@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Bookmark Manager Sync</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div id="app">
+
+      <!-- ── Header ─────────────────────────────────────────────────── -->
+      <header>
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 5C5 3.89543 5.89543 3 7 3H17C18.1046 3 19 3.89543 19 5V21L12 17.5L5 21V5Z"
+              stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+          </svg>
+          <span class="brand-name">Bookmark Sync</span>
+        </div>
+        <div id="status-dot" class="status-dot status-unconfigured" title="Not configured"></div>
+      </header>
+
+      <!-- ── Connection Section ─────────────────────────────────────── -->
+      <section class="card" id="connection-section">
+        <label for="api-url">API Base URL</label>
+        <div class="input-row">
+          <input type="url" id="api-url" placeholder="http://localhost:5080" autocomplete="off" spellcheck="false" />
+          <button id="save-btn" type="button" class="btn-primary" aria-label="Save and connect">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M5 12L10 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        <p id="connection-message" class="message" role="alert" aria-live="polite"></p>
+      </section>
+
+      <!-- ── Sync Status Section ────────────────────────────────────── -->
+      <section class="card" id="status-section">
+        <div class="status-row">
+          <span class="status-label">Status</span>
+          <span id="sync-state" class="status-value">Not configured</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Last sync</span>
+          <span id="last-sync" class="status-value muted">—</span>
+        </div>
+        <div class="status-row">
+          <span class="status-label">Pending events</span>
+          <span id="pending-count" class="status-value muted">0</span>
+        </div>
+        <p id="error-code" class="message error" role="alert" aria-live="polite"></p>
+      </section>
+
+      <!-- ── Keyboard Shortcut Section ──────────────────────────────── -->
+      <section class="card" id="shortcut-section">
+        <div class="shortcut-row">
+          <div class="shortcut-info">
+            <span class="shortcut-title">Quick Bookmark</span>
+            <span class="shortcut-desc">Bookmarks current page in last visited folder</span>
+          </div>
+          <kbd id="shortcut-badge">Ctrl+Shift+F</kbd>
+        </div>
+        <button id="configure-shortcut-btn" type="button" class="btn-link">
+          Change keybind →
+        </button>
+      </section>
+
+      <!-- ── Open Manager Section ───────────────────────────────────── -->
+      <section class="card" id="open-manager-section" style="margin-top: 10px;">
+        <button id="open-manager-btn" type="button" class="btn-primary" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;">
+          <span>Open Manager</span>
+        </button>
+      </section>
+
+      <!-- ── Danger Section ─────────────────────────────────────────── -->
+      <section id="danger-section">
+        <button id="clear-btn" type="button" class="btn-danger">Clear local data</button>
+      </section>
+
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

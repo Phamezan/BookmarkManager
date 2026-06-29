@@ -1,0 +1,19 @@
+@using BookmarkManager.Contracts
+
+@{
+    var (icon, color, label) = State switch
+    {
+        SyncState.Synced => (Icons.Material.Filled.CheckCircle, Color.Success, "Synced"),
+        SyncState.Pending => (Icons.Material.Filled.Sync, Color.Warning, "Pending"),
+        SyncState.Failed => (Icons.Material.Filled.Cancel, Color.Error, "Failed"),
+        _ => (Icons.Material.Filled.Help, Color.Default, "Unknown"),
+    };
+}
+
+<MudTooltip Text="@label">
+    <MudIcon Icon="@icon" Color="@color" Size="@Size.Small" />
+</MudTooltip>
+
+@code {
+    [Parameter] public SyncState State { get; set; }
+}

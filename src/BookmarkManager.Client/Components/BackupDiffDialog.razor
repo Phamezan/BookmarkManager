@@ -1,0 +1,82 @@
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+<MudDialog Class="diff-preview-dialog">
+    <DialogContent>
+        <div class="d-flex align-center justify-space-between mb-4">
+            <MudText Typo="Typo.h6">Import Preview</MudText>
+            <div class="d-flex gap-2">
+                <MudChip T="string" Color="Color.Success" Size="Size.Small" Variant="Variant.Outlined">@CreateCount Create</MudChip>
+                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Outlined">@UpdateCount Update</MudChip>
+                @if (DeleteCount > 0)
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined">@DeleteCount Delete</MudChip>
+                }
+                <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined">@SkipCount Skip</MudChip>
+            </div>
+        </div>
+
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-4">
+            Please review the changes below. Proceeding will apply these changes to your database and sync them to your browser.
+        </MudText>
+
+        <div class="diff-items-container" style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; background-color: var(--bg-surface);">
+            @if (Items.Count == 0)
+            {
+                <div class="pa-4 text-center mud-text-secondary">
+                    No changes detected.
+                </div>
+            }
+            else
+            {
+                    <Virtualize Items="Items" Context="item" OverscanCount="15">
+                        @{
+                            var (badgeClass, badgeText) = item.Action switch
+                            {
+                                "Create" => ("action-create", "+ Create"),
+                                "Update" => ("action-update", "~ Update"),
+                                "Delete" => ("action-delete", "- Delete"),
+                                _ => ("action-skip", "• Skip")
+                            };
+                        }
+                        <div class="diff-row d-flex align-center justify-space-between pa-3 border-bottom" style="height: 57px;">
+                            <div class="d-flex align-center gap-3">
+                                <span class="action-badge @badgeClass">@badgeText</span>
+                                <div class="d-flex align-center gap-2">
+                                    <MudIcon Icon="@(item.Type == "Folder" ? Icons.Material.Filled.Folder : Icons.Material.Filled.Bookmark)" Size="Size.Small" Class="mud-text-secondary" />
+                                    <div>
+                                        <MudText Typo="Typo.body2" Class="font-weight-medium text-truncate" Style="max-width: 400px;">@item.Title</MudText>
+                                        @if (!string.IsNullOrEmpty(item.Details))
+                                        {
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block text-truncate" Style="max-width: 400px;">@item.Details</MudText>
+                                        }
+                                        else if (!string.IsNullOrEmpty(item.Url))
+                                        {
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block text-truncate" Style="max-width: 400px;">@item.Url</MudText>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </Virtualize>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Variant="Variant.Text">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirm">Confirm Restore</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public List<BackupDiffItem> Items { get; set; } = [];
+    [Parameter] public int CreateCount { get; set; }
+    [Parameter] public int UpdateCount { get; set; }
+    [Parameter] public int DeleteCount { get; set; }
+    [Parameter] public int SkipCount { get; set; }
+
+    private void Cancel() => MudDialog.Cancel();
+    private void Confirm() => MudDialog.Close(DialogResult.Ok(true));
+}

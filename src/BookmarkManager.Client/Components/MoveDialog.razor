@@ -1,0 +1,46 @@
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Components
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Move Item</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-4">Select target folder:</MudText>
+        <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+            <FolderTree Folders="Folders"
+                        SelectedFolderId="_selectedId"
+                        FolderSelected="OnSelected" />
+        </div>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Move" Disabled="@(_selectedId == null)">Move</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public List<FolderTreeNodeDto> Folders { get; set; } = [];
+    [Parameter] public Guid? CurrentFolderId { get; set; }
+
+    private Guid? _selectedId;
+
+    private void OnSelected(Guid id)
+    {
+        _selectedId = id;
+    }
+
+    private void Move()
+    {
+        if (_selectedId.HasValue)
+        {
+            MudDialog.Close(DialogResult.Ok(_selectedId.Value));
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

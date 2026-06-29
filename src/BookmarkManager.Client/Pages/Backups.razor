@@ -1,0 +1,659 @@
+@page "/backups"
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Components
+@using System.IO
+@using System.Text.Json
+@inject IBookmarkService BookmarkService
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Backups & Restore</PageTitle>
+
+<MudStack Spacing="4" Class="page-surface">
+    <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween" Class="page-heading">
+        <div>
+            <MudText Typo="Typo.h4">Backups & Restore</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Export full-fidelity JSON snapshots, import Chrome/Brave backups, and preview restore impact before applying changes.
+            </MudText>
+        </div>
+        <MudButton Variant="Variant.Filled" 
+                   Color="Color.Primary" 
+                   StartIcon="@Icons.Material.Filled.CloudUpload"
+                   OnClick="CreateBackupAsync"
+                   Disabled="_loading">
+            Create Snapshot
+        </MudButton>
+    </MudStack>
+
+    <div class="backups-grid">
+        <!-- Import Control Panel -->
+        <MudPaper Elevation="0" Class="ops-panel pa-4">
+            <MudText Typo="Typo.h6">Import Backup File</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+                Upload a JSON backup file to restore your library. Supports both flat App Backup JSON files and standard Chrome/Brave nested bookmarks JSON.
+            </MudText>
+
+            <div class="d-flex flex-column gap-4 mt-6">
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Restore Mode</MudText>
+                    <MudRadioGroup T="bool" @bind-Value="_overwriteMode" Class="d-flex gap-4">
+                        <MudRadio Value="false" Color="Color.Primary">
+                            <div class="d-flex flex-column">
+                                <MudText Typo="Typo.body2" Class="font-weight-medium">Merge</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Merge missing items and update modified ones. Safe.</MudText>
+                            </div>
+                        </MudRadio>
+                        <MudRadio Value="true" Color="Color.Error">
+                            <div class="d-flex flex-column">
+                                <MudText Typo="Typo.body2" Class="font-weight-medium">Overwrite</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Wipe existing bookmarks and restore clean backup. Destructive.</MudText>
+                            </div>
+                        </MudRadio>
+                    </MudRadioGroup>
+                </div>
+
+                <div class="file-upload-zone">
+                    <InputFile id="backup-file-input" OnChange="OnFilesUploaded" hidden accept=".json" />
+                    <MudButton HtmlTag="label"
+                               for="backup-file-input"
+                               Variant="Variant.Outlined"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.AttachFile"
+                               FullWidth="true"
+                               Class="py-4"
+                               Style="border-style: dashed; border-width: 2px;">
+                        Select JSON File
+                    </MudButton>
+                </div>
+            </div>
+        </MudPaper>
+
+        <!-- Recent Snapshots List -->
+        <MudPaper Elevation="0" Class="ops-panel pa-4">
+            <MudText Typo="Typo.h6">Recent Server Snapshots</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1 mb-4">
+                Saved snapshots stored locally on the server.
+            </MudText>
+
+            @if (_loadingBackups)
+            {
+                <div class="d-flex justify-center my-8">
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                </div>
+            }
+            else if (_backups.Count == 0)
+            {
+                <div class="d-flex flex-column align-center justify-center my-8 text-center mud-text-secondary">
+                    <MudIcon Icon="@Icons.Material.Filled.BackupTable" Size="Size.Large" Class="mb-2" />
+                    <MudText Typo="Typo.body2">No snapshots found. Click "Create Snapshot" to save one.</MudText>
+                </div>
+            }
+            else
+            {
+                <div class="snapshot-list d-flex flex-column gap-2">
+                    @foreach (var backup in _backups)
+                    {
+                        <div class="snapshot-card d-flex align-center justify-space-between pa-3" style="border: 1px solid var(--border-color); border-radius: 6px;">
+                            <div>
+                                <MudText Typo="Typo.body2" Class="font-weight-medium">@backup.Name</MudText>
+                                <div class="d-flex gap-3 mt-1 text-secondary" style="font-size: 0.8rem;">
+                                    <span>Created: @backup.CreatedAt.ToLocalTime().ToString("g")</span>
+                                    <span>•</span>
+                                    <span>Items: @backup.BookmarkCount</span>
+                                    <span>•</span>
+                                    <span>Size: @($"{backup.SizeBytes / 1024.0:F1} KB")</span>
+                                </div>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <MudIconButton Icon="@Icons.Material.Filled.Download" 
+                                               Color="Color.Primary" 
+                                               Size="Size.Small" 
+                                               Href="@GetDownloadUrl(backup.Id)"
+                                               Target="_blank"
+                                               Title="Download snapshot JSON" />
+                                <MudIconButton Icon="@Icons.Material.Filled.Restore" 
+                                               Color="Color.Warning" 
+                                               Size="Size.Small" 
+                                               OnClick="() => ConfirmServerRestoreAsync(backup)"
+                                               Title="Restore from this snapshot" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </MudPaper>
+    </div>
+</MudStack>
+
+@code {
+    private List<BackupManifestDto> _backups = [];
+    private bool _loadingBackups = true;
+    private bool _loading = false;
+    private bool _overwriteMode = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBackupsAsync();
+    }
+
+    private async Task LoadBackupsAsync()
+    {
+        _loadingBackups = true;
+        try
+        {
+            _backups = await BookmarkService.GetBackupsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load snapshots: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingBackups = false;
+        }
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        _loading = true;
+        try
+        {
+            var manifest = await BookmarkService.CreateBackupAsync();
+            Snackbar.Add($"Snapshot '{manifest.Name}' created successfully!", Severity.Success);
+            await LoadBackupsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to create snapshot: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private string GetDownloadUrl(Guid id)
+    {
+        return NavigationManager.ToAbsoluteUri($"api/backups/{id}/download").ToString();
+    }
+
+    private async Task OnFilesUploaded(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
+            using var reader = new StreamReader(stream);
+            var content = await reader.ReadToEndAsync();
+
+            string detectedFormat;
+            List<BookmarkNodeDto> importedNodes;
+            
+            try
+            {
+                importedNodes = ParseAndFlattenJson(content, out detectedFormat);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Invalid JSON file: {ex.Message}", Severity.Error);
+                return;
+            }
+
+            // Calculate Differences for Preview
+            var activeItems = await GetCurrentActiveItemsAsync();
+            
+            var activeByUrl = new Dictionary<string, BookmarkNodeDto>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in activeItems.Where(i => i.Type == NodeType.Bookmark && i.Url != null))
+            {
+                activeByUrl[item.Url!] = item;
+            }
+
+            var activeByTitleFolder = new Dictionary<string, BookmarkNodeDto>(StringComparer.OrdinalIgnoreCase);
+            foreach (var item in activeItems.Where(i => i.Type == NodeType.Folder))
+            {
+                activeByTitleFolder[item.Title] = item;
+            }
+
+            var diffItems = new List<BackupDiffItem>();
+            int createCount = 0;
+            int updateCount = 0;
+            int skipCount = 0;
+            int deleteCount = 0;
+
+            if (_overwriteMode)
+            {
+                deleteCount = activeItems.Count;
+                foreach (var item in activeItems)
+                {
+                    diffItems.Add(new BackupDiffItem
+                    {
+                        Title = item.Title,
+                        Url = item.Url,
+                        Type = item.Type.ToString(),
+                        Action = "Delete",
+                        Details = "Will be deleted to perform clean overwrite"
+                    });
+                }
+            }
+
+            foreach (var node in importedNodes)
+            {
+                if (node.Type == NodeType.Bookmark)
+                {
+                    if (!_overwriteMode && node.Url != null && activeByUrl.TryGetValue(node.Url, out var existing))
+                    {
+                        if (existing.Title == node.Title)
+                        {
+                            skipCount++;
+                            diffItems.Add(new BackupDiffItem
+                            {
+                                Title = node.Title,
+                                Url = node.Url,
+                                Type = "Bookmark",
+                                Action = "Skip",
+                                Details = "Identical bookmark already exists"
+                            });
+                        }
+                        else
+                        {
+                            updateCount++;
+                            diffItems.Add(new BackupDiffItem
+                            {
+                                Title = node.Title,
+                                Url = node.Url,
+                                Type = "Bookmark",
+                                Action = "Update",
+                                Details = $"Title will be updated from '{existing.Title}'"
+                            });
+                        }
+                    }
+                    else
+                    {
+                        createCount++;
+                        diffItems.Add(new BackupDiffItem
+                        {
+                            Title = node.Title,
+                            Url = node.Url,
+                            Type = "Bookmark",
+                            Action = "Create"
+                        });
+                    }
+                }
+                else // Folder
+                {
+                    if (!_overwriteMode && activeByTitleFolder.TryGetValue(node.Title, out _))
+                    {
+                        skipCount++;
+                        diffItems.Add(new BackupDiffItem
+                        {
+                            Title = node.Title,
+                            Type = "Folder",
+                            Action = "Skip",
+                            Details = "Identical folder already exists"
+                        });
+                    }
+                    else
+                    {
+                        createCount++;
+                        diffItems.Add(new BackupDiffItem
+                        {
+                            Title = node.Title,
+                            Type = "Folder",
+                            Action = "Create"
+                        });
+                    }
+                }
+            }
+
+            // Open dialog
+            var parameters = new DialogParameters<BackupDiffDialog>
+            {
+                { x => x.Items, diffItems },
+                { x => x.CreateCount, createCount },
+                { x => x.UpdateCount, updateCount },
+                { x => x.DeleteCount, deleteCount },
+                { x => x.SkipCount, skipCount }
+            };
+
+            var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+            var dialog = await DialogService.ShowAsync<BackupDiffDialog>($"Import {detectedFormat}", parameters, options);
+            var result = await dialog.Result;
+            
+            if (result is not null && !result.Canceled && result.Data is bool ok && ok)
+            {
+                _loading = true;
+                StateHasChanged();
+                try
+                {
+                    var request = new ImportBackupRequest
+                    {
+                        Nodes = importedNodes,
+                        Overwrite = _overwriteMode
+                    };
+
+                    var success = await BookmarkService.ImportBackupAsync(request);
+                    if (success)
+                    {
+                        Snackbar.Add("Import completed successfully!", Severity.Success);
+                        await LoadBackupsAsync();
+                        NavigationManager.NavigateTo("/bookmarks", forceLoad: false);
+                    }
+                    else
+                    {
+                        Snackbar.Add("Import failed. Check server logs.", Severity.Error);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Import error: {ex.Message}", Severity.Error);
+                }
+                finally
+                {
+                    _loading = false;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Upload error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ConfirmServerRestoreAsync(BackupManifestDto manifest)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Message, $"Are you sure you want to restore from snapshot '{manifest.Name}'? This will completely wipe all current bookmarks and replace them." },
+            { x => x.ConfirmText, "Confirm Overwrite" }
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Restore Snapshot", parameters);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is bool ok && ok)
+        {
+            _loading = true;
+            StateHasChanged();
+            try
+            {
+                var success = await BookmarkService.RestoreBackupAsync(manifest.Id);
+                if (success)
+                {
+                    Snackbar.Add("Snapshot restored successfully! Reloading bookmarks…", Severity.Success);
+                    // Navigate to bookmarks so the page reinitialises with the restored data
+                    NavigationManager.NavigateTo("/bookmarks", forceLoad: false);
+                }
+                else
+                {
+                    Snackbar.Add("Restore failed. Check server logs for details.", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Restore error: {ex.Message}", Severity.Error);
+            }
+            finally
+            {
+                _loading = false;
+            }
+        }
+    }
+
+    private async Task<List<BookmarkNodeDto>> GetCurrentActiveItemsAsync()
+    {
+        var result = new List<BookmarkNodeDto>();
+        try
+        {
+            var bookmarksResult = await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = "", PageSize = 100000 });
+            result.AddRange(bookmarksResult.Items);
+
+            var foldersTree = await BookmarkService.GetFolderTreeAsync();
+            AddFoldersRecursive(foldersTree, result);
+        }
+        catch
+        {
+            // Ignore API fetch errors in diff calculator
+        }
+        return result;
+    }
+
+    private void AddFoldersRecursive(List<FolderTreeNodeDto> folders, List<BookmarkNodeDto> result)
+    {
+        foreach (var f in folders)
+        {
+            result.Add(new BookmarkNodeDto
+            {
+                Id = f.Id,
+                Title = f.Title,
+                Type = NodeType.Folder,
+                ParentId = null
+            });
+            AddFoldersRecursive(f.Children, result);
+        }
+    }
+
+    private List<BookmarkNodeDto> ParseAndFlattenJson(string json, out string fileType)
+    {
+        fileType = "Unknown File";
+        using var doc = JsonDocument.Parse(json);
+        
+        // 1. Chrome Bookmarks export format
+        if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("roots", out var rootsProp))
+        {
+            fileType = "Chrome Bookmarks";
+            var list = new List<BookmarkNodeDto>();
+            if (rootsProp.TryGetProperty("bookmark_bar", out var barProp))
+            {
+                FlattenChromeNodes(barProp, null, list);
+            }
+            if (rootsProp.TryGetProperty("other", out var otherProp))
+            {
+                FlattenChromeNodes(otherProp, null, list);
+            }
+            return list;
+        }
+
+        // 2. Flat list (App Backup DTOs)
+        if (doc.RootElement.ValueKind == JsonValueKind.Array)
+        {
+            var array = doc.RootElement.EnumerateArray();
+            var first = array.FirstOrDefault();
+            
+            if (first.ValueKind == JsonValueKind.Object && (first.TryGetProperty("type", out _) || first.TryGetProperty("Type", out _)))
+            {
+                fileType = "App Backup";
+                var list = JsonSerializer.Deserialize<List<BookmarkNodeDto>>(json, new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                });
+                return list ?? new();
+            }
+
+            if (first.ValueKind == JsonValueKind.Object && 
+                (first.TryGetProperty("id", out _) || first.TryGetProperty("Id", out _)) && 
+                (first.TryGetProperty("parentId", out _) || first.TryGetProperty("ParentId", out _)))
+            {
+                fileType = "Flat Bookmarks List";
+                return ParseFlatJsonList(doc.RootElement);
+            }
+            
+            // 3. Simple Nested JSON tree
+            fileType = "Simple Bookmarks Tree";
+            var simpleList = new List<BookmarkNodeDto>();
+            foreach (var item in doc.RootElement.EnumerateArray())
+            {
+                FlattenSimpleNode(item, null, simpleList);
+            }
+            return simpleList;
+        }
+
+        throw new Exception("Unsupported JSON schema.");
+    }
+
+    private List<BookmarkNodeDto> ParseFlatJsonList(JsonElement rootArray)
+    {
+        var idMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "1", Guid.Parse("5cc66c21-5ae3-3ee0-bf2b-dfd3eb811475") },
+            { "2", Guid.Parse("ba01de3a-adbe-347e-b64c-10a9528572e4") }
+        };
+
+        // First pass: map local IDs to Guids
+        foreach (var node in rootArray.EnumerateArray())
+        {
+            string localId = "";
+            if (node.TryGetProperty("id", out var idProp))
+            {
+                localId = idProp.ValueKind == JsonValueKind.Number 
+                    ? idProp.GetInt64().ToString() 
+                    : idProp.GetString() ?? "";
+            }
+            if (!string.IsNullOrEmpty(localId) && !idMap.ContainsKey(localId))
+            {
+                idMap[localId] = Guid.NewGuid();
+            }
+        }
+
+        // Second pass: reconstruct hierarchy
+        var list = new List<BookmarkNodeDto>();
+        foreach (var node in rootArray.EnumerateArray())
+        {
+            string localId = "";
+            if (node.TryGetProperty("id", out var idProp))
+            {
+                localId = idProp.ValueKind == JsonValueKind.Number 
+                    ? idProp.GetInt64().ToString() 
+                    : idProp.GetString() ?? "";
+            }
+            if (string.IsNullOrEmpty(localId)) continue;
+            if (localId == "1" || localId == "2" || localId == "0") continue;
+
+            string parentLocalId = "";
+            if (node.TryGetProperty("parentId", out var pProp))
+            {
+                parentLocalId = pProp.ValueKind == JsonValueKind.Number 
+                    ? pProp.GetInt64().ToString() 
+                    : pProp.GetString() ?? "";
+            }
+
+            string title = node.TryGetProperty("title", out var tProp) ? tProp.GetString() ?? "" : "";
+            string? url = null;
+            bool isFolder = true;
+            if (node.TryGetProperty("url", out var urlProp) && urlProp.ValueKind != JsonValueKind.Null)
+            {
+                var uVal = urlProp.GetString();
+                if (!string.IsNullOrEmpty(uVal))
+                {
+                    url = uVal;
+                    isFolder = false;
+                }
+            }
+
+            int position = node.TryGetProperty("index", out var idxProp) && idxProp.ValueKind == JsonValueKind.Number ? idxProp.GetInt32() : 0;
+
+            Guid? parentGuid = null;
+            if (!string.IsNullOrEmpty(parentLocalId) && idMap.TryGetValue(parentLocalId, out var pg))
+            {
+                parentGuid = pg;
+            }
+
+            list.Add(new BookmarkNodeDto
+            {
+                Id = idMap[localId],
+                ParentId = parentGuid,
+                Title = title,
+                Url = url,
+                Type = isFolder ? NodeType.Folder : NodeType.Bookmark,
+                Position = position
+            });
+        }
+        return list;
+    }
+
+    private void FlattenChromeNodes(JsonElement node, Guid? parentId, List<BookmarkNodeDto> list)
+    {
+        if (node.ValueKind == JsonValueKind.Object)
+        {
+            if (node.TryGetProperty("children", out var childrenProp) && childrenProp.ValueKind == JsonValueKind.Array)
+            {
+                string name = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                Guid? currentId = parentId;
+                
+                if (!string.IsNullOrEmpty(name) && name != "Roots" && name != "roots")
+                {
+                    currentId = Guid.NewGuid();
+                    list.Add(new BookmarkNodeDto
+                    {
+                        Id = currentId.Value,
+                        ParentId = parentId,
+                        Title = name,
+                        Type = NodeType.Folder,
+                        Position = list.Count(n => n.ParentId == parentId)
+                    });
+                }
+                
+                foreach (var child in childrenProp.EnumerateArray())
+                {
+                    FlattenChromeNodes(child, currentId, list);
+                }
+            }
+            else
+            {
+                string name = node.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? "" : "";
+                string url = node.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+                list.Add(new BookmarkNodeDto
+                {
+                    Id = Guid.NewGuid(),
+                    ParentId = parentId,
+                    Title = name,
+                    Url = url,
+                    Type = NodeType.Bookmark,
+                    Position = list.Count(n => n.ParentId == parentId)
+                });
+            }
+        }
+    }
+
+    private void FlattenSimpleNode(JsonElement node, Guid? parentId, List<BookmarkNodeDto> list)
+    {
+        string title = node.TryGetProperty("title", out var tProp) ? tProp.GetString() ?? "" : "";
+        string typeStr = node.TryGetProperty("type", out var typeProp) ? typeProp.GetString() ?? "" : "bookmark";
+        bool isFolder = typeStr.Equals("folder", StringComparison.OrdinalIgnoreCase);
+
+        Guid currentId = Guid.NewGuid();
+        if (isFolder)
+        {
+            list.Add(new BookmarkNodeDto
+            {
+                Id = currentId,
+                ParentId = parentId,
+                Title = title,
+                Type = NodeType.Folder,
+                Position = list.Count(n => n.ParentId == parentId)
+            });
+
+            if (node.TryGetProperty("children", out var childrenProp) && childrenProp.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var child in childrenProp.EnumerateArray())
+                {
+                    FlattenSimpleNode(child, currentId, list);
+                }
+            }
+        }
+        else
+        {
+            string url = node.TryGetProperty("url", out var urlProp) ? urlProp.GetString() ?? "" : "";
+            list.Add(new BookmarkNodeDto
+            {
+                Id = currentId,
+                ParentId = parentId,
+                Title = title,
+                Url = url,
+                Type = NodeType.Bookmark,
+                Position = list.Count(n => n.ParentId == parentId)
+            });
+        }
+    }
+}

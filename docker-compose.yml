@@ -1,0 +1,16 @@
+services:
+  bookmarkmanager:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${BOOKMARK_MANAGER_IMAGE:-bookmarkmanager:local}
+    container_name: bookmarkmanager
+    ports:
+      - "${BOOKMARK_MANAGER_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://0.0.0.0:8080
+      ConnectionStrings__Default: "Data Source=/data/bookmarks.db"
+    volumes:
+      - ${BOOKMARK_MANAGER_DATA_DIR:-./data}:/data
+    restart: unless-stopped

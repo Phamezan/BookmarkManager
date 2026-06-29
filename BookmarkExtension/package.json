@@ -1,0 +1,28 @@
+{
+  "name": "bookmark-manager-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Manifest V3 Brave extension that synchronizes selected bookmark folders with Bookmark Manager.",
+  "scripts": {
+    "clean": "rimraf dist",
+    "typecheck": "node node_modules/typescript-7/bin/tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.16.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3",
+    "typescript-7": "npm:typescript@^7.0.1-rc",
+    "vitest": "^2.1.8"
+  }
+}

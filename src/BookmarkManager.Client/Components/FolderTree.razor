@@ -1,0 +1,109 @@
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+<MudTreeView T="Guid?"
+             Items="@_treeItems"
+             Hover="true"
+             @bind-ExpandedItems="_expandedFolderIds"
+             SelectedValue="_selectedFolderId"
+             SelectedValueChanged="@OnSelectedChanged">
+    <ItemTemplate Context="item">
+        <MudTreeViewItem T="Guid?"
+                         Value="@item.Value"
+                         Items="@item.Children"
+                         CanExpand="@(item.Children?.Count > 0)">
+            <BodyContent>
+                <div class="d-flex align-center folder-drop-target"
+                     style="width: 100%"
+                     data-drop-target="true"
+                     draggable="true"
+                     data-drag-type="folder"
+                     data-drag-id="@item.Value"
+                     @ondragover:prevent
+                     @ondrop="@(() => OnDrop(item.Value))"
+                     @ondragstart="@(() => OnFolderDragStart(item.Value))"
+                     @oncontextmenu="@((e) => OpenFolderContextMenu(e, item.Value))"
+                     @oncontextmenu:preventDefault="true"
+                     @oncontextmenu:stopPropagation="true">
+                    <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="mr-2" Style="@($"color: {FolderColorHelper.GetFolderColor(item.Text)};")" />
+                    <MudText Typo="Typo.body2" Class="flex-grow-1">@item.Text</MudText>
+                    @{
+                        var fi = item as FolderTreeItemData;
+                    }
+                    @if (fi?.BookmarkCount > 0)
+                    {
+                        <span class="folder-count-badge">@fi.BookmarkCount</span>
+                    }
+                </div>
+            </BodyContent>
+        </MudTreeViewItem>
+    </ItemTemplate>
+</MudTreeView>
+
+@code {
+    [Parameter] public List<FolderTreeNodeDto> Folders { get; set; } = [];
+    [Parameter] public Guid? SelectedFolderId { get; set; }
+    [Parameter] public EventCallback<Guid> FolderSelected { get; set; }
+    [Parameter] public EventCallback<Guid> FolderDrop { get; set; }
+    [Parameter] public EventCallback<Guid> FolderDragStart { get; set; }
+    [Parameter] public EventCallback<(MouseEventArgs MouseEvent, Guid FolderId)> FolderContextMenu { get; set; }
+    [Parameter] public HashSet<Guid> ExpandedItems { get; set; } = [];
+    [Parameter] public EventCallback<HashSet<Guid>> ExpandedItemsChanged { get; set; }
+
+    private HashSet<Guid> _expandedFolderIds = [];
+    private List<TreeItemData<Guid?>> _treeItems = [];
+    private Guid? _selectedFolderId;
+
+    protected override void OnInitialized()
+    {
+        _expandedFolderIds = ExpandedItems;
+    }
+
+    protected override void OnParametersSet()
+    {
+        _selectedFolderId = SelectedFolderId;
+        _expandedFolderIds = ExpandedItems;
+        _treeItems = Folders.Select(ToTreeItemData).Select(x => (TreeItemData<Guid?>)x).ToList();
+    }
+
+    private void OnSelectedChanged(Guid? id)
+    {
+        _selectedFolderId = id;
+        if (id.HasValue)
+            FolderSelected.InvokeAsync(id.Value);
+    }
+
+    private async Task OnFolderDragStart(Guid? id)
+    {
+        if (id.HasValue)
+            await FolderDragStart.InvokeAsync(id.Value);
+    }
+
+    private async Task OnDrop(Guid? folderId)
+    {
+        if (folderId.HasValue)
+            await FolderDrop.InvokeAsync(folderId.Value);
+    }
+
+    private async Task OpenFolderContextMenu(MouseEventArgs e, Guid? id)
+    {
+        if (id.HasValue)
+            await FolderContextMenu.InvokeAsync((e, id.Value));
+    }
+
+    private static FolderTreeItemData ToTreeItemData(FolderTreeNodeDto dto)
+    {
+        return new FolderTreeItemData
+        {
+            Value = dto.Id,
+            Text = dto.Title,
+            BookmarkCount = dto.BookmarkCount,
+            Children = dto.Children.Select(ToTreeItemData).ToList()
+        };
+    }
+
+    private class FolderTreeItemData : TreeItemData<Guid?>
+    {
+        public int BookmarkCount { get; set; }
+    }
+}

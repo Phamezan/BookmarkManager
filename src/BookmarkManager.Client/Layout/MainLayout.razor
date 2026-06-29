@@ -1,0 +1,97 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider IsDarkMode="true" />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<canvas id="bg-canvas"></canvas>
+
+<MudLayout Class="app-shell">
+    <MudAppBar Elevation="0" Class="app-topbar">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       aria-label="Toggle navigation"
+                       OnClick="ToggleDrawer" />
+        <MudStack Spacing="0" Class="app-title">
+            <MudText Typo="Typo.subtitle1">Bookmark Manager</MudText>
+            <MudText Typo="Typo.caption">Tracked Brave library operations</MudText>
+        </MudStack>
+        <MudSpacer />
+        <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="topbar-status">
+            <MudTooltip Text="@(_extensionService.IsConnected ? "Extension is connected and responsive." : "Commands are queued until the extension checks in.")">
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Variant="Variant.Outlined"
+                         Color="@(_extensionService.IsConnected ? Color.Success : Color.Warning)"
+                         Icon="@(_extensionService.IsConnected ? Icons.Material.Filled.CloudDone : Icons.Material.Filled.CloudOff)">
+                    @(_extensionService.IsConnected ? "Connected" : "Extension offline")
+                </MudChip>
+            </MudTooltip>
+            <MudTooltip Text="Open settings">
+                <MudIconButton Href="settings"
+                               Icon="@Icons.Material.Filled.Settings"
+                               Color="Color.Inherit"
+                               Size="Size.Small"
+                               aria-label="Open settings" />
+            </MudTooltip>
+        </MudStack>
+    </MudAppBar>
+
+    <MudDrawer Open="@_drawerOpen"
+               Variant="@DrawerVariant.Responsive"
+               Elevation="0"
+               ClipMode="DrawerClipMode.Always"
+               Class="app-nav-drawer">
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent Class="app-main">
+        <div class="app-content">
+            @Body
+        </div>
+    </MudMainContent>
+</MudLayout>
+
+@implements IDisposable
+
+@code {
+    private bool _drawerOpen = true;
+
+    [Inject]
+    private IExtensionConnectionService _extensionService { get; set; } = null!;
+
+    [Inject]
+    private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = null!;
+
+    protected override void OnInitialized()
+    {
+        _extensionService.ConnectionStateChanged += OnConnectionStateChanged;
+        _extensionService.PollAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("initBgShader");
+            }
+            catch
+            {
+                // Fallback
+            }
+        }
+    }
+
+    private void OnConnectionStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
+
+    public void Dispose()
+    {
+        _extensionService.ConnectionStateChanged -= OnConnectionStateChanged;
+    }
+}

@@ -1,2 +1,48 @@
-*/Agents
-*/obj
+# .NET and IDE output
+[Bb]in/
+[Oo]bj/
+.vs/
+TestResults/
+*.user
+*.suo
+*.nupkg
+
+# Browser extension output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local runtime data, backups, and secrets
+data/
+backups/
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example
+
+# AI assistants and local agent instructions
+setup.md
+AGENT.md
+AGENTS.md
+AGENTS/
+.agents/
+.codex/
+.codegraph/
+.claude/
+CLAUDE.md
+.cursor/
+.continue/
+.windsurf/
+.roo/
+.cline/
+.opencode/
+.gemini/
+GEMINI.md
+.aider*
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+.github/agents/

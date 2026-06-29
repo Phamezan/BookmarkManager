@@ -1,0 +1,361 @@
+@page "/recycle-bin"
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+@inject IBookmarkService BookmarkService
+@inject ISnackbar Snackbar
+
+<PageTitle>Recycle Bin</PageTitle>
+
+<div class="bookmarks-workspace">
+    <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
+        <div class="bookmark-header">
+            <div class="bookmark-breadcrumbs">
+                <div class="breadcrumbs-container">
+                    <span class="breadcrumb-item active">Recycle Bin</span>
+                    <span class="breadcrumb-separator">/</span>
+                    <span class="breadcrumb-item text-muted">Deleted bookmarks remain recoverable for 30 days before purge.</span>
+                </div>
+            </div>
+
+            <div class="header-select-row" style="display: block;">
+                <div class="header-content-container">
+                    @if (_selectedIds.Count > 0)
+                    {
+                        <div class="selection-bar">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <div class="bookmark-select mr-2" style="display: flex; align-items: center; padding-left: 4px;">
+                                        <input type="checkbox"
+                                               checked="@IsAllSelected()"
+                                               @onchange="ToggleSelectAll"
+                                               class="bm-checkbox master-checkbox"
+                                               aria-label="Select all" />
+                                    </div>
+                                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => _selectedIds.Clear())" aria-label="Clear selection" />
+                                    <MudText Typo="Typo.subtitle2" Class="ml-2">@_selectedIds.Count selected</MudText>
+                                </MudStack>
+                                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                    <MudButton Variant="Variant.Filled" 
+                                               Color="Color.Primary" 
+                                               StartIcon="@Icons.Material.Filled.Restore" 
+                                               Size="Size.Small" 
+                                               OnClick="@RestoreSelected">
+                                        Restore Selected
+                                    </MudButton>
+                                </MudStack>
+                            </MudStack>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudPaper Elevation="0" Class="explorer-toolbar">
+                            <div class="bookmark-select mr-2" style="display: flex; align-items: center; height: 100%; padding-left: 4px;">
+                                <input type="checkbox"
+                                       checked="@IsAllSelected()"
+                                       @onchange="ToggleSelectAll"
+                                       class="bm-checkbox master-checkbox"
+                                       aria-label="Select all" />
+                            </div>
+                            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                <MudIcon Icon="@Icons.Material.Filled.RestoreFromTrash" Class="mud-text-secondary" />
+                                <MudText Typo="Typo.body2" Class="mud-text-secondary">@NearPurgeCount item(s) nearing purge (7 days or less)</MudText>
+                            </MudStack>
+                        </MudPaper>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="bookmark-list">
+            @if (_loading)
+            {
+                <div class="bookmark-grid" aria-label="Loading deleted bookmarks...">
+                    @for (int i = 0; i < 6; i++)
+                    {
+                        <div class="skeleton-card" />
+                    }
+                </div>
+            }
+            else if (_deleted.Count == 0)
+            {
+                <div class="empty-state">
+                    <MudIcon Icon="@Icons.Material.Filled.RestoreFromTrash" />
+                    <MudText Typo="Typo.h6">Recycle bin is empty</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Deleted bookmarks will appear here with restore and purge timing.</MudText>
+                </div>
+            }
+            else
+            {
+                <div class="bookmark-grid" role="list" aria-label="Deleted Bookmarks">
+                    @* Group Folders First *@
+                    @foreach (var item in _deleted.Where(i => i.Type == NodeType.Folder))
+                    {
+                        <div class="@($"bookmark-card {(IsSelected(item.Id) ? "is-selected" : "")}")" 
+                             role="listitem" 
+                             @onclick="@((e) => OnRowClick(e, item))">
+                            <div class="bookmark-select" @onclick:stopPropagation>
+                                <input type="checkbox" 
+                                       checked="@IsSelected(item.Id)" 
+                                       @onclick="@((e) => OnCheckboxClick(e, item.Id))" 
+                                       class="bm-checkbox" 
+                                       aria-label="@($"Select {item.Title}")" />
+                            </div>
+                            
+                            <div class="bookmark-card-header">
+                                <div class="bookmark-card-title-group">
+                                    <div class="bookmark-card-icon">
+                                        <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Style="color: #e0a96d;" />
+                                    </div>
+                                    <SyncBadge State="@item.SyncState" />
+                                    <h3 class="bookmark-card-title" title="@item.Title">
+                                        <span>@item.Title</span>
+                                    </h3>
+                                </div>
+                            </div>
+
+                            <div class="bookmark-card-footer">
+                                <div class="d-flex flex-column gap-0.5">
+                                    <span class="bookmark-card-time">Deleted: @item.DeletedAt?.ToLocalTime().ToString("g")</span>
+                                    <span class="bookmark-card-time" style="color: var(--bm-warning) !important;">Purge: @item.PurgeAfter?.ToLocalTime().ToString("g")</span>
+                                </div>
+                            </div>
+
+                            <div class="bookmark-card-actions" @onclick:stopPropagation>
+                                <MudTooltip Text="Restore folder">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Restore" Color="Color.Primary" Size="Size.Small" OnClick="@(() => RestoreAsync(item.Id))" aria-label="@($"Restore {item.Title}")" />
+                                </MudTooltip>
+                            </div>
+                        </div>
+                    }
+
+                    @* Group Bookmarks Second *@
+                    @foreach (var item in _deleted.Where(i => i.Type != NodeType.Folder))
+                    {
+                        <div class="@($"bookmark-card {(IsSelected(item.Id) ? "is-selected" : "")}")" 
+                             role="listitem" 
+                             @onclick="@((e) => OnRowClick(e, item))">
+                            <div class="bookmark-select" @onclick:stopPropagation>
+                                <input type="checkbox" 
+                                       checked="@IsSelected(item.Id)" 
+                                       @onclick="@((e) => OnCheckboxClick(e, item.Id))" 
+                                       class="bm-checkbox" 
+                                       aria-label="@($"Select {item.Title}")" />
+                            </div>
+                            
+                            <div class="bookmark-card-header">
+                                <div class="bookmark-card-title-group">
+                                    <div class="bookmark-card-icon">
+                                        <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Small" />
+                                    </div>
+                                    <SyncBadge State="@item.SyncState" />
+                                    <h3 class="bookmark-card-title" title="@item.Title">
+                                        <span>@item.Title</span>
+                                    </h3>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(item.Url))
+                            {
+                                <span class="bookmark-card-url" title="@item.Url">@item.Url</span>
+                            }
+
+                            <div class="bookmark-card-footer">
+                                <div class="d-flex flex-column gap-0.5">
+                                    <span class="bookmark-card-time">Deleted: @item.DeletedAt?.ToLocalTime().ToString("g")</span>
+                                    <span class="bookmark-card-time" style="color: var(--bm-warning) !important;">Purge: @item.PurgeAfter?.ToLocalTime().ToString("g")</span>
+                                </div>
+                            </div>
+
+                            <div class="bookmark-card-actions" @onclick:stopPropagation>
+                                <MudTooltip Text="Restore bookmark">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Restore" Color="Color.Primary" Size="Size.Small" OnClick="@(() => RestoreAsync(item.Id))" aria-label="@($"Restore {item.Title}")" />
+                                </MudTooltip>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </main>
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<BookmarkNodeDto> _deleted = [];
+
+    private int NearPurgeCount => _deleted.Count(item => item.PurgeAfter is not null && item.PurgeAfter.Value <= DateTime.UtcNow.AddDays(7));
+
+    private readonly HashSet<Guid> _selectedIds = [];
+    private Guid? _lastSelectedId;
+
+    private bool IsSelected(Guid id) => _selectedIds.Contains(id);
+
+    private void ToggleSelection(Guid id)
+    {
+        if (!_selectedIds.Remove(id))
+            _selectedIds.Add(id);
+    }
+
+    private bool IsAllSelected()
+    {
+        if (_deleted.Count == 0) return false;
+        return _deleted.All(i => _selectedIds.Contains(i.Id));
+    }
+
+    private void ToggleSelectAll(Microsoft.AspNetCore.Components.ChangeEventArgs e)
+    {
+        var checkedVal = e.Value is bool b && b;
+        if (checkedVal)
+        {
+            foreach (var item in _deleted)
+            {
+                _selectedIds.Add(item.Id);
+            }
+        }
+        else
+        {
+            _selectedIds.Clear();
+        }
+    }
+
+    private void OnCheckboxClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, Guid id)
+    {
+        if (e.ShiftKey && _lastSelectedId.HasValue)
+        {
+            var idx1 = _deleted.FindIndex(i => i.Id == _lastSelectedId.Value);
+            var idx2 = _deleted.FindIndex(i => i.Id == id);
+            if (idx1 != -1 && idx2 != -1)
+            {
+                var start = Math.Min(idx1, idx2);
+                var end = Math.Max(idx1, idx2);
+                for (int i = start; i <= end; i++)
+                {
+                    _selectedIds.Add(_deleted[i].Id);
+                }
+            }
+        }
+        else
+        {
+            ToggleSelection(id);
+        }
+        _lastSelectedId = id;
+    }
+
+    private void OnRowClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, BookmarkNodeDto item)
+    {
+        if (e.CtrlKey || e.MetaKey)
+        {
+            ToggleSelection(item.Id);
+            _lastSelectedId = item.Id;
+        }
+        else if (e.ShiftKey && _lastSelectedId.HasValue)
+        {
+            var idx1 = _deleted.FindIndex(i => i.Id == _lastSelectedId.Value);
+            var idx2 = _deleted.FindIndex(i => i.Id == item.Id);
+            if (idx1 != -1 && idx2 != -1)
+            {
+                var start = Math.Min(idx1, idx2);
+                var end = Math.Max(idx1, idx2);
+                for (int i = start; i <= end; i++)
+                {
+                    _selectedIds.Add(_deleted[i].Id);
+                }
+            }
+            _lastSelectedId = item.Id;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _deleted = await BookmarkService.GetDeletedBookmarksAsync();
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add($"Failed to load recycle bin: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RestoreAsync(Guid id)
+    {
+        try
+        {
+            if (await BookmarkService.RestoreBookmarkAsync(id))
+            {
+                _deleted = await BookmarkService.GetDeletedBookmarksAsync();
+                Snackbar.Add("Restore queued for Brave confirmation", Severity.Success);
+            }
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add($"Restore failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RestoreSelected()
+    {
+        if (_selectedIds.Count == 0) return;
+
+        var count = 0;
+        var failed = 0;
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            foreach (var id in _selectedIds)
+            {
+                try
+                {
+                    if (await BookmarkService.RestoreBookmarkAsync(id))
+                    {
+                        count++;
+                    }
+                    else
+                    {
+                        failed++;
+                    }
+                }
+                catch
+                {
+                    failed++;
+                }
+            }
+
+            _selectedIds.Clear();
+            _deleted = await BookmarkService.GetDeletedBookmarksAsync();
+
+            if (failed > 0)
+            {
+                Snackbar.Add($"Restored {count} bookmark(s), {failed} failed", Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add($"Restored {count} bookmark(s)", Severity.Success);
+            }
+        }
+        finally
+        {
+            _loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string RowClass(BookmarkNodeDto item)
+    {
+        var typeClass = item.Type == NodeType.Folder ? "is-folder" : "is-bookmark";
+        var state = item.SyncState switch
+        {
+            SyncState.Pending => "is-pending",
+            SyncState.Failed => "is-failed",
+            _ => "is-synced"
+        };
+
+        return $"bookmark-row {typeClass} {state}";
+    }
+}

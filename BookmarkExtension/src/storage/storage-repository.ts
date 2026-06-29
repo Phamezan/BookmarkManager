@@ -1,0 +1,182 @@
+import type {
+  CommandCorrelation,
+  ExtensionEvent,
+  ExtensionSettings,
+  FolderCatalogNode,
+  OutboxEntry,
+  ServerConfig,
+  SnapshotRootPayload,
+  SyncStatus,
+} from "../api/contracts";
+import type { StorageRepository } from "../api/contracts";
+
+type ChromeStorageLocal = {
+  get(keys: string | string[] | null): Promise<Record<string, unknown>>;
+  set(items: Record<string, unknown>): Promise<void>;
+  remove(keys: string | string[]): Promise<void>;
+};
+
+const OUTBOX_THRESHOLD = 5000;
+
+export class ChromeStorageRepository implements StorageRepository {
+  private outboxChain: Promise<void> = Promise.resolve();
+
+  constructor(private storage: ChromeStorageLocal) {}
+
+  async getSettings(): Promise<ExtensionSettings | null> {
+    const result = await this.storage.get("bm.settings");
+    return (result["bm.settings"] as ExtensionSettings | undefined) ?? null;
+  }
+
+  async saveSettings(value: ExtensionSettings): Promise<void> {
+    await this.storage.set({ "bm.settings": value });
+  }
+
+  async getServerConfig(): Promise<ServerConfig | null> {
+    const result = await this.storage.get("bm.serverConfig");
+    return (result["bm.serverConfig"] as ServerConfig | undefined) ?? null;
+  }
+
+  async saveServerConfig(value: ServerConfig): Promise<void> {
+    await this.storage.set({ "bm.serverConfig": value });
+  }
+
+  async getFolderCatalog(): Promise<FolderCatalogNode[] | null> {
+    const result = await this.storage.get("bm.folderCatalog");
+    return (result["bm.folderCatalog"] as FolderCatalogNode[] | undefined) ?? null;
+  }
+
+  async saveFolderCatalog(folders: FolderCatalogNode[]): Promise<void> {
+    await this.storage.set({ "bm.folderCatalog": folders });
+  }
+
+  async enqueueEvent(event: ExtensionEvent): Promise<void> {
+    this.outboxChain = this.outboxChain.then(async () => {
+      const result = await this.storage.get("bm.outbox");
+      const outbox = (result["bm.outbox"] as Record<string, OutboxEntry>) ?? {};
+      outbox[event.eventId] = {
+        event,
+        createdAt: new Date().toISOString(),
+        attemptCount: 0,
+        nextAttemptAt: new Date().toISOString(),
+        lastErrorCode: null,
+      };
+      await this.storage.set({ "bm.outbox": outbox });
+    });
+    await this.outboxChain;
+  }
+
+  async getReadyEvents(
+    limit: number,
+    now: Date,
+  ): Promise<OutboxEntry[]> {
+    const result = await this.storage.get("bm.outbox");
+    const outbox = (result["bm.outbox"] as Record<string, OutboxEntry>) ?? {};
+    const nowIso = now.toISOString();
+    return Object.values(outbox)
+      .filter((entry) => entry.nextAttemptAt <= nowIso)
+      .sort((a, b) => {
+        const timeCmp = a.event.occurredAt.localeCompare(b.event.occurredAt);
+        if (timeCmp !== 0) return timeCmp;
+        return a.createdAt.localeCompare(b.createdAt);
+      })
+      .slice(0, limit);
+  }
+
+  async acknowledgeEvents(eventIds: string[]): Promise<void> {
+    this.outboxChain = this.outboxChain.then(async () => {
+      const result = await this.storage.get("bm.outbox");
+      const outbox = (result["bm.outbox"] as Record<string, OutboxEntry>) ?? {};
+      for (const id of eventIds) {
+        delete outbox[id];
+      }
+      await this.storage.set({ "bm.outbox": outbox });
+    });
+    await this.outboxChain;
+  }
+
+  async getOutboxCount(): Promise<number> {
+    const result = await this.storage.get("bm.outbox");
+    const outbox = (result["bm.outbox"] as Record<string, OutboxEntry>) ?? {};
+    return Object.keys(outbox).length;
+  }
+
+  isAtThreshold(count: number): boolean {
+    return count >= OUTBOX_THRESHOLD;
+  }
+
+  async saveCorrelation(value: CommandCorrelation): Promise<void> {
+    const result = await this.storage.get("bm.correlations");
+    const correlations =
+      (result["bm.correlations"] as Record<string, CommandCorrelation>) ?? {};
+    correlations[value.operationId] = value;
+    await this.storage.set({ "bm.correlations": correlations });
+  }
+
+  async getCorrelation(
+    operationId: string,
+  ): Promise<CommandCorrelation | null> {
+    const result = await this.storage.get("bm.correlations");
+    const correlations =
+      (result["bm.correlations"] as Record<string, CommandCorrelation>) ?? {};
+    return correlations[operationId] ?? null;
+  }
+
+  async pruneExpiredCorrelations(now: Date): Promise<void> {
+    const result = await this.storage.get("bm.correlations");
+    const correlations =
+      (result["bm.correlations"] as Record<string, CommandCorrelation>) ?? {};
+    const nowIso = now.toISOString();
+    let changed = false;
+    for (const [id, corr] of Object.entries(correlations)) {
+      if (corr.expiresAt <= nowIso) {
+        delete correlations[id];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await this.storage.set({ "bm.correlations": correlations });
+    }
+  }
+
+  async updateSyncStatus(value: SyncStatus): Promise<void> {
+    await this.storage.set({ "bm.syncStatus": value });
+  }
+
+  async getSyncStatus(): Promise<SyncStatus | null> {
+    const result = await this.storage.get("bm.syncStatus");
+    return (result["bm.syncStatus"] as SyncStatus | undefined) ?? null;
+  }
+
+  async getSnapshotState(): Promise<{
+    lastRequestId: string | null;
+    preparing: SnapshotRootPayload[] | null;
+  }> {
+    const result = await this.storage.get("bm.snapshotState");
+    return (
+      (result["bm.snapshotState"] as {
+        lastRequestId: string | null;
+        preparing: SnapshotRootPayload[] | null;
+      }) ?? { lastRequestId: null, preparing: null }
+    );
+  }
+
+  async saveSnapshotState(state: {
+    lastRequestId: string | null;
+    preparing: SnapshotRootPayload[] | null;
+  }): Promise<void> {
+    await this.storage.set({ "bm.snapshotState": state });
+  }
+
+  async clearAll(): Promise<void> {
+    await this.storage.remove([
+      "bm.settings",
+      "bm.serverConfig",
+      "bm.folderCatalog",
+      "bm.outbox",
+      "bm.correlations",
+      "bm.snapshotState",
+      "bm.syncStatus",
+    ]);
+  }
+}
