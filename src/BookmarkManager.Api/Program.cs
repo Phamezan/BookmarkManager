@@ -22,6 +22,9 @@ var dataProtectionKeys = ResolveDataProtectionKeysDirectory(builder.Environment.
 builder.Services.AddDataProtection().PersistKeysToFileSystem(dataProtectionKeys);
 
 builder.Services.AddScoped<IExtensionService, ExtensionService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.TagExtractorService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.AddAutoMapper(typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>

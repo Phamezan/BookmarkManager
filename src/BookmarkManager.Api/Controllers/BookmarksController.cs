@@ -19,6 +19,16 @@ public class BookmarksController : ControllerBase
         _mapper = mapper;
     }
 
+    [HttpGet("suggest-tags")]
+    public ActionResult<List<string>> SuggestTags(
+        [FromQuery] string title,
+        [FromQuery] string? url,
+        [FromServices] BookmarkManager.Api.Services.TagExtractorService tagExtractor)
+    {
+        var tags = tagExtractor.ExtractTags(title ?? string.Empty, url);
+        return Ok(tags);
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<BookmarkNodeDto>> GetAsync(Guid id, CancellationToken ct)
     {
@@ -46,6 +56,108 @@ public class BookmarksController : ControllerBase
             .OrderBy(n => n.Title)
             .ToListAsync(ct);
         return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    }
+
+    [HttpGet("stale")]
+    public async Task<ActionResult<List<BookmarkNodeDto>>> GetStaleAsync([FromQuery] int days = 180, CancellationToken ct = default)
+    {
+        var cutoff = DateTime.UtcNow.AddDays(-days);
+        var staleBookmarks = await _db.BookmarkNodes
+            .Where(n => n.Type == NodeType.Bookmark && !n.IsDeleted && n.UpdatedAt <= cutoff)
+            .OrderBy(n => n.UpdatedAt)
+            .ToListAsync(ct);
+
+        return _mapper.Map<List<BookmarkNodeDto>>(staleBookmarks);
+    }
+
+    [HttpPost("{id:guid}/archive")]
+    public async Task<ActionResult<BookmarkNodeDto>> ArchiveAsync(Guid id, CancellationToken ct)
+    {
+        var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
+        if (node is null) return NotFound();
+
+        var rootFolder = await _db.BookmarkNodes
+            .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.ParentId == null && !n.IsDeleted, ct);
+        if (rootFolder == null)
+        {
+            rootFolder = await _db.BookmarkNodes
+                .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && !n.IsDeleted, ct);
+        }
+        if (rootFolder == null) return BadRequest("No parent folder found.");
+
+        var archiveFolder = await _db.BookmarkNodes
+            .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.ParentId == rootFolder.Id && n.Title == "Archive" && !n.IsDeleted, ct);
+
+        if (archiveFolder == null)
+        {
+            var maxPosRoot = await _db.BookmarkNodes
+                .Where(n => n.ParentId == rootFolder.Id)
+                .MaxAsync(n => (int?)n.Position, ct) ?? -1;
+
+            archiveFolder = new BookmarkNode
+            {
+                Id = Guid.NewGuid(),
+                ParentId = rootFolder.Id,
+                Type = NodeType.Folder,
+                Title = "Archive",
+                Position = maxPosRoot + 1,
+                SyncState = SyncState.Pending,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.BookmarkNodes.Add(archiveFolder);
+
+            var createPayload = new
+            {
+                parentId = rootFolder.BrowserNodeId ?? "1",
+                title = "Archive"
+            };
+            _db.ExtensionCommands.Add(new ExtensionCommandEntry
+            {
+                Id = Guid.NewGuid(),
+                OperationId = Guid.NewGuid(),
+                CommandType = "Create",
+                BookmarkId = archiveFolder.Id,
+                BrowserNodeId = null,
+                ExpectedVersion = 0,
+                PayloadJson = System.Text.Json.JsonSerializer.Serialize(createPayload),
+                CreatedAt = DateTime.UtcNow,
+                Status = "Pending"
+            });
+        }
+
+        var maxPosArchive = await _db.BookmarkNodes
+            .Where(n => n.ParentId == archiveFolder.Id)
+            .MaxAsync(n => (int?)n.Position, ct) ?? -1;
+
+        node.ParentId = archiveFolder.Id;
+        node.Position = maxPosArchive + 1;
+        node.SyncState = SyncState.Pending;
+        node.UpdatedAt = DateTime.UtcNow;
+
+        var movePayload = new
+        {
+            parentBrowserNodeId = archiveFolder.BrowserNodeId ?? "1",
+            position = node.Position
+        };
+
+        _db.ExtensionCommands.Add(new ExtensionCommandEntry
+        {
+            Id = Guid.NewGuid(),
+            OperationId = Guid.NewGuid(),
+            CommandType = "Move",
+            BookmarkId = node.Id,
+            BrowserNodeId = node.BrowserNodeId,
+            ExpectedVersion = node.Version,
+            PayloadJson = System.Text.Json.JsonSerializer.Serialize(movePayload),
+            CreatedAt = DateTime.UtcNow,
+            Status = "Pending"
+        });
+
+        await _db.SaveChangesAsync(ct);
+        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+
+        return _mapper.Map<BookmarkNodeDto>(node);
     }
 
     [HttpGet("{parentId:guid}/children")]
@@ -356,6 +468,19 @@ public class BookmarksController : ControllerBase
         await _db.SaveChangesAsync(ct);
         await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
         return NoContent();
+    }
+
+    [HttpPost("check-links")]
+    public IActionResult TriggerLinkCheck([FromServices] BookmarkManager.Api.Services.LinkCheckerService linkChecker)
+    {
+        linkChecker.TriggerCheck();
+        return Accepted();
+    }
+
+    [HttpGet("check-links/status")]
+    public ActionResult<bool> GetLinkCheckStatus([FromServices] BookmarkManager.Api.Services.LinkCheckerService linkChecker)
+    {
+        return Ok(linkChecker.IsRunning);
     }
 
 
