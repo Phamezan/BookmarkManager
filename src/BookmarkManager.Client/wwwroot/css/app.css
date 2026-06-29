@@ -1138,9 +1138,18 @@ code {
 .bookmark-card-footer {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-end;
     margin-top: auto;
     padding-top: 4px;
+    gap: 8px;
+}
+
+.bookmark-card-footer-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .bookmark-card-tags {
@@ -1158,9 +1167,20 @@ code {
     color: var(--bm-text-secondary);
 }
 
+.bookmark-card-folder-path {
+    font-size: 0.66rem;
+    color: rgba(140, 144, 159, 0.55);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
 .bookmark-card-time {
     font-size: 0.68rem;
     color: rgba(140, 144, 159, 0.6);
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* Card Actions Overlay on hover */
@@ -1432,4 +1452,60 @@ a.root-card {
 a.root-card:hover {
     color: var(--bm-text) !important;
     text-decoration: none !important;
+}
+
+/* Extension Offline Overlay Styling */
+.extension-offline-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(100vh - 120px);
+    width: 100%;
+    padding: 24px;
+}
+
+.extension-offline-card {
+    background: var(--bm-panel);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-lg, 12px);
+    padding: 48px 32px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    animation: fadeIn var(--bm-transition-speed, 0.3s) ease;
+}
+
+.extension-offline-icon {
+    color: var(--bm-text-muted) !important;
+    font-size: 4rem !important;
+    margin-bottom: 8px;
+    filter: drop-shadow(0 0 16px rgba(148, 163, 184, 0.1));
+}
+
+.extension-offline-title {
+    color: var(--bm-text);
+    font-weight: 700 !important;
+    letter-spacing: -0.02em;
+}
+
+.extension-offline-desc {
+    color: var(--bm-text-secondary);
+    line-height: 1.6;
+    font-size: 0.95rem;
+}
+
+.extension-offline-help {
+    color: var(--bm-text-muted);
+    font-size: 0.8rem;
+    margin-top: 8px;
+    padding-top: 16px;
+    border-top: 1px solid var(--bm-border);
+    width: 100%;
 }

@@ -411,7 +411,7 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
         const children = subtrees[0]!.children ?? [];
         return Math.max(0, Math.min(position, children.length));
       }
-    } catch (e) {
+    } catch {
       // Ignore and fallback if getSubTree fails
     }
     return position;

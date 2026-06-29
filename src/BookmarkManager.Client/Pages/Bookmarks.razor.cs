@@ -15,6 +15,7 @@ public partial class Bookmarks : IDisposable
     [Inject] private IDialogService DialogService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
+    [Inject] private IExtensionConnectionService ExtensionConnectionService { get; set; } = default!;
 
     private List<FolderTreeNodeDto> _folderTree = [];
     private List<BookmarkNodeDto> _items = [];
@@ -106,6 +107,21 @@ public partial class Bookmarks : IDisposable
 
     protected override async Task OnInitializedAsync()
     {
+        ExtensionConnectionService.ConnectionStateChanged += OnConnectionStateChanged;
+        if (ExtensionConnectionService.IsConnected)
+        {
+            await LoadDataAsync();
+        }
+        else
+        {
+            _treeLoading = false;
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        _treeLoading = true;
+        StateHasChanged();
         await LoadFavoritesAsync();
         try
         {
@@ -127,8 +143,30 @@ public partial class Bookmarks : IDisposable
                 await OnFolderSelected(firstId);
         }
 
+        _wsCts?.Cancel();
+        _wsCts?.Dispose();
         _wsCts = new CancellationTokenSource();
         _ = StartWebSocketListenerAsync(_wsCts.Token);
+        StateHasChanged();
+    }
+
+    private void OnConnectionStateChanged()
+    {
+        InvokeAsync(async () =>
+        {
+            if (ExtensionConnectionService.IsConnected)
+            {
+                await LoadDataAsync();
+            }
+            else
+            {
+                _folderTree.Clear();
+                _items.Clear();
+                _favorites.Clear();
+                _selectedFolderId = null;
+                StateHasChanged();
+            }
+        });
     }
 
     private static Guid FindFirstLeaf(FolderTreeNodeDto folder)
@@ -519,6 +557,20 @@ public partial class Bookmarks : IDisposable
         if (parentId is null) return string.Empty;
         var folder = FindFolderById(_folderTree, parentId.Value);
         return folder?.Title ?? string.Empty;
+    }
+
+    private string GetFolderPath(Guid? parentId)
+    {
+        if (parentId is null) return string.Empty;
+        var path = GetBreadcrumbPath(parentId.Value);
+        if (path.Count == 0) return string.Empty;
+        return string.Join(" / ", path.Select(p => p.Title));
+    }
+
+    private static string FormatUpdatedAt(DateTime updatedAt)
+    {
+        if (updatedAt == default(DateTime) || DateTime.MinValue.Equals(updatedAt)) return "—";
+        return updatedAt.ToLocalTime().ToString("g");
     }
 
     private static string RowClass(BookmarkNodeDto item)
@@ -914,6 +966,7 @@ public partial class Bookmarks : IDisposable
 
     public void Dispose()
     {
+        ExtensionConnectionService.ConnectionStateChanged -= OnConnectionStateChanged;
         _wsCts?.Cancel();
         _wsCts?.Dispose();
         _debounceCts?.Cancel();

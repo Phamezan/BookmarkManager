@@ -16,8 +16,8 @@ import type { ExtensionEvent } from "../api/contracts";
 const ALARM_NAME = "bookmark-sync";
 const POLL_INTERVAL_MINUTES = 0.5;
 
-// Storage key for smart folder memory
-const LAST_FOLDER_KEY = "bm.lastActiveFolderId";
+/** Bookmarks Bar id, used as the fallback quick-bookmark destination. */
+const BOOKMARKS_BAR_ID = "1";
 
 export interface ServiceWorkerDeps {
   api: SettingsAwareApiClient;
@@ -78,7 +78,12 @@ export class ServiceWorker {
       // Capture the parent folder as the last active context for smart re-bookmarking
       const parentId = (removedNode as { parentId?: string })?.parentId;
       if (parentId) {
-        await this.rememberLastActiveFolder(parentId);
+        try {
+          await this.deps.storage.saveLastActiveFolder(parentId);
+          console.log("[worker] Last active folder saved:", parentId);
+        } catch (e) {
+          console.error("[worker] Failed to save last active folder:", e);
+        }
       }
       const event = normalizeRemove(id, removedNode as never);
       await this.handleBookmarkEvent(event);
@@ -119,38 +124,16 @@ export class ServiceWorker {
     this.coordinator.runSyncCycle();
   }
 
-  // ── Smart Folder Memory ──────────────────────────────────────────────────────
+  // ── Quick Bookmark ──────────────────────────────────────────────────────────
 
   /**
-   * Stores the given folder ID as the most recently active folder context.
-   * This is called whenever a bookmark is removed, so that the next
-   * quick-bookmark command re-uses the same destination.
-   */
-  private async rememberLastActiveFolder(folderId: string): Promise<void> {
-    try {
-      await chrome.storage.local.set({ [LAST_FOLDER_KEY]: folderId });
-      console.log("[worker] Last active folder saved:", folderId);
-    } catch (e) {
-      console.error("[worker] Failed to save last active folder:", e);
-    }
-  }
-
-  /**
-   * Retrieves the last remembered folder ID, falling back to the Bookmarks
-   * Bar (id "1") if nothing has been stored yet.
-   */
-  private async getLastActiveFolder(): Promise<string> {
-    try {
-      const result = await chrome.storage.local.get(LAST_FOLDER_KEY);
-      return (result[LAST_FOLDER_KEY] as string | undefined) ?? "1";
-    } catch {
-      return "1";
-    }
-  }
-
-  /**
-   * Handles the `quick-bookmark` command: gets the active tab, resolves the
-   * last remembered folder, and creates the bookmark there.
+   * Handles the `quick-bookmark` command. Resolves the active tab, the last
+   * remembered folder, and either edits an existing exact-URL match or creates
+   * a new bookmark, then stores transient editor state and opens the popup.
+   *
+   * This issues real `chrome.bookmarks` operations only — the normal
+   * `onCreated`/`onChanged`/`onMoved` listeners handle sync. No synthetic
+   * events are enqueued here.
    */
   async handleQuickBookmark(): Promise<void> {
     try {
@@ -159,39 +142,125 @@ export class ServiceWorker {
         console.warn("[worker] quick-bookmark: no active tab or missing URL/title");
         return;
       }
+      const url = tab.url;
+      const title = tab.title;
 
       // Only bookmark http/https pages
-      if (!tab.url.startsWith("http://") && !tab.url.startsWith("https://")) {
-        console.warn("[worker] quick-bookmark: non-http URL, skipping:", tab.url);
+      if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        console.warn("[worker] quick-bookmark: non-http URL, skipping:", url);
         return;
       }
 
-      const folderId = await this.getLastActiveFolder();
-      console.log(`[worker] quick-bookmark: creating bookmark in folder ${folderId} — "${tab.title}"`);
+      const folderId = await this.resolveTargetFolder();
+      if (folderId === null) {
+        console.warn("[worker] quick-bookmark: no valid target folder available");
+        return;
+      }
 
-      const created = await chrome.bookmarks.create({
-        parentId: folderId,
-        title: tab.title,
-        url: tab.url,
+      const target = await this.resolveOrCreateBookmark(url, title, folderId);
+
+      await this.deps.storage.saveShortcutEditorState({
+        bookmarkId: target.id,
+        url,
+        title: target.title,
+        parentId: target.parentId,
+        capturedAt: this.deps.now().toISOString(),
+        wasCreated: target.wasCreated,
       });
 
-      console.log("[worker] quick-bookmark: bookmark created:", created.id);
-      
-      // Visual confirmation on toolbar icon badge
-      await chrome.action.setBadgeText({ text: "✓" });
-      await chrome.action.setBadgeBackgroundColor({ color: "#10B981" }); // Emerald green
-      setTimeout(() => {
-        chrome.action.setBadgeText({ text: "" }).catch(() => {});
-      }, 2000);
+      await this.openPopupOrBadge();
     } catch (e) {
       console.error("[worker] quick-bookmark failed:", e);
-      // Visual confirmation of error on toolbar icon badge
-      chrome.action.setBadgeText({ text: "X" }).catch(() => {});
-      chrome.action.setBadgeBackgroundColor({ color: "#EF4444" }).catch(() => {});
-      setTimeout(() => {
-        chrome.action.setBadgeText({ text: "" }).catch(() => {});
-      }, 2000);
+      this.showBadge("X", "#EF4444");
     }
+  }
+
+  /**
+   * Resolves and validates the remembered destination folder, falling back to
+   * the Bookmarks Bar. Returns null if neither is usable.
+   */
+  private async resolveTargetFolder(): Promise<string | null> {
+    const remembered = await this.deps.storage.getLastActiveFolder();
+    if (await this.isValidFolder(remembered)) return remembered;
+    if (remembered !== BOOKMARKS_BAR_ID && (await this.isValidFolder(BOOKMARKS_BAR_ID))) {
+      return BOOKMARKS_BAR_ID;
+    }
+    return null;
+  }
+
+  private async isValidFolder(folderId: string): Promise<boolean> {
+    try {
+      const nodes = await chrome.bookmarks.get(folderId);
+      const node = nodes[0];
+      if (!node) return false;
+      // Folders have no url; bookmarks do.
+      return node.url === undefined;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Searches browser bookmarks for an exact-URL match. If found, edits the
+   * match in the remembered folder first (or the first match), updating the
+   * title and moving it into the remembered folder when needed. Otherwise
+   * creates a new bookmark in the remembered folder.
+   */
+  private async resolveOrCreateBookmark(
+    url: string,
+    title: string,
+    folderId: string,
+  ): Promise<{ id: string; title: string; parentId: string; wasCreated: boolean }> {
+    const results = await chrome.bookmarks.search({ url });
+    const exact = results.filter((n) => n.url === url);
+
+    if (exact.length > 0) {
+      const inFolder = exact.find((n) => n.parentId === folderId);
+      const chosen = inFolder ?? exact[0];
+      if (chosen) {
+        return {
+          id: chosen.id,
+          title: chosen.title,
+          parentId: chosen.parentId ?? folderId,
+          wasCreated: false,
+        };
+      }
+    }
+
+    const created = await chrome.bookmarks.create({
+      parentId: folderId,
+      title,
+      url,
+    });
+    console.log("[worker] quick-bookmark: bookmark created:", created.id);
+    return { id: created.id, title, parentId: folderId, wasCreated: true };
+  }
+
+  /**
+   * Opens the extension popup when supported. Falls back to a short badge
+   * flash when openPopup is unavailable or rejected by the host browser.
+   */
+  private async openPopupOrBadge(): Promise<void> {
+    try {
+      const action = chrome.action as typeof chrome.action & {
+        openPopup?: (() => Promise<void>) | undefined;
+      };
+      if (typeof action.openPopup === "function") {
+        await action.openPopup();
+        return;
+      }
+    } catch (e) {
+      console.warn("[worker] openPopup unavailable, using badge fallback", e);
+    }
+    this.showBadge("✓", "#10B981");
+  }
+
+  private showBadge(text: string, color: string): void {
+    chrome.action.setBadgeText({ text }).catch(() => {});
+    chrome.action.setBadgeBackgroundColor({ color }).catch(() => {});
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: "" }).catch(() => {});
+    }, 2000);
   }
 
   // ── Sync / Alarm ─────────────────────────────────────────────────────────────
@@ -283,7 +352,9 @@ export class ServiceWorker {
     if (this.ws) {
       try {
         this.ws.close();
-      } catch {}
+      } catch {
+        // Ignored
+      }
       this.ws = null;
     }
   }

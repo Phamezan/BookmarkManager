@@ -19,6 +19,21 @@ export interface FolderCatalogNode {
   isProtected: boolean;
 }
 
+/**
+ * Transient state written by the `quick-bookmark` command and consumed by the
+ * popup to render the bookmark editor. Lives in `chrome.storage.local` under
+ * `bm.shortcutEditorState` and is cleared when the editor is done/dismissed.
+ */
+export interface ShortcutEditorState {
+  bookmarkId: string;
+  url: string;
+  title: string;
+  parentId: string;
+  capturedAt: string;
+  /** True when the command created a new node; false when it edited an existing one. */
+  wasCreated: boolean;
+}
+
 export type ExtensionEventType =
   | "Created"
   | "Changed"
@@ -246,6 +261,11 @@ export interface StorageRepository {
   saveServerConfig(value: ServerConfig): Promise<void>;
   getFolderCatalog(): Promise<FolderCatalogNode[] | null>;
   saveFolderCatalog(folders: FolderCatalogNode[]): Promise<void>;
+  getShortcutEditorState(): Promise<ShortcutEditorState | null>;
+  saveShortcutEditorState(state: ShortcutEditorState): Promise<void>;
+  clearShortcutEditorState(): Promise<void>;
+  getLastActiveFolder(): Promise<string>;
+  saveLastActiveFolder(folderId: string): Promise<void>;
   enqueueEvent(event: ExtensionEvent): Promise<void>;
   getReadyEvents(limit: number, now: Date): Promise<OutboxEntry[]>;
   acknowledgeEvents(eventIds: string[]): Promise<void>;

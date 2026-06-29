@@ -5,6 +5,7 @@ import type {
   FolderCatalogNode,
   OutboxEntry,
   ServerConfig,
+  ShortcutEditorState,
   SnapshotRootPayload,
   SyncStatus,
 } from "../api/contracts";
@@ -17,6 +18,11 @@ type ChromeStorageLocal = {
 };
 
 const OUTBOX_THRESHOLD = 5000;
+
+/** Bookmarks Bar node id used as the default quick-bookmark destination. */
+export const DEFAULT_FOLDER_ID = "1";
+const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
+const LAST_ACTIVE_FOLDER_KEY = "bm.lastActiveFolderId";
 
 export class ChromeStorageRepository implements StorageRepository {
   private outboxChain: Promise<void> = Promise.resolve();
@@ -48,6 +54,28 @@ export class ChromeStorageRepository implements StorageRepository {
 
   async saveFolderCatalog(folders: FolderCatalogNode[]): Promise<void> {
     await this.storage.set({ "bm.folderCatalog": folders });
+  }
+
+  async getShortcutEditorState(): Promise<ShortcutEditorState | null> {
+    const result = await this.storage.get(SHORTCUT_EDITOR_KEY);
+    return (result[SHORTCUT_EDITOR_KEY] as ShortcutEditorState | undefined) ?? null;
+  }
+
+  async saveShortcutEditorState(state: ShortcutEditorState): Promise<void> {
+    await this.storage.set({ [SHORTCUT_EDITOR_KEY]: state });
+  }
+
+  async clearShortcutEditorState(): Promise<void> {
+    await this.storage.remove(SHORTCUT_EDITOR_KEY);
+  }
+
+  async getLastActiveFolder(): Promise<string> {
+    const result = await this.storage.get(LAST_ACTIVE_FOLDER_KEY);
+    return (result[LAST_ACTIVE_FOLDER_KEY] as string | undefined) ?? DEFAULT_FOLDER_ID;
+  }
+
+  async saveLastActiveFolder(folderId: string): Promise<void> {
+    await this.storage.set({ [LAST_ACTIVE_FOLDER_KEY]: folderId });
   }
 
   async enqueueEvent(event: ExtensionEvent): Promise<void> {
@@ -177,6 +205,8 @@ export class ChromeStorageRepository implements StorageRepository {
       "bm.correlations",
       "bm.snapshotState",
       "bm.syncStatus",
+      SHORTCUT_EDITOR_KEY,
+      LAST_ACTIVE_FOLDER_KEY,
     ]);
   }
 }

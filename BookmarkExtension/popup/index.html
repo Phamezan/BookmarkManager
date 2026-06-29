@@ -23,61 +23,87 @@
         <div id="status-dot" class="status-dot status-unconfigured" title="Not configured"></div>
       </header>
 
-      <!-- ── Connection Section ─────────────────────────────────────── -->
-      <section class="card" id="connection-section">
-        <label for="api-url">API Base URL</label>
-        <div class="input-row">
-          <input type="url" id="api-url" placeholder="http://192.168.1.100:8080" autocomplete="off" spellcheck="false" />
-          <button id="save-btn" type="button" class="btn-primary" aria-label="Save and connect">
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M5 12L10 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
-        </div>
-        <p id="connection-message" class="message" role="alert" aria-live="polite"></p>
-      </section>
+      <!-- ── Normal Mode (connection / sync settings) ─────────────── -->
+      <div id="normal-mode">
 
-      <!-- ── Sync Status Section ────────────────────────────────────── -->
-      <section class="card" id="status-section">
-        <div class="status-row">
-          <span class="status-label">Status</span>
-          <span id="sync-state" class="status-value">Not configured</span>
-        </div>
-        <div class="status-row">
-          <span class="status-label">Last sync</span>
-          <span id="last-sync" class="status-value muted">—</span>
-        </div>
-        <div class="status-row">
-          <span class="status-label">Pending events</span>
-          <span id="pending-count" class="status-value muted">0</span>
-        </div>
-        <p id="error-code" class="message error" role="alert" aria-live="polite"></p>
-      </section>
-
-      <!-- ── Keyboard Shortcut Section ──────────────────────────────── -->
-      <section class="card" id="shortcut-section">
-        <div class="shortcut-row">
-          <div class="shortcut-info">
-            <span class="shortcut-title">Quick Bookmark</span>
-            <span class="shortcut-desc">Bookmarks current page in last visited folder</span>
+        <!-- ── Connection Section ─────────────────────────────────────── -->
+        <section class="card" id="connection-section">
+          <label for="api-url">API Base URL</label>
+          <div class="input-row">
+            <input type="url" id="api-url" placeholder="http://192.168.1.100:8080" autocomplete="off" spellcheck="false" />
+            <button id="save-btn" type="button" class="btn-primary" aria-label="Save and connect">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5 12L10 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
           </div>
-          <kbd id="shortcut-badge">Ctrl+Shift+F</kbd>
+          <p id="connection-message" class="message" role="alert" aria-live="polite"></p>
+        </section>
+
+        <!-- ── Sync Status Section ────────────────────────────────────── -->
+        <section class="card" id="status-section">
+          <div class="status-row">
+            <span class="status-label">Status</span>
+            <span id="sync-state" class="status-value">Not configured</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Last sync</span>
+            <span id="last-sync" class="status-value muted">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Pending events</span>
+            <span id="pending-count" class="status-value muted">0</span>
+          </div>
+          <p id="error-code" class="message error" role="alert" aria-live="polite"></p>
+        </section>
+
+        <!-- ── Keyboard Shortcut Section ──────────────────────────────── -->
+        <section class="card" id="shortcut-section">
+          <div class="shortcut-row">
+            <div class="shortcut-info">
+              <span class="shortcut-title">Quick Bookmark</span>
+              <span class="shortcut-desc">Bookmarks current page in last visited folder</span>
+            </div>
+            <kbd id="shortcut-badge">Ctrl+Shift+F</kbd>
+          </div>
+          <button id="configure-shortcut-btn" type="button" class="btn-link">
+            Change keybind →
+          </button>
+        </section>
+
+        <!-- ── Open Manager Section ───────────────────────────────────── -->
+        <section class="card" id="open-manager-section" style="margin-top: 10px;">
+          <button id="open-manager-btn" type="button" class="btn-primary" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;">
+            <span>Open Manager</span>
+          </button>
+        </section>
+
+        <!-- ── Danger Section ─────────────────────────────────────────── -->
+        <section id="danger-section">
+          <button id="clear-btn" type="button" class="btn-danger">Clear local data</button>
+        </section>
+
+      </div>
+
+      <!-- ── Editor Mode (shortcut) ─────────────────────────────────── -->
+      <section class="card editor-card" id="editor-mode" hidden>
+        <div class="editor-head">
+          <img id="editor-favicon" class="editor-favicon" alt="" src="" />
+          <div class="editor-head-info">
+            <span id="editor-mode-label" class="editor-mode-label">Edit bookmark</span>
+            <span id="editor-host" class="editor-host"></span>
+          </div>
+          <button id="editor-close-btn" type="button" class="editor-close" aria-label="Close editor" title="Close">&times;</button>
         </div>
-        <button id="configure-shortcut-btn" type="button" class="btn-link">
-          Change keybind →
-        </button>
-      </section>
-
-      <!-- ── Open Manager Section ───────────────────────────────────── -->
-      <section class="card" id="open-manager-section" style="margin-top: 10px;">
-        <button id="open-manager-btn" type="button" class="btn-primary" style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 8px;">
-          <span>Open Manager</span>
-        </button>
-      </section>
-
-      <!-- ── Danger Section ─────────────────────────────────────────── -->
-      <section id="danger-section">
-        <button id="clear-btn" type="button" class="btn-danger">Clear local data</button>
+        <label for="editor-title">Name</label>
+        <input type="text" id="editor-title" autocomplete="off" spellcheck="false" />
+        <label for="editor-folder">Folder</label>
+        <select id="editor-folder"></select>
+        <p id="editor-message" class="message" role="alert" aria-live="polite"></p>
+        <div class="editor-actions">
+          <button id="editor-remove-btn" type="button" class="btn-danger editor-remove-btn">Remove</button>
+          <button id="editor-done-btn" type="button" class="btn-primary editor-done-btn">Done</button>
+        </div>
       </section>
 
     </div>

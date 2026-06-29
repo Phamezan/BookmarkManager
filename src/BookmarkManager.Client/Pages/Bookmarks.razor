@@ -6,8 +6,26 @@
 
 <PageTitle>Bookmarks</PageTitle>
 
-<div class="bookmarks-workspace">
-    <MudPaper Elevation="0" Class="folder-zone">
+@if (!ExtensionConnectionService.IsConnected)
+{
+    <div class="extension-offline-container">
+        <div class="extension-offline-card">
+            <MudIcon Icon="@Icons.Material.Filled.CloudOff" Class="extension-offline-icon" />
+            <MudText Typo="Typo.h5" Class="extension-offline-title">Extension is Offline</MudText>
+            <MudText Typo="Typo.body1" Class="extension-offline-desc">
+                The Brave extension is not connected or responsive.
+                Please pair the extension and ensure it is running to sync and manage your bookmarks.
+            </MudText>
+            <MudText Typo="Typo.caption" Class="extension-offline-help">
+                Commands are queued until the extension checks in. Check settings to verify connections.
+            </MudText>
+        </div>
+    </div>
+}
+else
+{
+    <div class="bookmarks-workspace">
+        <MudPaper Elevation="0" Class="folder-zone">
         <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="zone-heading">
             <div>
                 <MudText Typo="Typo.subtitle1">Tracked Roots</MudText>
@@ -255,20 +273,29 @@
                                 </div>
 
                                 <div class="bookmark-card-footer">
-                                    <div class="bookmark-card-tags">
-                                        @if (item.Metadata?.Category != null)
-                                        {
-                                            <span class="tag-badge">@item.Metadata.Category</span>
-                                        }
-                                        @if (item.Metadata?.Tags != null)
-                                        {
-                                            @foreach (var tag in item.Metadata.Tags.Take(2))
+                                    <div class="bookmark-card-footer-left">
+                                        <div class="bookmark-card-tags">
+                                            @if (item.Metadata?.Category != null)
                                             {
-                                                <span class="tag-badge">@tag</span>
+                                                <span class="tag-badge">@item.Metadata.Category</span>
                                             }
+                                            @if (item.Metadata?.Tags != null)
+                                            {
+                                                @foreach (var tag in item.Metadata.Tags.Take(2))
+                                                {
+                                                    <span class="tag-badge">@tag</span>
+                                                }
+                                            }
+                                        </div>
+                                        @{
+                                            var folderPath = GetFolderPath(item.ParentId);
+                                        }
+                                        @if (!string.IsNullOrEmpty(folderPath))
+                                        {
+                                            <span class="bookmark-card-folder-path" title="@folderPath">@folderPath</span>
                                         }
                                     </div>
-                                    <span class="bookmark-card-time">@item.UpdatedAt.ToLocalTime().ToString("g")</span>
+                                    <span class="bookmark-card-time">@FormatUpdatedAt(item.UpdatedAt)</span>
                                 </div>
 
                                 <div class="bookmark-card-actions" @onclick:stopPropagation>
@@ -350,20 +377,29 @@
                                 }
 
                                 <div class="bookmark-card-footer">
-                                    <div class="bookmark-card-tags">
-                                        @if (item.Metadata?.Category != null)
-                                        {
-                                            <span class="tag-badge">@item.Metadata.Category</span>
-                                        }
-                                        @if (item.Metadata?.Tags != null)
-                                        {
-                                            @foreach (var tag in item.Metadata.Tags.Take(2))
+                                    <div class="bookmark-card-footer-left">
+                                        <div class="bookmark-card-tags">
+                                            @if (item.Metadata?.Category != null)
                                             {
-                                                <span class="tag-badge">@tag</span>
+                                                <span class="tag-badge">@item.Metadata.Category</span>
                                             }
+                                            @if (item.Metadata?.Tags != null)
+                                            {
+                                                @foreach (var tag in item.Metadata.Tags.Take(2))
+                                                {
+                                                    <span class="tag-badge">@tag</span>
+                                                }
+                                            }
+                                        </div>
+                                        @{
+                                            var folderPath = GetFolderPath(item.ParentId);
+                                        }
+                                        @if (!string.IsNullOrEmpty(folderPath))
+                                        {
+                                            <span class="bookmark-card-folder-path" title="@folderPath">@folderPath</span>
                                         }
                                     </div>
-                                    <span class="bookmark-card-time">@item.UpdatedAt.ToLocalTime().ToString("g")</span>
+                                    <span class="bookmark-card-time">@FormatUpdatedAt(item.UpdatedAt)</span>
                                 </div>
 
                                 <div class="bookmark-card-actions" @onclick:stopPropagation>
@@ -394,6 +430,7 @@
         </div>
     </main>
 </div>
+}
 
 @if (_contextMenuOpen)
 {

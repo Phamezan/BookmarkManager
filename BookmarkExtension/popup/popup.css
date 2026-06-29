@@ -317,3 +317,161 @@ kbd {
   border-color: hsl(0 65% 55% / 0.35);
   background: var(--error-bg);
 }
+
+/* ── Mode toggling ──────────────────────────────────────────────────────── */
+#normal-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#normal-mode[hidden],
+#editor-mode[hidden] {
+  display: none !important;
+}
+
+/* ── Bookmark Editor (shortcut) ────────────────────────────────────────── */
+.editor-card {
+  gap: 8px;
+}
+
+.editor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.editor-favicon {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--bg);
+}
+
+.editor-head-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.editor-mode-label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.editor-host {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.editor-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition), background var(--transition);
+  flex-shrink: 0;
+}
+
+.editor-close:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+#editor-title {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+#editor-title:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+#editor-folder {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%238a9099' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+#editor-folder:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+#editor-folder option {
+  background: var(--surface);
+  color: var(--text-primary);
+}
+
+.editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.editor-remove-btn {
+  width: auto;
+  min-width: 80px;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--error);
+  border: 1px solid hsl(0 65% 55% / 0.25);
+  background: var(--error-bg);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition), box-shadow var(--transition);
+}
+
+.editor-remove-btn:hover {
+  background: hsl(0 65% 55% / 0.22);
+  border-color: hsl(0 65% 55% / 0.45);
+  color: var(--error);
+  box-shadow: 0 2px 8px hsl(0 65% 55% / 0.15);
+}
+
+.editor-done-btn {
+  width: auto;
+  min-width: 96px;
+  height: 32px;
+  padding: 0 18px;
+  font-size: 12.5px;
+  font-weight: 600;
+}

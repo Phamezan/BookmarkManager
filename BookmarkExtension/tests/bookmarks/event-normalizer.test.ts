@@ -54,6 +54,7 @@ describe("event-normalizer", () => {
     it("creates a Removed event", () => {
       const event = normalizeRemove("84", {
         node: {
+          id: "84",
           title: "Series A",
           url: "https://example.com",
         },

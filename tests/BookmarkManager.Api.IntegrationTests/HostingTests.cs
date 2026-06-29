@@ -33,7 +33,7 @@ public sealed class HostingTests(IntegrationTestWebApplicationFactory factory)
             "net10.0",
             "wwwroot",
             "_framework");
-        var frameworkAsset = Directory.GetFiles(frameworkDirectory, "dotnet.*.js")
+        var frameworkAsset = Directory.GetFiles(frameworkDirectory, "dotnet*.js")
             .Select(Path.GetFileName)
             .Single(fileName => fileName is not null
                 && !fileName.EndsWith(".map", StringComparison.Ordinal)

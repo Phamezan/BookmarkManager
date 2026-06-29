@@ -562,7 +562,7 @@ public sealed class ExtensionService(AppDbContext db) : IExtensionService
 
         var (allNodes, browserToBookmarkId) = ResolveNodeTree(request.Roots);
 
-        await UpsertSnapshotTreeAsync(allNodes, ct);
+        await UpsertSnapshotTreeAsync(allNodes, batch.CapturedAt, ct);
 
         var mappings = new List<NodeMappingDto>();
         foreach (var kvp in browserToBookmarkId)
@@ -601,22 +601,27 @@ public sealed class ExtensionService(AppDbContext db) : IExtensionService
         };
     }
 
-    private async Task UpsertSnapshotTreeAsync(List<BookmarkNodeDto> allNodes, CancellationToken ct)
+    private async Task UpsertSnapshotTreeAsync(List<BookmarkNodeDto> allNodes, DateTime capturedAt, CancellationToken ct)
     {
         var ids = allNodes.Where(n => n.Id != Guid.Empty).Select(n => n.Id).Distinct().ToHashSet();
         if (ids.Count == 0) return;
 
-        await UpsertCoreAsync(ids, allNodes, ct);
+        await UpsertCoreAsync(ids, allNodes, capturedAt, ct);
     }
 
-    private async Task UpsertCoreAsync(HashSet<Guid> ids, List<BookmarkNodeDto> allNodes, CancellationToken ct)
+    private async Task UpsertCoreAsync(HashSet<Guid> ids, List<BookmarkNodeDto> allNodes, DateTime capturedAt, CancellationToken ct)
     {
+        var effectiveCapturedAt = IsDefault(capturedAt) ? DateTime.UtcNow : capturedAt;
+
         var existing = await db.BookmarkNodes
             .Where(n => ids.Contains(n.Id))
             .ToDictionaryAsync(n => n.Id, ct);
 
         foreach (var node in allNodes.Where(n => n.Id != Guid.Empty))
         {
+            var incomingIsDefault = IsDefault(node.UpdatedAt);
+            var effectiveTimestamp = incomingIsDefault ? effectiveCapturedAt : node.UpdatedAt;
+
             if (existing.TryGetValue(node.Id, out var existingNode))
             {
                 existingNode.ParentId = node.ParentId;
@@ -627,7 +632,10 @@ public sealed class ExtensionService(AppDbContext db) : IExtensionService
                 existingNode.IsProtected = node.IsProtected;
                 existingNode.SyncState = SyncState.Synced;
                 existingNode.Version = node.Version;
-                existingNode.UpdatedAt = node.UpdatedAt;
+                if (!(incomingIsDefault && !IsDefault(existingNode.UpdatedAt)))
+                {
+                    existingNode.UpdatedAt = effectiveTimestamp;
+                }
                 existingNode.IsDeleted = node.IsDeleted;
                 existingNode.DeletedAt = node.DeletedAt;
                 existingNode.PurgeAfter = node.PurgeAfter;
@@ -647,7 +655,7 @@ public sealed class ExtensionService(AppDbContext db) : IExtensionService
                     IsProtected = node.IsProtected,
                     SyncState = SyncState.Synced,
                     Version = node.Version,
-                    UpdatedAt = node.UpdatedAt,
+                    UpdatedAt = effectiveTimestamp,
                     IsDeleted = node.IsDeleted,
                     DeletedAt = node.DeletedAt,
                     PurgeAfter = node.PurgeAfter,
@@ -657,6 +665,8 @@ public sealed class ExtensionService(AppDbContext db) : IExtensionService
             }
         }
     }
+
+    private static bool IsDefault(DateTime value) => value == default(DateTime) || DateTime.MinValue.Equals(value);
 
     private static (List<BookmarkNodeDto> AllNodes, Dictionary<string, Guid> BrowserToBookmarkId) ResolveNodeTree(
         List<SnapshotRootPayloadDto> roots)

@@ -1,13 +1,22 @@
-import type { StorageRepository } from "../api/contracts";
+import type { FolderCatalogNode, ShortcutEditorState, StorageRepository } from "../api/contracts";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
 export const DEFAULT_API_BASE_URL = "http://192.168.1.100:8080";
+
+/** Subset of chrome.bookmarks used by the editor. Injectable for testability. */
+export interface PopupBookmarkApi {
+  update(id: string, changes: { title: string }): Promise<void>;
+  move(id: string, destination: { parentId: string }): Promise<void>;
+  remove(id: string): Promise<void>;
+}
 
 export interface PopupDeps {
   storage: StorageRepository;
   sendMessage: (message: unknown) => Promise<unknown>;
   requestPermission: (origin: string) => Promise<boolean>;
   now: () => Date;
+  /** Browser bookmark mutators. Optional so non-editor tests can omit it. */
+  bookmarks?: PopupBookmarkApi;
 }
 
 export class PopupController {
@@ -80,12 +89,116 @@ export class PopupController {
 
   async testConnection(): Promise<{ success: boolean; error: string | null }> {
     try {
-      const response = await this.deps.sendMessage({ type: "testConnection" }) as { success: boolean; error?: string };
+      const response = (await this.deps.sendMessage({
+        type: "testConnection",
+      })) as { success: boolean; error?: string };
       return { success: response.success, error: response.error ?? null };
-    } catch (e: any) {
-      return { success: false, error: e.message ?? "Connection test failed" };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Connection test failed",
+      };
     }
   }
+
+  // ── Shortcut Editor ──────────────────────────────────────────────────────
+
+  /** Loads the transient editor state (if any) and the folder catalog for the dropdown. */
+  async loadEditorState(): Promise<{
+    editor: ShortcutEditorState | null;
+    catalog: FolderCatalogNode[];
+  }> {
+    const editor = await this.deps.storage.getShortcutEditorState();
+    const catalog = (await this.deps.storage.getFolderCatalog()) ?? [];
+    return { editor, catalog };
+  }
+
+  /** Updates title and (optionally) moves the bookmark, remembers the folder, clears editor state. */
+  async commitEditor(input: {
+    bookmarkId: string;
+    title: string;
+    folderId: string;
+    currentParentId: string;
+  }): Promise<{ success: boolean; error: string | null }> {
+    if (!this.deps.bookmarks) {
+      return { success: false, error: "Bookmark API unavailable" };
+    }
+    const title = input.title.trim();
+    if (title.length === 0) {
+      return { success: false, error: "Name cannot be empty" };
+    }
+    try {
+      await this.deps.bookmarks.update(input.bookmarkId, { title });
+      if (input.folderId !== input.currentParentId) {
+        await this.deps.bookmarks.move(input.bookmarkId, { parentId: input.folderId });
+      }
+      await this.deps.storage.saveLastActiveFolder(input.folderId);
+      await this.deps.storage.clearShortcutEditorState();
+      return { success: true, error: null };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to update bookmark",
+      };
+    }
+  }
+
+  /** Deletes the bookmark, remembers its previous parent, and clears editor state. */
+  async removeBookmark(input: {
+    bookmarkId: string;
+    previousParentId: string;
+  }): Promise<{ success: boolean; error: string | null }> {
+    if (!this.deps.bookmarks) {
+      return { success: false, error: "Bookmark API unavailable" };
+    }
+    try {
+      await this.deps.bookmarks.remove(input.bookmarkId);
+      await this.deps.storage.saveLastActiveFolder(input.previousParentId);
+      await this.deps.storage.clearShortcutEditorState();
+      return { success: true, error: null };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to remove bookmark",
+      };
+    }
+  }
+
+  /** Clears only the transient editor state (cancel). Does not touch the bookmark. */
+  async dismissEditor(): Promise<void> {
+    await this.deps.storage.clearShortcutEditorState();
+  }
+}
+
+/**
+ * Builds a readable full-path label (e.g. "Bookmarks Bar / Dev / React") for a
+ * folder by walking parent pointers in the flat catalog. Falls back to the
+ * node title or "(root)" when ancestry cannot be resolved.
+ */
+export function buildFolderPath(
+  catalog: FolderCatalogNode[],
+  folderId: string,
+): string {
+  const byId = new Map<string, FolderCatalogNode>();
+  for (const node of catalog) {
+    byId.set(node.browserNodeId, node);
+  }
+  const segments: string[] = [];
+  let current = byId.get(folderId);
+  let guard = 0;
+  while (current && guard < 32) {
+    if (current.title.length > 0) segments.unshift(current.title);
+    const parentId = current.parentBrowserNodeId;
+    if (!parentId || parentId === "0") break;
+    current = byId.get(parentId);
+    guard++;
+  }
+  if (segments.length === 0) {
+    const leaf = byId.get(folderId);
+    if (leaf && leaf.title.length > 0) return leaf.title;
+    return "(root)";
+  }
+  return segments.join(" / ");
 }
 
 // ── DOM Bootstrap (browser-only) ────────────────────────────────────────────
@@ -116,10 +229,23 @@ if (isBrowser) {
       }
     },
     now: () => new Date(),
+    bookmarks: {
+      update: async (id, changes) => {
+        await chrome.bookmarks.update(id, changes);
+      },
+      move: async (id, destination) => {
+        await chrome.bookmarks.move(id, destination);
+      },
+      remove: async (id) => {
+        await chrome.bookmarks.remove(id);
+      },
+    },
   });
 
   // ── Element refs ────────────────────────────────────────────────────────────
   const els = {
+    normalMode:    document.getElementById("normal-mode")     as HTMLElement | null,
+    editorMode:    document.getElementById("editor-mode")     as HTMLElement | null,
     apiUrl:        document.getElementById("api-url")         as HTMLInputElement | null,
     saveBtn:       document.getElementById("save-btn")        as HTMLButtonElement | null,
     clearBtn:      document.getElementById("clear-btn")       as HTMLButtonElement | null,
@@ -131,6 +257,16 @@ if (isBrowser) {
     pendingCount:  document.getElementById("pending-count")   as HTMLElement | null,
     connMsg:       document.getElementById("connection-message") as HTMLElement | null,
     errorCode:     document.getElementById("error-code")      as HTMLElement | null,
+    // Editor mode
+    editorFavicon: document.getElementById("editor-favicon")  as HTMLImageElement | null,
+    editorModeLabel: document.getElementById("editor-mode-label") as HTMLElement | null,
+    editorHost:    document.getElementById("editor-host")     as HTMLElement | null,
+    editorCloseBtn:document.getElementById("editor-close-btn") as HTMLButtonElement | null,
+    editorTitle:   document.getElementById("editor-title")    as HTMLInputElement | null,
+    editorFolder:  document.getElementById("editor-folder")   as HTMLSelectElement | null,
+    editorMsg:     document.getElementById("editor-message")  as HTMLElement | null,
+    editorDoneBtn: document.getElementById("editor-done-btn") as HTMLButtonElement | null,
+    editorRemoveBtn: document.getElementById("editor-remove-btn") as HTMLButtonElement | null,
   };
 
   // ── Status helpers ──────────────────────────────────────────────────────────
@@ -182,7 +318,7 @@ if (isBrowser) {
 
   let inputsInitialized = false;
 
-  async function refreshUI(): Promise<void> {
+  async function refreshNormalStatus(): Promise<void> {
     const state = await controller.loadState();
 
     if (!inputsInitialized) {
@@ -206,6 +342,113 @@ if (isBrowser) {
     if (els.errorCode) {
       els.errorCode.textContent = state.errorCode ?? "";
     }
+  }
+
+  function showEditorMode(editorActive: boolean): void {
+    if (els.normalMode) els.normalMode.hidden = editorActive;
+    if (els.editorMode) els.editorMode.hidden = !editorActive;
+  }
+
+  function setEditorMsg(text: string, type: "success" | "error" | "info" | "" = ""): void {
+    if (!els.editorMsg) return;
+    els.editorMsg.textContent = text;
+    els.editorMsg.className = `message${type ? " " + type : ""}`;
+  }
+
+  function populateFolderSelect(
+    select: HTMLSelectElement,
+    catalog: FolderCatalogNode[],
+    selectedId: string,
+  ): void {
+    const fallback: FolderCatalogNode[] = catalog.length > 0
+      ? catalog.filter((n) => n.browserNodeId !== "0" && n.title.length > 0)
+      : [
+          {
+            browserNodeId: "1",
+            parentBrowserNodeId: null,
+            title: "Bookmarks Bar",
+            position: 0,
+            isProtected: true,
+          },
+        ];
+
+    const options = fallback
+      .map((f) => ({
+        value: f.browserNodeId,
+        label: f.title,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    select.options.length = 0;
+    let hasSelected = false;
+    for (const opt of options) {
+      const el = document.createElement("option");
+      el.value = opt.value;
+      el.textContent = opt.label;
+      if (opt.value === selectedId) {
+        el.selected = true;
+        hasSelected = true;
+      }
+      select.appendChild(el);
+    }
+    if (!hasSelected && selectedId.length > 0) {
+      const el = document.createElement("option");
+      el.value = selectedId;
+      el.textContent = "(current folder)";
+      el.selected = true;
+      select.appendChild(el);
+    }
+    select.value = selectedId;
+  }
+
+  function renderEditor(editor: ShortcutEditorState, catalog: FolderCatalogNode[]): void {
+    let host = editor.url;
+    try {
+      host = new URL(editor.url).hostname;
+    } catch {
+      // keep raw url as host fallback
+    }
+
+    if (els.editorFavicon) {
+      els.editorFavicon.onerror = () => {
+        if (els.editorFavicon) els.editorFavicon.style.visibility = "hidden";
+      };
+      els.editorFavicon.onload = () => {
+        if (els.editorFavicon) els.editorFavicon.style.visibility = "";
+      };
+      els.editorFavicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
+      els.editorFavicon.alt = host;
+    }
+    if (els.editorHost) els.editorHost.textContent = host;
+    if (els.editorModeLabel) {
+      els.editorModeLabel.textContent = editor.wasCreated ? "Added bookmark" : "Edit bookmark";
+    }
+
+    // Only repopulate editable fields when the target bookmark changes, so
+    // storage-driven re-renders don't clobber what the user is typing.
+    const sameTarget = els.editorTitle?.dataset.bookmarkId === editor.bookmarkId;
+    if (!sameTarget) {
+      if (els.editorTitle) {
+        els.editorTitle.value = editor.title;
+        els.editorTitle.dataset.bookmarkId = editor.bookmarkId;
+      }
+      if (els.editorFolder) {
+        populateFolderSelect(els.editorFolder, catalog, editor.parentId);
+      }
+    }
+    setEditorMsg("");
+  }
+
+  async function refreshUI(): Promise<void> {
+    const { editor, catalog } = await controller.loadEditorState();
+    if (editor) {
+      renderEditor(editor, catalog);
+      showEditorMode(true);
+    } else {
+      showEditorMode(false);
+    }
+    // Keep normal-mode status fresh for when the editor is dismissed.
+    await refreshNormalStatus();
   }
 
   // ── Event listeners ─────────────────────────────────────────────────────────
@@ -245,9 +488,80 @@ if (isBrowser) {
     }
   });
 
-  // Keyboard shortcut listener within popup: pressing 'O' or 'Enter' opens the manager (unless in text inputs)
+  // ── Editor event listeners ──────────────────────────────────────────────────
+
+  els.editorDoneBtn?.addEventListener("click", async () => {
+    const btn = els.editorDoneBtn;
+    if (!btn) return;
+    const { editor } = await controller.loadEditorState();
+    if (!editor) {
+      await refreshUI();
+      return;
+    }
+    const title = els.editorTitle?.value?.trim() ?? "";
+    const folderId = els.editorFolder?.value ?? editor.parentId;
+    if (title.length === 0) {
+      setEditorMsg("Name cannot be empty", "error");
+      return;
+    }
+    btn.disabled = true;
+    setEditorMsg("Saving…", "info");
+    const result = await controller.commitEditor({
+      bookmarkId: editor.bookmarkId,
+      title,
+      folderId,
+      currentParentId: editor.parentId,
+    });
+    btn.disabled = false;
+    if (result.success) {
+      // State is cleared; storage.onChanged will re-render to normal mode.
+      window.close();
+    } else {
+      setEditorMsg(result.error ?? "Failed to update", "error");
+    }
+  });
+
+  els.editorRemoveBtn?.addEventListener("click", async () => {
+    const btn = els.editorRemoveBtn;
+    if (!btn) return;
+    const { editor } = await controller.loadEditorState();
+    if (!editor) {
+      await refreshUI();
+      return;
+    }
+    btn.disabled = true;
+    const result = await controller.removeBookmark({
+      bookmarkId: editor.bookmarkId,
+      previousParentId: editor.parentId,
+    });
+    btn.disabled = false;
+    if (result.success) {
+      window.close();
+    } else {
+      setEditorMsg(result.error ?? "Failed to remove", "error");
+    }
+  });
+
+  els.editorCloseBtn?.addEventListener("click", async () => {
+    await controller.dismissEditor();
+  });
+
+  // Keyboard shortcuts within popup.
   document.addEventListener("keydown", (e) => {
-    if (document.activeElement?.tagName === "INPUT") return;
+    // Escape clears only the transient editor state (cancel).
+    if (e.key === "Escape") {
+      const editorVisible = els.editorMode?.hidden === false;
+      if (editorVisible) {
+        e.preventDefault();
+        controller.dismissEditor();
+        return;
+      }
+    }
+    // 'O' / Enter opens the manager, only in normal mode and when not typing.
+    if (document.activeElement?.tagName === "INPUT" || document.activeElement?.tagName === "SELECT") {
+      return;
+    }
+    if (els.editorMode?.hidden === false) return;
     const key = e.key.toLowerCase();
     if (key === "o" || key === "enter") {
       e.preventDefault();

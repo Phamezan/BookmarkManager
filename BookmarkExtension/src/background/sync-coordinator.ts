@@ -154,7 +154,7 @@ export class SyncCoordinator {
           snapshotRequest: newConfig.snapshotRequest,
         });
       }
-    } catch (error) {
+    } catch {
       // Leave events in outbox for retry
     }
   }
