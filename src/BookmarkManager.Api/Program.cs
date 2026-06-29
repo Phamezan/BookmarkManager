@@ -1,0 +1,119 @@
+using System.Text.Json.Serialization;
+using BookmarkManager.Api;
+using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Hosting;
+using BookmarkManager.Api.Infrastructure;
+using BookmarkManager.Api.Services;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("Default")
+        ?? "Data Source=bookmarks.db"));
+
+var dataProtectionKeys = ResolveDataProtectionKeysDirectory(builder.Environment.ContentRootPath);
+builder.Services.AddDataProtection().PersistKeysToFileSystem(dataProtectionKeys);
+
+builder.Services.AddScoped<IExtensionService, ExtensionService>();
+builder.Services.AddHostedService<PurgeBackgroundJob>();
+builder.Services.AddAutoMapper(typeof(MappingProfile));
+builder.Services.AddProblemDetails(options =>
+    options.CustomizeProblemDetails = ctx =>
+    {
+        if (!ctx.ProblemDetails.Extensions.ContainsKey("code"))
+        {
+            ctx.ProblemDetails.Extensions["code"] = ApiProblem.InternalCode;
+        }
+    });
+
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
+
+builder.Services.Configure<ApiBehaviorOptions>(options =>
+{
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var problem = new ValidationProblemDetails(context.ModelState)
+        {
+            Status = StatusCodes.Status400BadRequest,
+            Title = "One or more validation errors occurred."
+        };
+        problem.Extensions["code"] = ApiProblem.ValidationCode;
+        return new BadRequestObjectResult(problem);
+    };
+});
+
+var app = builder.Build();
+
+await app.InitializeDatabaseAsync();
+
+app.UseExceptionHandler(exceptionBuilder =>
+{
+    exceptionBuilder.Run(async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+        var problem = ApiProblem.Create(
+            StatusCodes.Status500InternalServerError,
+            ApiProblem.InternalCode,
+            "Internal server error",
+            "An unexpected error occurred.");
+        var json = System.Text.Json.JsonSerializer.Serialize(problem,
+            new System.Text.Json.JsonSerializerOptions { PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase });
+        await context.Response.WriteAsync(json);
+    });
+});
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+}
+
+app.UseBlazorFrameworkFiles();
+app.UseStaticFiles();
+
+app.UseWebSockets();
+
+app.Map("/api/sync/ws", async (HttpContext context) =>
+{
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        await BookmarkManager.Api.Infrastructure.SyncWebSocketManager.HandleConnectionAsync(webSocket);
+    }
+    else
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    }
+});
+
+app.UseRouting();
+
+app.MapControllers();
+app.MapStaticAssets();
+
+app.MapHealthChecks("/health/live");
+app.MapHealthChecks("/health/ready");
+app.MapFallbackToFile("index.html");
+
+app.Run();
+
+static DirectoryInfo ResolveDataProtectionKeysDirectory(string contentRootPath)
+{
+    const string containerKeysPath = "/data";
+    return Directory.Exists(containerKeysPath)
+        ? new DirectoryInfo(containerKeysPath)
+        : Directory.CreateDirectory(Path.Combine(contentRootPath, ".dataprotection-keys"));
+}
+
+public partial class Program;
