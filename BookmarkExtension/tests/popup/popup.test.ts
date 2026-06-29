@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { PopupController } from "../../src/popup/popup";
+import {
+  DEFAULT_API_BASE_URL,
+  PopupController,
+} from "../../src/popup/popup";
 import { FakeStorage } from "../helpers/fake-chrome-storage";
 import { ChromeStorageRepository } from "../../src/storage/storage-repository";
 
@@ -32,7 +35,7 @@ describe("PopupController", () => {
       const state = await controller.loadState();
       expect(state.setupComplete).toBe(false);
       expect(state.syncState).toBe("NotConfigured");
-      expect(state.apiBaseUrl).toBe("");
+      expect(state.apiBaseUrl).toBe(DEFAULT_API_BASE_URL);
     });
 
     it("returns configured state when settings exist", async () => {

@@ -1,6 +1,8 @@
 import type { StorageRepository } from "../api/contracts";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
+export const DEFAULT_API_BASE_URL = "http://192.168.1.100:8080";
+
 export interface PopupDeps {
   storage: StorageRepository;
   sendMessage: (message: unknown) => Promise<unknown>;
@@ -23,7 +25,7 @@ export class PopupController {
     const status = await this.deps.storage.getSyncStatus();
 
     return {
-      apiBaseUrl: settings?.apiBaseUrl ?? "",
+      apiBaseUrl: settings?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
       setupComplete: settings?.setupComplete ?? false,
       syncState: status?.state ?? "NotConfigured",
       lastSync: status?.lastSuccessAt ?? null,
