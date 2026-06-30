@@ -265,15 +265,48 @@ public sealed class AiTaggingService
         }
     }
 
+    private static string ExtractContentFromChatCompletion(string rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+            return string.Empty;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("choices", out var choicesEl) && choicesEl.ValueKind == JsonValueKind.Array && choicesEl.GetArrayLength() > 0)
+            {
+                var firstChoice = choicesEl[0];
+                if (firstChoice.TryGetProperty("message", out var messageEl) && messageEl.TryGetProperty("content", out var contentEl))
+                {
+                    var content = contentEl.GetString();
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        return content;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore, fallback to original
+        }
+
+        return rawJson;
+    }
+
     private static Dictionary<Guid, List<string>> ParseBatchTags(string rawJson)
     {
         var result = new Dictionary<Guid, List<string>>();
         if (string.IsNullOrWhiteSpace(rawJson))
             return result;
 
+        var contentJson = ExtractContentFromChatCompletion(rawJson);
+
         try
         {
-            using var doc = JsonDocument.Parse(rawJson);
+            using var doc = JsonDocument.Parse(contentJson);
             var root = doc.RootElement;
             if (root.TryGetProperty("tags", out var tagsEl))
             {
@@ -309,12 +342,11 @@ public sealed class AiTaggingService
         if (string.IsNullOrWhiteSpace(rawJson))
             return new List<string>();
 
-        // The chat API already returns a JSON object wrapper. Some local
-        // servers ignore response_format and return bare prose, so parse
-        // defensively: look for the tags array anywhere in the payload.
+        var contentJson = ExtractContentFromChatCompletion(rawJson);
+
         try
         {
-            using var doc = JsonDocument.Parse(rawJson);
+            using var doc = JsonDocument.Parse(contentJson);
             if (doc.RootElement.TryGetProperty("tags", out var tagsEl) && tagsEl.ValueKind == JsonValueKind.Array)
             {
                 return tagsEl.EnumerateArray()
@@ -332,7 +364,7 @@ public sealed class AiTaggingService
         }
 
         // Salvage: extract quoted strings anywhere in the payload as tags.
-        var salvaged = System.Text.RegularExpressions.Regex.Matches(rawJson, "\"([\\w\\s\\-./+]{2,30})\"")
+        var salvaged = System.Text.RegularExpressions.Regex.Matches(contentJson, "\"([\\w\\s\\-./+]{2,30})\"")
             .Select(m => m.Groups[1].Value.Trim())
             .Where(s => !s.Equals("tags", System.StringComparison.OrdinalIgnoreCase))
             .Distinct(System.StringComparer.OrdinalIgnoreCase)
