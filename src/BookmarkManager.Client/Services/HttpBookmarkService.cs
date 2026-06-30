@@ -109,6 +109,22 @@ public sealed class HttpBookmarkService : IBookmarkService
     private async Task SendAndConfirmAsync(HttpMethod method, string uri, CancellationToken cancellationToken, object? body = null)
         => await _apiClient.SendAsync(method, uri, body, cancellationToken);
 
+    public async Task<List<string>> SuggestTagsAsync(string title, string? url, CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<string>>($"api/bookmarks/suggest-tags?title={Uri.EscapeDataString(title)}&url={Uri.EscapeDataString(url ?? string.Empty)}", cancellationToken) ?? [];
+
+    public async Task<List<BookmarkNodeDto>> GetStaleBookmarksAsync(int days, CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<BookmarkNodeDto>>($"api/bookmarks/stale?days={days}", cancellationToken) ?? [];
+
+    public async Task<BookmarkNodeDto?> ArchiveBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
+        => await InvokeOrNullAsync<BookmarkNodeDto>(
+            () => _apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Post, $"api/bookmarks/{id}/archive", cancellationToken: cancellationToken));
+
+    public async Task<bool> TriggerLinkCheckAsync(CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/check-links", cancellationToken));
+
+    public async Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<bool>("api/bookmarks/check-links/status", cancellationToken);
+
     private static async Task<T?> InvokeOrNullAsync<T>(Func<Task<T?>> action) where T : class
     {
         try

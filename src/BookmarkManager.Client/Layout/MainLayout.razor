@@ -15,7 +15,10 @@
                        aria-label="Toggle navigation"
                        OnClick="ToggleDrawer" />
         <MudStack Spacing="0" Class="app-title">
-            <MudText Typo="Typo.subtitle1">Bookmark Manager</MudText>
+            <MudText Typo="Typo.subtitle1">
+                <span class="app-title-mark" aria-hidden="true"></span>
+                Bookmark Manager
+            </MudText>
             <MudText Typo="Typo.caption">Tracked Brave library operations</MudText>
         </MudStack>
         <MudSpacer />
@@ -26,6 +29,7 @@
                          Variant="Variant.Outlined"
                          Color="@(_extensionService.IsConnected ? Color.Success : Color.Warning)"
                          Icon="@(_extensionService.IsConnected ? Icons.Material.Filled.CloudDone : Icons.Material.Filled.CloudOff)">
+                    <span class="status-dot @( _extensionService.IsConnected ? "is-online" : "is-offline")" aria-hidden="true"></span>
                     @(_extensionService.IsConnected ? "Connected" : "Extension offline")
                 </MudChip>
             </MudTooltip>
@@ -49,7 +53,34 @@
 
     <MudMainContent Class="app-main">
         <div class="app-content">
-            @Body
+            @if (!_extensionService.IsConnected)
+            {
+                <div class="extension-offline-container">
+                    <div class="extension-offline-card">
+                        <div class="extension-offline-icon-wrap" aria-hidden="true">
+                            <MudIcon Icon="@Icons.Material.Filled.CloudOff" Class="extension-offline-icon" />
+                        </div>
+                        <MudText Typo="Typo.h5" Class="extension-offline-title">Extension is Offline</MudText>
+                        <MudText Typo="Typo.body1" Class="extension-offline-desc">
+                            The Brave extension isn't connected or responsive. Pair it and confirm it's running to sync and manage your bookmarks.
+                        </MudText>
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Settings"
+                                   Href="settings"
+                                   Class="extension-offline-cta">
+                            Open Settings
+                        </MudButton>
+                        <MudText Typo="Typo.caption" Class="extension-offline-help">
+                            Commands are queued until the extension checks in.
+                        </MudText>
+                    </div>
+                </div>
+            }
+            else
+            {
+                @Body
+            }
         </div>
     </MudMainContent>
 </MudLayout>

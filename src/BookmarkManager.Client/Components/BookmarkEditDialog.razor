@@ -10,6 +10,43 @@
 
             <MudTextField @bind-Value="_url" Label="URL" Variant="Variant.Outlined"
                           Placeholder="https://" Class="mb-4" />
+
+            <div class="mb-4">
+                <MudText Typo="Typo.body2" Class="mb-1">Tags</MudText>
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                    @foreach (var tag in _tags)
+                    {
+                        <MudChip T="string" Color="Color.Primary" OnClose="@(() => RemoveTag(tag))">@tag</MudChip>
+                    }
+                    @if (_tags.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">No tags added yet.</MudText>
+                    }
+                </div>
+                <div class="d-flex gap-2">
+                    <MudTextField @bind-Value="_newTag" Label="New Tag" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  OnKeyDown="OnTagInputKeyDown" />
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="AddTag">Add</MudButton>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <div class="d-flex align-center justify-space-between mb-1">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">AI Tag Suggestions</MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Secondary" Size="Size.Small" OnClick="GenerateTagSuggestions" Disabled="@(string.IsNullOrWhiteSpace(_title))">
+                        Generate Suggestions
+                    </MudButton>
+                </div>
+                @if (_suggestedTags.Count > 0)
+                {
+                    <div class="d-flex flex-wrap gap-1">
+                        @foreach (var tag in _suggestedTags)
+                        {
+                            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Secondary" OnClick="@(() => AddSuggestedTag(tag))" Style="cursor: pointer;">@tag</MudChip>
+                        }
+                    </div>
+                }
+            </div>
         </MudForm>
     </DialogContent>
 
@@ -20,6 +57,7 @@
 </MudDialog>
 
 @code {
+    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Parameter] public BookmarkNodeDto? Node { get; set; }
     [Parameter] public EventCallback<BookmarkEditResult> OnSave { get; set; }
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
@@ -29,6 +67,9 @@
 
     private string _title = "";
     private string? _url;
+    private List<string> _tags = [];
+    private string _newTag = "";
+    private List<string> _suggestedTags = [];
 
     protected override void OnParametersSet()
     {
@@ -36,6 +77,56 @@
         {
             _title = Node.Title;
             _url = Node.Url;
+            _tags = Node.Metadata?.Tags != null ? new List<string>(Node.Metadata.Tags) : [];
+        }
+    }
+
+    private async Task GenerateTagSuggestions()
+    {
+        if (string.IsNullOrWhiteSpace(_title)) return;
+        try
+        {
+            _suggestedTags = await BookmarkService.SuggestTagsAsync(_title, _url);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Ignore suggestion failures
+        }
+    }
+
+    private void AddTag()
+    {
+        if (!string.IsNullOrWhiteSpace(_newTag))
+        {
+            var cleaned = _newTag.Trim();
+            if (!_tags.Contains(cleaned, StringComparer.OrdinalIgnoreCase))
+            {
+                _tags.Add(cleaned);
+            }
+            _newTag = "";
+        }
+    }
+
+    private void RemoveTag(string tag)
+    {
+        _tags.Remove(tag);
+    }
+
+    private void AddSuggestedTag(string tag)
+    {
+        if (!_tags.Contains(tag, StringComparer.OrdinalIgnoreCase))
+        {
+            _tags.Add(tag);
+        }
+        _suggestedTags.Remove(tag);
+    }
+
+    private void OnTagInputKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddTag();
         }
     }
 
@@ -48,6 +139,7 @@
         {
             Title = _title,
             Url = string.IsNullOrWhiteSpace(_url) ? null : _url,
+            Tags = _tags
         };
 
         await OnSave.InvokeAsync(result);
@@ -60,5 +152,6 @@
     {
         public string Title { get; set; } = "";
         public string? Url { get; set; }
+        public List<string> Tags { get; set; } = [];
     }
 }

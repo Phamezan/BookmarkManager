@@ -16,6 +16,7 @@ public partial class Bookmarks : IDisposable
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     [Inject] private IExtensionConnectionService ExtensionConnectionService { get; set; } = default!;
+    [Inject] private UndoService UndoService { get; set; } = default!;
 
     private List<FolderTreeNodeDto> _folderTree = [];
     private List<BookmarkNodeDto> _items = [];
@@ -138,9 +139,12 @@ public partial class Bookmarks : IDisposable
 
         if (_folderTree.Count > 0)
         {
-            var firstId = FindFirstLeaf(_folderTree[0]);
-            if (firstId != Guid.Empty)
-                await OnFolderSelected(firstId);
+            var rootFolder = _folderTree.FirstOrDefault(f => f.Title.Equals("Bookmarks Bar", StringComparison.OrdinalIgnoreCase))
+                             ?? _folderTree[0];
+            if (rootFolder != null && rootFolder.Id != Guid.Empty)
+            {
+                await OnFolderSelected(rootFolder.Id);
+            }
         }
 
         _wsCts?.Cancel();
@@ -360,11 +364,23 @@ public partial class Bookmarks : IDisposable
     {
         if (_draggedFolderId == targetFolderId) return;
 
+        var originalParentId = FindParentFolderId(_folderTree, _draggedFolderId);
+        var folder = FindFolderById(_folderTree, _draggedFolderId);
+
         await BookmarkService.MoveFolderAsync(_draggedFolderId, targetFolderId);
 
+        var draggedId = _draggedFolderId;
         _draggedFolderId = Guid.Empty;
         await RefreshFolderTreeAsync();
-        Snackbar.Add("Folder moved", Severity.Success);
+
+        if (originalParentId.HasValue && folder != null)
+        {
+            ShowUndoSnackbar($"Folder \"{folder.Title}\" moved", () => BookmarkService.MoveFolderAsync(draggedId, originalParentId.Value));
+        }
+        else
+        {
+            Snackbar.Add("Folder moved", Severity.Success);
+        }
     }
 
     private async Task MoveSelected()
@@ -375,7 +391,7 @@ public partial class Bookmarks : IDisposable
         var parameters = new DialogParameters
         {
             ["Folders"] = _folderTree,
-            ["CurrentFolderId"] = (Guid?)null
+            ["CurrentFolderId"] = _selectedFolderId
         };
         var dialog = await DialogService.ShowAsync<MoveDialog>("Move Selected Items", parameters, options);
         var result = await dialog.Result;
@@ -404,12 +420,28 @@ public partial class Bookmarks : IDisposable
         _selectedBookmarkIds.Clear();
 
         await RefreshFolderTreeAsync();
-        Snackbar.Add("Selected bookmarks queued for deletion and 30-day recovery", Severity.Success);
+        ShowUndoSnackbar($"Deleted {idsToDelete.Count} bookmarks", async () =>
+        {
+            foreach (var id in idsToDelete)
+            {
+                await BookmarkService.RestoreBookmarkAsync(id);
+            }
+        });
     }
 
     private async Task MoveSelectedBookmarks(Guid targetFolderId)
     {
         if (_selectedBookmarkIds.Count == 0) return;
+
+        var originalParents = new Dictionary<Guid, Guid>();
+        foreach (var id in _selectedBookmarkIds)
+        {
+            var item = _items.FirstOrDefault(i => i.Id == id);
+            if (item?.ParentId != null)
+            {
+                originalParents[id] = item.ParentId.Value;
+            }
+        }
 
         var count = 0;
         foreach (var id in _selectedBookmarkIds)
@@ -424,7 +456,13 @@ public partial class Bookmarks : IDisposable
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
 
         await RefreshFolderTreeAsync();
-        Snackbar.Add($"Moved {count} bookmark(s)", Severity.Success);
+        ShowUndoSnackbar($"Moved {count} bookmark(s)", async () =>
+        {
+            foreach (var kvp in originalParents)
+            {
+                await BookmarkService.MoveBookmarkAsync(kvp.Key, kvp.Value);
+            }
+        });
     }
 
     private async Task RefreshFolderTreeAsync()
@@ -444,6 +482,42 @@ public partial class Bookmarks : IDisposable
             ids.UnionWith(GetAllFolderIds(f.Children));
         }
         return ids;
+    }
+
+    private void ShowUndoSnackbar(string message, Func<Task> revertAction)
+    {
+        UndoService.Push(message, revertAction);
+        Snackbar.Add(message, Severity.Success, config =>
+        {
+            config.Action = "UNDO";
+            config.ActionColor = Color.Warning;
+            config.OnClick = async snackbar =>
+            {
+                try
+                {
+                    await UndoService.UndoAsync();
+                    if (_selectedFolderId.HasValue)
+                        _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+                    await RefreshFolderTreeAsync();
+                    Snackbar.Add("Action reverted", Severity.Success);
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Failed to undo action: {ex.Message}", Severity.Error);
+                }
+            };
+        });
+    }
+
+    private Guid? FindParentFolderId(List<FolderTreeNodeDto> folders, Guid folderId, Guid? currentParentId = null)
+    {
+        foreach (var folder in folders)
+        {
+            if (folder.Id == folderId) return currentParentId;
+            var foundParent = FindParentFolderId(folder.Children, folderId, folder.Id);
+            if (foundParent.HasValue) return foundParent.Value;
+        }
+        return null;
     }
 
     private async Task CreateFolder()
@@ -475,7 +549,12 @@ public partial class Bookmarks : IDisposable
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
 
-        await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url);
+        var created = await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url);
+        if (data.Tags != null && data.Tags.Count > 0)
+        {
+            var metadata = new BookmarkMetadataDto { Tags = data.Tags };
+            await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
+        }
 
         _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
         await RefreshFolderTreeAsync();
@@ -490,6 +569,9 @@ public partial class Bookmarks : IDisposable
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
 
         await BookmarkService.UpdateBookmarkAsync(item.Id, data.Title, data.Url);
+        var metadata = item.Metadata ?? new BookmarkMetadataDto();
+        metadata.Tags = data.Tags;
+        await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
 
         if (_selectedFolderId.HasValue)
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
@@ -512,7 +594,7 @@ public partial class Bookmarks : IDisposable
         await BookmarkService.DeleteBookmarkAsync(item.Id);
         _items.Remove(item);
         await RefreshFolderTreeAsync();
-        Snackbar.Add("Bookmark queued for deletion and 30-day recovery", Severity.Success);
+        ShowUndoSnackbar($"Bookmark \"{item.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(item.Id));
     }
 
     private async Task DeleteFolder(Guid folderId)
@@ -538,7 +620,7 @@ public partial class Bookmarks : IDisposable
         }
 
         await RefreshFolderTreeAsync();
-        Snackbar.Add("Folder queued for deletion and 30-day recovery", Severity.Success);
+        ShowUndoSnackbar($"Folder \"{folder.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(folderId));
     }
 
     private FolderTreeNodeDto? FindFolderById(List<FolderTreeNodeDto> folders, Guid id)
@@ -631,13 +713,23 @@ public partial class Bookmarks : IDisposable
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not Guid targetFolderId) return;
 
+        var originalParentId = item.ParentId;
+
         await BookmarkService.MoveBookmarkAsync(item.Id, targetFolderId);
         
         if (_selectedFolderId.HasValue)
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
 
         await RefreshFolderTreeAsync();
-        Snackbar.Add("Bookmark moved", Severity.Success);
+        
+        if (originalParentId.HasValue)
+        {
+            ShowUndoSnackbar($"Bookmark \"{item.Title}\" moved", () => BookmarkService.MoveBookmarkAsync(item.Id, originalParentId.Value));
+        }
+        else
+        {
+            Snackbar.Add("Bookmark moved", Severity.Success);
+        }
     }
 
     private async Task MoveFolder(Guid folderId)
@@ -645,11 +737,14 @@ public partial class Bookmarks : IDisposable
         var folder = FindFolderById(_folderTree, folderId);
         if (folder is null) return;
 
+        var originalParentId = FindParentFolderId(_folderTree, folderId);
+
         var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small };
         var parameters = new DialogParameters 
         { 
             ["Folders"] = _folderTree,
-            ["CurrentFolderId"] = (Guid?)null
+            ["CurrentFolderId"] = originalParentId,
+            ["FolderToMoveId"] = folderId
         };
         var dialog = await DialogService.ShowAsync<MoveDialog>("Move Folder", parameters, options);
         var result = await dialog.Result;
@@ -658,7 +753,15 @@ public partial class Bookmarks : IDisposable
         await BookmarkService.MoveFolderAsync(folderId, targetFolderId);
 
         await RefreshFolderTreeAsync();
-        Snackbar.Add("Folder moved", Severity.Success);
+        
+        if (originalParentId.HasValue)
+        {
+            ShowUndoSnackbar($"Folder \"{folder.Title}\" moved", () => BookmarkService.MoveFolderAsync(folderId, originalParentId.Value));
+        }
+        else
+        {
+            Snackbar.Add("Folder moved", Severity.Success);
+        }
     }
 
     private async Task CreateBookmarkUnderFolder(Guid folderId)
@@ -668,7 +771,12 @@ public partial class Bookmarks : IDisposable
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
 
-        await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url);
+        var created = await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url);
+        if (data.Tags != null && data.Tags.Count > 0)
+        {
+            var metadata = new BookmarkMetadataDto { Tags = data.Tags };
+            await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
+        }
 
         if (_selectedFolderId == folderId)
         {

@@ -145,6 +145,30 @@
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.LinkOff" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Broken Link Checker</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="RunLinkCheckerAsync"
+                           Disabled="@_linkCheckerRunning">
+                    @(_linkCheckerRunning ? "Checking..." : "Run Checker")
+                </MudButton>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Scan your active bookmarks for dead domains or 404 pages. Broken links will be moved automatically to the "Broken Links" folder.
+            </MudText>
+            @if (_linkCheckerRunning)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+        </MudStack>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" />
                 <MudText Typo="Typo.h6">Theme and density</MudText>
             </MudStack>

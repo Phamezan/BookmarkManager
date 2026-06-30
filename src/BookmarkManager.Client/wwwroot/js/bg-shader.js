@@ -47,18 +47,24 @@ window.initBgShader = function() {
             void main() {
                 vec2 uv = v_texCoord;
                 
-                // Create a flowing tech-inspired noise pattern
-                float noise = sin(uv.x * 10.0 + u_time * 0.5) * cos(uv.y * 10.0 - u_time * 0.3);
-                noise += 0.5 * sin(uv.x * 20.0 - u_time * 0.8) * cos(uv.y * 15.0 + u_time * 0.4);
-                
-                // Deep slate/charcoal base palette from Command Center
-                vec3 color1 = vec3(0.07, 0.07, 0.07); // Surface
-                vec3 color2 = vec3(0.11, 0.11, 0.13); // Surface container
-                
+                // Flowing premium dark noise pattern
+                float noise = sin(uv.x * 8.0 + u_time * 0.35) * cos(uv.y * 8.0 - u_time * 0.22);
+                noise += 0.5 * sin(uv.x * 18.0 - u_time * 0.6) * cos(uv.y * 13.0 + u_time * 0.3);
+
+                // Deep near-black base with a subtle indigo undertone
+                vec3 color1 = vec3(0.030, 0.031, 0.043); // base shadow
+                vec3 color2 = vec3(0.055, 0.058, 0.082); // raised
+                vec3 indigo = vec3(0.14, 0.16, 0.30);     // accent tint
+
                 vec3 finalColor = mix(color1, color2, noise * 0.5 + 0.5);
-                
-                // Add subtle scanline effect
-                float scanline = sin(v_texCoord.y * 800.0) * 0.02;
+
+                // Subtle indigo glow rising from below
+                float glow = smoothstep(0.0, 1.0, uv.y) * 0.5 + smoothstep(1.0, 0.0, uv.y) * 0.5;
+                float sideGlow = pow(1.0 - abs(uv.x - 0.5) * 2.0, 3.0) * (1.0 - uv.y);
+                finalColor += indigo * sideGlow * 0.06 * (0.6 + 0.4 * sin(u_time * 0.4));
+
+                // Soft scanline for texture
+                float scanline = sin(v_texCoord.y * 900.0) * 0.015;
                 finalColor -= scanline;
 
                 gl_FragColor = vec4(finalColor, 1.0);

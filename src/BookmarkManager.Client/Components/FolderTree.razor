@@ -11,7 +11,8 @@
         <MudTreeViewItem T="Guid?"
                          Value="@item.Value"
                          Items="@item.Children"
-                         CanExpand="@(item.Children?.Count > 0)">
+                         CanExpand="@(item.Children?.Count > 0)"
+                         Disabled="@(item.Value.HasValue && DisabledFolderIds.Contains(item.Value.Value))">
             <BodyContent>
                 <div class="d-flex align-center folder-drop-target"
                      style="width: 100%"
@@ -43,6 +44,7 @@
 @code {
     [Parameter] public List<FolderTreeNodeDto> Folders { get; set; } = [];
     [Parameter] public Guid? SelectedFolderId { get; set; }
+    [Parameter] public HashSet<Guid> DisabledFolderIds { get; set; } = [];
     [Parameter] public EventCallback<Guid> FolderSelected { get; set; }
     [Parameter] public EventCallback<Guid> FolderDrop { get; set; }
     [Parameter] public EventCallback<Guid> FolderDragStart { get; set; }

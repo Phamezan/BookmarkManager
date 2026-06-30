@@ -343,65 +343,57 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
         "Cannot restore under system root node",
       );
     }
-    const clampedPosition = await this.clampIndex(payload.parentBrowserNodeId, payload.position);
-    const created = await this.bookmarks.create({
-      parentId: payload.parentBrowserNodeId,
-      title: payload.title,
-      ...(payload.url !== null ? { url: payload.url } : {}),
-      index: clampedPosition,
-    });
 
-    const mappings: NodeMapping[] = [
-      { bookmarkId: command.bookmarkId, browserNodeId: created.id },
-    ];
+    const mappings: NodeMapping[] = [];
 
-    if (payload.children && payload.children.length > 0 && payload.url === null) {
-      for (let i = 0; i < payload.children.length; i++) {
-        const child = payload.children[i] as RestorePayload;
-        try {
-          const childClampedPosition = await this.clampIndex(created.id, child.position);
-          const childCreated = await this.bookmarks.create({
-            parentId: created.id,
-            title: child.title,
-            ...(child.url !== null ? { url: child.url } : {}),
-            index: childClampedPosition,
-          });
-          if (!child.bookmarkId) {
-            return {
-              succeeded: false,
-              browserNodeId: created.id,
-              completedNodeMappings: mappings,
-              retryable: false,
-              errorCode: "INVALID_RESTORE_PAYLOAD",
-              errorMessage: "Recursive restore child is missing bookmarkId",
-            };
-          }
-          mappings.push({
-            bookmarkId: child.bookmarkId,
-            browserNodeId: childCreated.id,
-          });
-        } catch (error) {
-          return {
-            succeeded: false,
-            browserNodeId: created.id,
-            completedNodeMappings: mappings,
-            retryable: false,
-            errorCode: "PARTIAL_FAILURE",
-            errorMessage:
-              error instanceof Error ? error.message : "Partial restore failure",
-          };
+    const restoreNodeRecursive = async (node: RestorePayload, parentBrowserId: string, commandBookmarkId?: string): Promise<string> => {
+      const clampedPosition = await this.clampIndex(parentBrowserId, node.position);
+      const created = await this.bookmarks.create({
+        parentId: parentBrowserId,
+        title: node.title,
+        ...(node.url !== null && node.url !== undefined ? { url: node.url } : {}),
+        index: clampedPosition,
+      });
+
+      const bId = commandBookmarkId || node.bookmarkId;
+      if (!bId) {
+        throw new Error("Recursive restore child is missing bookmarkId");
+      }
+
+      mappings.push({
+        bookmarkId: bId,
+        browserNodeId: created.id,
+      });
+
+      if (node.children && node.children.length > 0 && (node.url === null || node.url === undefined)) {
+        for (const child of node.children) {
+          await restoreNodeRecursive(child, created.id);
         }
       }
-    }
 
-    return {
-      succeeded: true,
-      browserNodeId: created.id,
-      completedNodeMappings: mappings,
-      retryable: false,
-      errorCode: null,
-      errorMessage: null,
+      return created.id;
     };
+
+    try {
+      const rootCreatedId = await restoreNodeRecursive(payload, payload.parentBrowserNodeId, command.bookmarkId);
+      return {
+        succeeded: true,
+        browserNodeId: rootCreatedId,
+        completedNodeMappings: mappings,
+        retryable: false,
+        errorCode: null,
+        errorMessage: null,
+      };
+    } catch (error) {
+      return {
+        succeeded: false,
+        browserNodeId: undefined,
+        completedNodeMappings: mappings,
+        retryable: false,
+        errorCode: "PARTIAL_FAILURE",
+        errorMessage: error instanceof Error ? error.message : "Restore failed",
+      };
+    }
   }
 
   private async clampIndex(parentId: string, position: number): Promise<number> {

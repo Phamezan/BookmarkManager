@@ -1,0 +1,194 @@
+@page "/stale"
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+@inject IBookmarkService BookmarkService
+@inject ISnackbar Snackbar
+
+<PageTitle>Stale Bookmarks</PageTitle>
+
+<div class="bookmarks-workspace">
+    <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
+        <div class="bookmark-header">
+            <div class="bookmark-breadcrumbs">
+                <div class="breadcrumbs-container">
+                    <span class="breadcrumb-item active">Stale Bookmarks</span>
+                    <span class="breadcrumb-separator">/</span>
+                    <span class="breadcrumb-item text-muted">Identify and clean up active bookmarks that haven't been updated or visited in a long time.</span>
+                </div>
+            </div>
+
+            <div class="header-select-row" style="display: block;">
+                <div class="header-content-container">
+                    <MudPaper Elevation="0" Class="explorer-toolbar">
+                        <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Style="width: 100%">
+                            <MudIcon Icon="@Icons.Material.Filled.TimerOff" Class="mud-text-secondary" />
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Show bookmarks older than:</MudText>
+                            <MudSelect T="int" Value="_thresholdDays" ValueChanged="OnThresholdChanged" Margin="Margin.Dense" Dense="true" Class="toolbar-select" Style="width: 150px;">
+                                <MudSelectItem Value="180">180 Days</MudSelectItem>
+                                <MudSelectItem Value="90">90 Days</MudSelectItem>
+                                <MudSelectItem Value="30">30 Days</MudSelectItem>
+                                <MudSelectItem Value="7">7 Days</MudSelectItem>
+                                <MudSelectItem Value="0">0 Days (All)</MudSelectItem>
+                            </MudSelect>
+                            <span class="flex-grow-1"></span>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">@_staleBookmarks.Count stale items found</MudText>
+                        </MudStack>
+                    </MudPaper>
+                </div>
+            </div>
+        </div>
+
+        <div class="bookmark-list">
+            @if (_loading)
+            {
+                <div class="bookmark-grid" aria-label="Loading stale bookmarks...">
+                    @for (int i = 0; i < 6; i++)
+                    {
+                        <div class="skeleton-card" />
+                    }
+                </div>
+            }
+            else if (_staleBookmarks.Count == 0)
+            {
+                <div class="empty-state">
+                    <MudIcon Icon="@Icons.Material.Filled.History" />
+                    <MudText Typo="Typo.h6">No stale bookmarks found</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">All your bookmarks have been updated within the last @_thresholdDays day(s).</MudText>
+                </div>
+            }
+            else
+            {
+                <div class="bookmark-grid" role="list" aria-label="Stale Bookmarks">
+                    @foreach (var item in _staleBookmarks)
+                    {
+                        <div class="bookmark-card">
+                            <div class="bookmark-card-header">
+                                <div class="bookmark-card-title-group">
+                                    <div class="bookmark-card-icon">
+                                        <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Small" />
+                                    </div>
+                                    <h3 class="bookmark-card-title" title="@item.Title">
+                                        <span>@item.Title</span>
+                                    </h3>
+                                </div>
+                            </div>
+
+                            @if (!string.IsNullOrEmpty(item.Url))
+                            {
+                                <span class="bookmark-card-url" title="@item.Url">@item.Url</span>
+                            }
+
+                            <div class="bookmark-card-footer">
+                                <div class="d-flex flex-column gap-0.5">
+                                    <span class="bookmark-card-time">Last Updated: @item.UpdatedAt.ToLocalTime().ToString("g")</span>
+                                    <span class="bookmark-card-time" style="color: var(--bm-warning) !important;">
+                                        @(GetStaleDays(item.UpdatedAt)) days ago
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="bookmark-card-actions">
+                                <MudTooltip Text="Visit URL">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="Color.Info" Size="Size.Small" Href="@item.Url" Target="_blank" />
+                                </MudTooltip>
+                                <MudTooltip Text="Keep (Mark Active)">
+                                    <MudIconButton Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Small" OnClick="@(() => KeepAsync(item))" />
+                                </MudTooltip>
+                                <MudTooltip Text="Archive bookmark">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Warning" Size="Size.Small" OnClick="@(() => ArchiveAsync(item))" />
+                                </MudTooltip>
+                                <MudTooltip Text="Delete bookmark">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteAsync(item))" />
+                                </MudTooltip>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </main>
+</div>
+
+@code {
+    private bool _loading = true;
+    private int _thresholdDays = 180;
+    private List<BookmarkNodeDto> _staleBookmarks = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStaleBookmarksAsync();
+    }
+
+    private async Task OnThresholdChanged(int days)
+    {
+        _thresholdDays = days;
+        await LoadStaleBookmarksAsync();
+    }
+
+    private async Task LoadStaleBookmarksAsync()
+    {
+        _loading = true;
+        try
+        {
+            _staleBookmarks = await BookmarkService.GetStaleBookmarksAsync(_thresholdDays);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load stale bookmarks: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private int GetStaleDays(DateTime updatedAt)
+    {
+        return (int)Math.Max(0, (DateTime.UtcNow - updatedAt).TotalDays);
+    }
+
+    private async Task KeepAsync(BookmarkNodeDto item)
+    {
+        try
+        {
+            var metadata = item.Metadata ?? new BookmarkMetadataDto();
+            await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
+            _staleBookmarks.Remove(item);
+            Snackbar.Add($"Marked \"{item.Title}\" as active.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update bookmark: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ArchiveAsync(BookmarkNodeDto item)
+    {
+        try
+        {
+            await BookmarkService.ArchiveBookmarkAsync(item.Id);
+            _staleBookmarks.Remove(item);
+            Snackbar.Add($"Moved \"{item.Title}\" to Archive.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to archive bookmark: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteAsync(BookmarkNodeDto item)
+    {
+        try
+        {
+            if (await BookmarkService.DeleteBookmarkAsync(item.Id))
+            {
+                _staleBookmarks.Remove(item);
+                Snackbar.Add($"Deleted \"{item.Title}\".", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete bookmark: {ex.Message}", Severity.Error);
+        }
+    }
+}

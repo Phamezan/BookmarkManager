@@ -12,6 +12,7 @@ public partial class Settings
     [Inject] private ITrackedRootService TrackedRootService { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
+    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
 
     private List<FolderCandidateDto> _folderCandidates = [];
     private bool _foldersLoading = true;
@@ -21,12 +22,38 @@ public partial class Settings
     private string _themePreference = "System";
     private string _densityPreference = "Comfortable";
     private bool _showSyncHints = true;
+    private bool _linkCheckerRunning;
 
     protected override async Task OnInitializedAsync()
     {
+        try
+        {
+            _linkCheckerRunning = await BookmarkService.IsLinkCheckRunningAsync();
+        }
+        catch
+        {
+            // Ignore failure
+        }
+
         await Task.WhenAll(
             LoadFolderCandidatesAsync(),
             LoadTrackedRootsAsync());
+    }
+
+    private async Task RunLinkCheckerAsync()
+    {
+        _linkCheckerRunning = true;
+        try
+        {
+            await BookmarkService.TriggerLinkCheckAsync();
+            Snackbar.Add("Broken link checker started in the background.", Severity.Info);
+            await Task.Delay(1000);
+            _linkCheckerRunning = await BookmarkService.IsLinkCheckRunningAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to start link checker: {ex.Message}", Severity.Error);
+        }
     }
 
     private async Task LoadFolderCandidatesAsync()

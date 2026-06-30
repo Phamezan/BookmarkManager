@@ -20,4 +20,5 @@ builder.Services.AddScoped<IExtensionConnectionService, ExtensionConnectionServi
 builder.Services.AddScoped<IBookmarkService, HttpBookmarkService>();
 builder.Services.AddScoped<ITrackedRootService, HttpTrackedRootService>();
 builder.Services.AddScoped<IFolderCatalogService, HttpFolderCatalogService>();
+builder.Services.AddScoped<UndoService>();
 await builder.Build().RunAsync();

@@ -1,15 +1,28 @@
-
 <MudNavMenu Class="primary-nav" Dense="true">
-    <div class="nav-section-label">Active</div>
+    <div class="nav-brand">
+        <MudIcon Icon="@Icons.Material.Filled.Bookmarks" Size="Size.Medium" />
+        <div class="nav-brand-text">
+            <span class="nav-brand-name">Bookmark Manager</span>
+            <span class="nav-brand-sub">Brave Sync · v1</span>
+        </div>
+    </div>
+
+    <div class="nav-section-label">Library</div>
     <MudNavLink Href="bookmarks" Icon="@Icons.Material.Filled.Bookmarks">
         Bookmarks
+    </MudNavLink>
+    <MudNavLink Href="stale" Icon="@Icons.Material.Filled.History">
+        Stale Bookmarks
     </MudNavLink>
     <MudNavLink Href="recycle-bin" Icon="@Icons.Material.Filled.RestoreFromTrash">
         Recycle Bin
     </MudNavLink>
+
+    <div class="nav-section-label">Data</div>
     <MudNavLink Href="backups" Icon="@Icons.Material.Filled.Inventory">
         Backups
     </MudNavLink>
+
     <div class="nav-section-label">Configure</div>
     <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">
         Settings

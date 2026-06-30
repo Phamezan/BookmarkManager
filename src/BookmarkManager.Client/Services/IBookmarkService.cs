@@ -25,4 +25,9 @@ public interface IBookmarkService
     Task<bool> RestoreBackupAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<BookmarkNodeDto>> ExportBackupAsync(CancellationToken cancellationToken = default);
     Task<List<BookmarkNodeDto>> GetFavoritesAsync(CancellationToken cancellationToken = default);
+    Task<List<string>> SuggestTagsAsync(string title, string? url, CancellationToken cancellationToken = default);
+    Task<List<BookmarkNodeDto>> GetStaleBookmarksAsync(int days, CancellationToken cancellationToken = default);
+    Task<BookmarkNodeDto?> ArchiveBookmarkAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<bool> TriggerLinkCheckAsync(CancellationToken cancellationToken = default);
+    Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default);
 }

@@ -1,67 +1,89 @@
-# Bookmark Extension Shortcut Popup Implementation
+# Bookmark Manager — V2 Feature Roadmap & Implementation Plan
 
-## Summary
+This document details the planned implementation for the next milestone of the Bookmark Manager, expanding capabilities across sync fidelity, UI ergonomics, browser integration, automation, and user assistant tools.
 
-Implement a Chrome-like bookmark editor for the extension shortcut without using Chrome's internal bookmark bubble. The shortcut should stop creating duplicate bookmarks for URLs that already exist, keep using the last remembered folder, and show an editor surface for create/edit/remove decisions.
+---
 
-This plan intentionally skips unit-test work. Verification will rely on build/typecheck checks and manual testing.
+## 1. Default Home Screen Folder to Bookmarks Bar
+- **Goal**: Instead of defaulting to the first leaf folder under the tree on startup, the home screen should immediately display the root Bookmarks Bar.
+- **Implementation**:
+  - Modify [Bookmarks.razor.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/Pages/Bookmarks.razor.cs) in `OnInitializedAsync`.
+  - Locate the root folder node in `_folderTree` (usually the node with `ParentId == null` or title `"Bookmarks Bar"`).
+  - Directly set `_selectedFolderId = rootFolder.Id` and load its bookmarks on initial load rather than calling `FindFirstLeaf(_folderTree[0])`.
 
-## Extension Behavior
+---
 
-- Keep `Ctrl+Shift+F` mapped to the existing `quick-bookmark` command.
-- When the command runs:
-  - read the active tab and ignore non-HTTP(S) URLs;
-  - read the remembered folder from `bm.lastActiveFolderId`;
-  - validate that folder still exists, falling back to the Bookmarks Bar if needed;
-  - search browser bookmarks for an exact URL match before creating anything;
-  - if one or more matches exist, edit the match in the remembered folder first, otherwise edit the first exact match;
-  - if no match exists, create one in the remembered folder.
-- Store short-lived editor state in `chrome.storage.local` so the popup can render the bookmark editor after the command runs.
-- Use `chrome.action.openPopup()` to open the extension popup when supported. If opening fails, keep the current badge feedback as a fallback.
-- Continue relying on normal `chrome.bookmarks` events for sync. Do not enqueue synthetic create/update/move/remove events in parallel.
+## 2. 1:1 Sync Fidelity (Orphan & Duplicate Cleanup)
+- **Goal**: Guarantee that deleted or moved folders/bookmarks in Brave are cleaned up on the server so that the web app remains a 1:1 projection of the browser's tracked roots.
+- **Implementation**:
+  - Modify snapshot ingestion in [ExtensionService.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Services/ExtensionService.cs) within `UpsertSnapshotTreeAsync`.
+  - For each tracked root upload, fetch all currently active (non-deleted) nodes in the database under that root's hierarchy.
+  - Compare the database nodes with the incoming snapshot nodes (`allNodes`).
+  - Identify any database nodes that are missing from the incoming snapshot.
+  - Soft-delete these missing nodes by setting `IsDeleted = true`, `DeletedAt = DateTime.UtcNow`, and `PurgeAfter = DateTime.UtcNow.AddDays(30)`.
 
-## Popup Editor
+---
 
-- Extend the existing popup so it can render two modes:
-  - normal connection/sync settings when no shortcut editor state is present;
-  - bookmark editor when shortcut editor state is present.
-- The bookmark editor should include:
-  - favicon or simple bookmark icon;
-  - editable name field;
-  - folder dropdown populated from the browser folder catalog;
-  - `Done` button;
-  - `Remove` button;
-  - close/cancel behavior that clears only the transient editor state.
-- `Done` should update the title and move the bookmark if the folder changed, then remember the selected folder.
-- `Remove` should delete the bookmark and remember its previous parent folder.
+## 3. Anime/Manga Episode & Chapter Auto-Extraction
+- **Goal**: Automatically detect the current episode/chapter of an anime or manga from the tab DOM and append it to the bookmark title during creation.
+- **Implementation**:
+  - In [service-worker.ts](file:///c:/Users/Pham2/source/repos/BookmarkManager/BookmarkExtension/src/background/service-worker.ts) during `handleQuickBookmark()`, execute a lightweight content script using `chrome.scripting.executeScript`.
+  - The script will query the DOM of the active tab for common video/reader selectors:
+    - Generic selectors: `.episode-title`, `.chapter-name`, `#episode`, `.chapter-number`.
+    - Regex matching on heading/body texts: `/(?:episode|ep|chapter|ch)\.?\s*(\d+(\.\d+)?)/i`.
+  - If a match is found, append it to the tab title string (e.g. `"One Piece - Episode 1092"`) before passing it to `resolveOrCreateBookmark`.
 
-## Frontend Timestamp And Folder Label
+---
 
-- Fix snapshot timestamp ingestion so nodes imported from extension snapshots do not keep `DateTime.MinValue`.
-- When snapshot node timestamps are missing/default, use the snapshot `CapturedAt` timestamp.
-- Avoid overwriting existing non-default timestamps with default values during snapshot upsert.
-- Add a data repair path for existing rows with `UpdatedAt == DateTime.MinValue`.
-- Guard the Blazor card timestamp formatter so `1/1/0001` is never displayed.
-- Show the full folder path at the bottom-left of bookmark cards, derived from the loaded folder tree. Keep the timestamp on the bottom-right.
+## 4. Global Undo Stack
+- **Goal**: Provide a quick way to revert recent bookmark operations (delete, move, edit) via an "Undo" snackbar button.
+- **Implementation**:
+  - Create a Blazor client-side `UndoService` implementing a stack of command actions:
+    ```csharp
+    public record UndoAction(string Description, Func<Task> RevertAction);
+    ```
+  - When the user performs a destructive action (like deleting bookmarks or moving folders), push the opposite action onto the stack.
+  - Display a MudSnackbar notification: `"Bookmarks moved. [UNDO]"`.
+  - Clicking "Undo" executes the top `RevertAction` and pops it, sending the reversing API command to the server.
 
-## Manual Verification
+---
 
-- Run extension typecheck, lint, and build.
-- Run the .NET build.
-- Manually load the unpacked extension in Brave.
-- Manually verify:
-  - shortcut on a new HTTP(S) page creates one bookmark in the remembered folder and opens the editor;
-  - shortcut on the same page again opens the existing bookmark instead of creating a duplicate;
-  - when duplicate URLs exist, the bookmark in the remembered folder is selected first;
-  - changing the folder in the popup moves the bookmark and updates future remembered-folder behavior;
-  - removing a bookmark remembers its parent folder;
-  - non-HTTP(S) pages are ignored;
-  - the frontend no longer shows `1/1/0001`;
-  - bookmark cards show the folder path at bottom-left.
+## 5. Broken Link Checker (Scheduled / Manual)
+- **Goal**: Scan bookmarks for dead domains or 404 pages and automatically move broken bookmarks to a dedicated "Broken Links" folder.
+- **Implementation**:
+  - **API Service**: Implement a hosted background worker `LinkCheckerService` in ASP.NET Core.
+  - **Execution**: Can be triggered manually from settings or runs as a scheduled daily job.
+  - **Logic**:
+    - Query all active bookmark URLs.
+    - Dispatch HTTP `HEAD` requests throttled at a concurrency limit (e.g. max 5 parallel requests) to avoid rate limits.
+    - If status code is `404` or DNS lookup fails, move the bookmark to a special `"Broken Links"` folder under the Bookmarks Bar (created dynamically if missing).
+    - Queue the move commands so they synchronize back to the Brave browser.
 
-## Assumptions
+---
 
-- The implementation uses a custom extension popup because Chrome does not expose the internal bookmark editor bubble to extensions.
-- Default duplicate policy is remembered folder first, then first exact URL match.
-- Default card label is the full folder path.
-- Unit tests are intentionally skipped per user request; manual testing is the acceptance gate.
+## 6. AI Auto-Tagging
+- **Goal**: Suggest tags for new or existing bookmarks automatically based on page metadata.
+- **Implementation**:
+  - **Server Integration**: Integrate an offline TF-IDF term extractor, or provide a configurable OpenAI/Ollama API endpoint in settings.
+  - **Process**:
+    - During bookmark synchronization or when explicitly requested, send the bookmark title and domain description to the tag extractor.
+    - Parse top keywords/categories and suggest them as tags on the bookmark detail editor cards in the Blazor UI.
+
+---
+
+## 7. Search Omnibox Integration
+- **Goal**: Let users search their library directly from Brave's URL address bar by typing `bm + Tab/Space`.
+- **Implementation**:
+  - Register the `omnibox` keyword `"bm"` in the extension's [manifest.json](file:///c:/Users/Pham2/source/repos/BookmarkManager/BookmarkExtension/manifest.json).
+  - In [service-worker.ts](file:///c:/Users/Pham2/source/repos/BookmarkManager/BookmarkExtension/src/background/service-worker.ts), listen to `chrome.omnibox.onInputChanged`:
+    - Perform fuzzy keyword match against the local cached folder/bookmark catalog.
+    - Format suggestions as suggestions list.
+  - Listen to `chrome.omnibox.onInputEntered` to navigate the active tab to the chosen bookmark URL.
+
+---
+
+## 8. Stale Bookmarks Page
+- **Goal**: Introduce a dedicated screen showing bookmarks that have not been visited or updated in a long time.
+- **Implementation**:
+  - **API Endpoint**: Add a GET `/api/bookmarks/stale` endpoint returning nodes where `UpdatedAt` or `LastVisitedAt` is older than 180 days.
+  - **Blazor UI**: Create [Stale.razor](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/Pages/Stale.razor) presenting these items as a list, letting users quickly review, visit, clean up, or archive them.

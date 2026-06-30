@@ -143,12 +143,84 @@ export class ServiceWorker {
         return;
       }
       const url = tab.url;
-      const title = tab.title;
+      let title = tab.title;
 
       // Only bookmark http/https pages
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
         console.warn("[worker] quick-bookmark: non-http URL, skipping:", url);
         return;
+      }
+
+      let extractedEpisodeOrChapter: string | null = null;
+
+      // 1. Try extracting from URL search parameters first
+      try {
+        const parsedUrl = new URL(url);
+        const epParam = parsedUrl.searchParams.get("ep") || parsedUrl.searchParams.get("episode") || parsedUrl.searchParams.get("p");
+        const chParam = parsedUrl.searchParams.get("ch") || parsedUrl.searchParams.get("chapter");
+
+        if (epParam && /^\d+$/.test(epParam)) {
+          extractedEpisodeOrChapter = `Episode ${epParam}`;
+        } else if (chParam && /^\d+$/.test(chParam)) {
+          extractedEpisodeOrChapter = `Chapter ${chParam}`;
+        } else {
+          // Try path matching e.g. /episode-10 or /ch-10
+          const pathMatch = parsedUrl.pathname.match(/(?:episode|ep|chapter|ch|volume|vol)[-/_.]?(\d+(?:\.\d+)?)/i);
+          if (pathMatch) {
+            const num = pathMatch[1];
+            if (pathMatch[0].toLowerCase().includes("ch")) {
+              extractedEpisodeOrChapter = `Chapter ${num}`;
+            } else {
+              extractedEpisodeOrChapter = `Episode ${num}`;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[worker] Failed to parse URL search params or path:", e);
+      }
+
+      // 2. Fallback to DOM extraction if URL did not yield an episode/chapter
+      if (!extractedEpisodeOrChapter && tab.id) {
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+              const selectors = ['.episode-title', '.chapter-name', '#episode', '.chapter-number'];
+              for (const selector of selectors) {
+                const el = document.querySelector(selector);
+                if (el && el.textContent) {
+                  const text = el.textContent.trim();
+                  if (text) return text;
+                }
+              }
+
+              const regex = /(?:episode|ep|chapter|ch)\.?\s*(\d+(?:\.\d+)?)/i;
+              const headers = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span');
+              for (const el of Array.from(headers)) {
+                if (el.textContent) {
+                  const match = el.textContent.match(regex);
+                  if (match) {
+                    return match[0].trim();
+                  }
+                }
+              }
+              return null;
+            }
+          });
+
+          if (results && results[0] && results[0].result) {
+            extractedEpisodeOrChapter = results[0].result;
+          }
+        } catch (scriptError) {
+          console.warn("[worker] Failed to execute content script for title extraction:", scriptError);
+        }
+      }
+
+      // 3. Append to title if found and not already present
+      if (extractedEpisodeOrChapter) {
+        if (!title.toLowerCase().includes(extractedEpisodeOrChapter.toLowerCase())) {
+          title = `${title} - ${extractedEpisodeOrChapter}`;
+        }
       }
 
       const folderId = await this.resolveTargetFolder();
@@ -408,3 +480,53 @@ chrome.commands.onCommand.addListener((command) => {
     );
   }
 });
+
+// ── Search Omnibox Integration ──────────────────────────────────────────────
+chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
+  try {
+    const results = await chrome.bookmarks.search(text);
+    const suggestions = results
+      .filter(bm => bm.url !== undefined)
+      .slice(0, 5)
+      .map(bm => ({
+        content: bm.url!,
+        description: escapeHtml(bm.title || bm.url!)
+      }));
+    suggest(suggestions);
+  } catch (error) {
+    console.error("[omnibox] failed to search bookmarks:", error);
+  }
+});
+
+chrome.omnibox.onInputEntered.addListener((text, disposition) => {
+  let url = text;
+  if (!text.startsWith("http://") && !text.startsWith("https://")) {
+    chrome.bookmarks.search(text, (results) => {
+      const match = results.find(bm => bm.url !== undefined);
+      if (match && match.url) {
+        navigate(match.url, disposition);
+      }
+    });
+  } else {
+    navigate(url, disposition);
+  }
+});
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function navigate(url: string, disposition: string) {
+  if (disposition === "currentTab") {
+    chrome.tabs.update({ url });
+  } else if (disposition === "newForegroundTab") {
+    chrome.tabs.create({ url, active: true });
+  } else {
+    chrome.tabs.create({ url, active: false });
+  }
+}
