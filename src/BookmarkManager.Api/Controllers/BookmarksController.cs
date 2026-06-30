@@ -573,7 +573,11 @@ public class BookmarksController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, ex.Message);
+            return Problem(
+                detail: ex.Message,
+                statusCode: 500,
+                title: "AI Batch Tagging Error"
+            );
         }
     }
 
