@@ -5,6 +5,7 @@ namespace BookmarkManager.Contracts;
 public class BatchTagRequest
 {
     public List<BookmarkTagCandidateDto> Items { get; set; } = [];
-    public bool UseAi { get; set; } = true;
-    public bool AllowFallback { get; set; } = true;
+    public Guid? FolderId { get; set; }
+    public string? FolderPath { get; set; }
+    public BookmarkTagDomainDto Domain { get; set; } = BookmarkTagDomainDto.Auto;
 }

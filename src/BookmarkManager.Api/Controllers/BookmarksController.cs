@@ -13,18 +13,18 @@ public class BookmarksController : ControllerBase
     private readonly AppDbContext _db;
     private readonly IMapper _mapper;
     private readonly BookmarkManager.Api.Services.TagExtractorService _tagExtractor;
-    private readonly BookmarkManager.Api.Services.AiTaggingService _aiTagging;
+    private readonly BookmarkManager.Api.Services.BookmarkTaggingService _bookmarkTagging;
 
     public BookmarksController(
         AppDbContext db,
         IMapper mapper,
         BookmarkManager.Api.Services.TagExtractorService tagExtractor,
-        BookmarkManager.Api.Services.AiTaggingService aiTagging)
+        BookmarkManager.Api.Services.BookmarkTaggingService bookmarkTagging)
     {
         _db = db;
         _mapper = mapper;
         _tagExtractor = tagExtractor;
-        _aiTagging = aiTagging;
+        _bookmarkTagging = bookmarkTagging;
     }
 
     [HttpGet("suggest-tags")]
@@ -185,12 +185,13 @@ public class BookmarksController : ControllerBase
         CancellationToken ct)
     {
         string parentBrowserNodeId = "0";
+        BookmarkNode? parentNode = null;
         if (parentId != Guid.Empty)
         {
             var parentExists = await _db.BookmarkNodes.AnyAsync(n => n.Id == parentId && !n.IsDeleted, ct);
             if (!parentExists) return NotFound("Parent folder not found");
 
-            var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == parentId, ct);
+            parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == parentId, ct);
             parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
         }
 
@@ -215,15 +216,8 @@ public class BookmarksController : ControllerBase
         // Auto-tag new bookmarks created through the web UI/API.
         if (node.Type == NodeType.Bookmark)
         {
-            List<string> autoTags = [];
-            if (_aiTagging.IsConfigured)
-            {
-                autoTags = await _aiTagging.SuggestTagsAsync(node.Title, node.Url, cancellationToken: ct);
-            }
-            if (autoTags.Count == 0)
-            {
-                autoTags = _tagExtractor.ExtractTags(node.Title, node.Url).ToList();
-            }
+            var folderPath = await BuildFolderPathAsync(parentNode?.Id, ct);
+            var autoTags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
             if (autoTags.Count > 0)
                 node.Tags = string.Join(",", autoTags);
         }
@@ -507,37 +501,20 @@ public class BookmarksController : ControllerBase
         return Ok(linkChecker.IsRunning);
     }
 
+    [HttpPost("auto-tagger/run")]
+    public IActionResult TriggerAutoTagger([FromServices] BookmarkManager.Api.Services.AutoTaggerBackgroundJob autoTagger)
+    {
+        autoTagger.Trigger();
+        return Accepted(autoTagger.GetStatus());
+    }
+
+    [HttpGet("auto-tagger/status")]
+    public ActionResult<AutoTaggerStatusDto> GetAutoTaggerStatus([FromServices] BookmarkManager.Api.Services.AutoTaggerBackgroundJob autoTagger)
+    {
+        return Ok(autoTagger.GetStatus());
+    }
+
     // ── Tagging ─────────────────────────────────────────────────────────────
-
-    [HttpGet("ai-tags/status")]
-    public ActionResult<object> GetAiTaggingStatus(
-        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging)
-    {
-        return Ok(new { enabled = aiTagging.IsConfigured });
-    }
-
-    [HttpGet("ai-tags/settings")]
-    public ActionResult<BookmarkManager.Contracts.AiTaggingSettingsDto> GetAiTaggingSettings(
-        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging)
-    {
-        var opts = aiTagging.GetCurrentOptions();
-        return Ok(new BookmarkManager.Contracts.AiTaggingSettingsDto
-        {
-            Enabled = opts.IsEnabled,
-            Endpoint = opts.Endpoint,
-            Model = opts.Model,
-            ApiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? string.Empty : "••••••••"
-        });
-    }
-
-    [HttpPost("ai-tags/settings")]
-    public ActionResult SaveAiTaggingSettings(
-        [FromBody] BookmarkManager.Contracts.AiTaggingSettingsDto settings,
-        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging)
-    {
-        aiTagging.SaveSettings(settings.Enabled, settings.Endpoint, settings.Model, settings.ApiKey);
-        return Ok();
-    }
 
     [HttpPost("ai-tags/batch")]
     public async Task<ActionResult<BookmarkManager.Contracts.BatchTagResponse>> SuggestBatchTagsAsync(
@@ -546,28 +523,11 @@ public class BookmarksController : ControllerBase
     {
         try
         {
-            var resultMapping = new Dictionary<Guid, List<string>>();
+            var folderPath = request.FolderPath;
+            if (string.IsNullOrWhiteSpace(folderPath) && request.FolderId.HasValue)
+                folderPath = await BuildFolderPathAsync(request.FolderId.Value, ct);
 
-            if (request.UseAi)
-            {
-                resultMapping = await _aiTagging.SuggestTagsBatchAsync(request.Items, ct);
-            }
-
-            // Fallback to offline rule-based tag extractor if requested
-            foreach (var item in request.Items)
-            {
-                var hasAiTags = resultMapping.TryGetValue(item.Id, out var tags) && tags.Count > 0;
-                if (!hasAiTags && request.AllowFallback)
-                {
-                    var fallbackTags = _tagExtractor.ExtractTags(item.Title, item.Url).ToList();
-                    resultMapping[item.Id] = fallbackTags;
-                }
-                else if (!hasAiTags)
-                {
-                    // Ensure the key exists even if empty, so the client knows it failed
-                    resultMapping[item.Id] = new List<string>();
-                }
-            }
+            var resultMapping = await _bookmarkTagging.GetTagsForBatchAsync(request.Items, folderPath, request.Domain, ct);
 
             return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
         }
@@ -576,7 +536,7 @@ public class BookmarksController : ControllerBase
             return Problem(
                 detail: ex.Message,
                 statusCode: 500,
-                title: "AI Batch Tagging Error"
+                title: "Batch Tagging Error"
             );
         }
     }
@@ -621,57 +581,29 @@ public class BookmarksController : ControllerBase
     [HttpPost("{id:guid}/ai-tags")]
     public async Task<ActionResult<List<string>>> AiRetagAsync(
         Guid id,
-        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging,
         CancellationToken ct)
     {
         var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
         if (node is null) return NotFound();
 
-        var aiTags = await aiTagging.SuggestTagsAsync(node.Title, node.Url, cancellationToken: ct);
-        if (aiTags.Count == 0)
-        {
-            // AI disabled or failed: fall back to the heuristic so the caller still gets suggestions.
-            aiTags = _tagExtractor.ExtractTags(node.Title, node.Url).ToList();
-        }
-        return Ok(aiTags);
+        var folderPath = await BuildFolderPathAsync(node.ParentId, ct);
+        var tags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
+        return Ok(tags);
     }
 
     /// <summary>
-    /// Backfill tags on every active, untagged bookmark using the offline
-    /// heuristic. Returns counts so the UI can report what changed.
+    /// Backfill tags on active bookmarks through the same folder-aware provider routing
+    /// used by the manual Auto Tagger. This is explicit work and is never triggered
+    /// by extension reconnect or snapshot restore.
     /// </summary>
     [HttpPost("retag-all")]
     public async Task<ActionResult<object>> RetagAllAsync(
         [FromQuery] bool overwrite = false,
+        [FromServices] BookmarkManager.Api.Services.AutoTaggerService autoTagger = default!,
         CancellationToken ct = default)
     {
-        var candidates = await _db.BookmarkNodes
-            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark)
-            .ToListAsync(ct);
-
-        int tagged = 0;
-        int skipped = 0;
-        foreach (var node in candidates)
-        {
-            if (!overwrite && !string.IsNullOrWhiteSpace(node.Tags))
-            {
-                skipped++;
-                continue;
-            }
-
-            var tags = _tagExtractor.ExtractTags(node.Title, node.Url);
-            if (tags.Count > 0)
-            {
-                node.Tags = string.Join(",", tags);
-                node.UpdatedAt = DateTime.UtcNow;
-                tagged++;
-            }
-        }
-
-        if (tagged > 0)
-            await _db.SaveChangesAsync(ct);
-
-        return Ok(new { tagged, skipped, total = candidates.Count });
+        var result = await autoTagger.ProcessAsync(overwrite, folderIds: null, ct);
+        return Ok(result);
     }
 
     /// <summary>
@@ -717,5 +649,30 @@ public class BookmarksController : ControllerBase
                 await MarkDeletedRecursiveAsync(child.Id, deletedAt, purgeAfter, ct);
             }
         }
+    }
+
+    private async Task<string?> BuildFolderPathAsync(Guid? folderId, CancellationToken ct)
+    {
+        if (!folderId.HasValue)
+            return null;
+
+        var titles = new Stack<string>();
+        var currentId = folderId;
+        for (var depth = 0; currentId.HasValue && depth < 32; depth++)
+        {
+            var folder = await _db.BookmarkNodes
+                .AsNoTracking()
+                .Where(n => n.Id == currentId.Value && n.Type == NodeType.Folder && !n.IsDeleted)
+                .Select(n => new { n.Title, n.ParentId })
+                .FirstOrDefaultAsync(ct);
+
+            if (folder is null)
+                break;
+
+            titles.Push(folder.Title);
+            currentId = folder.ParentId;
+        }
+
+        return titles.Count == 0 ? null : string.Join(" / ", titles);
     }
 }

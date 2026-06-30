@@ -8,7 +8,7 @@ namespace BookmarkManager.Api.Services;
 /// <summary>
 /// Offline rule + token heuristic tagger. Produces instant tags on bookmark
 /// creation with no network dependency. Accuracy ceiling is intentionally
-/// lifted by <see cref="AiTaggingService"/> for on-demand retagging.
+/// lifted by domain-specific providers for anime, manga, and novel retagging.
 /// </summary>
 public sealed class TagExtractorService
 {

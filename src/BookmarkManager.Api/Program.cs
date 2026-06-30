@@ -4,6 +4,7 @@ using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Hosting;
 using BookmarkManager.Api.Infrastructure;
 using BookmarkManager.Api.Services;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -29,7 +30,18 @@ builder.Services.Configure<HostOptions>(options =>
 builder.Services.AddScoped<IExtensionService, ExtensionService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.TagExtractorService>();
 builder.Services.AddHttpClient();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.AiTaggingService>();
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.AnilistTaggingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.MangaUpdatesTaggingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.AnilistTaggingService>();
+builder.Services.AddSingleton<IAnilistTagProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
+builder.Services.AddSingleton<MangaUpdatesTaggingService>();
+builder.Services.AddSingleton<IMangaUpdatesTagProvider>(provider => provider.GetRequiredService<MangaUpdatesTaggingService>());
+builder.Services.AddScoped<BookmarkManager.Api.Services.BookmarkTaggingService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.AutoTaggerService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
 builder.Services.AddHostedService<PurgeBackgroundJob>();
