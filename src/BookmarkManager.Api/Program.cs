@@ -21,8 +21,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 var dataProtectionKeys = ResolveDataProtectionKeysDirectory(builder.Environment.ContentRootPath);
 builder.Services.AddDataProtection().PersistKeysToFileSystem(dataProtectionKeys);
 
+builder.Services.Configure<HostOptions>(options =>
+{
+    options.ShutdownTimeout = TimeSpan.FromSeconds(1.5);
+});
+
 builder.Services.AddScoped<IExtensionService, ExtensionService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.TagExtractorService>();
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.AiTaggingService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
 builder.Services.AddHostedService<PurgeBackgroundJob>();
@@ -92,7 +99,7 @@ app.Map("/api/sync/ws", async (HttpContext context) =>
     if (context.WebSockets.IsWebSocketRequest)
     {
         using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-        await BookmarkManager.Api.Infrastructure.SyncWebSocketManager.HandleConnectionAsync(webSocket);
+        await BookmarkManager.Api.Infrastructure.SyncWebSocketManager.HandleConnectionAsync(webSocket, context.RequestAborted);
     }
     else
     {
@@ -108,6 +115,11 @@ app.MapStaticAssets();
 app.MapHealthChecks("/health/live");
 app.MapHealthChecks("/health/ready");
 app.MapFallbackToFile("index.html");
+
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    SyncWebSocketManager.CloseAll();
+});
 
 app.Run();
 

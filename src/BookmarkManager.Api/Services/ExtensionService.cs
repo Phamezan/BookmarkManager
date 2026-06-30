@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BookmarkManager.Api.Services;
 
-public sealed class ExtensionService(AppDbContext db) : IExtensionService
+public sealed class ExtensionService(AppDbContext db, TagExtractorService tagExtractor, AiTaggingService aiTagging) : IExtensionService
 {
     public async Task<HeartbeatResponse> HandleHeartbeatAsync(HeartbeatRequest request, CancellationToken ct)
     {
@@ -404,6 +404,24 @@ public sealed class ExtensionService(AppDbContext db) : IExtensionService
                     BrowserNodeId = evt.BrowserNodeId,
                     ParentBrowserNodeId = parentBrowserNodeId
                 };
+
+                // Auto-tag new bookmarks. Folders and already-tagged nodes are left alone.
+                // Tags are manager-only metadata, so no command is enqueued back to Brave.
+                if (newNode.Type == NodeType.Bookmark && string.IsNullOrEmpty(newNode.Tags))
+                {
+                    List<string> autoTags = [];
+                    if (aiTagging.IsConfigured)
+                    {
+                        autoTags = await aiTagging.SuggestTagsAsync(title ?? string.Empty, url, cancellationToken: ct);
+                    }
+                    if (autoTags.Count == 0)
+                    {
+                        autoTags = tagExtractor.ExtractTags(title ?? string.Empty, url).ToList();
+                    }
+                    if (autoTags.Count > 0)
+                        newNode.Tags = string.Join(",", autoTags);
+                }
+
                 db.BookmarkNodes.Add(newNode);
                 existingNodes[nodeId] = newNode;
                 if (!string.IsNullOrEmpty(evt.BrowserNodeId))

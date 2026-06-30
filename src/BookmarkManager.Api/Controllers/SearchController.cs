@@ -43,6 +43,23 @@ public class SearchController : ControllerBase
         if (request.IsFavorite.HasValue)
             query = query.Where(n => n.IsFavorite == request.IsFavorite.Value);
 
+        // Tag filter: tags are stored as a comma-separated string. To get
+        // boundary-correct matching ("Dev" must not match "Development") we
+        // match against ",tag," on a comma-padded projection. SQLite translates
+        // this to LIKE with the usual % wildcards.
+        if (request.Tags is { Count: > 0 })
+        {
+            foreach (var tag in request.Tags)
+            {
+                var t = tag.Trim();
+                if (t.Length == 0) continue;
+                var needle = $"%,{t},%";
+                query = query.Where(n =>
+                    n.Tags != null
+                    && EF.Functions.Like("," + n.Tags + ",", needle));
+            }
+        }
+
         var total = await query.CountAsync(ct);
 
         query = query.OrderByDescending(n => n.UpdatedAt);

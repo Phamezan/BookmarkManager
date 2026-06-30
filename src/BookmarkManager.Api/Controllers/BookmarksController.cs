@@ -12,11 +12,19 @@ public class BookmarksController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IMapper _mapper;
+    private readonly BookmarkManager.Api.Services.TagExtractorService _tagExtractor;
+    private readonly BookmarkManager.Api.Services.AiTaggingService _aiTagging;
 
-    public BookmarksController(AppDbContext db, IMapper mapper)
+    public BookmarksController(
+        AppDbContext db,
+        IMapper mapper,
+        BookmarkManager.Api.Services.TagExtractorService tagExtractor,
+        BookmarkManager.Api.Services.AiTaggingService aiTagging)
     {
         _db = db;
         _mapper = mapper;
+        _tagExtractor = tagExtractor;
+        _aiTagging = aiTagging;
     }
 
     [HttpGet("suggest-tags")]
@@ -203,6 +211,22 @@ public class BookmarksController : ControllerBase
             Version = 1,
             UpdatedAt = DateTime.UtcNow
         };
+
+        // Auto-tag new bookmarks created through the web UI/API.
+        if (node.Type == NodeType.Bookmark)
+        {
+            List<string> autoTags = [];
+            if (_aiTagging.IsConfigured)
+            {
+                autoTags = await _aiTagging.SuggestTagsAsync(node.Title, node.Url, cancellationToken: ct);
+            }
+            if (autoTags.Count == 0)
+            {
+                autoTags = _tagExtractor.ExtractTags(node.Title, node.Url).ToList();
+            }
+            if (autoTags.Count > 0)
+                node.Tags = string.Join(",", autoTags);
+        }
 
         _db.BookmarkNodes.Add(node);
 
@@ -481,6 +505,117 @@ public class BookmarksController : ControllerBase
     public ActionResult<bool> GetLinkCheckStatus([FromServices] BookmarkManager.Api.Services.LinkCheckerService linkChecker)
     {
         return Ok(linkChecker.IsRunning);
+    }
+
+    // ── Tagging ─────────────────────────────────────────────────────────────
+
+    [HttpGet("ai-tags/status")]
+    public ActionResult<object> GetAiTaggingStatus(
+        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging)
+    {
+        return Ok(new { enabled = aiTagging.IsConfigured });
+    }
+
+    [HttpGet("ai-tags/settings")]
+    public ActionResult<BookmarkManager.Contracts.AiTaggingSettingsDto> GetAiTaggingSettings(
+        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging)
+    {
+        var opts = aiTagging.GetCurrentOptions();
+        return Ok(new BookmarkManager.Contracts.AiTaggingSettingsDto
+        {
+            Enabled = opts.IsEnabled,
+            Endpoint = opts.Endpoint,
+            Model = opts.Model,
+            ApiKey = string.IsNullOrWhiteSpace(opts.ApiKey) ? string.Empty : "••••••••"
+        });
+    }
+
+    [HttpPost("ai-tags/settings")]
+    public ActionResult SaveAiTaggingSettings(
+        [FromBody] BookmarkManager.Contracts.AiTaggingSettingsDto settings,
+        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging)
+    {
+        aiTagging.SaveSettings(settings.Enabled, settings.Endpoint, settings.Model, settings.ApiKey);
+        return Ok();
+    }
+
+    [HttpPost("{id:guid}/ai-tags")]
+    public async Task<ActionResult<List<string>>> AiRetagAsync(
+        Guid id,
+        [FromServices] BookmarkManager.Api.Services.AiTaggingService aiTagging,
+        CancellationToken ct)
+    {
+        var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
+        if (node is null) return NotFound();
+
+        var aiTags = await aiTagging.SuggestTagsAsync(node.Title, node.Url, cancellationToken: ct);
+        if (aiTags.Count == 0)
+        {
+            // AI disabled or failed: fall back to the heuristic so the caller still gets suggestions.
+            aiTags = _tagExtractor.ExtractTags(node.Title, node.Url).ToList();
+        }
+        return Ok(aiTags);
+    }
+
+    /// <summary>
+    /// Backfill tags on every active, untagged bookmark using the offline
+    /// heuristic. Returns counts so the UI can report what changed.
+    /// </summary>
+    [HttpPost("retag-all")]
+    public async Task<ActionResult<object>> RetagAllAsync(
+        [FromQuery] bool overwrite = false,
+        CancellationToken ct = default)
+    {
+        var candidates = await _db.BookmarkNodes
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark)
+            .ToListAsync(ct);
+
+        int tagged = 0;
+        int skipped = 0;
+        foreach (var node in candidates)
+        {
+            if (!overwrite && !string.IsNullOrWhiteSpace(node.Tags))
+            {
+                skipped++;
+                continue;
+            }
+
+            var tags = _tagExtractor.ExtractTags(node.Title, node.Url);
+            if (tags.Count > 0)
+            {
+                node.Tags = string.Join(",", tags);
+                node.UpdatedAt = DateTime.UtcNow;
+                tagged++;
+            }
+        }
+
+        if (tagged > 0)
+            await _db.SaveChangesAsync(ct);
+
+        return Ok(new { tagged, skipped, total = candidates.Count });
+    }
+
+    /// <summary>
+    /// Returns the distinct set of tags currently in use, with usage counts.
+    /// Powers the tag-filter chips in the client.
+    /// </summary>
+    [HttpGet("tags")]
+    public async Task<ActionResult<List<TagCountDto>>> GetTagsAsync(CancellationToken ct)
+    {
+        var rows = await _db.BookmarkNodes
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && n.Tags != null && n.Tags != "")
+            .Select(n => n.Tags!)
+            .ToListAsync(ct);
+
+        var counts = rows
+            .SelectMany(s => s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new TagCountDto { Tag = g.Key, Count = g.Count() })
+            .OrderByDescending(t => t.Count)
+            .ThenBy(t => t.Tag)
+            .ToList();
+
+        return Ok(counts);
     }
 
 

@@ -75,4 +75,15 @@ public class TrackedRootsController : ControllerBase
         await _db.SaveChangesAsync(ct);
         return NoContent();
     }
+
+    [HttpPost("{id:guid}/repair")]
+    public async Task<ActionResult> RepairAsync(Guid id, CancellationToken ct)
+    {
+        var root = await _db.TrackedRoots.FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (root is null) return NotFound();
+
+        root.LastSyncedAt = DateTime.MinValue;
+        await _db.SaveChangesAsync(ct);
+        return NoContent();
+    }
 }

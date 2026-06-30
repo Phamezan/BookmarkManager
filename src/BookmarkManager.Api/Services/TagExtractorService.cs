@@ -1,69 +1,289 @@
-using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
-using System.Threading;
 
 namespace BookmarkManager.Api.Services;
 
-public class TagExtractorService
+/// <summary>
+/// Offline rule + token heuristic tagger. Produces instant tags on bookmark
+/// creation with no network dependency. Accuracy ceiling is intentionally
+/// lifted by <see cref="AiTaggingService"/> for on-demand retagging.
+/// </summary>
+public sealed class TagExtractorService
 {
+    private const int MaxTags = 5;
+
     private static readonly HashSet<string> StopWords = new(StringComparer.OrdinalIgnoreCase)
     {
-        "and", "the", "a", "of", "to", "for", "in", "on", "at", "with", "is", "was", "were", "or", "but", 
-        "not", "this", "that", "these", "those", "then", "there", "their", "them", "what", "which", 
-        "who", "how", "why", "where", "when", "watch", "read", "view", "online", "free", "home", 
-        "page", "website", "web", "site", "com", "net", "org", "www", "http", "https"
+        // Articles / conjunctions / prepositions
+        "and", "the", "a", "an", "of", "to", "for", "in", "on", "at", "by", "with",
+        "is", "was", "were", "be", "been", "are", "or", "but", "not", "this", "that",
+        "these", "those", "then", "there", "their", "them", "they", "its", "it",
+        "what", "which", "who", "how", "why", "where", "when", "from", "into", "your",
+        "you", "we", "our", "i", "me", "my",
+        // Generic web words that add no signal
+        "watch", "read", "view", "online", "free", "home", "page", "website", "web",
+        "site", "com", "net", "org", "www", "http", "https", "official", "new", "best",
+        "top", "via", "more", "see", "get", "use", "using", "all", "any", "out",
+        "official", "latest", "update", "updates", "blog", "post", "posts", "review",
+        "reviews", "guide", "list", "part", "ep", "episode", "chapter", "vol", "volume",
+        // Generic title filler
+        "way", "ways", "things", "thing", "everything", "nothing", "someone", "somebody",
+        "using", "make", "makes", "making", "do", "does", "done", "about", "your", "you"
     };
 
-    public List<string> ExtractTags(string title, string? url)
+    // Tokenization: words 3-24 chars, tolerates accented latin letters.
+    private static readonly Regex WordRegex = new(
+        @"\b[\p{L}][\p{L}0-9]{2,23}\b",
+        RegexOptions.Compiled);
+
+    // Split titles on common separators into "segments" before tokenizing,
+    // so "One Piece - Episode 1092" and "GitHub - foo/bar" yield clean pieces.
+    private static readonly Regex TitleSegmentSplit = new(
+        @"[\|\-–—::•·»>]+|(?:\s[–—]\s)",
+        RegexOptions.Compiled);
+
+    // Match an episode/chapter marker appended by the extension, e.g.
+    // " - Episode 1092" / " - Chapter 12" / " Ep 5".
+    private static readonly Regex EpisodeSuffix = new(
+        @"\s*[-–]\s*(?:episode|ep|chapter|ch)\.?\s*\d+(?:\.\d+)?",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    public IReadOnlyList<string> ExtractTags(string title, string? url, PageMetadata? page = null)
     {
-        var suggestions = new List<string>();
+        var scores = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
-        // 1. Rule-based category mapping
-        var combinedText = (title + " " + (url ?? "")).ToLower();
-        if (combinedText.Contains("anime") || combinedText.Contains("miruro") || combinedText.Contains("crunchyroll") || combinedText.Contains("episode") || combinedText.Contains("watch"))
+        // 1. Rule-based category + domain tags (highest confidence).
+        var combined = $"{title} {url ?? string.Empty} {page?.Description ?? string.Empty}".ToLowerInvariant();
+        foreach (var tag in MatchCategoryRules(combined, url))
+            scores[tag] = Math.Max(scores.GetValueOrDefault(tag), 5.0);
+
+        // 2. Domain-derived tags (github owner, youtube channel, etc.).
+        if (!string.IsNullOrWhiteSpace(url))
         {
-            suggestions.Add("Anime");
-        }
-        if (combinedText.Contains("manga") || combinedText.Contains("chapter") || combinedText.Contains("read") || combinedText.Contains("mangadex"))
-        {
-            suggestions.Add("Manga");
-        }
-        if (combinedText.Contains("github") || combinedText.Contains("gitlab") || combinedText.Contains("develop") || combinedText.Contains("code") || combinedText.Contains("programming") || combinedText.Contains("api") || combinedText.Contains("stack-overflow"))
-        {
-            suggestions.Add("Development");
-        }
-        if (combinedText.Contains("news") || combinedText.Contains("bbc") || combinedText.Contains("cnn") || combinedText.Contains("times") || combinedText.Contains("post"))
-        {
-            suggestions.Add("News");
-        }
-        if (combinedText.Contains("shop") || combinedText.Contains("amazon") || combinedText.Contains("ebay") || combinedText.Contains("buy") || combinedText.Contains("price"))
-        {
-            suggestions.Add("Shopping");
+            foreach (var tag in ExtractDomainTags(url))
+                scores[tag] = Math.Max(scores.GetValueOrDefault(tag), 4.0);
         }
 
-        // 2. Token extraction from title
-        var wordRegex = new Regex(@"\b[a-zA-Z]{3,15}\b");
-        var matches = wordRegex.Matches(title);
-        var keywords = matches
-            .Select(m => m.Value)
-            .Where(w => !StopWords.Contains(w))
-            .GroupBy(w => w, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(g => g.Count())
-            .Select(g => Thread.CurrentThread.CurrentCulture.TextInfo.ToTitleCase(g.Key.ToLower()))
-            .Take(5)
+        // 3. Meaningful tokens from title + page title + description, scored
+        //    by position and source rather than flat frequency.
+        var titleForTokens = StripEpisodeSuffix(title ?? string.Empty);
+        AddTokenScores(scores, titleForTokens, weight: 3.0, source: "title");
+        if (!string.IsNullOrWhiteSpace(page?.SiteName) && !IsBrandNoise(page.SiteName))
+            scores[ToTitleCase(page.SiteName)] = Math.Max(scores.GetValueOrDefault(page.SiteName), 3.0);
+        if (!string.IsNullOrWhiteSpace(page?.OgTitle))
+            AddTokenScores(scores, page.OgTitle, weight: 1.5, source: "ogTitle");
+        if (!string.IsNullOrWhiteSpace(page?.Description))
+            AddTokenScores(scores, page.Description, weight: 0.8, source: "desc");
+
+        // Normalize to Title Case, dedupe case-insensitively, order by score desc.
+        return scores
+            .OrderByDescending(kv => kv.Value)
+            .ThenBy(kv => kv.Key)
+            .Select(kv => ToTitleCase(kv.Key))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxTags)
             .ToList();
+    }
 
-        foreach (var keyword in keywords)
+    // Back-compat overload used by the suggest-tags endpoint.
+    public List<string> ExtractTags(string title, string? url)
+        => ExtractTags(title, url, null).ToList();
+
+    // ── Category rules ──────────────────────────────────────────────────────
+
+    private static IEnumerable<string> MatchCategoryRules(string combined, string? url)
+    {
+        if (HasAny(combined, "anime", "crunchyroll", "miruro", "gogoanime", "anilist",
+                   "myanimelist", "kitsu", "9anime", "animepahe"))
+            yield return "Anime";
+
+        if (HasAny(combined, "manga", "mangadex", "mangafox", "mangakakalot",
+                   "mangaplus", "chapter", "manhwa", "manhua", "webtoon"))
+            yield return "Manga";
+
+        if (HasAny(combined, "github", "gitlab", "bitbucket", "stackoverflow",
+                   "stack overflow", "developer", "developing", "documentation",
+                   "api reference", "programming", "code", "coding", "tutorial"))
+            yield return "Development";
+
+        if (HasAny(combined, "youtube", "youtu.be", "vimeo", "twitch.tv", "dailymotion"))
+            yield return "Video";
+
+        if (HasAny(combined, "reddit.com", "discord", "twitter", "x.com", "mastodon",
+                   "forum", "community"))
+            yield return "Social";
+
+        if (HasAny(combined, "news", "bbc", "cnn", "reuters", "nytimes", "washingtonpost"))
+            yield return "News";
+
+        if (HasAny(combined, "shop", "store", "amazon", "ebay", "etsy", "buy",
+                   "price", "product", "cart"))
+            yield return "Shopping";
+
+        if (HasAny(combined, "wiki", "wikipedia", "encyclopedia"))
+            yield return "Reference";
+
+        // Domain-only signals (url may be null when the tagger is called with just a title).
+        if (url is not null && HasAny(combined, "wikipedia.org", ".edu", "scholar.google"))
+            yield return "Reference";
+    }
+
+    private static bool HasAny(string haystack, params string[] needles)
+    {
+        foreach (var n in needles)
+            if (haystack.Contains(n))
+                return true;
+        return false;
+    }
+
+    // ── Domain intelligence ─────────────────────────────────────────────────
+
+    private static IEnumerable<string> ExtractDomainTags(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Host is null)
+            yield break;
+
+        var host = uri.Host.ToLowerInvariant();
+        var parts = host.Split('.');
+
+        // repo host: surface the owner/org as a tag (github.com/<owner>/<repo>).
+        if (host is "github.com" or "gitlab.com" or "bitbucket.org")
         {
-            if (suggestions.Count >= 5) break;
-            if (!suggestions.Contains(keyword, StringComparer.OrdinalIgnoreCase))
+            var seg = uri.Segments.Length > 1 ? uri.Segments[1].Trim('/') : null;
+            if (!string.IsNullOrWhiteSpace(seg) && !IsBrandNoise(seg))
+                yield return ToTitleCase(seg.Replace("-", " "));
+            yield return host.Split('.')[0] switch
             {
-                suggestions.Add(keyword);
+                "github" => "GitHub",
+                "gitlab" => "GitLab",
+                "bitbucket" => "Bitbucket",
+                _ => ToTitleCase(parts[^2])
+            };
+            yield break;
+        }
+
+        // youtube channel: /@ChannelName or /channel/UC...
+        if (host is "youtube.com" or "youtu.be" or "www.youtube.com" or "m.youtube.com")
+        {
+            yield return "YouTube";
+            var atHandle = uri.Segments.FirstOrDefault(s => s.StartsWith("@"));
+            if (!string.IsNullOrWhiteSpace(atHandle))
+                yield return ToTitleCase(atHandle.TrimStart('@').TrimEnd('/'));
+            yield break;
+        }
+
+        // reddit subreddit: /r/<name>
+        if (host.EndsWith("reddit.com"))
+        {
+            for (int i = 0; i < uri.Segments.Length - 1; i++)
+            {
+                if (uri.Segments[i] == "r/" && uri.Segments.Length > i + 1)
+                {
+                    var sub = uri.Segments[i + 1].TrimEnd('/');
+                    if (!string.IsNullOrWhiteSpace(sub))
+                        yield return $"r/{sub}";
+                }
+            }
+            yield return "Reddit";
+            yield break;
+        }
+
+        // Generic: second-level domain as a brand tag ("github" from raw hosts,
+        // "medium" from medium.com) unless it's brand noise.
+        if (parts.Length >= 2)
+        {
+            var sld = parts[^2];
+            if (!IsBrandNoise(sld))
+                yield return ToTitleCase(sld);
+        }
+    }
+
+    // ── Token scoring ───────────────────────────────────────────────────────
+
+    private static void AddTokenScores(Dictionary<string, double> scores, string text, double weight, string source)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        // Title segmentation: keep the first segment (the real title), lightly
+        // consider later segments. For ogTitle/description, treat as one blob.
+        var segments = source == "title"
+            ? TitleSegmentSplit.Split(text)
+            : new[] { text };
+
+        for (int i = 0; i < segments.Length; i++)
+        {
+            var segWeight = source == "title"
+                ? weight * (i == 0 ? 1.0 : 0.4)
+                : weight;
+
+            foreach (var word in WordRegex.Matches(segments[i]).Select(m => m.Value))
+            {
+                var lower = word.ToLowerInvariant();
+                if (StopWords.Contains(lower)) continue;
+                if (IsBrandNoise(lower)) continue;
+
+                // CamelCase / PascalCase tokens (e.g. "TypeScript") are high signal.
+                var boost = IsMultiCase(word) ? 1.5 : 1.0;
+                var key = ToTitleCase(lower);
+
+                scores[key] = scores.GetValueOrDefault(key) + segWeight * boost;
             }
         }
-
-        return suggestions.Take(5).ToList();
     }
+
+    // ── Helpers ─────────────────────────────────────────────────────────────
+
+    private static string StripEpisodeSuffix(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) return title;
+        var stripped = EpisodeSuffix.Replace(title, string.Empty);
+        return stripped.Trim();
+    }
+
+    private static bool IsBrandNoise(string token)
+    {
+        var t = token.ToLowerInvariant().Trim(' ', '/', '-');
+        if (t.Length < 2) return true;
+        return t switch
+        {
+            "www" or "com" or "net" or "org" or "html" or "htm" or "php"
+            or "search" or "results" or "watch" or "read" or "view"
+            or "official" or "home" or "index" => true,
+            _ => false
+        };
+    }
+
+    private static bool IsMultiCase(string word)
+    {
+        if (word.Length < 3) return false;
+        bool hasUpper = false, hasLower = false, hasDigit = false;
+        foreach (var c in word)
+        {
+            if (char.IsUpper(c)) hasUpper = true;
+            else if (char.IsLower(c)) hasLower = true;
+            else if (char.IsDigit(c)) hasDigit = true;
+        }
+        // Treat "ABC123" style or "FooBar" style as multi-case signal.
+        return (hasUpper && hasLower) || (hasUpper && hasDigit);
+    }
+
+    private static string ToTitleCase(string word)
+    {
+        if (string.IsNullOrEmpty(word)) return word;
+        var lower = word.ToLowerInvariant();
+        return CultureInfo.CurrentCulture.TextInfo.ToTitleCase(lower);
+    }
+}
+
+/// <summary>
+/// Optional page metadata captured by the extension. When present the heuristic
+/// tagger uses description and OpenGraph title as additional signal.
+/// </summary>
+public sealed class PageMetadata
+{
+    public string? SiteName { get; set; }
+    public string? OgTitle { get; set; }
+    public string? Description { get; set; }
 }
