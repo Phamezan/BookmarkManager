@@ -258,9 +258,10 @@ public partial class Settings
         {
             "OpenAI" => ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
             "OpenRouter" => [
+                "openrouter/free",
                 "google/gemini-2.5-flash:free",
                 "meta-llama/llama-3-8b-instruct:free",
-                "qwen/qwen-2-7b-instruct:free",
+                "qwen/qwen-2.5-7b-instruct:free",
                 "microsoft/phi-3-medium-128k-instruct:free",
                 "mistralai/mistral-7b-instruct:free"
             ],
