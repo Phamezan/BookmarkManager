@@ -157,13 +157,26 @@ public sealed class HttpBookmarkService : IBookmarkService
         }
     }
 
-    public async Task<BatchTagResponse> TagBatchAsync(List<BookmarkTagCandidateDto> items, CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<BatchTagResponse>(HttpMethod.Post, "api/bookmarks/ai-tags/batch", items, cancellationToken)
+    public async Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<BatchTagResponse>(HttpMethod.Post, "api/bookmarks/ai-tags/batch", request, cancellationToken)
            ?? new BatchTagResponse();
 
     public async Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<Dictionary<Guid, int>>("api/bookmarks/untagged-counts", cancellationToken)
            ?? new Dictionary<Guid, int>();
+
+    public async Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await _apiClient.SendAsync(HttpMethod.Post, "api/bookmarks/tags/bulk-save", request, cancellationToken);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private sealed class AiTaggingStatusDto
     {

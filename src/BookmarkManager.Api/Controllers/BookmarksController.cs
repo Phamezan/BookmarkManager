@@ -541,29 +541,47 @@ public class BookmarksController : ControllerBase
 
     [HttpPost("ai-tags/batch")]
     public async Task<ActionResult<BookmarkManager.Contracts.BatchTagResponse>> SuggestBatchTagsAsync(
-        [FromBody] List<BookmarkManager.Contracts.BookmarkTagCandidateDto> items,
+        [FromBody] BookmarkManager.Contracts.BatchTagRequest request,
         CancellationToken ct)
     {
-        var resultMapping = await _aiTagging.SuggestTagsBatchAsync(items, ct);
+        var resultMapping = new Dictionary<Guid, List<string>>();
 
-        // Fallback to offline rule-based tag extractor for any missing or failed items
-        foreach (var item in items)
+        if (request.UseAi)
         {
-            if (!resultMapping.TryGetValue(item.Id, out var tags) || tags.Count == 0)
+            resultMapping = await _aiTagging.SuggestTagsBatchAsync(request.Items, ct);
+        }
+
+        // Fallback to offline rule-based tag extractor if requested
+        foreach (var item in request.Items)
+        {
+            var hasAiTags = resultMapping.TryGetValue(item.Id, out var tags) && tags.Count > 0;
+            if (!hasAiTags && request.AllowFallback)
             {
                 var fallbackTags = _tagExtractor.ExtractTags(item.Title, item.Url).ToList();
                 resultMapping[item.Id] = fallbackTags;
             }
+            else if (!hasAiTags)
+            {
+                // Ensure the key exists even if empty, so the client knows it failed
+                resultMapping[item.Id] = new List<string>();
+            }
         }
 
-        // Save generated tags to database
-        if (resultMapping.Count > 0)
+        return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
+    }
+
+    [HttpPost("tags/bulk-save")]
+    public async Task<ActionResult> BulkSaveTagsAsync(
+        [FromBody] BookmarkManager.Contracts.BulkSaveTagsRequest request,
+        CancellationToken ct)
+    {
+        if (request.Tags.Count > 0)
         {
-            var ids = resultMapping.Keys.ToList();
+            var ids = request.Tags.Keys.ToList();
             var nodes = await _db.BookmarkNodes.Where(n => ids.Contains(n.Id)).ToListAsync(ct);
             foreach (var node in nodes)
             {
-                if (resultMapping.TryGetValue(node.Id, out var tags))
+                if (request.Tags.TryGetValue(node.Id, out var tags))
                 {
                     node.Tags = string.Join(",", tags);
                     node.UpdatedAt = DateTime.UtcNow;
@@ -571,8 +589,7 @@ public class BookmarksController : ControllerBase
             }
             await _db.SaveChangesAsync(ct);
         }
-
-        return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
+        return Ok();
     }
 
     [HttpGet("untagged-counts")]

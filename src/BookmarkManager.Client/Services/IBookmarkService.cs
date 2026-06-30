@@ -38,6 +38,7 @@ public interface IBookmarkService
     Task<List<TagCountDto>> GetTagsAsync(CancellationToken cancellationToken = default);
     Task<AiTaggingSettingsDto?> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default);
     Task<bool> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default);
-    Task<BatchTagResponse> TagBatchAsync(List<BookmarkTagCandidateDto> items, CancellationToken cancellationToken = default);
+    Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default);
     Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default);
+    Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default);
 }
