@@ -55,23 +55,6 @@
                         </MudGrid>
                     </div>
 
-                    <MudDivider Class="my-1" />
-
-                    <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Style="flex-wrap: wrap;">
-                        <div class="d-flex align-center gap-2">
-                            <MudSwitch T="bool" @bind-Value="_useAi" Label="Use AI Tagging" Color="Color.Primary" Disabled="@(!_aiConfigured)" />
-                            @if (!_aiConfigured)
-                            {
-                                <MudText Typo="Typo.caption" Color="Color.Error" Class="ml-2">
-                                    AI is not configured. Set up your provider and API key in Settings first.
-                                </MudText>
-                            }
-                        </div>
-                        @if (_useAi && _aiConfigured)
-                        {
-                            <MudSwitch T="bool" @bind-Value="_allowFallback" Label="Allow Heuristic Fallback" Color="Color.Primary" />
-                        }
-                    </MudStack>
                 </MudStack>
             }
             else if (_currentState == TaggerState.Tagging)
@@ -121,39 +104,7 @@
                         <MudStack Spacing="3">
                             @foreach (var item in _reviewItems)
                             {
-                                <MudPaper Outlined="true" Class="pa-3" Style="background: transparent;">
-                                    <MudStack Spacing="2">
-                                        <div class="d-flex align-center justify-space-between text-truncate">
-                                            <div class="d-flex align-center gap-2 text-truncate">
-                                                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Size="Size.Small" />
-                                                <span style="font-weight: 500;" class="text-truncate">@item.Title</span>
-                                            </div>
-                                            <span class="mud-text-secondary" style="font-size: 0.75rem;">@item.Url</span>
-                                        </div>
-                                        <div class="d-flex flex-wrap align-center gap-1">
-                                            @foreach (var tag in item.Tags)
-                                            {
-                                                <MudChip T="string"
-                                                         Size="Size.Small"
-                                                         Color="Color.Primary"
-                                                         OnClose="@(() => RemoveTag(item.Id, tag))">
-                                                    @tag
-                                                </MudChip>
-                                            }
-                                            <div style="width: 140px; display: inline-block;">
-                                                <MudTextField @bind-Value="item.NewTagText"
-                                                              Placeholder="Add Tag..."
-                                                              Variant="Variant.Outlined"
-                                                              Margin="Margin.Dense"
-                                                              Style="font-size: 0.75rem; padding: 2px 4px;"
-                                                              OnKeyDown="@((e) => HandleAddTagKeyDown(e, item))"
-                                                              Adornment="Adornment.End"
-                                                              AdornmentIcon="@Icons.Material.Filled.Add"
-                                                              OnAdornmentClick="@(() => AddTagToItem(item))" />
-                                            </div>
-                                        </div>
-                                    </MudStack>
-                                </MudPaper>
+                                <AutoTaggerReviewRow Item="item" />
                             }
                         </MudStack>
                     </div>
@@ -227,9 +178,6 @@
     private int _totalCount;
     private bool _selectAll;
 
-    private bool _useAi = true;
-    private bool _allowFallback = true;
-
     private List<FolderTreeNodeDto> _selectableFolders = [];
     private Dictionary<Guid, int> _untaggedCounts = new();
     private HashSet<Guid> _selectedFolderIds = [];
@@ -242,28 +190,8 @@
 
     private double ProgressPercent => _totalCount == 0 ? 0 : ((double)_processedCount / _totalCount) * 100;
 
-    private bool _aiConfigured;
-
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            var settings = await BookmarkService.GetAiTaggingSettingsAsync();
-            if (settings != null && !string.IsNullOrWhiteSpace(settings.Endpoint))
-            {
-                var isOllama = settings.Endpoint.Contains("localhost:11434") || settings.Endpoint.Contains("127.0.0.1:11434") || settings.Endpoint.Contains("ollama");
-                if (isOllama || !string.IsNullOrWhiteSpace(settings.ApiKey))
-                {
-                    _aiConfigured = true;
-                }
-            }
-            _useAi = _aiConfigured && (settings?.Enabled ?? false);
-        }
-        catch
-        {
-            _useAi = false;
-            _aiConfigured = false;
-        }
 
         try
         {
@@ -337,8 +265,7 @@
         _reviewItems.Clear();
         _cts = new CancellationTokenSource();
 
-        AddLog("Initializing AI Auto Tagger...", LogType.Info);
-        AddLog($"Settings - Use AI: {_useAi}, Heuristic Fallback: {_allowFallback}", LogType.Info);
+        AddLog("Initializing Auto Tagger...", LogType.Info);
 
         try
         {
@@ -365,21 +292,14 @@
                 AddLog($"Found {untagged.Count} untagged bookmarks. Processing...", LogType.Info);
                 StateHasChanged();
 
-                for (int i = 0; i < untagged.Count; i += 50)
+                for (int i = 0; i < untagged.Count; i += 10)
                 {
                     _cts.Token.ThrowIfCancellationRequested();
 
-                    var chunk = untagged.Skip(i).Take(50).ToList();
+                    var chunk = untagged.Skip(i).Take(10).ToList();
                     var candidates = chunk.Select(b => new BookmarkTagCandidateDto { Id = b.Id, Title = b.Title, Url = b.Url }).ToList();
 
-                    if (_useAi)
-                    {
-                        AddLog($"Sending batch of {chunk.Count} bookmarks to AI Tagging service...", LogType.Info);
-                    }
-                    else
-                    {
-                        AddLog($"Tagging batch of {chunk.Count} bookmarks using rule heuristic...", LogType.Info);
-                    }
+                    AddLog($"Processing batch of {chunk.Count} bookmarks...", LogType.Info);
                     StateHasChanged();
 
                     try
@@ -387,8 +307,9 @@
                         var req = new BatchTagRequest
                         {
                             Items = candidates,
-                            UseAi = _useAi,
-                            AllowFallback = _allowFallback
+                            FolderId = folderId,
+                            FolderPath = folder.Title,
+                            Domain = GuessDefaultDomain(folder.Title)
                         };
 
                         var response = await BookmarkService.TagBatchAsync(req, _cts.Token);
@@ -464,38 +385,6 @@
         _currentState = TaggerState.Review;
     }
 
-    private void RemoveTag(Guid id, string tag)
-    {
-        var item = _reviewItems.FirstOrDefault(i => i.Id == id);
-        if (item != null)
-        {
-            item.Tags.Remove(tag);
-            StateHasChanged();
-        }
-    }
-
-    private void AddTagToItem(ReviewItem item)
-    {
-        if (!string.IsNullOrWhiteSpace(item.NewTagText))
-        {
-            var clean = item.NewTagText.Trim();
-            if (!item.Tags.Contains(clean, StringComparer.OrdinalIgnoreCase))
-            {
-                item.Tags.Add(clean);
-            }
-            item.NewTagText = string.Empty;
-            StateHasChanged();
-        }
-    }
-
-    private void HandleAddTagKeyDown(KeyboardEventArgs e, ReviewItem item)
-    {
-        if (e.Key == "Enter")
-        {
-            AddTagToItem(item);
-        }
-    }
-
     private async Task ConfirmAndSaveAsync()
     {
         _loading = true;
@@ -552,6 +441,15 @@
         StateHasChanged();
     }
 
+    private static BookmarkTagDomainDto GuessDefaultDomain(string folderTitle)
+    {
+        var value = $" {folderTitle} ".ToLowerInvariant();
+        if (value.Contains(" anime ")) return BookmarkTagDomainDto.Anime;
+        if (value.Contains(" manga ") || value.Contains(" manhwa ") || value.Contains(" manhua ") || value.Contains(" webtoon ")) return BookmarkTagDomainDto.Manga;
+        if (value.Contains(" novel ") || value.Contains(" novels ") || value.Contains(" light novel ") || value.Contains(" web novel ") || value.Contains(" ln ") || value.Contains(" wn ") || value.Contains(" wuxia ") || value.Contains(" xianxia ")) return BookmarkTagDomainDto.Novel;
+        return BookmarkTagDomainDto.General;
+    }
+
     private async Task ScrollTerminalToBottomAsync()
     {
         try
@@ -562,15 +460,6 @@
         {
             // Ignore JS failures
         }
-    }
-
-    private class ReviewItem
-    {
-        public Guid Id { get; set; }
-        public string Title { get; set; } = string.Empty;
-        public string Url { get; set; } = string.Empty;
-        public List<string> Tags { get; set; } = [];
-        public string NewTagText { get; set; } = string.Empty;
     }
 
     private class TerminalLogEntry

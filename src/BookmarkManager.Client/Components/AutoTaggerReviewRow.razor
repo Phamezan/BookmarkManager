@@ -1,0 +1,69 @@
+@using MudBlazor
+
+<MudPaper Outlined="true" Class="pa-3" Style="background: transparent;">
+    <MudStack Spacing="2">
+        <div class="d-flex align-center justify-space-between text-truncate">
+            <div class="d-flex align-center gap-2 text-truncate">
+                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Size="Size.Small" />
+                <span style="font-weight: 500;" class="text-truncate">@Item.Title</span>
+            </div>
+            <span class="mud-text-secondary" style="font-size: 0.75rem;">@Item.Url</span>
+        </div>
+        <div class="d-flex flex-wrap align-center gap-1">
+            @foreach (var tag in Item.Tags)
+            {
+                <MudChip T="string"
+                         Size="Size.Small"
+                         Color="Color.Primary"
+                         OnClose="@(() => RemoveTag(tag))">
+                    @tag
+                </MudChip>
+            }
+            <div style="width: 140px; display: inline-block;">
+                <MudTextField @bind-Value="_localTagText"
+                              Placeholder="Add Tag..."
+                              Variant="Variant.Outlined"
+                              Margin="Margin.Dense"
+                              Style="font-size: 0.75rem; padding: 2px 4px;"
+                              OnKeyDown="@((e) => HandleAddTagKeyDown(e))"
+                              Adornment="Adornment.End"
+                              AdornmentIcon="@Icons.Material.Filled.Add"
+                              OnAdornmentClick="@(() => AddTag())" />
+            </div>
+        </div>
+    </MudStack>
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public ReviewItem Item { get; set; } = default!;
+
+    // Local field bound to the text box. Because this component owns the
+    // value, typing only re-renders THIS row — not every row in the list.
+    private string _localTagText = string.Empty;
+
+    private void AddTag()
+    {
+        if (string.IsNullOrWhiteSpace(_localTagText))
+            return;
+
+        var clean = _localTagText.Trim();
+        if (!Item.Tags.Contains(clean, StringComparer.OrdinalIgnoreCase))
+        {
+            Item.Tags.Add(clean);
+        }
+        _localTagText = string.Empty;
+    }
+
+    private void RemoveTag(string tag)
+    {
+        Item.Tags.Remove(tag);
+    }
+
+    private void HandleAddTagKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            AddTag();
+        }
+    }
+}

@@ -125,37 +125,21 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<bool>("api/bookmarks/check-links/status", cancellationToken);
 
+    public async Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/auto-tagger/run", cancellationToken));
+
+    public async Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<AutoTaggerStatusDto>("api/bookmarks/auto-tagger/status", cancellationToken)
+           ?? new AutoTaggerStatusDto();
+
     public async Task<List<string>> SuggestAiTagsAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<List<string>>(HttpMethod.Post, $"api/bookmarks/{bookmarkId}/ai-tags", cancellationToken: cancellationToken) ?? [];
-
-    public async Task<bool> IsAiTaggingEnabledAsync(CancellationToken cancellationToken = default)
-    {
-        var status = await _apiClient.GetAsync<AiTaggingStatusDto>("api/bookmarks/ai-tags/status", cancellationToken);
-        return status?.Enabled ?? false;
-    }
-
     public async Task<RetagAllResult> RetagAllAsync(bool overwrite, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<RetagAllResult>(HttpMethod.Post, $"api/bookmarks/retag-all?overwrite={overwrite.ToString().ToLowerInvariant()}", null, cancellationToken)
            ?? new RetagAllResult();
 
     public async Task<List<TagCountDto>> GetTagsAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<TagCountDto>>("api/bookmarks/tags", cancellationToken) ?? [];
-
-    public async Task<AiTaggingSettingsDto?> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<AiTaggingSettingsDto>("api/bookmarks/ai-tags/settings", cancellationToken);
-
-    public async Task<bool> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            await _apiClient.SendAsync(HttpMethod.Post, "api/bookmarks/ai-tags/settings", settings, cancellationToken);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
 
     public async Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<BatchTagResponse>(HttpMethod.Post, "api/bookmarks/ai-tags/batch", request, cancellationToken)

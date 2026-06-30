@@ -25,10 +25,6 @@ public partial class Settings
     private bool _statusLoading = true;
     private bool _linkCheckerRunning;
 
-    private AiTaggingSettingsDto _aiSettings = new();
-    private bool _aiSettingsLoading = true;
-    private bool _aiSettingsSaving;
-
     protected override async Task OnInitializedAsync()
     {
         try
@@ -43,8 +39,7 @@ public partial class Settings
         await Task.WhenAll(
             LoadFolderCandidatesAsync(),
             LoadTrackedRootsAsync(),
-            LoadExtensionStatusAsync(),
-            LoadAiSettingsAsync());
+            LoadExtensionStatusAsync());
     }
 
     private async Task RunLinkCheckerAsync()
@@ -187,149 +182,4 @@ public partial class Settings
         }
     }
 
-    private string _selectedProvider = "OpenAI";
-    private string _selectedModel = "gpt-4o-mini";
-    private bool _customModelActive;
-
-    private async Task LoadAiSettingsAsync()
-    {
-        _aiSettingsLoading = true;
-        try
-        {
-            _aiSettings = await BookmarkService.GetAiTaggingSettingsAsync() ?? new();
-            DetectProviderAndModel();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to load AI settings: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _aiSettingsLoading = false;
-        }
-    }
-
-    private void DetectProviderAndModel()
-    {
-        if (string.IsNullOrEmpty(_aiSettings.Endpoint))
-        {
-            _selectedProvider = "OpenAI";
-            _aiSettings.Endpoint = "https://api.openai.com/v1/chat/completions";
-        }
-        else if (_aiSettings.Endpoint.Contains("openai.com", StringComparison.OrdinalIgnoreCase))
-        {
-            _selectedProvider = "OpenAI";
-        }
-        else if (_aiSettings.Endpoint.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase))
-        {
-            _selectedProvider = "OpenRouter";
-        }
-        else if (_aiSettings.Endpoint.Contains("localhost:11434", StringComparison.OrdinalIgnoreCase) || _aiSettings.Endpoint.Contains("127.0.0.1:11434", StringComparison.OrdinalIgnoreCase))
-        {
-            _selectedProvider = "Ollama";
-        }
-        else
-        {
-            _selectedProvider = "Custom";
-        }
-
-        var commonModels = GetModelsForProvider(_selectedProvider);
-        if (commonModels.Contains(_aiSettings.Model, StringComparer.OrdinalIgnoreCase))
-        {
-            _selectedModel = _aiSettings.Model;
-            _customModelActive = false;
-        }
-        else if (string.IsNullOrWhiteSpace(_aiSettings.Model))
-        {
-            _selectedModel = commonModels.FirstOrDefault() ?? string.Empty;
-            _aiSettings.Model = _selectedModel;
-            _customModelActive = false;
-        }
-        else
-        {
-            _selectedModel = "Custom";
-            _customModelActive = true;
-        }
-    }
-
-    private List<string> GetModelsForProvider(string provider)
-    {
-        return provider switch
-        {
-            "OpenAI" => ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
-            "OpenRouter" => [
-                "openrouter/free",
-                "google/gemini-2.5-flash",
-                "meta-llama/llama-3-8b-instruct",
-                "qwen/qwen-2.5-7b-instruct:free"
-            ],
-            "Ollama" => ["llama3", "mistral", "phi3"],
-            _ => []
-        };
-    }
-
-    private void OnProviderChanged(string provider)
-    {
-        _selectedProvider = provider;
-        _aiSettings.Endpoint = provider switch
-        {
-            "OpenAI" => "https://api.openai.com/v1/chat/completions",
-            "OpenRouter" => "https://openrouter.ai/api/v1/chat/completions",
-            "Ollama" => "http://localhost:11434/v1/chat/completions",
-            _ => _aiSettings.Endpoint
-        };
-
-        var models = GetModelsForProvider(provider);
-        if (models.Count > 0)
-        {
-            _selectedModel = models[0];
-            _aiSettings.Model = _selectedModel;
-            _customModelActive = false;
-        }
-        else
-        {
-            _selectedModel = "Custom";
-            _customModelActive = true;
-        }
-    }
-
-    private void OnModelChanged(string model)
-    {
-        _selectedModel = model;
-        if (model == "Custom")
-        {
-            _customModelActive = true;
-            _aiSettings.Model = string.Empty;
-        }
-        else
-        {
-            _customModelActive = false;
-            _aiSettings.Model = model;
-        }
-    }
-
-    private async Task SaveAiSettingsAsync()
-    {
-        _aiSettingsSaving = true;
-        try
-        {
-            var success = await BookmarkService.SaveAiTaggingSettingsAsync(_aiSettings);
-            if (success)
-            {
-                Snackbar.Add("AI Tagging settings saved successfully.", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add("Failed to save AI Tagging settings.", Severity.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error saving AI settings: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _aiSettingsSaving = false;
-        }
-    }
 }
