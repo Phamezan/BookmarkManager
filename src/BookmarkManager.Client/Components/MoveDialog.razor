@@ -10,9 +10,8 @@
     <DialogContent>
         <MudText Typo="Typo.body2" Class="mb-4">Select target folder:</MudText>
         <div style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
-            <FolderTree Folders="Folders"
+            <FolderTree Folders="_filteredFolders"
                         SelectedFolderId="_selectedId"
-                        DisabledFolderIds="_disabledFolderIds"
                         FolderSelected="OnSelected" />
         </div>
     </DialogContent>
@@ -30,44 +29,40 @@
     [Parameter] public Guid? FolderToMoveId { get; set; }
 
     private Guid? _selectedId;
-    private readonly HashSet<Guid> _disabledFolderIds = [];
+    private List<FolderTreeNodeDto> _filteredFolders = [];
 
     protected override void OnParametersSet()
     {
-        _disabledFolderIds.Clear();
-        if (CurrentFolderId.HasValue)
-        {
-            _disabledFolderIds.Add(CurrentFolderId.Value);
-        }
         if (FolderToMoveId.HasValue)
         {
-            _disabledFolderIds.Add(FolderToMoveId.Value);
-            var folderNode = FindFolderById(Folders, FolderToMoveId.Value);
-            if (folderNode != null)
+            _filteredFolders = FilterFolders(Folders, FolderToMoveId.Value);
+        }
+        else
+        {
+            _filteredFolders = Folders;
+        }
+    }
+
+    private List<FolderTreeNodeDto> FilterFolders(List<FolderTreeNodeDto> source, Guid folderToExclude)
+    {
+        var result = new List<FolderTreeNodeDto>();
+        foreach (var node in source)
+        {
+            if (node.Id == folderToExclude)
             {
-                AddDescendantsToDisabled(folderNode);
+                continue;
             }
-        }
-    }
 
-    private void AddDescendantsToDisabled(FolderTreeNodeDto node)
-    {
-        foreach (var child in node.Children)
-        {
-            _disabledFolderIds.Add(child.Id);
-            AddDescendantsToDisabled(child);
+            var newNode = new FolderTreeNodeDto
+            {
+                Id = node.Id,
+                Title = node.Title,
+                BookmarkCount = node.BookmarkCount,
+                Children = FilterFolders(node.Children, folderToExclude)
+            };
+            result.Add(newNode);
         }
-    }
-
-    private FolderTreeNodeDto? FindFolderById(List<FolderTreeNodeDto> folders, Guid id)
-    {
-        foreach (var folder in folders)
-        {
-            if (folder.Id == id) return folder;
-            var found = FindFolderById(folder.Children, id);
-            if (found is not null) return found;
-        }
-        return null;
+        return result;
     }
 
     private void OnSelected(Guid id)

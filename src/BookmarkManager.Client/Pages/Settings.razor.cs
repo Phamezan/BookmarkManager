@@ -13,16 +13,21 @@ public partial class Settings
     [Inject] private IDialogService DialogService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+    [Inject] private IBookmarkManagerApiClient ApiClient { get; set; } = default!;
 
     private List<FolderCandidateDto> _folderCandidates = [];
     private bool _foldersLoading = true;
 
     private List<TrackedRootDto> _trackedRoots = [];
     private bool _rootsLoading = true;
-    private string _themePreference = "System";
-    private string _densityPreference = "Comfortable";
-    private bool _showSyncHints = true;
+    
+    private ExtensionStatusDto? _extensionStatus;
+    private bool _statusLoading = true;
     private bool _linkCheckerRunning;
+
+    private AiTaggingSettingsDto _aiSettings = new();
+    private bool _aiSettingsLoading = true;
+    private bool _aiSettingsSaving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -37,7 +42,9 @@ public partial class Settings
 
         await Task.WhenAll(
             LoadFolderCandidatesAsync(),
-            LoadTrackedRootsAsync());
+            LoadTrackedRootsAsync(),
+            LoadExtensionStatusAsync(),
+            LoadAiSettingsAsync());
     }
 
     private async Task RunLinkCheckerAsync()
@@ -53,6 +60,23 @@ public partial class Settings
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to start link checker: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadExtensionStatusAsync()
+    {
+        _statusLoading = true;
+        try
+        {
+            _extensionStatus = await ApiClient.GetAsync<ExtensionStatusDto>("/api/extension/status");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load extension status: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _statusLoading = false;
         }
     }
 
@@ -137,11 +161,11 @@ public partial class Settings
         }
     }
 
-    private async Task PromptRepairAsync()
+    private async Task PromptRepairRootAsync(Guid id, string title)
     {
         var parameters = new DialogParameters
         {
-            ["Message"] = "Request a Brave-wins repair snapshot for all active tracked roots? This can overwrite stale server projection data.",
+            ["Message"] = $"Request a Brave-wins repair snapshot for \"{title}\"? This will reset its sync status and force a full overwrite from Brave on the next heartbeat check-in.",
             ["ConfirmText"] = "Request repair",
             ["CancelText"] = "Cancel"
         };
@@ -149,12 +173,164 @@ public partial class Settings
         var result = await dialog.Result;
         if (result?.Canceled != false) return;
 
-        Snackbar.Add("Repair snapshot request queued", Severity.Warning);
+        try
+        {
+            if (await TrackedRootService.RepairRootAsync(id))
+            {
+                await LoadTrackedRootsAsync();
+                Snackbar.Add($"Repair snapshot queued for \"{title}\"", Severity.Warning);
+            }
+        }
+        catch (ApiException ex)
+        {
+            Snackbar.Add(ex.Detail ?? ex.Title, Severity.Error);
+        }
     }
 
-    private static string DefaultCategory(string title)
-        => title.Contains("Manga", StringComparison.OrdinalIgnoreCase) ? "Manga"
-            : title.Contains("Novel", StringComparison.OrdinalIgnoreCase) ? "Novels"
-            : title.Contains("Anime", StringComparison.OrdinalIgnoreCase) ? "Anime"
-            : "Other";
+    private string _selectedProvider = "OpenAI";
+    private string _selectedModel = "gpt-4o-mini";
+    private bool _customModelActive;
+
+    private async Task LoadAiSettingsAsync()
+    {
+        _aiSettingsLoading = true;
+        try
+        {
+            _aiSettings = await BookmarkService.GetAiTaggingSettingsAsync() ?? new();
+            DetectProviderAndModel();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load AI settings: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _aiSettingsLoading = false;
+        }
+    }
+
+    private void DetectProviderAndModel()
+    {
+        if (string.IsNullOrEmpty(_aiSettings.Endpoint))
+        {
+            _selectedProvider = "OpenAI";
+            _aiSettings.Endpoint = "https://api.openai.com/v1/chat/completions";
+        }
+        else if (_aiSettings.Endpoint.Contains("openai.com", StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedProvider = "OpenAI";
+        }
+        else if (_aiSettings.Endpoint.Contains("openrouter.ai", StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedProvider = "OpenRouter";
+        }
+        else if (_aiSettings.Endpoint.Contains("localhost:11434", StringComparison.OrdinalIgnoreCase) || _aiSettings.Endpoint.Contains("127.0.0.1:11434", StringComparison.OrdinalIgnoreCase))
+        {
+            _selectedProvider = "Ollama";
+        }
+        else
+        {
+            _selectedProvider = "Custom";
+        }
+
+        var commonModels = GetModelsForProvider(_selectedProvider);
+        if (commonModels.Contains(_aiSettings.Model, StringComparer.OrdinalIgnoreCase))
+        {
+            _selectedModel = _aiSettings.Model;
+            _customModelActive = false;
+        }
+        else if (string.IsNullOrWhiteSpace(_aiSettings.Model))
+        {
+            _selectedModel = commonModels.FirstOrDefault() ?? string.Empty;
+            _aiSettings.Model = _selectedModel;
+            _customModelActive = false;
+        }
+        else
+        {
+            _selectedModel = "Custom";
+            _customModelActive = true;
+        }
+    }
+
+    private List<string> GetModelsForProvider(string provider)
+    {
+        return provider switch
+        {
+            "OpenAI" => ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
+            "OpenRouter" => [
+                "google/gemini-2.5-flash:free",
+                "meta-llama/llama-3-8b-instruct:free",
+                "qwen/qwen-2-7b-instruct:free",
+                "microsoft/phi-3-medium-128k-instruct:free",
+                "mistralai/mistral-7b-instruct:free"
+            ],
+            "Ollama" => ["llama3", "mistral", "phi3"],
+            _ => []
+        };
+    }
+
+    private void OnProviderChanged(string provider)
+    {
+        _selectedProvider = provider;
+        _aiSettings.Endpoint = provider switch
+        {
+            "OpenAI" => "https://api.openai.com/v1/chat/completions",
+            "OpenRouter" => "https://openrouter.ai/api/v1/chat/completions",
+            "Ollama" => "http://localhost:11434/v1/chat/completions",
+            _ => _aiSettings.Endpoint
+        };
+
+        var models = GetModelsForProvider(provider);
+        if (models.Count > 0)
+        {
+            _selectedModel = models[0];
+            _aiSettings.Model = _selectedModel;
+            _customModelActive = false;
+        }
+        else
+        {
+            _selectedModel = "Custom";
+            _customModelActive = true;
+        }
+    }
+
+    private void OnModelChanged(string model)
+    {
+        _selectedModel = model;
+        if (model == "Custom")
+        {
+            _customModelActive = true;
+            _aiSettings.Model = string.Empty;
+        }
+        else
+        {
+            _customModelActive = false;
+            _aiSettings.Model = model;
+        }
+    }
+
+    private async Task SaveAiSettingsAsync()
+    {
+        _aiSettingsSaving = true;
+        try
+        {
+            var success = await BookmarkService.SaveAiTaggingSettingsAsync(_aiSettings);
+            if (success)
+            {
+                Snackbar.Add("AI Tagging settings saved successfully.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to save AI Tagging settings.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error saving AI settings: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _aiSettingsSaving = false;
+        }
+    }
 }

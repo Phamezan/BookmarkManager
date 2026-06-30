@@ -52,6 +52,10 @@ public partial class Bookmarks : IDisposable
         }
     }
 
+    private HashSet<string> _activeTagFilters = [];
+    private List<TagCountDto> _availableTags = [];
+    private bool _retagBusy;
+
     private string _sortModeBacking = "TitleAsc";
     private string _sortMode
     {
@@ -86,6 +90,15 @@ public partial class Bookmarks : IDisposable
             {
                 items = items.Where(i => i.Metadata?.IsFavorite == true);
             }
+
+            if (_activeTagFilters.Count > 0)
+            {
+                items = items.Where(i =>
+                    i.Metadata?.Tags != null
+                    && _activeTagFilters.All(f =>
+                        i.Metadata.Tags.Contains(f, StringComparer.OrdinalIgnoreCase)));
+            }
+
             return items.ToList();
         }
     }
@@ -124,6 +137,7 @@ public partial class Bookmarks : IDisposable
         _treeLoading = true;
         StateHasChanged();
         await LoadFavoritesAsync();
+        await LoadTagsAsync();
         try
         {
             _folderTree = await BookmarkService.GetFolderTreeAsync();
@@ -234,6 +248,48 @@ public partial class Bookmarks : IDisposable
             _loading = false;
             StateHasChanged();
         }
+    }
+
+    private async Task LoadTagsAsync()
+    {
+        try
+        {
+            _availableTags = await BookmarkService.GetTagsAsync();
+        }
+        catch
+        {
+            _availableTags = [];
+        }
+    }
+
+    private void ToggleTagFilter(string tag)
+    {
+        if (!_activeTagFilters.Remove(tag))
+            _activeTagFilters.Add(tag);
+        _currentPage = 1;
+    }
+
+    private void ClearTagFilters()
+    {
+        if (_activeTagFilters.Count > 0)
+        {
+            _activeTagFilters.Clear();
+            _currentPage = 1;
+        }
+    }
+
+    private async Task OpenAutoTaggerDialog()
+    {
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<AutoTaggerDialog>("Auto Tagger", options);
+        var result = await dialog.Result;
+        
+        await LoadTagsAsync();
+        if (_selectedFolderId.HasValue)
+        {
+            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+        }
+        StateHasChanged();
     }
 
     private bool IsSelected(Guid id) => _selectedBookmarkIds.Contains(id);

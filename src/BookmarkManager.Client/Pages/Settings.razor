@@ -9,7 +9,7 @@
         <div>
             <MudText Typo="Typo.h4">Settings</MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Manage tracked folders, sync behaviour, and preferences.
+                Manage tracked folders, sync behavior, and extension connection status.
             </MudText>
         </div>
         <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Lan">
@@ -17,10 +17,78 @@
         </MudChip>
     </MudStack>
 
+    <!-- Extension Connection Status Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Primary" />
+                <MudIcon Icon="@Icons.Material.Filled.Power" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Brave Extension Connection</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Size="Size.Small"
+                               OnClick="LoadExtensionStatusAsync"
+                               Disabled="@_statusLoading" />
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Connection status and diagnostics from the Brave sync extension.
+            </MudText>
+            @if (_statusLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_extensionStatus == null)
+            {
+                <MudText Color="Color.Error" Class="pa-2">
+                    Failed to fetch extension connection status. Make sure the API server is reachable.
+                </MudText>
+            }
+            else
+            {
+                <MudGrid>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Connection Status</MudText>
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <span class="status-dot @(_extensionStatus.IsConnected ? "is-online" : "is-offline")" style="margin-right: 4px;" aria-hidden="true"></span>
+                                <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                    @(_extensionStatus.IsConnected ? "Connected" : "Offline")
+                                </MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Extension Version</MudText>
+                            <MudText Typo="Typo.body1" Style="font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
+                                @(string.IsNullOrWhiteSpace(_extensionStatus.ExtensionVersion) ? "N/A" : _extensionStatus.ExtensionVersion)
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Brave Browser Version</MudText>
+                            <MudText Typo="Typo.body1" Style="font-family: 'JetBrains Mono', monospace; font-size: 0.9rem;">
+                                @(string.IsNullOrWhiteSpace(_extensionStatus.BraveVersion) ? "N/A" : _extensionStatus.BraveVersion)
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Last Heartbeat</MudText>
+                            <MudText Typo="Typo.body1">
+                                @(_extensionStatus.LastHeartbeatAt.HasValue ? _extensionStatus.LastHeartbeatAt.Value.ToLocalTime().ToString("g") : "Never")
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudStack>
+    </MudPaper>
+
+    <!-- Uploaded Folder Candidates Section -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Color="Color.Primary" />
                 <MudText Typo="Typo.h6" Class="flex-grow-1">Uploaded folder candidates</MudText>
                 <MudIconButton Icon="@Icons.Material.Filled.Refresh"
                                Size="Size.Small"
@@ -80,22 +148,16 @@
         </MudStack>
     </MudPaper>
 
+    <!-- Tracked Roots Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudIcon Icon="@Icons.Material.Filled.Bookmarks" Color="Color.Primary" />
                 <MudText Typo="Typo.h6" Class="flex-grow-1">Tracked roots</MudText>
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Warning"
-                           Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.Build"
-                           OnClick="PromptRepairAsync">
-                    Repair snapshot
-                </MudButton>
             </MudStack>
-            <MudAlert Severity="Severity.Info" Variant="Variant.Text">
-                Repair asks the extension for a Brave-wins snapshot. Use it only when the server projection is clearly stale.
-            </MudAlert>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Tracked roots currently synchronizing with the database. Trigger a manual sync or queue a Brave-wins repair snapshot.
+            </MudText>
             @if (_rootsLoading)
             {
                 <MudProgressLinear Indeterminate="true" />
@@ -109,31 +171,29 @@
                 <MudTable Items="_trackedRoots" Dense="true" Hover="true">
                     <HeaderContent>
                         <MudTh>Root</MudTh>
-                        <MudTh>Default category</MudTh>
                         <MudTh>Added</MudTh>
                         <MudTh>Last sync</MudTh>
                         <MudTh></MudTh>
                     </HeaderContent>
                     <RowTemplate Context="root">
                         <MudTd DataLabel="Root">@root.Title</MudTd>
-                        <MudTd DataLabel="Default category">
-                            <MudSelect T="string" Value="@DefaultCategory(root.Title)" Dense="true" Margin="Margin.Dense" Class="settings-category-select">
-                                <MudSelectItem Value="@("Manga")">Manga</MudSelectItem>
-                                <MudSelectItem Value="@("Novels")">Novels</MudSelectItem>
-                                <MudSelectItem Value="@("Anime")">Anime</MudSelectItem>
-                                <MudSelectItem Value="@("Other")">Other</MudSelectItem>
-                            </MudSelect>
-                        </MudTd>
                         <MudTd DataLabel="Added">@root.AddedAt.ToLocalTime().ToString("g")</MudTd>
                         <MudTd DataLabel="Last sync">@(root.LastSyncedAt == DateTime.MinValue ? "Never" : root.LastSyncedAt.ToLocalTime().ToString("g"))</MudTd>
                         <MudTd DataLabel="Actions" Style="text-align: right;">
                             <MudIconButton Icon="@Icons.Material.Filled.Sync"
                                            Color="Color.Primary"
                                            Size="Size.Small"
+                                           Title="Sync Root"
                                            OnClick="@(() => SyncRootAsync(root.Id))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Build"
+                                           Color="Color.Warning"
+                                           Size="Size.Small"
+                                           Title="Repair Snapshot (Brave wins)"
+                                           OnClick="@(() => PromptRepairRootAsync(root.Id, root.Title))" />
                             <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                            Color="Color.Error"
                                            Size="Size.Small"
+                                           Title="Stop Tracking"
                                            OnClick="@(() => PromptRemoveRootAsync(root.Id, root.Title))" />
                         </MudTd>
                     </RowTemplate>
@@ -142,6 +202,7 @@
         </MudStack>
     </MudPaper>
 
+    <!-- Link Checker Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
@@ -166,24 +227,72 @@
         </MudStack>
     </MudPaper>
 
+    <!-- AI Tagging Settings Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                <MudIcon Icon="@Icons.Material.Filled.Tune" Color="Color.Primary" />
-                <MudText Typo="Typo.h6">Theme and density</MudText>
+                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">AI Tagging Settings</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="SaveAiSettingsAsync"
+                           Disabled="@(_aiSettingsLoading || _aiSettingsSaving)">
+                    @(_aiSettingsSaving ? "Saving..." : "Save Settings")
+                </MudButton>
             </MudStack>
-            <MudStack Row="true" Spacing="3" Class="settings-preferences">
-                <MudSelect T="string" @bind-Value="_themePreference" Label="Theme" Dense="true" Margin="Margin.Dense">
-                    <MudSelectItem Value="@("System")">System</MudSelectItem>
-                    <MudSelectItem Value="@("Light")">Light</MudSelectItem>
-                    <MudSelectItem Value="@("Dark")">Dark</MudSelectItem>
-                </MudSelect>
-                <MudSelect T="string" @bind-Value="_densityPreference" Label="Density" Dense="true" Margin="Margin.Dense">
-                    <MudSelectItem Value="@("Comfortable")">Comfortable</MudSelectItem>
-                    <MudSelectItem Value="@("Compact")">Compact</MudSelectItem>
-                </MudSelect>
-                <MudSwitch T="bool" @bind-Value="_showSyncHints" Label="Show sync explanations" Color="Color.Primary" />
-            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Configure your custom OpenAI-compatible AI provider (OpenAI, Ollama, OpenRouter, LM Studio, etc.) for smart bookmark tagging.
+            </MudText>
+            
+            @if (_aiSettingsLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else
+            {
+                <MudGrid>
+                    <MudItem xs="12">
+                        <MudSwitch T="bool" @bind-Value="_aiSettings.Enabled" Label="Enable AI Tagging" Color="Color.Primary" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudSelect T="string" Value="_selectedProvider" ValueChanged="OnProviderChanged" Label="AI Provider" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem Value="@("OpenAI")">OpenAI</MudSelectItem>
+                            <MudSelectItem Value="@("OpenRouter")">OpenRouter</MudSelectItem>
+                            <MudSelectItem Value="@("Ollama")">Ollama (Local)</MudSelectItem>
+                            <MudSelectItem Value="@("Custom")">Custom Provider...</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="4">
+                        <MudSelect T="string" Value="_selectedModel" ValueChanged="OnModelChanged" Label="Model Selection" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (var m in GetModelsForProvider(_selectedProvider))
+                            {
+                                <MudSelectItem Value="@m">@m</MudSelectItem>
+                            }
+                            <MudSelectItem Value="@("Custom")">Custom Model...</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    @if (_selectedProvider != "Ollama")
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="_aiSettings.ApiKey" Label="API Key" InputType="InputType.Password" Placeholder="Enter your API Key" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    }
+                    @if (_customModelActive)
+                    {
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudTextField @bind-Value="_aiSettings.Model" Label="Custom Model Name" Placeholder="e.g. custom-model:latest" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    }
+                    @if (_selectedProvider == "Custom")
+                    {
+                        <MudItem xs="12" sm="12" md="8">
+                            <MudTextField @bind-Value="_aiSettings.Endpoint" Label="Custom API Endpoint URL" Placeholder="https://example.com/v1/chat/completions" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
         </MudStack>
     </MudPaper>
 </MudStack>

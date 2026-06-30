@@ -32,11 +32,28 @@
 
             <div class="mb-4">
                 <div class="d-flex align-center justify-space-between mb-1">
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">AI Tag Suggestions</MudText>
-                    <MudButton Variant="Variant.Text" Color="Color.Secondary" Size="Size.Small" OnClick="GenerateTagSuggestions" Disabled="@(string.IsNullOrWhiteSpace(_title))">
-                        Generate Suggestions
-                    </MudButton>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Tag Suggestions</MudText>
+                    <div class="d-flex gap-1">
+                        <MudButton Variant="Variant.Text" Color="Color.Secondary" Size="Size.Small"
+                                   OnClick="GenerateTagSuggestions" Disabled="@(string.IsNullOrWhiteSpace(_title))">
+                            Suggest
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" Color="Color.Tertiary" Size="Size.Small"
+                                   OnClick="GenerateAiTags" Disabled="@(!_aiEnabled || string.IsNullOrWhiteSpace(_title))">
+                            @if (_aiBusy)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                            }
+                            Retag with AI
+                        </MudButton>
+                    </div>
                 </div>
+                @if (!_aiEnabled)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Default" Class="d-block mb-1">
+                        AI tagging is disabled. Configure the AiTagging endpoint on the server to enable "Retag with AI".
+                    </MudText>
+                }
                 @if (_suggestedTags.Count > 0)
                 {
                     <div class="d-flex flex-wrap gap-1">
@@ -71,6 +88,21 @@
     private string _newTag = "";
     private List<string> _suggestedTags = [];
 
+    private bool _aiEnabled;
+    private bool _aiBusy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _aiEnabled = await BookmarkService.IsAiTaggingEnabledAsync();
+        }
+        catch
+        {
+            _aiEnabled = false;
+        }
+    }
+
     protected override void OnParametersSet()
     {
         if (Node != null)
@@ -92,6 +124,31 @@
         catch
         {
             // Ignore suggestion failures
+        }
+    }
+
+    private async Task GenerateAiTags()
+    {
+        if (string.IsNullOrWhiteSpace(_title) || _aiBusy) return;
+        if (Node?.Id is null) return;
+
+        _aiBusy = true;
+        try
+        {
+            var aiTags = await BookmarkService.SuggestAiTagsAsync(Node.Id);
+            if (aiTags.Count > 0)
+            {
+                _suggestedTags = aiTags;
+            }
+        }
+        catch
+        {
+            // Ignore AI failures — the server already falls back to heuristic.
+        }
+        finally
+        {
+            _aiBusy = false;
+            StateHasChanged();
         }
     }
 

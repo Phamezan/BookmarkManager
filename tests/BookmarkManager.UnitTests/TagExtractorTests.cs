@@ -1,0 +1,93 @@
+using BookmarkManager.Api.Services;
+
+namespace BookmarkManager.UnitTests;
+
+public sealed class TagExtractorTests
+{
+    private readonly TagExtractorService _svc = new();
+
+    [Theory]
+    [InlineData("One Piece - Episode 1092", "https://crunchyroll.com/watch/one-piece/1092", "Anime")]
+    [InlineData("Jujutsu Kaisen - Chapter 245", "https://mangadex.org/title/jjk/245", "Manga")]
+    [InlineData("dotnet/aspnetcore", "https://github.com/dotnet/aspnetcore", "Development")]
+    [InlineData("Lofi hip hop radio", "https://www.youtube.com/watch?v=jfKfPfyJRdk", "Video")]
+    [InlineData("One Piece 1092 discussion", "https://www.reddit.com/r/OnePiece/comments/abc/x", "Social")]
+    [InlineData("CNN - Breaking News", "https://www.cnn.com", "News")]
+    [InlineData("Amazon.com: USB-C cable", "https://www.amazon.com/dp/B0XXXXX", "Shopping")]
+    [InlineData("Kubernetes overview", "https://en.wikipedia.org/wiki/Kubernetes", "Reference")]
+    public void CategoryRules_AssignExpectedCategory(string title, string url, string expected)
+    {
+        var tags = _svc.ExtractTags(title, url);
+        Assert.Contains(expected, tags, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GitHub_Repo_SurfacesBrandAndOwner()
+    {
+        var tags = _svc.ExtractTags("dotnet/aspnetcore", "https://github.com/dotnet/aspnetcore");
+        Assert.Contains("GitHub", tags, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Dotnet", tags, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void YouTube_SurfacesYouTubeTag()
+    {
+        var tags = _svc.ExtractTags("Lofi beats", "https://www.youtube.com/watch?v=abc");
+        Assert.Contains("YouTube", tags, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Reddit_Subreddit_SurfacesSubredditTag()
+    {
+        var tags = _svc.ExtractTags("Discussion", "https://www.reddit.com/r/OnePiece/comments/abc/x");
+        Assert.Contains("Reddit", tags, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains(tags, t => t.StartsWith("r/", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void EpisodeSuffix_IsStrippedFromTitleBeforeTokenizing()
+    {
+        // " - Episode 1092" must not bleed "Episode" into tags.
+        var tags = _svc.ExtractTags("One Piece - Episode 1092", "https://example.com");
+        Assert.DoesNotContain("Episode", tags, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ReturnsAtMostFiveTags()
+    {
+        var tags = _svc.ExtractTags(
+            "Super Long Title With Many Distinct Interesting Words Here Today",
+            "https://example.com");
+        Assert.True(tags.Count <= 5);
+    }
+
+    [Fact]
+    public void EmptyTitle_DoesNotThrow()
+    {
+        var tags = _svc.ExtractTags("", "https://example.com");
+        Assert.NotNull(tags);
+    }
+
+    [Fact]
+    public void FoldersAndTags_AreCaseNormalized()
+    {
+        var tags = _svc.ExtractTags("typescript handbook", "https://typescriptlang.org");
+        Assert.Contains(tags, t => string.Equals(t, "Typescript", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void StopWords_AreExcluded()
+    {
+        var tags = _svc.ExtractTags("The Best Way To Read The Page Online Free", "https://example.com");
+        // None of these generic words should survive as tags.
+        foreach (var stop in new[] { "The", "Best", "Way", "Read", "Page", "Online", "Free" })
+            Assert.DoesNotContain(stop, tags, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void CamelCaseTokens_GetHigherPriority()
+    {
+        var tags = _svc.ExtractTags("Blazor WebAssembly tutorial", "https://learn.microsoft.com/blazor");
+        Assert.Contains(tags, t => string.Equals(t, "Blazor", StringComparison.OrdinalIgnoreCase));
+    }
+}

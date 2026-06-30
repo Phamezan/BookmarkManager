@@ -539,6 +539,57 @@ public class BookmarksController : ControllerBase
         return Ok();
     }
 
+    [HttpPost("ai-tags/batch")]
+    public async Task<ActionResult<BookmarkManager.Contracts.BatchTagResponse>> SuggestBatchTagsAsync(
+        [FromBody] List<BookmarkManager.Contracts.BookmarkTagCandidateDto> items,
+        CancellationToken ct)
+    {
+        var resultMapping = await _aiTagging.SuggestTagsBatchAsync(items, ct);
+
+        // Fallback to offline rule-based tag extractor for any missing or failed items
+        foreach (var item in items)
+        {
+            if (!resultMapping.TryGetValue(item.Id, out var tags) || tags.Count == 0)
+            {
+                var fallbackTags = _tagExtractor.ExtractTags(item.Title, item.Url).ToList();
+                resultMapping[item.Id] = fallbackTags;
+            }
+        }
+
+        // Save generated tags to database
+        if (resultMapping.Count > 0)
+        {
+            var ids = resultMapping.Keys.ToList();
+            var nodes = await _db.BookmarkNodes.Where(n => ids.Contains(n.Id)).ToListAsync(ct);
+            foreach (var node in nodes)
+            {
+                if (resultMapping.TryGetValue(node.Id, out var tags))
+                {
+                    node.Tags = string.Join(",", tags);
+                    node.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+            await _db.SaveChangesAsync(ct);
+        }
+
+        return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
+    }
+
+    [HttpGet("untagged-counts")]
+    public async Task<ActionResult<Dictionary<Guid, int>>> GetUntaggedCountsAsync(CancellationToken ct)
+    {
+        var bookmarks = await _db.BookmarkNodes
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && (n.Tags == null || n.Tags == ""))
+            .ToListAsync(ct);
+
+        var counts = bookmarks
+            .Where(b => b.ParentId.HasValue)
+            .GroupBy(b => b.ParentId!.Value)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+        return Ok(counts);
+    }
+
     [HttpPost("{id:guid}/ai-tags")]
     public async Task<ActionResult<List<string>>> AiRetagAsync(
         Guid id,

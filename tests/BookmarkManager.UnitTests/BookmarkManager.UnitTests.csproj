@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BookmarkManager.Contracts\BookmarkManager.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\BookmarkManager.Api\BookmarkManager.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -95,7 +95,7 @@ else
                                          <div class="root-card-title" title="@fav.Title">@fav.Title</div>
                                          <div class="root-card-path">Folder Shortcut</div>
                                      </div>
-                                     <div class="root-card-count" @onclick:stopPropagation @onclick="@(() => ToggleFavorite(fav))" style="cursor: pointer;" title="Remove from Shortcuts">
+                                     <div class="root-card-remove" @onclick:stopPropagation @onclick="@(() => ToggleFavorite(fav))" style="cursor: pointer;" title="Remove from Shortcuts">
                                          <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
                                      </div>
                                  </div>
@@ -125,7 +125,7 @@ else
                                          <div class="root-card-title" title="@fav.Title">@fav.Title</div>
                                          <div class="root-card-path">Link Shortcut</div>
                                      </div>
-                                     <div class="root-card-count" @onclick:stopPropagation @onclick="@(() => ToggleFavorite(fav))" style="cursor: pointer;" title="Remove from Shortcuts">
+                                     <div class="root-card-remove" @onclick:stopPropagation @onclick="@(() => ToggleFavorite(fav))" style="cursor: pointer;" title="Remove from Shortcuts">
                                          <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
                                      </div>
                                  </a>
@@ -207,9 +207,55 @@ else
                              <MudTooltip Text="Create bookmark">
                                  <MudIconButton Icon="@Icons.Material.Filled.AddLink" Color="Color.Primary" OnClick="@CreateBookmark" aria-label="Create bookmark" />
                              </MudTooltip>
-                         </MudPaper>
-                     }
-                 </div>
+                             </MudPaper>
+                             }
+                             @if (_availableTags.Count > 0 || _retagBusy)
+                             {
+                             <MudPaper Elevation="0" Class="tag-bar">
+                             <div class="tag-bar-chips">
+                                 <span class="tag-bar-label">Tags:</span>
+                                 @foreach (var tag in _availableTags.Take(24))
+                                 {
+                                     var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
+                                     <MudChip T="string"
+                                              Variant="@(active ? Variant.Filled : Variant.Outlined)"
+                                              Color="Color.Primary"
+                                              Size="Size.Small"
+                                              OnClick="@(() => ToggleTagFilter(tag.Tag))"
+                                              Style="cursor:pointer;">
+                                         @tag.Tag <span class="tag-count">@tag.Count</span>
+                                     </MudChip>
+                                 }
+                                 @if (_activeTagFilters.Count > 0)
+                                 {
+                                     <MudChip T="string" Variant="Variant.Text" Size="Size.Small" OnClick="ClearTagFilters" Style="cursor:pointer;">Clear</MudChip>
+                                 }
+                             </div>
+                             <MudButton Variant="Variant.Text"
+                                        Color="Color.Default"
+                                        Size="Size.Small"
+                                        StartIcon="@Icons.Material.Filled.AutoAwesome"
+                                        OnClick="OpenAutoTaggerDialog"
+                                        Disabled="@_loading">
+                                 Auto Tag
+                             </MudButton>
+                             </MudPaper>
+                             }
+                             else if (!_loading && _items.Count > 0)
+                             {
+                             <MudPaper Elevation="0" Class="tag-bar pa-2 d-flex align-center justify-space-between">
+                                 <span class="mud-text-secondary" style="font-size: 0.875rem; padding-left: 8px;">No tags found. Run tag backfill to automatically scan and tag your bookmarks.</span>
+                                 <MudButton Variant="Variant.Text"
+                                            Color="Color.Primary"
+                                            Size="Size.Small"
+                                            StartIcon="@Icons.Material.Filled.AutoAwesome"
+                                            OnClick="OpenAutoTaggerDialog"
+                                            Disabled="@_loading">
+                                     Auto Tag
+                                 </MudButton>
+                             </MudPaper>
+                             }
+                             </div>
              </div>
         </div>
 

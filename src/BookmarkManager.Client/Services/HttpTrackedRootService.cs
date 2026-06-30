@@ -28,6 +28,9 @@ public sealed class HttpTrackedRootService : ITrackedRootService
     public async Task<bool> SyncRootAsync(Guid id, CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => _apiClient.SendAsync(HttpMethod.Post, $"api/trackedroots/{id}/sync", cancellationToken: cancellationToken));
 
+    public async Task<bool> RepairRootAsync(Guid id, CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => _apiClient.SendAsync(HttpMethod.Post, $"api/trackedroots/{id}/repair", cancellationToken: cancellationToken));
+
     private static async Task<bool> InvokeBoolAsync(Func<Task> action)
     {
         try

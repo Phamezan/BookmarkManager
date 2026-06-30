@@ -1,0 +1,357 @@
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+@using MudBlazor
+@using System.Threading
+
+<MudDialog Class="auto-tagger-dialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Auto Tagger</MudText>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        <MudStack Spacing="4">
+            @if (_loading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Scanning bookmarks for untagged items...</MudText>
+            }
+            else if (_selectableFolders.Count == 0 && !_isTagging)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">
+                    All bookmarks are fully tagged! There are no untagged bookmarks found.
+                </MudAlert>
+            }
+            else
+            {
+                @if (!_isTagging)
+                {
+                    <MudStack Spacing="2">
+                        <div class="d-flex align-center justify-space-between">
+                            <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">SELECT FOLDERS TO TAG</MudText>
+                            <MudCheckBox T="bool" Value="_selectAll" ValueChanged="OnSelectAllChanged" Label="Select All" Color="Color.Primary" Dense="true" />
+                        </div>
+                        <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+                            <MudGrid Spacing="1">
+                                @foreach (var folder in _selectableFolders)
+                                {
+                                    var isChecked = _selectedFolderIds.Contains(folder.Id);
+                                    <MudItem xs="12" sm="6">
+                                        <MudPaper Outlined="true" Class="pa-2 d-flex align-center justify-space-between" Style="background: transparent;">
+                                            <div class="d-flex align-center gap-2 text-truncate">
+                                                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" Color="Color.Primary" />
+                                                <span class="text-truncate" style="font-size: 0.9rem;">
+                                                    @folder.Title
+                                                    <span class="mud-text-secondary" style="font-size: 0.75rem; font-weight: 600; margin-left: 4px;">
+                                                        (@_untaggedCounts[folder.Id] untagged)
+                                                    </span>
+                                                </span>
+                                            </div>
+                                            <MudCheckBox T="bool" Value="isChecked" ValueChanged="@((val) => OnFolderCheckChanged(folder.Id, val))" Color="Color.Primary" Dense="true" />
+                                        </MudPaper>
+                                    </MudItem>
+                                }
+                            </MudGrid>
+                        </div>
+                    </MudStack>
+                }
+
+                @if (_isTagging || _processedCount > 0)
+                {
+                    <MudStack Spacing="1" Class="mt-2">
+                        <div class="d-flex justify-space-between align-center">
+                            <MudText Typo="Typo.caption" Style="font-weight: 600;">@_statusText</MudText>
+                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">@_processedCount / @_totalCount bookmarks</MudText>
+                        </div>
+                        <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                    </MudStack>
+                }
+
+                <MudStack Spacing="1">
+                    <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">ACTIVITY LOG</MudText>
+                    <div id="tagger-terminal-log" style="height: 180px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
+                        @foreach (var log in _logs)
+                        {
+                            <div style="margin-bottom: 2px;">
+                                <span style="color: #64748b; margin-right: 6px;">[@log.Timestamp]</span>
+                                @if (log.Type == LogType.Success)
+                                {
+                                    <span style="color: #10b981;">@log.Message</span>
+                                }
+                                else if (log.Type == LogType.Error)
+                                {
+                                    <span style="color: #ef4444;">@log.Message</span>
+                                }
+                                else if (log.Type == LogType.Info)
+                                {
+                                    <span style="color: #38bdf8;">@log.Message</span>
+                                }
+                                else
+                                {
+                                    <span>@log.Message</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                </MudStack>
+            }
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="@_isTagging">Cancel</MudButton>
+        @if (_isTagging)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopTagging">Stop Tagging</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled"
+                       Style="background-color: #10b981; color: white;"
+                       StartIcon="@Icons.Material.Filled.PlayArrow"
+                       OnClick="StartTaggingAsync"
+                       Disabled="@(_loading || _selectedFolderIds.Count == 0)">
+                Start Tagging
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+    [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
+
+    private bool _loading = true;
+    private bool _isTagging;
+    private string _statusText = "Ready to start.";
+    private int _processedCount;
+    private int _totalCount;
+    private bool _selectAll;
+
+    private List<FolderTreeNodeDto> _selectableFolders = [];
+    private Dictionary<Guid, int> _untaggedCounts = new();
+    private HashSet<Guid> _selectedFolderIds = [];
+
+    private List<TerminalLogEntry> _logs = [];
+    private CancellationTokenSource? _cts;
+
+    private double ProgressPercent => _totalCount == 0 ? 0 : ((double)_processedCount / _totalCount) * 100;
+
+    protected override async Task OnInitializedAsync()
+    {
+        AddLog("Scanning database for folders with untagged bookmarks...", LogType.Info);
+        try
+        {
+            var rawFolders = await BookmarkService.GetFolderTreeAsync();
+            _untaggedCounts = await BookmarkService.GetUntaggedCountsAsync();
+
+            var flatFolders = new List<FolderTreeNodeDto>();
+            FlattenFolders(rawFolders, flatFolders);
+
+            _selectableFolders = flatFolders
+                .Where(f => _untaggedCounts.TryGetValue(f.Id, out var count) && count > 0)
+                .ToList();
+
+            // Default to selecting all available folders
+            foreach (var f in _selectableFolders)
+            {
+                _selectedFolderIds.Add(f.Id);
+            }
+            _selectAll = true;
+
+            AddLog($"Found {_selectableFolders.Count} folders with untagged bookmarks.", LogType.Success);
+        }
+        catch (Exception ex)
+        {
+            AddLog($"Error scanning folders: {ex.Message}", LogType.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void FlattenFolders(List<FolderTreeNodeDto> nodes, List<FolderTreeNodeDto> flatList)
+    {
+        foreach (var node in nodes)
+        {
+            flatList.Add(node);
+            FlattenFolders(node.Children, flatList);
+        }
+    }
+
+    private void OnSelectAllChanged(bool val)
+    {
+        _selectAll = val;
+        _selectedFolderIds.Clear();
+        if (val)
+        {
+            foreach (var f in _selectableFolders)
+            {
+                _selectedFolderIds.Add(f.Id);
+            }
+        }
+    }
+
+    private void OnFolderCheckChanged(Guid id, bool isChecked)
+    {
+        if (isChecked)
+        {
+            _selectedFolderIds.Add(id);
+        }
+        else
+        {
+            _selectedFolderIds.Remove(id);
+            _selectAll = false;
+        }
+    }
+
+    private async Task StartTaggingAsync()
+    {
+        _isTagging = true;
+        _processedCount = 0;
+        _totalCount = _selectedFolderIds.Sum(id => _untaggedCounts.GetValueOrDefault(id, 0));
+        _logs.Clear();
+        _cts = new CancellationTokenSource();
+
+        AddLog("Initializing AI Auto Tagger...", LogType.Info);
+
+        try
+        {
+            foreach (var folderId in _selectedFolderIds)
+            {
+                _cts.Token.ThrowIfCancellationRequested();
+
+                var folder = _selectableFolders.First(f => f.Id == folderId);
+                _statusText = $"Loading '{folder.Title}'...";
+                AddLog($"Reading bookmarks in folder '{folder.Title}'...", LogType.Info);
+                StateHasChanged();
+
+                var bookmarks = await BookmarkService.GetBookmarksAsync(folderId);
+                var untagged = bookmarks
+                    .Where(b => b.Type == NodeType.Bookmark && (b.Metadata?.Tags == null || b.Metadata.Tags.Count == 0))
+                    .Select(b => new BookmarkTagCandidateDto { Id = b.Id, Title = b.Title, Url = b.Url })
+                    .ToList();
+
+                if (untagged.Count == 0)
+                {
+                    continue;
+                }
+
+                _statusText = $"Tagging '{folder.Title}' folder...";
+                AddLog($"Found {untagged.Count} untagged bookmarks. Chunking for batch API...", LogType.Info);
+                StateHasChanged();
+
+                // Chunk in sizes of 50
+                for (int i = 0; i < untagged.Count; i += 50)
+                {
+                    _cts.Token.ThrowIfCancellationRequested();
+
+                    var chunk = untagged.Skip(i).Take(50).ToList();
+                    AddLog($"Sending batch of {chunk.Count} bookmarks to AI Tagging service...", LogType.Info);
+                    StateHasChanged();
+
+                    try
+                    {
+                        var response = await BookmarkService.TagBatchAsync(chunk, _cts.Token);
+                        foreach (var item in chunk)
+                        {
+                            if (response.Tags.TryGetValue(item.Id, out var tags) && tags.Count > 0)
+                            {
+                                AddLog($"✓ '{item.Title}' tagged: [{string.Join(", ", tags)}]", LogType.Success);
+                            }
+                            else
+                            {
+                                AddLog($"⚠ '{item.Title}' tagged with empty suggestions.", LogType.Success);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AddLog($"Error tagging batch starting with '{chunk[0].Title}': {ex.Message}", LogType.Error);
+                    }
+
+                    _processedCount += chunk.Count;
+                    StateHasChanged();
+                    await ScrollTerminalToBottomAsync();
+                }
+
+                AddLog($"✓ Folder '{folder.Title}' tagged successfully.", LogType.Success);
+                await ScrollTerminalToBottomAsync();
+            }
+
+            _statusText = "Completed successfully!";
+            AddLog("AI Auto Tagger finished successfully.", LogType.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            _statusText = "Cancelled.";
+            AddLog("AI Auto Tagger cancelled by user.", LogType.Error);
+        }
+        catch (Exception ex)
+        {
+            _statusText = "Error.";
+            AddLog($"An error occurred: {ex.Message}", LogType.Error);
+        }
+        finally
+        {
+            _isTagging = false;
+            _cts?.Dispose();
+            _cts = null;
+            StateHasChanged();
+            await ScrollTerminalToBottomAsync();
+        }
+    }
+
+    private void StopTagging()
+    {
+        _cts?.Cancel();
+    }
+
+    private void Cancel()
+    {
+        StopTagging();
+        MudDialog.Cancel();
+    }
+
+    private void AddLog(string message, LogType type)
+    {
+        _logs.Add(new TerminalLogEntry
+        {
+            Timestamp = DateTime.Now.ToString("HH:mm:ss"),
+            Message = message,
+            Type = type
+        });
+        StateHasChanged();
+    }
+
+    private async Task ScrollTerminalToBottomAsync()
+    {
+        try
+        {
+            await JsRuntime.InvokeVoidAsync("eval", "const el = document.getElementById('tagger-terminal-log'); if (el) el.scrollTop = el.scrollHeight;");
+        }
+        catch
+        {
+            // Ignore JS failures
+        }
+    }
+
+    private class TerminalLogEntry
+    {
+        public string Timestamp { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+        public LogType Type { get; set; }
+    }
+
+    private enum LogType
+    {
+        Normal,
+        Success,
+        Error,
+        Info
+    }
+}

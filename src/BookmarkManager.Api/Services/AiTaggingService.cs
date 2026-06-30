@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Services;
 
@@ -196,6 +197,107 @@ public sealed class AiTaggingService
             _logger.LogWarning(ex, "AI tagging failed for {Url}; falling back to heuristic.", cleanUrl);
             return new List<string>();
         }
+    }
+
+    public async Task<Dictionary<Guid, List<string>>> SuggestTagsBatchAsync(
+        List<BookmarkTagCandidateDto> items,
+        CancellationToken cancellationToken = default)
+    {
+        var result = new Dictionary<Guid, List<string>>();
+        if (!IsConfigured || items.Count == 0)
+            return result;
+
+        var opts = GetCurrentOptions();
+
+        var system = "You tag bookmarks. You are given a JSON array of bookmarks containing " +
+                     "{\"id\":\"...\",\"title\":\"...\",\"url\":\"...\"}. " +
+                     "Reply with ONLY a JSON object of the form " +
+                     "{\"tags\":{\"<id>\":[\"tag\",\"tag\"],\"<id>\":[...]}}. " +
+                     "Use 1-6 short tags per bookmark. Prefer concrete nouns the page is about (language, framework, " +
+                     "topic, domain). Use TitleCase. No commentary, no prose.";
+
+        var cleanItems = items.Select(i => new
+        {
+            id = i.Id.ToString(),
+            title = string.IsNullOrWhiteSpace(i.Title) ? "(untitled)" : i.Title,
+            url = string.IsNullOrWhiteSpace(i.Url) ? "(none)" : i.Url
+        }).ToList();
+
+        var user = JsonSerializer.Serialize(cleanItems);
+
+        var body = new
+        {
+            model = opts.Model,
+            messages = new object[]
+            {
+                new { role = "system", content = system },
+                new { role = "user", content = user }
+            },
+            temperature = opts.Temperature,
+            max_tokens = 4000,
+            response_format = new { type = "json_object" }
+        };
+
+        try
+        {
+            var http = _httpFactory.CreateClient(nameof(AiTaggingService));
+            using var req = new HttpRequestMessage(HttpMethod.Post, opts.Endpoint) { Content = JsonContent.Create(body, options: JsonOptions) };
+            if (!string.IsNullOrWhiteSpace(opts.ApiKey))
+                req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", opts.ApiKey);
+
+            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            http.Timeout = opts.Timeout;
+
+            using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            resp.EnsureSuccessStatusCode();
+
+            var raw = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            return ParseBatchTags(raw);
+        }
+        catch (System.Exception ex)
+        {
+            _logger.LogWarning(ex, "AI batch tagging failed for {Count} items.", items.Count);
+            return result;
+        }
+    }
+
+    private static Dictionary<Guid, List<string>> ParseBatchTags(string rawJson)
+    {
+        var result = new Dictionary<Guid, List<string>>();
+        if (string.IsNullOrWhiteSpace(rawJson))
+            return result;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("tags", out var tagsEl))
+            {
+                root = tagsEl;
+            }
+
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var prop in root.EnumerateObject())
+                {
+                    if (Guid.TryParse(prop.Name, out var id) && prop.Value.ValueKind == JsonValueKind.Array)
+                    {
+                        var tagsList = prop.Value.EnumerateArray()
+                            .Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null)
+                            .Where(s => !string.IsNullOrWhiteSpace(s))
+                            .Select(s => s!.Trim())
+                            .Take(6)
+                            .ToList();
+                        result[id] = tagsList;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Ignore parse errors, caller handles fallback
+        }
+        return result;
     }
 
     private static List<string> ParseTags(string rawJson)

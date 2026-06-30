@@ -90,7 +90,10 @@
     --mud-palette-text-primary: var(--bm-text) !important;
     --mud-palette-text-secondary: var(--bm-text-secondary) !important;
     --mud-palette-primary: var(--bm-accent) !important;
-    --mud-palette-primary-hover: var(--bm-accent-hover) !important;
+    /* MudBlazor uses primary-hover as a BACKGROUND fill for selected/hover
+       states (treeview rows, chips, etc.). It must be a faint overlay, NOT
+       a solid bright color, or every selected item glows neon. */
+    --mud-palette-primary-hover: var(--bm-accent-soft) !important;
     --mud-palette-primary-soft: var(--bm-accent-soft) !important;
 }
 
@@ -326,6 +329,9 @@ body {
 
 /* Primary nav */
 .primary-nav {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     padding: var(--bm-space-3) var(--bm-space-2);
 }
 
@@ -564,7 +570,7 @@ body {
 ---------------------------------------------------------------------------- */
 .bookmarks-workspace {
     display: grid;
-    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(280px, 18vw) minmax(0, 1fr);
     gap: var(--bm-gap);
     height: calc(100vh - 56px - 40px);
     min-height: 600px;
@@ -639,7 +645,6 @@ body {
 .mud-treeview .mud-treeview-item-content {
     border-radius: var(--bm-radius);
     transition: background var(--bm-fast) var(--bm-ease);
-    position: relative;
 }
 
 .mud-treeview .mud-treeview-item-content:hover {
@@ -647,24 +652,20 @@ body {
 }
 
 /* Selected folder — restrained: subtle elevation + accent text, no blue wash.
-   The leading accent rail is the only color cue, matching nav + root-card. */
-.mud-treeview .mud-treeview-item-selected .mud-treeview-item-content,
-.mud-treeview .mud-treeview-item-active .mud-treeview-item-content {
-    background: var(--bm-surface-raised) !important;
-    box-shadow: inset 2px 0 0 var(--bm-accent);
-}
-
-.mud-treeview .mud-treeview-item-selected .mud-typography,
-.mud-treeview .mud-treeview-item-active .mud-typography {
+   IMPORTANT: MudBlazor puts `mud-treeview-item-selected` on the SAME element
+   as `mud-treeview-item-content` (compound selector), not on an ancestor.
+   The leading accent rail is the only color cue. */
+.mud-treeview.mud-treeview-selected-primary
+.mud-treeview-item-content.mud-treeview-item-selected {
+    background-color: var(--bm-surface-raised) !important;
     color: var(--bm-text) !important;
-    font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--bm-accent);
 }
 
 /* Disabled folder — must be visibly distinct or the Move dialog feels broken
    (clicks are silently rejected by MudBlazor on disabled items). */
 .mud-treeview-item.mud-disabled,
-.mud-treeview .mud-treeview-item-content:has(.mud-disabled),
-.mud-treeview-item[aria-disabled="true"] .mud-treeview-item-content {
+.mud-treeview-item[aria-disabled="true"] {
     opacity: 0.4;
     cursor: not-allowed;
 }
@@ -768,6 +769,44 @@ body {
 
 .explorer-toolbar .mud-select .mud-input {
     color: var(--bm-text) !important;
+}
+
+/* Tag filter bar */
+.tag-bar {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: var(--bm-space-3) !important;
+    width: 100% !important;
+    padding: var(--bm-space-2) var(--bm-space-3) !important;
+    margin-top: var(--bm-space-2) !important;
+    background: var(--bm-surface) !important;
+    border: 1px solid var(--bm-border) !important;
+    border-radius: var(--bm-radius-lg) !important;
+    box-shadow: var(--bm-shadow-sm) !important;
+}
+
+.tag-bar-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--bm-space-1);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.tag-bar-label {
+    color: var(--bm-text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-right: var(--bm-space-1);
+}
+
+.tag-count {
+    opacity: 0.6;
+    font-size: 0.7rem;
+    margin-left: 0.25rem;
 }
 
 /* Selection bar — sticky, accent-tinted */
@@ -960,16 +999,29 @@ a.root-card:hover {
     margin-top: 2px;
 }
 
-.root-card-count {
-    background: rgba(255, 255, 255, 0.04);
-    padding: 2px 7px;
+.root-card-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     border-radius: var(--bm-radius-full);
-    font-size: 0.68rem;
-    font-weight: 600;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
-    color: var(--bm-accent);
-    border: 1px solid var(--bm-border-accent);
+    color: var(--bm-text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--bm-border);
+    transition: all var(--bm-fast) var(--bm-ease);
     flex-shrink: 0;
+}
+
+.root-card:hover .root-card-remove {
+    color: var(--bm-text-secondary);
+}
+
+.root-card-remove:hover {
+    background: var(--bm-danger-soft) !important;
+    color: var(--bm-danger) !important;
+    border-color: rgba(248, 113, 113, 0.2) !important;
+    transform: scale(1.05);
 }
 
 /* Empty favorites placeholder */
@@ -999,20 +1051,11 @@ a.root-card:hover {
 }
 
 /* Dynamic grid: cards reflow to fill available container width.
-   minmax floor keeps cards readable; auto-fit stretches them to fill. */
+   minmax floor keeps cards readable; auto-fill prevents small counts from stretching. */
 .bookmark-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: var(--bm-space-3);
-}
-
-/* On very wide viewports, avoid an endless row of narrow cards by
-   centering the grid and capping its max width. */
-@media (min-width: 1600px) {
-    .bookmark-grid {
-        max-width: 1480px;
-        margin-inline: auto;
-    }
 }
 
 /* Bookmark card — glassy, refined */
@@ -1764,16 +1807,14 @@ a.root-card:hover {
     padding: var(--bm-space-6) !important;
 }
 
-/* Popovers / dropdowns */
-.mud-popover,
-.mud-popover.mud-paper,
-.mud-popover-provider .mud-paper {
+/* Popovers / dropdowns — only style OPEN popovers, never force invisible
+   ones visible (forcing opacity:1 on hidden popovers can intercept clicks). */
+.mud-popover.mud-popover-open,
+.mud-popover.mud-popover-open.mud-paper {
     background-color: var(--bm-popover-bg) !important;
-    background: var(--bm-popover-bg) !important;
     border: 1px solid var(--bm-border-strong) !important;
     box-shadow: var(--bm-shadow-lg) !important;
     border-radius: var(--bm-radius-md) !important;
-    opacity: 1 !important;
 }
 
 .mud-list-item {
@@ -1783,7 +1824,7 @@ a.root-card:hover {
 }
 
 .mud-list-item:hover {
-    background-color: var(--bm-surface-muted) !important;
+    background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 /* Layout transparency */
