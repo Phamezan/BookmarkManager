@@ -168,7 +168,20 @@
         }
         else if (_currentState == TaggerState.Tagging)
         {
-            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopTagging">Stop Tagging</MudButton>
+            @if (!_taggingFinished)
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopTagging">Stop Tagging</MudButton>
+            }
+            else
+            {
+                <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled"
+                           Style="background-color: #10b981; color: white;"
+                           StartIcon="@Icons.Material.Filled.ArrowForward"
+                           OnClick="GoToReview">
+                    Next
+                </MudButton>
+            }
         }
         else if (_currentState == TaggerState.Review)
         {
@@ -198,7 +211,8 @@
 
     private bool _loading = true;
     private TaggerState _currentState = TaggerState.Selection;
-    private bool _isTagging => _currentState == TaggerState.Tagging;
+    private bool _taggingFinished;
+    private bool _isTagging => _currentState == TaggerState.Tagging && !_taggingFinished;
     
     private string _statusText = "Ready to start.";
     private int _processedCount;
@@ -403,19 +417,18 @@
                 await ScrollTerminalToBottomAsync();
             }
 
-            AddLog("Tag generation complete. Transitioning to review screen...", LogType.Info);
-            await Task.Delay(1000);
-            _currentState = TaggerState.Review;
+            AddLog("Tag generation complete. Review the activity log above and click 'Next' to continue.", LogType.Success);
+            _taggingFinished = true;
         }
         catch (OperationCanceledException)
         {
-            _currentState = TaggerState.Selection;
-            Snackbar.Add("Tagging cancelled by user.", Severity.Warning);
+            AddLog("Tagging cancelled by user.", LogType.Error);
+            _taggingFinished = true;
         }
         catch (Exception ex)
         {
-            _currentState = TaggerState.Selection;
-            Snackbar.Add($"An error occurred during tagging: {ex.Message}", Severity.Error);
+            AddLog($"An error occurred during tagging: {ex.Message}", LogType.Error);
+            _taggingFinished = true;
         }
         finally
         {
@@ -423,6 +436,11 @@
             _cts = null;
             StateHasChanged();
         }
+    }
+
+    private void GoToReview()
+    {
+        _currentState = TaggerState.Review;
     }
 
     private void RemoveTag(Guid id, string tag)
