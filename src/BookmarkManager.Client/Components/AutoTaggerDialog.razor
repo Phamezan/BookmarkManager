@@ -57,9 +57,17 @@
 
                     <MudDivider Class="my-1" />
 
-                    <MudStack Row="true" Spacing="4">
-                        <MudSwitch T="bool" @bind-Value="_useAi" Label="Use AI Tagging" Color="Color.Primary" />
-                        @if (_useAi)
+                    <MudStack Row="true" Spacing="4" AlignItems="AlignItems.Center" Style="flex-wrap: wrap;">
+                        <div class="d-flex align-center gap-2">
+                            <MudSwitch T="bool" @bind-Value="_useAi" Label="Use AI Tagging" Color="Color.Primary" Disabled="@(!_aiConfigured)" />
+                            @if (!_aiConfigured)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Error" Class="ml-2">
+                                    AI is not configured. Set up your provider and API key in Settings first.
+                                </MudText>
+                            }
+                        </div>
+                        @if (_useAi && _aiConfigured)
                         {
                             <MudSwitch T="bool" @bind-Value="_allowFallback" Label="Allow Heuristic Fallback" Color="Color.Primary" />
                         }
@@ -234,15 +242,27 @@
 
     private double ProgressPercent => _totalCount == 0 ? 0 : ((double)_processedCount / _totalCount) * 100;
 
+    private bool _aiConfigured;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            _useAi = await BookmarkService.IsAiTaggingEnabledAsync();
+            var settings = await BookmarkService.GetAiTaggingSettingsAsync();
+            if (settings != null && !string.IsNullOrWhiteSpace(settings.Endpoint))
+            {
+                var isOllama = settings.Endpoint.Contains("localhost:11434") || settings.Endpoint.Contains("127.0.0.1:11434") || settings.Endpoint.Contains("ollama");
+                if (isOllama || !string.IsNullOrWhiteSpace(settings.ApiKey))
+                {
+                    _aiConfigured = true;
+                }
+            }
+            _useAi = _aiConfigured && (settings?.Enabled ?? false);
         }
         catch
         {
             _useAi = false;
+            _aiConfigured = false;
         }
 
         try
