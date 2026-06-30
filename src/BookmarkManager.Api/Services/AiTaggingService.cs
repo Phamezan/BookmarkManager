@@ -249,7 +249,11 @@ public sealed class AiTaggingService
             http.Timeout = opts.Timeout;
 
             using var resp = await http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-            resp.EnsureSuccessStatusCode();
+            if (!resp.IsSuccessStatusCode)
+            {
+                var errorContent = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                throw new HttpRequestException($"AI endpoint returned status {(int)resp.StatusCode} ({resp.ReasonPhrase}). Details: {errorContent}");
+            }
 
             var raw = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             return ParseBatchTags(raw);
@@ -257,7 +261,7 @@ public sealed class AiTaggingService
         catch (System.Exception ex)
         {
             _logger.LogWarning(ex, "AI batch tagging failed for {Count} items.", items.Count);
-            return result;
+            throw;
         }
     }
 

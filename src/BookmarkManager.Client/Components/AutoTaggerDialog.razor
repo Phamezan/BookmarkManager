@@ -415,7 +415,8 @@
                     }
                     catch (Exception ex)
                     {
-                        AddLog($"Error tagging batch starting with '{chunk[0].Title}': {ex.Message}", LogType.Error);
+                        var msg = ex is ApiException apiEx ? (apiEx.Detail ?? apiEx.Title) : ex.Message;
+                        AddLog($"Error: {msg}", LogType.Error);
                         foreach (var item in chunk)
                         {
                             _reviewItems.Add(new ReviewItem

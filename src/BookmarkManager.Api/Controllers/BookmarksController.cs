@@ -544,30 +544,37 @@ public class BookmarksController : ControllerBase
         [FromBody] BookmarkManager.Contracts.BatchTagRequest request,
         CancellationToken ct)
     {
-        var resultMapping = new Dictionary<Guid, List<string>>();
-
-        if (request.UseAi)
+        try
         {
-            resultMapping = await _aiTagging.SuggestTagsBatchAsync(request.Items, ct);
-        }
+            var resultMapping = new Dictionary<Guid, List<string>>();
 
-        // Fallback to offline rule-based tag extractor if requested
-        foreach (var item in request.Items)
+            if (request.UseAi)
+            {
+                resultMapping = await _aiTagging.SuggestTagsBatchAsync(request.Items, ct);
+            }
+
+            // Fallback to offline rule-based tag extractor if requested
+            foreach (var item in request.Items)
+            {
+                var hasAiTags = resultMapping.TryGetValue(item.Id, out var tags) && tags.Count > 0;
+                if (!hasAiTags && request.AllowFallback)
+                {
+                    var fallbackTags = _tagExtractor.ExtractTags(item.Title, item.Url).ToList();
+                    resultMapping[item.Id] = fallbackTags;
+                }
+                else if (!hasAiTags)
+                {
+                    // Ensure the key exists even if empty, so the client knows it failed
+                    resultMapping[item.Id] = new List<string>();
+                }
+            }
+
+            return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
+        }
+        catch (Exception ex)
         {
-            var hasAiTags = resultMapping.TryGetValue(item.Id, out var tags) && tags.Count > 0;
-            if (!hasAiTags && request.AllowFallback)
-            {
-                var fallbackTags = _tagExtractor.ExtractTags(item.Title, item.Url).ToList();
-                resultMapping[item.Id] = fallbackTags;
-            }
-            else if (!hasAiTags)
-            {
-                // Ensure the key exists even if empty, so the client knows it failed
-                resultMapping[item.Id] = new List<string>();
-            }
+            return StatusCode(500, ex.Message);
         }
-
-        return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
     }
 
     [HttpPost("tags/bulk-save")]
