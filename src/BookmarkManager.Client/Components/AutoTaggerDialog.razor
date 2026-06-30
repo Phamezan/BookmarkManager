@@ -360,26 +360,38 @@
                         var response = await BookmarkService.TagBatchAsync(req, _cts.Token);
                         foreach (var item in chunk)
                         {
-                            if (response.Tags.TryGetValue(item.Id, out var tags) && tags.Count > 0)
+                            var tags = response.Tags.TryGetValue(item.Id, out var t) ? t : new List<string>();
+                            if (tags.Count > 0)
                             {
                                 AddLog($"✓ '{item.Title}' tagged: [{string.Join(", ", tags)}]", LogType.Success);
-                                _reviewItems.Add(new ReviewItem
-                                {
-                                    Id = item.Id,
-                                    Title = item.Title,
-                                    Url = item.Url ?? string.Empty,
-                                    Tags = tags
-                                });
                             }
                             else
                             {
                                 AddLog($"✗ '{item.Title}' failed to tag (no tags generated)", LogType.Error);
                             }
+
+                            _reviewItems.Add(new ReviewItem
+                            {
+                                Id = item.Id,
+                                Title = item.Title,
+                                Url = item.Url ?? string.Empty,
+                                Tags = tags
+                            });
                         }
                     }
                     catch (Exception ex)
                     {
                         AddLog($"Error tagging batch starting with '{chunk[0].Title}': {ex.Message}", LogType.Error);
+                        foreach (var item in chunk)
+                        {
+                            _reviewItems.Add(new ReviewItem
+                            {
+                                Id = item.Id,
+                                Title = item.Title,
+                                Url = item.Url ?? string.Empty,
+                                Tags = new List<string>()
+                            });
+                        }
                     }
 
                     _processedCount += chunk.Count;
