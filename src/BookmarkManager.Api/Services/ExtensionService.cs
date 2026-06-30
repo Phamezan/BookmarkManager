@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BookmarkManager.Api.Services;
 
-public sealed class ExtensionService(AppDbContext db, TagExtractorService tagExtractor, AiTaggingService aiTagging) : IExtensionService
+public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService bookmarkTagging) : IExtensionService
 {
     public async Task<HeartbeatResponse> HandleHeartbeatAsync(HeartbeatRequest request, CancellationToken ct)
     {
@@ -405,19 +405,10 @@ public sealed class ExtensionService(AppDbContext db, TagExtractorService tagExt
                     ParentBrowserNodeId = parentBrowserNodeId
                 };
 
-                // Auto-tag new bookmarks. Folders and already-tagged nodes are left alone.
-                // Tags are manager-only metadata, so no command is enqueued back to Brave.
                 if (newNode.Type == NodeType.Bookmark && string.IsNullOrEmpty(newNode.Tags))
                 {
-                    List<string> autoTags = [];
-                    if (aiTagging.IsConfigured)
-                    {
-                        autoTags = await aiTagging.SuggestTagsAsync(title ?? string.Empty, url, cancellationToken: ct);
-                    }
-                    if (autoTags.Count == 0)
-                    {
-                        autoTags = tagExtractor.ExtractTags(title ?? string.Empty, url).ToList();
-                    }
+                    var folderPath = await BuildFolderPathAsync(parentId, ct);
+                    var autoTags = await bookmarkTagging.GetTagsAsync(title ?? string.Empty, url, folderPath, BookmarkTagDomainDto.Auto, ct);
                     if (autoTags.Count > 0)
                         newNode.Tags = string.Join(",", autoTags);
                 }
@@ -839,6 +830,31 @@ public sealed class ExtensionService(AppDbContext db, TagExtractorService tagExt
             await db.SaveChangesAsync(ct);
             await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
         }
+    }
+
+    private async Task<string?> BuildFolderPathAsync(Guid? folderId, CancellationToken ct)
+    {
+        if (!folderId.HasValue)
+            return null;
+
+        var titles = new Stack<string>();
+        var currentId = folderId;
+        for (var depth = 0; currentId.HasValue && depth < 32; depth++)
+        {
+            var folder = await db.BookmarkNodes
+                .AsNoTracking()
+                .Where(n => n.Id == currentId.Value && n.Type == NodeType.Folder && !n.IsDeleted)
+                .Select(n => new { n.Title, n.ParentId })
+                .FirstOrDefaultAsync(ct);
+
+            if (folder is null)
+                break;
+
+            titles.Push(folder.Title);
+            currentId = folder.ParentId;
+        }
+
+        return titles.Count == 0 ? null : string.Join(" / ", titles);
     }
 
     private async Task<AppConfig> GetOrCreateAppConfigAsync(CancellationToken ct)

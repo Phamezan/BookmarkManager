@@ -31,6 +31,7 @@ export interface ServiceWorkerDeps {
 export class ServiceWorker {
   private coordinator: SyncCoordinator;
   private deps: ServiceWorkerDeps;
+  private bookmarkListenersRegistered = false;
 
   constructor(deps: ServiceWorkerDeps) {
     this.deps = deps;
@@ -42,6 +43,7 @@ export class ServiceWorker {
       getExtensionVersion: deps.getExtensionVersion,
       getBraveVersion: deps.getBraveVersion,
     });
+    this.registerBookmarkListeners();
   }
 
   async initialize(): Promise<void> {
@@ -64,6 +66,9 @@ export class ServiceWorker {
   }
 
   private registerBookmarkListeners(): void {
+    if (this.bookmarkListenersRegistered) return;
+    this.bookmarkListenersRegistered = true;
+
     const bookmarks = chrome.bookmarks;
     console.log("[worker] Registering bookmark listeners");
 

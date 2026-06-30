@@ -387,7 +387,7 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
     } catch (error) {
       return {
         succeeded: false,
-        browserNodeId: undefined,
+        browserNodeId: null,
         completedNodeMappings: mappings,
         retryable: false,
         errorCode: "PARTIAL_FAILURE",
