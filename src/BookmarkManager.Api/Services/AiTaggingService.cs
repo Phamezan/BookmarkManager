@@ -352,7 +352,7 @@ public sealed class AiTaggingOptions
     public string ApiKey { get; set; } = string.Empty;
     public string Model { get; set; } = string.Empty;
     public double Temperature { get; set; } = 0.2;
-    public System.TimeSpan Timeout { get; set; } = System.TimeSpan.FromSeconds(20);
+    public System.TimeSpan Timeout { get; set; } = System.TimeSpan.FromSeconds(120);
 
     public static AiTaggingOptions Bind(IConfigurationSection section)
     {
