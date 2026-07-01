@@ -163,8 +163,9 @@ public sealed class AnilistTaggingService : IAnilistTagProvider
         // verbs / actions
         "watch", "read", "view", "stream", "online", "free", "official",
         // site / brand noise commonly appended to page titles
-        "miruro", "crunchyroll", "gogoanime", "gogo", "animepahe", "9anime",
-        "zoro", "kaido", "aniwave", "mangadex", "comick", "asura", "flame", "reaper",
+        "miruro", "crunchyroll", "gogoanime", "gogo", "animepahe", "9anime", "9animetv",
+        "zoro", "zorox", "kaido", "aniwave", "aniwatch", "aniwatchtv", "hianime", "animesge",
+        "kickassanime", "allanime", "mangadex", "comick", "asura", "flame", "reaper",
         "subs", "dub", "sub", "hd",
         // generic web words
         "home", "page", "website", "site", "com", "net", "org", "www",

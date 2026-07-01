@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
+using BookmarkManager.Api.Services.BookmarkTagging;
 
 namespace BookmarkManager.Api.Services;
 
@@ -50,13 +51,13 @@ public sealed class TagExtractorService
         @"\s*[-–]\s*(?:episode|ep|chapter|ch)\.?\s*\d+(?:\.\d+)?",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public IReadOnlyList<string> ExtractTags(string title, string? url, PageMetadata? page = null)
+    public IReadOnlyList<string> ExtractTags(string title, string? url, BookmarkTagDomain domain = BookmarkTagDomain.General, PageMetadata? page = null)
     {
         var scores = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 
         // 1. Rule-based category + domain tags (highest confidence).
         var combined = $"{title} {url ?? string.Empty} {page?.Description ?? string.Empty}".ToLowerInvariant();
-        foreach (var tag in MatchCategoryRules(combined, url))
+        foreach (var tag in MatchCategoryRules(combined, url, domain))
             scores[tag] = Math.Max(scores.GetValueOrDefault(tag), 5.0);
 
         // 2. Domain-derived tags (github owner, youtube channel, etc.).
@@ -78,7 +79,21 @@ public sealed class TagExtractorService
             AddTokenScores(scores, page.Description, weight: 0.8, source: "desc");
 
         // Normalize to Title Case, dedupe case-insensitively, order by score desc.
-        return scores
+        var queryableScores = scores.AsEnumerable();
+        if (domain == BookmarkTagDomain.Anime)
+        {
+            queryableScores = queryableScores.Where(kv => !string.Equals(kv.Key, "Manga", StringComparison.OrdinalIgnoreCase) && !string.Equals(kv.Key, "Novel", StringComparison.OrdinalIgnoreCase));
+        }
+        else if (domain == BookmarkTagDomain.Manga)
+        {
+            queryableScores = queryableScores.Where(kv => !string.Equals(kv.Key, "Anime", StringComparison.OrdinalIgnoreCase) && !string.Equals(kv.Key, "Novel", StringComparison.OrdinalIgnoreCase));
+        }
+        else if (domain == BookmarkTagDomain.Novel)
+        {
+            queryableScores = queryableScores.Where(kv => !string.Equals(kv.Key, "Anime", StringComparison.OrdinalIgnoreCase) && !string.Equals(kv.Key, "Manga", StringComparison.OrdinalIgnoreCase));
+        }
+
+        return queryableScores
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key)
             .Select(kv => ToTitleCase(kv.Key))
@@ -89,19 +104,50 @@ public sealed class TagExtractorService
 
     // Back-compat overload used by the suggest-tags endpoint.
     public List<string> ExtractTags(string title, string? url)
-        => ExtractTags(title, url, null).ToList();
+        => ExtractTags(title, url, BookmarkTagDomain.General, null).ToList();
 
     // ── Category rules ──────────────────────────────────────────────────────
 
-    private static IEnumerable<string> MatchCategoryRules(string combined, string? url)
+    private static IEnumerable<string> MatchCategoryRules(string combined, string? url, BookmarkTagDomain domain)
     {
-        if (HasAny(combined, "anime", "crunchyroll", "miruro", "gogoanime", "anilist",
-                   "myanimelist", "kitsu", "9anime", "animepahe"))
+        if (domain == BookmarkTagDomain.Anime)
+        {
             yield return "Anime";
-
-        if (HasAny(combined, "manga", "mangadex", "mangafox", "mangakakalot",
-                   "mangaplus", "chapter", "manhwa", "manhua", "webtoon"))
+        }
+        else if (domain == BookmarkTagDomain.Manga)
+        {
             yield return "Manga";
+        }
+        else if (domain == BookmarkTagDomain.Novel)
+        {
+            yield return "Novel";
+        }
+        else
+        {
+            // URL-based hints first to prevent false format tagging
+            string? urlLower = url?.ToLowerInvariant();
+            bool isAnimeUrl = urlLower != null && HasAny(urlLower, "crunchyroll.com", "miruro.tv", "gogoanime", "9anime", "animepahe", "hianime", "animesge", "kickassanime", "allanime");
+            bool isMangaUrl = urlLower != null && HasAny(urlLower, "mangadex.org", "mangafox", "mangakakalot", "mangaplus", "webtoons.com");
+
+            if (isAnimeUrl)
+            {
+                yield return "Anime";
+            }
+            else if (isMangaUrl)
+            {
+                yield return "Manga";
+            }
+            else
+            {
+                if (HasAny(combined, "anime", "crunchyroll", "miruro", "gogoanime", "anilist",
+                           "myanimelist", "kitsu", "9anime", "animepahe", "hianime", "animesge"))
+                    yield return "Anime";
+
+                else if (HasAny(combined, "manga", "mangadex", "mangafox", "mangakakalot",
+                                "mangaplus", "chapter", "manhwa", "manhua", "webtoon"))
+                    yield return "Manga";
+            }
+        }
 
         if (HasAny(combined, "github", "gitlab", "bitbucket", "stackoverflow",
                    "stack overflow", "developer", "developing", "documentation",
@@ -250,7 +296,14 @@ public sealed class TagExtractorService
         {
             "www" or "com" or "net" or "org" or "html" or "htm" or "php"
             or "search" or "results" or "watch" or "read" or "view"
-            or "official" or "home" or "index" => true,
+            or "official" or "home" or "index" or "english" or "season"
+            or "episode" or "episodes" or "series" or "dub" or "dubbed"
+            or "sub" or "subbed" or "uncensored" or "censored" or "tv"
+            or "aniwatch" or "aniwatchtv" or "gogoanime" or "miruro" or "zoro"
+            or "9anime" or "9animetv" or "aniwave" or "zorox" or "animepahe"
+            or "crunchyroll" or "bilibili" or "hianime" or "animesge" or "kickassanime"
+            or "allanime" or "gogoanimes" or "gogo" or "animetv" or "play" or "player"
+            => true,
             _ => false
         };
     }

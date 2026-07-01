@@ -47,7 +47,7 @@ public sealed class BookmarkTaggingService
         }
 
         if (tags.Count == 0)
-            tags = _localTagExtractor.ExtractTags(title, url).ToList();
+            tags = _localTagExtractor.ExtractTags(title, url, classification.Domain).ToList();
 
         return tags;
     }
@@ -84,7 +84,7 @@ public sealed class BookmarkTaggingService
             // If the provider returned nothing, try the local extractor so the
             // bookmark is never left empty just because an external API hiccupped.
             if (tags.Count == 0)
-                tags = _localTagExtractor.ExtractTags(item.Title, item.Url).ToList();
+                tags = _localTagExtractor.ExtractTags(item.Title, item.Url, classification.Domain).ToList();
 
             results[item.Id] = tags.ToList();
         }

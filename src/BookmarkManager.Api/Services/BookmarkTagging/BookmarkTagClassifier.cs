@@ -24,7 +24,8 @@ public static partial class BookmarkTagClassifier
             return new(BookmarkTagDomain.General, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: false, "user selected General");
 
         if (ContainsAny(combined,
-                " anime ", "crunchyroll", "animepahe", "gogoanime", "9anime", "anilist.co/anime", "myanimelist.net/anime"))
+                " anime ", "anime/", "/anime", "crunchyroll", "animepahe", "gogoanime", "9anime", "9animetv", "anilist.co/anime", "myanimelist.net/anime",
+                "miruro", "aniwatch", "aniwave", "zoro", "zorox", "hianime", "animesge", "kickassanime", "allanime"))
         {
             return new(BookmarkTagDomain.Anime, cleanTitle, ShouldUseAniList: true, ShouldUseMangaUpdates: false, "anime folder/host signal");
         }
@@ -46,10 +47,10 @@ public static partial class BookmarkTagClassifier
 
     public static BookmarkTagDomainDto GuessDefaultDomainFromFolderTitle(string folderTitleOrPath)
     {
-        var value = $" {folderTitleOrPath} ".ToLowerInvariant();
-        if (ContainsAny(value, " anime ")) return BookmarkTagDomainDto.Anime;
-        if (ContainsAny(value, " manga ", " manhwa ", " manhua ", " webtoon ")) return BookmarkTagDomainDto.Manga;
-        if (ContainsAny(value, " novel ", " novels ", " light novel ", "lightnovel", " web novel ", "webnovel", "ranobe", "wuxia", "xianxia", " ln ", " wn ")) return BookmarkTagDomainDto.Novel;
+        var value = folderTitleOrPath.ToLowerInvariant();
+        if (value.Contains("anime")) return BookmarkTagDomainDto.Anime;
+        if (ContainsAny(value, "manga", "manhwa", "manhua", "webtoon")) return BookmarkTagDomainDto.Manga;
+        if (ContainsAny(value, "novel", "novels", "lightnovel", "webnovel", "ranobe", "wuxia", "xianxia", " ln ", " wn ")) return BookmarkTagDomainDto.Novel;
         return BookmarkTagDomainDto.General;
     }
 

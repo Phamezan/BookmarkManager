@@ -1,4 +1,5 @@
 using BookmarkManager.Api.Services;
+using BookmarkManager.Api.Services.BookmarkTagging;
 
 namespace BookmarkManager.UnitTests;
 
@@ -89,5 +90,29 @@ public sealed class TagExtractorTests
     {
         var tags = _svc.ExtractTags("Blazor WebAssembly tutorial", "https://learn.microsoft.com/blazor");
         Assert.Contains(tags, t => string.Equals(t, "Blazor", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void NoiseWords_AreExcluded()
+    {
+        var tags = _svc.ExtractTags("Watch Miruro Anime English Subbed Dubbed Zoro Aniwave", "https://miruro.tv/watch/show");
+        
+        var noise = new[] { "Miruro", "English", "Subbed", "Dubbed", "Zoro", "Aniwave" };
+        foreach (var word in noise)
+        {
+            Assert.DoesNotContain(word, tags, StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void DomainConstraint_PreventsCrossDomainFormattingTags()
+    {
+        var tags = _svc.ExtractTags(
+            "Frieren Anime (manga adaptation description)", 
+            "https://miruro.tv/watch/frieren", 
+            BookmarkTagDomain.Anime);
+
+        Assert.Contains("Anime", tags);
+        Assert.DoesNotContain("Manga", tags);
     }
 }
