@@ -135,40 +135,6 @@ else
                  </div>
               </section>
 
-              <!-- Breadcrumbs Navigation -->
-              @{
-                  var breadcrumbs = GetBreadcrumbs();
-                  if (breadcrumbs.Count > 0)
-                  {
-                      <div class="bookmark-breadcrumbs" style="margin-top: 8px;">
-                          <div class="breadcrumbs-container" style="padding-left: 8px;">
-                              <span class="breadcrumb-item link" @onclick="@(() => OnFolderSelected(breadcrumbs[0].Id))" title="Go to Root">
-                                  <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" Style="margin-right: 4px; color: var(--bm-text-secondary);" />
-                                  Home
-                              </span>
-                              @for (int i = 0; i < breadcrumbs.Count; i++)
-                              {
-                                  var crumb = breadcrumbs[i];
-                                  var isLast = i == breadcrumbs.Count - 1;
-                                  
-                                  <span class="breadcrumb-separator">/</span>
-                                  
-                                  if (isLast)
-                                  {
-                                      <span class="breadcrumb-item active">@crumb.Title</span>
-                                  }
-                                  else
-                                  {
-                                      <span class="breadcrumb-item link" @onclick="@(() => OnFolderSelected(crumb.Id))">
-                                          @crumb.Title
-                                      </span>
-                                  }
-                              }
-                          </div>
-                      </div>
-                  }
-              }
-
               <!-- Toolbar & Selection Row -->
              <div class="header-select-row" style="display: block;">
                  <div class="header-content-container">
@@ -243,62 +209,93 @@ else
                              </MudTooltip>
                              </MudPaper>
                              }
-                             @if (_availableTags.Count > 0 || _retagBusy)
+                             @if (_selectedFolderId.HasValue)
                              {
-                             <MudPaper Elevation="0" Class="tag-bar" Style="flex-wrap: wrap; height: auto; padding: 12px; gap: 12px;">
-                             <div class="tag-categories-container" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                                 @foreach (var group in GroupTags(_availableTags))
-                                 {
-                                     <div class="tag-category-row" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                                         <span class="tag-bar-label" style="font-weight: 600; min-width: 70px; color: var(--bm-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">@group.CategoryName:</span>
-                                         <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                                             @foreach (var tag in group.Tags)
+                                 <MudPaper Elevation="0" Class="tag-bar" Style="flex-wrap: wrap; height: auto; padding: 12px; gap: 12px;">
+                                     @if (_availableTags.Count > 0 || _retagBusy)
+                                     {
+                                         <div class="tag-categories-container" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                                             @foreach (var group in GroupTags(_availableTags))
                                              {
-                                                 var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
-                                                 <MudChip T="string"
-                                                          Variant="@(active ? Variant.Filled : Variant.Outlined)"
-                                                          Color="@GetCategoryColor(group.CategoryName)"
-                                                          Size="Size.Small"
-                                                          OnClick="@(() => ToggleTagFilter(tag.Tag))"
-                                                          Style="cursor:pointer; margin: 0;">
-                                                     @tag.Tag <span class="tag-count" style="opacity: 0.6; font-size: 0.75rem; margin-left: 3px;">@tag.Count</span>
-                                                 </MudChip>
+                                                 <div class="tag-category-row" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                                     <span class="tag-bar-label" style="font-weight: 600; min-width: 70px; color: var(--bm-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">@group.CategoryName:</span>
+                                                     <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                                         @foreach (var tag in group.Tags)
+                                                         {
+                                                             var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
+                                                             <MudChip T="string"
+                                                                      Variant="@(active ? Variant.Filled : Variant.Outlined)"
+                                                                      Color="@GetCategoryColor(group.CategoryName)"
+                                                                      Size="Size.Small"
+                                                                      OnClick="@(() => ToggleTagFilter(tag.Tag))"
+                                                                      Style="cursor:pointer; margin: 0;">
+                                                                 @tag.Tag <span class="tag-count" style="opacity: 0.6; font-size: 0.75rem; margin-left: 3px;">@tag.Count</span>
+                                                             </MudChip>
+                                                         }
+                                                     </div>
+                                                 </div>
+                                             }
+                                             @if (_activeTagFilters.Count > 0)
+                                             {
+                                                 <div style="margin-top: 4px;">
+                                                     <MudChip T="string" Variant="Variant.Text" Size="Size.Small" OnClick="ClearTagFilters" Style="cursor:pointer; margin: 0;">Clear Active Filters</MudChip>
+                                                 </div>
                                              }
                                          </div>
+                                     }
+                                     else if (!_loading)
+                                     {
+                                         <div class="tag-categories-container" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                                             <span class="mud-text-secondary" style="font-size: 0.875rem; padding-left: 8px;">No tags found. Run auto tagger to automatically scan and tag your bookmarks.</span>
+                                         </div>
+                                     }
+
+                                     <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 8px; border-top: 1px solid rgba(148, 163, 184, 0.1); padding-top: 8px;">
+                                         <!-- Breadcrumbs on the left -->
+                                         <div style="display: flex; align-items: center;">
+                                             @{
+                                                 var breadcrumbs = GetBreadcrumbs();
+                                                 if (breadcrumbs.Count > 0)
+                                                 {
+                                                     <div class="breadcrumbs-container" style="padding: 0; background: transparent !important; border: none !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; box-shadow: none !important; font-size: 0.82rem; color: var(--bm-text-secondary); gap: var(--bm-space-2); margin-bottom: 0;">
+                                                         <span class="breadcrumb-item link" @onclick="@(() => OnFolderSelected(breadcrumbs[0].Id))" title="Go to Root" style="font-size: 0.82rem;">
+                                                             <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" Style="margin-right: 4px; color: var(--bm-text-secondary); width: 16px; height: 16px;" />
+                                                             Home
+                                                         </span>
+                                                         @for (int i = 0; i < breadcrumbs.Count; i++)
+                                                         {
+                                                             var crumb = breadcrumbs[i];
+                                                             var isLast = i == breadcrumbs.Count - 1;
+                                                             
+                                                             <span class="breadcrumb-separator" style="font-size: 0.82rem;">/</span>
+                                                             
+                                                             if (isLast)
+                                                             {
+                                                                 <span class="breadcrumb-item active" style="font-size: 0.82rem; font-weight: 600; color: var(--bm-text-primary);">@crumb.Title</span>
+                                                             }
+                                                             else
+                                                             {
+                                                                 <span class="breadcrumb-item link" @onclick="@(() => OnFolderSelected(crumb.Id))" style="font-size: 0.82rem;">
+                                                                     @crumb.Title
+                                                                 </span>
+                                                             }
+                                                         }
+                                                     </div>
+                                                 }
+                                             }
+                                         </div>
+                                         
+                                         <!-- Auto Tag button on the right -->
+                                         <MudButton Variant="Variant.Text"
+                                                    Color="Color.Default"
+                                                    Size="Size.Small"
+                                                    StartIcon="@Icons.Material.Filled.AutoAwesome"
+                                                    OnClick="OpenAutoTaggerDialog"
+                                                    Disabled="@_loading">
+                                             Auto Tag
+                                         </MudButton>
                                      </div>
-                                 }
-                                  @if (_activeTagFilters.Count > 0)
-                                  {
-                                      <div style="margin-top: 4px;">
-                                          <MudChip T="string" Variant="Variant.Text" Size="Size.Small" OnClick="ClearTagFilters" Style="cursor:pointer; margin: 0;">Clear Active Filters</MudChip>
-                                      </div>
-                                  }
-                              </div>
-                              <div style="display: flex; justify-content: flex-end; width: 100%; margin-top: 4px;">
-                                  <MudButton Variant="Variant.Text"
-                                             Color="Color.Default"
-                                             Size="Size.Small"
-                                             StartIcon="@Icons.Material.Filled.AutoAwesome"
-                                             OnClick="OpenAutoTaggerDialog"
-                                             Disabled="@_loading">
-                                      Auto Tag
-                                  </MudButton>
-                              </div>
-                              </MudPaper>
-                             }
-                             else if (!_loading && _items.Count > 0)
-                             {
-                             <MudPaper Elevation="0" Class="tag-bar pa-2 d-flex align-center justify-space-between">
-                                 <span class="mud-text-secondary" style="font-size: 0.875rem; padding-left: 8px;">No tags found. Run tag backfill to automatically scan and tag your bookmarks.</span>
-                                 <MudButton Variant="Variant.Text"
-                                            Color="Color.Primary"
-                                            Size="Size.Small"
-                                            StartIcon="@Icons.Material.Filled.AutoAwesome"
-                                            OnClick="OpenAutoTaggerDialog"
-                                            Disabled="@_loading">
-                                     Auto Tag
-                                 </MudButton>
-                             </MudPaper>
+                                 </MudPaper>
                              }
                              </div>
              </div>
