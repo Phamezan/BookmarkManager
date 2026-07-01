@@ -115,4 +115,18 @@ public sealed class TagExtractorTests
         Assert.Contains("Anime", tags);
         Assert.DoesNotContain("Manga", tags);
     }
+
+    [Fact]
+    public void DynamicBrandExclusion_FiltersOutSiteNameAndDomainSegments()
+    {
+        var page = new PageMetadata { SiteName = "Kaido Anime Player" };
+        var tags = _svc.ExtractTags(
+            "Frieren at the Funeral - Watch on Kaido",
+            "https://sub.kaido.to/watch/123",
+            BookmarkTagDomain.Anime,
+            page);
+
+        Assert.DoesNotContain("Kaido", tags, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Frieren", tags);
+    }
 }

@@ -93,6 +93,37 @@ public sealed class TagExtractorService
             queryableScores = queryableScores.Where(kv => !string.Equals(kv.Key, "Anime", StringComparison.OrdinalIgnoreCase) && !string.Equals(kv.Key, "Manga", StringComparison.OrdinalIgnoreCase));
         }
 
+        // Dynamically filter out website brand/domain names for media formats to prevent self-tagging
+        if (domain is BookmarkTagDomain.Anime or BookmarkTagDomain.Manga or BookmarkTagDomain.Novel)
+        {
+            if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Host is not null)
+            {
+                var hostParts = uri.Host.Split('.');
+                var brandSegments = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                
+                foreach (var part in hostParts)
+                {
+                    if (part.Length > 2 && !string.Equals(part, "www", StringComparison.OrdinalIgnoreCase))
+                    {
+                        brandSegments.Add(part);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(page?.SiteName))
+                {
+                    brandSegments.Add(page.SiteName);
+                    var siteWords = page.SiteName.Split(new[] { ' ', '-', '_', '.' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var word in siteWords)
+                    {
+                        if (word.Length > 2)
+                            brandSegments.Add(word);
+                    }
+                }
+
+                queryableScores = queryableScores.Where(kv => !brandSegments.Contains(kv.Key));
+            }
+        }
+
         return queryableScores
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key)
