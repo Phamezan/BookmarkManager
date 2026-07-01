@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BookmarkManager.Api.IntegrationTests;
 
@@ -48,6 +49,22 @@ public sealed class ExtensionEndpointsTests : IntegrationTestBase
     public async Task GetConfigReturnsDefaultValuesAndNoSnapshot()
     {
         using var extension = CreateExtensionClient();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BookmarkManager.Api.Data.AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkManager.Api.Data.BookmarkNode
+            {
+                Id = Guid.NewGuid(),
+                Title = "Bookmarks Bar",
+                Type = BookmarkManager.Contracts.NodeType.Folder,
+                IsProtected = true,
+                SyncState = BookmarkManager.Contracts.SyncState.Synced,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
 
         using var response = await extension.GetAsync("/api/extension/config");
         response.EnsureSuccessStatusCode();

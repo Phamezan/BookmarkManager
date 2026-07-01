@@ -1,5 +1,6 @@
 namespace BookmarkManager.Contracts;
 
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter))]
 public enum SnapshotReason
 {
     InitialImport,

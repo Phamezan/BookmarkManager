@@ -87,25 +87,7 @@ public sealed class HttpBookmarkService : IBookmarkService
         return true;
     }
 
-    public async Task<List<BackupManifestDto>> GetBackupsAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<List<BackupManifestDto>>("api/backups", cancellationToken) ?? new();
 
-    public async Task<BackupManifestDto> CreateBackupAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<BackupManifestDto>(HttpMethod.Post, "api/backups", null, cancellationToken)
-           ?? throw new ApiException(HttpStatusCode.OK, "Backup response was empty.");
-
-    public async Task<BackupImportPreviewDto> PreviewBackupImportAsync(ImportBackupRequest request, CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<BackupImportPreviewDto>(HttpMethod.Post, "api/backups/preview", request, cancellationToken)
-           ?? new BackupImportPreviewDto();
-
-    public async Task<bool> ImportBackupAsync(ImportBackupRequest request, CancellationToken cancellationToken = default)
-        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/backups/import", cancellationToken, request));
-
-    public async Task<bool> RestoreBackupAsync(Guid id, CancellationToken cancellationToken = default)
-        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, $"api/backups/{id}/restore", cancellationToken));
-
-    public async Task<List<BookmarkNodeDto>> ExportBackupAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<List<BookmarkNodeDto>>("api/backups/export", cancellationToken) ?? new();
 
     public async Task<List<BookmarkNodeDto>> GetFavoritesAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<BookmarkNodeDto>>("api/bookmarks/favorites", cancellationToken) ?? new();
