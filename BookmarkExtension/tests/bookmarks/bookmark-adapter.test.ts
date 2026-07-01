@@ -57,24 +57,7 @@ describe("ChromeBookmarkAdapter", () => {
     adapter = new ChromeBookmarkAdapter(bookmarks);
   });
 
-  describe("getFolderCatalog", () => {
-    it("returns folders only with correct hierarchy", async () => {
-      const catalog = await adapter.getFolderCatalog();
-      const folderIds = catalog.map((f) => f.browserNodeId);
-      expect(folderIds).toContain("0");
-      expect(folderIds).toContain("1");
-      expect(folderIds).toContain("42");
-      expect(folderIds).toContain("60");
-      expect(folderIds).not.toContain("84");
-      expect(folderIds).not.toContain("85");
-    });
 
-    it("marks root nodes as protected", async () => {
-      const catalog = await adapter.getFolderCatalog();
-      const root = catalog.find((f) => f.browserNodeId === "0");
-      expect(root?.isProtected).toBe(true);
-    });
-  });
 
   describe("getSubtree", () => {
     it("returns a complete subtree", async () => {

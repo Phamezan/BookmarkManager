@@ -40,14 +40,6 @@ describe("SyncCoordinator", () => {
 
   beforeEach(() => {
     mock = new MockApiServer();
-    mock.setTrackedRoots([
-      {
-        trackedRootId: "root-1",
-        browserNodeId: "42",
-        displayName: "Manga",
-        defaultCategory: "Manga",
-      },
-    ]);
     bookmarks = new FakeBookmarks(fixtureTree);
     adapter = new ChromeBookmarkAdapter(bookmarks as never);
     storage = new FakeStorage();
@@ -83,20 +75,9 @@ describe("SyncCoordinator", () => {
     const config = await repo.getServerConfig();
     expect(config).not.toBeNull();
     expect(config!.configVersion).toBe(4);
-    expect(config!.trackedRoots).toHaveLength(1);
   });
 
-  it("uploads folder catalog on first config fetch", async () => {
-    await repo.saveSettings({
-      apiBaseUrl: "http://localhost:8080",
-      setupComplete: true,
-    });
 
-    await coordinator.runSyncCycle();
-
-    const calls = mock.getCalls();
-    expect(calls.some((c) => c.method === "uploadFolderCatalog")).toBe(true);
-  });
 
   it("does not re-fetch config when version is unchanged", async () => {
     await repo.saveSettings({

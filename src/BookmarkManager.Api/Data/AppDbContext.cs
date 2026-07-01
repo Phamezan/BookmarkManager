@@ -10,12 +10,9 @@ public class AppDbContext : DbContext
     public DbSet<BookmarkNode> BookmarkNodes => Set<BookmarkNode>();
     public DbSet<ActivityLogEntry> ActivityLog => Set<ActivityLogEntry>();
     public DbSet<BackupManifest> BackupManifests => Set<BackupManifest>();
-    public DbSet<TrackedRoot> TrackedRoots => Set<TrackedRoot>();
 
     public DbSet<AdminAccount> AdminAccounts => Set<AdminAccount>();
     public DbSet<ExtensionClient> ExtensionClients => Set<ExtensionClient>();
-    public DbSet<FolderCatalogBatch> FolderCatalogBatches => Set<FolderCatalogBatch>();
-    public DbSet<FolderCatalogEntry> FolderCatalogEntries => Set<FolderCatalogEntry>();
     public DbSet<AppConfig> AppConfig => Set<AppConfig>();
     public DbSet<ExtensionEventEntry> ExtensionEvents => Set<ExtensionEventEntry>();
     public DbSet<SnapshotBatch> SnapshotBatches => Set<SnapshotBatch>();
@@ -67,14 +64,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.FilePath).HasMaxLength(2048);
         });
 
-        modelBuilder.Entity<TrackedRoot>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
-            entity.Property(e => e.Url).HasMaxLength(2048);
-            entity.Property(e => e.BrowserNodeId).HasMaxLength(128);
-        });
-
         modelBuilder.Entity<AdminAccount>(entity =>
         {
             entity.HasKey(e => e.Id);
@@ -87,21 +76,6 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.ExtensionVersion).HasMaxLength(64);
             entity.Property(e => e.BraveVersion).HasMaxLength(64);
-        });
-
-        modelBuilder.Entity<FolderCatalogBatch>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.HasIndex(e => new { e.ExtensionClientId, e.CatalogId }).IsUnique();
-        });
-
-        modelBuilder.Entity<FolderCatalogEntry>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.BrowserNodeId).HasMaxLength(128).IsRequired();
-            entity.Property(e => e.ParentBrowserNodeId).HasMaxLength(128);
-            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
-            entity.HasIndex(e => e.ExtensionClientId);
         });
 
         modelBuilder.Entity<AppConfig>(entity =>

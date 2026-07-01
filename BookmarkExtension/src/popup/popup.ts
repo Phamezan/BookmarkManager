@@ -1,4 +1,4 @@
-import type { FolderCatalogNode, ShortcutEditorState, StorageRepository } from "../api/contracts";
+import type { ShortcutEditorState, StorageRepository } from "../api/contracts";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
 export const DEFAULT_API_BASE_URL = "http://192.168.1.100:8080";
@@ -8,6 +8,7 @@ export interface PopupBookmarkApi {
   update(id: string, changes: { title: string }): Promise<void>;
   move(id: string, destination: { parentId: string }): Promise<void>;
   remove(id: string): Promise<void>;
+  getFolders(): Promise<{ browserNodeId: string; parentBrowserNodeId: string | null; title: string }[]>;
 }
 
 export interface PopupDeps {
@@ -106,10 +107,10 @@ export class PopupController {
   /** Loads the transient editor state (if any) and the folder catalog for the dropdown. */
   async loadEditorState(): Promise<{
     editor: ShortcutEditorState | null;
-    catalog: FolderCatalogNode[];
+    catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[];
   }> {
     const editor = await this.deps.storage.getShortcutEditorState();
-    const catalog = (await this.deps.storage.getFolderCatalog()) ?? [];
+    const catalog = this.deps.bookmarks ? await this.deps.bookmarks.getFolders() : [];
     return { editor, catalog };
   }
 
@@ -176,10 +177,10 @@ export class PopupController {
  * node title or "(root)" when ancestry cannot be resolved.
  */
 export function buildFolderPath(
-  catalog: FolderCatalogNode[],
+  catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[],
   folderId: string,
 ): string {
-  const byId = new Map<string, FolderCatalogNode>();
+  const byId = new Map<string, { browserNodeId: string; parentBrowserNodeId: string | null; title: string }>();
   for (const node of catalog) {
     byId.set(node.browserNodeId, node);
   }
@@ -238,6 +239,22 @@ if (isBrowser) {
       },
       remove: async (id) => {
         await chrome.bookmarks.remove(id);
+      },
+      getFolders: async () => {
+        const tree = await chrome.bookmarks.getTree();
+        const folders: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[] = [];
+        function traverse(node: chrome.bookmarks.BookmarkTreeNode) {
+          if (node.url === undefined) {
+            folders.push({
+              browserNodeId: node.id,
+              parentBrowserNodeId: node.parentId ?? null,
+              title: node.title,
+            });
+            if (node.children) node.children.forEach(traverse);
+          }
+        }
+        tree.forEach(traverse);
+        return folders;
       },
     },
   });
@@ -357,18 +374,16 @@ if (isBrowser) {
 
   function populateFolderSelect(
     select: HTMLSelectElement,
-    catalog: FolderCatalogNode[],
+    catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[],
     selectedId: string,
   ): void {
-    const fallback: FolderCatalogNode[] = catalog.length > 0
+    const fallback = catalog.length > 0
       ? catalog.filter((n) => n.browserNodeId !== "0" && n.title.length > 0)
       : [
           {
             browserNodeId: "1",
             parentBrowserNodeId: null,
             title: "Bookmarks Bar",
-            position: 0,
-            isProtected: true,
           },
         ];
 
@@ -401,7 +416,7 @@ if (isBrowser) {
     select.value = selectedId;
   }
 
-  function renderEditor(editor: ShortcutEditorState, catalog: FolderCatalogNode[]): void {
+  function renderEditor(editor: ShortcutEditorState, catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[]): void {
     let host = editor.url;
     try {
       host = new URL(editor.url).hostname;

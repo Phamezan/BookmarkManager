@@ -21,6 +21,7 @@ public interface IBookmarkService
     Task<bool> BatchDeleteBookmarksAsync(List<Guid> ids, CancellationToken cancellationToken = default);
     Task<List<BackupManifestDto>> GetBackupsAsync(CancellationToken cancellationToken = default);
     Task<BackupManifestDto> CreateBackupAsync(CancellationToken cancellationToken = default);
+    Task<BackupImportPreviewDto> PreviewBackupImportAsync(ImportBackupRequest request, CancellationToken cancellationToken = default);
     Task<bool> ImportBackupAsync(ImportBackupRequest request, CancellationToken cancellationToken = default);
     Task<bool> RestoreBackupAsync(Guid id, CancellationToken cancellationToken = default);
     Task<List<BookmarkNodeDto>> ExportBackupAsync(CancellationToken cancellationToken = default);

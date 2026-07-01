@@ -1,0 +1,67 @@
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2">
+            <MudText Typo="Typo.h6">Choose import destination</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                @SourceLabel imports are merged into an existing folder. Pick the folder that should receive the imported top-level items.
+            </MudText>
+            <MudSelect T="Guid?" Label="Destination folder" @bind-Value="_selectedFolderId" Variant="Variant.Outlined" Required="true">
+                @foreach (var option in _options)
+                {
+                    <MudSelectItem T="Guid?" Value="option.Id">@option.Label</MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="!_selectedFolderId.HasValue" OnClick="Confirm">Continue</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public string SourceLabel { get; set; } = string.Empty;
+    [Parameter] public List<FolderTreeNodeDto> FolderTree { get; set; } = [];
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private Guid? _selectedFolderId;
+    private List<FolderOption> _options = [];
+
+    protected override void OnParametersSet()
+    {
+        _options = FlattenFolders(FolderTree);
+        if (!_selectedFolderId.HasValue)
+        {
+            _selectedFolderId = _options.FirstOrDefault()?.Id;
+        }
+    }
+
+    private void Confirm()
+    {
+        if (_selectedFolderId.HasValue)
+        {
+            MudDialog.Close(DialogResult.Ok(_selectedFolderId.Value));
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static List<FolderOption> FlattenFolders(IEnumerable<FolderTreeNodeDto> folders, int depth = 0)
+    {
+        var options = new List<FolderOption>();
+        foreach (var folder in folders)
+        {
+            var label = $"{new string(' ', depth * 2)}{(depth > 0 ? "↳ " : string.Empty)}{folder.Title}";
+            options.Add(new FolderOption(folder.Id, label));
+            options.AddRange(FlattenFolders(folder.Children, depth + 1));
+        }
+
+        return options;
+    }
+
+    private sealed record FolderOption(Guid Id, string Label);
+}

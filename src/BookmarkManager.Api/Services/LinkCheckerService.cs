@@ -248,25 +248,51 @@ public class LinkCheckerService : BackgroundService
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Head, url);
-            var response = await client.SendAsync(request, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
-            if (response.StatusCode == HttpStatusCode.NotFound)
+            if (!response.IsSuccessStatusCode)
             {
                 return true;
             }
 
-            if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+            using var stream = await response.Content.ReadAsStreamAsync(ct);
+            var buffer = new byte[32768]; // 32KB limit
+            int totalBytesRead = 0;
+            int bytesRead;
+
+            while ((bytesRead = await stream.ReadAsync(buffer, totalBytesRead, buffer.Length - totalBytesRead, ct)) > 0)
             {
-                request = new HttpRequestMessage(HttpMethod.Get, url);
-                response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                if (response.StatusCode == HttpStatusCode.NotFound)
+                totalBytesRead += bytesRead;
+                if (totalBytesRead >= buffer.Length)
                 {
-                    return true;
+                    break; // Cap reached
                 }
             }
 
-            return !response.IsSuccessStatusCode;
+            // Small body implies domain parking / closed site
+            if (totalBytesRead < 500)
+            {
+                return true;
+            }
+
+            var contentString = System.Text.Encoding.UTF8.GetString(buffer, 0, totalBytesRead).ToLowerInvariant();
+            var failurePhrases = new[] 
+            { 
+                "domain is for sale", 
+                "this domain may be for sale",
+                "website is closed", 
+                "account suspended", 
+                "page not found",
+                "404 not found"
+            };
+
+            if (failurePhrases.Any(p => contentString.Contains(p)))
+            {
+                return true;
+            }
+
+            return false;
         }
         catch (HttpRequestException)
         {

@@ -42,7 +42,6 @@ describe("ChromeStorageRepository", () => {
         extensionClientId: "client-1",
         configVersion: 4,
         pollIntervalSeconds: 30,
-        trackedRoots: [],
         snapshotRequest: null,
       };
       await repo.saveServerConfig(config);
@@ -56,7 +55,6 @@ describe("ChromeStorageRepository", () => {
         eventId: id,
         eventType: "Changed",
         browserNodeId: "1",
-        trackedRootBrowserNodeId: "42",
         occurredAt: createdAt,
         causedByOperationId: null,
         payload: {},

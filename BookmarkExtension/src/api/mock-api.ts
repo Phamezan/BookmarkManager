@@ -7,8 +7,6 @@ import type {
   EventBatchResponse,
   ExtensionCommand,
   ExtensionConfig,
-  FolderCatalogRequest,
-  FolderCatalogResponse,
   HeartbeatRequest,
   HeartbeatResponse,
   SnapshotRequestPayload,
@@ -37,7 +35,6 @@ export class MockApiServer implements ApiClient {
   private seenEventIds = new Set<string>();
   private configVersion = 4;
   private pollIntervalSeconds = 30;
-  private trackedRoots: { trackedRootId: string; browserNodeId: string; displayName: string; defaultCategory: string }[] = [];
   private snapshotRequest: SnapshotRequest | null = null;
   private staleLease = false;
   private retryableFailing = false;
@@ -68,7 +65,6 @@ export class MockApiServer implements ApiClient {
     this.seenEventIds.clear();
     this.configVersion = 4;
     this.pollIntervalSeconds = 30;
-    this.trackedRoots = [];
     this.snapshotRequest = null;
     this.staleLease = false;
     this.retryableFailing = false;
@@ -79,10 +75,6 @@ export class MockApiServer implements ApiClient {
 
   setConfigVersion(version: number): void {
     this.configVersion = version;
-  }
-
-  setTrackedRoots(roots: typeof this.trackedRoots): void {
-    this.trackedRoots = roots;
   }
 
   setSnapshotRequest(request: SnapshotRequest | null): void {
@@ -117,18 +109,6 @@ export class MockApiServer implements ApiClient {
       serverTime: new Date().toISOString(),
       configVersion: this.configVersion,
       pollIntervalSeconds: this.pollIntervalSeconds,
-      trackedRootCount: this.trackedRoots.length,
-    };
-  }
-
-  async uploadFolderCatalog(
-    input: FolderCatalogRequest,
-  ): Promise<FolderCatalogResponse> {
-    this.log("uploadFolderCatalog", input);
-    await this.delay();
-    return {
-      catalogId: input.catalogId,
-      acceptedAt: new Date().toISOString(),
     };
   }
 
@@ -138,7 +118,6 @@ export class MockApiServer implements ApiClient {
     return {
       configVersion: this.configVersion,
       pollIntervalSeconds: this.pollIntervalSeconds,
-      trackedRoots: this.trackedRoots,
       snapshotRequest: this.snapshotRequest,
     };
   }

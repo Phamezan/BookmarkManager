@@ -94,6 +94,10 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<BackupManifestDto>(HttpMethod.Post, "api/backups", null, cancellationToken)
            ?? throw new ApiException(HttpStatusCode.OK, "Backup response was empty.");
 
+    public async Task<BackupImportPreviewDto> PreviewBackupImportAsync(ImportBackupRequest request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<BackupImportPreviewDto>(HttpMethod.Post, "api/backups/preview", request, cancellationToken)
+           ?? new BackupImportPreviewDto();
+
     public async Task<bool> ImportBackupAsync(ImportBackupRequest request, CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/backups/import", cancellationToken, request));
 

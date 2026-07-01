@@ -45,7 +45,6 @@ export function normalizeCreate(
     eventId: generateEventId(),
     eventType: "Created",
     browserNodeId: id,
-    trackedRootBrowserNodeId: null,
     occurredAt: nowIso(),
     causedByOperationId: null,
     payload: {
@@ -62,7 +61,6 @@ export function normalizeRemove(
     eventId: generateEventId(),
     eventType: "Removed",
     browserNodeId: id,
-    trackedRootBrowserNodeId: null,
     occurredAt: nowIso(),
     causedByOperationId: null,
     payload: {
@@ -84,7 +82,6 @@ export function normalizeChange(
     eventId: generateEventId(),
     eventType: "Changed",
     browserNodeId: id,
-    trackedRootBrowserNodeId: null,
     occurredAt: nowIso(),
     causedByOperationId: null,
     payload: {
@@ -107,7 +104,6 @@ export function normalizeMove(
     eventId: generateEventId(),
     eventType: "Moved",
     browserNodeId: id,
-    trackedRootBrowserNodeId: null,
     occurredAt: nowIso(),
     causedByOperationId: null,
     payload: {
@@ -127,39 +123,11 @@ export function normalizeReorder(
     eventId: generateEventId(),
     eventType: "Reordered",
     browserNodeId: id,
-    trackedRootBrowserNodeId: null,
     occurredAt: nowIso(),
     causedByOperationId: null,
     payload: {
       parentBrowserNodeId: id,
       orderedChildBrowserNodeIds: reorderInfo.childIds,
-    },
-  };
-}
-
-export function createArchivedEvent(
-  browserNodeId: string,
-  oldTrackedRootBrowserNodeId: string,
-  node: {
-    browserNodeId: string;
-    parentBrowserNodeId: string | null;
-    type: "Bookmark" | "Folder";
-    title: string;
-    url: string | null;
-    position: number;
-    isProtected: boolean;
-  },
-): ExtensionEvent {
-  return {
-    eventId: generateEventId(),
-    eventType: "Archived",
-    browserNodeId,
-    trackedRootBrowserNodeId: null,
-    occurredAt: nowIso(),
-    causedByOperationId: null,
-    payload: {
-      oldTrackedRootBrowserNodeId,
-      node,
     },
   };
 }

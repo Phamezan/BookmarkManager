@@ -19,33 +19,19 @@ public class SyncController : ControllerBase
     [HttpGet("status")]
     public async Task<SyncStatusDto> GetStatusAsync(CancellationToken ct)
     {
-        var tracked = await _db.TrackedRoots.ToListAsync(ct);
         var nodeCount = await _db.BookmarkNodes.CountAsync(n => !n.IsDeleted, ct);
         var pendingCount = await _db.BookmarkNodes
             .CountAsync(n => n.SyncState == SyncState.Pending, ct);
 
+        var lastSyncAt = await _db.BookmarkNodes
+            .Where(n => !n.IsDeleted)
+            .MaxAsync(n => (DateTime?)n.UpdatedAt, ct);
+
         return new SyncStatusDto
         {
-            TrackedRootCount = tracked.Count,
             TotalNodeCount = nodeCount,
             PendingSyncCount = pendingCount,
-            LastSyncAt = tracked.Count > 0
-                ? tracked.Max(t => t.LastSyncedAt)
-                : DateTime.MinValue
+            LastSyncAt = lastSyncAt ?? DateTime.MinValue
         };
-    }
-
-    [HttpGet("roots")]
-    public async Task<List<TrackedRootDto>> GetRootsAsync(CancellationToken ct)
-    {
-        var roots = await _db.TrackedRoots.ToListAsync(ct);
-        return roots.Select(r => new TrackedRootDto
-        {
-            Id = r.Id,
-            Title = r.Title,
-            Url = r.Url,
-            AddedAt = r.AddedAt,
-            LastSyncedAt = r.LastSyncedAt
-        }).ToList();
     }
 }

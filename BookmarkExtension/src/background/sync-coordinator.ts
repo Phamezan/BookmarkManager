@@ -3,7 +3,6 @@ import type {
   BookmarkAdapter,
   ExtensionConfig,
   ExtensionEvent,
-  FolderCatalogNode,
   OutboxEntry,
   ServerConfig,
   SnapshotRootPayload,
@@ -97,25 +96,14 @@ export class SyncCoordinator {
       response.extensionClientId !== storedConfig.extensionClientId
     ) {
       const config = await this.deps.api.getConfig();
-      console.log("[sync] Config fetched, version", config.configVersion, "tracked roots:", config.trackedRoots.length);
+      console.log("[sync] Config fetched, version", config.configVersion);
       const serverConfig: ServerConfig = {
         extensionClientId: response.extensionClientId,
         configVersion: config.configVersion,
         pollIntervalSeconds: config.pollIntervalSeconds,
-        trackedRoots: config.trackedRoots,
         snapshotRequest: config.snapshotRequest,
       };
       await this.deps.storage.saveServerConfig(serverConfig);
-
-      const catalog = await this.deps.adapter.getFolderCatalog();
-      await this.deps.storage.saveFolderCatalog(catalog);
-
-      const catalogReq = {
-        catalogId: crypto.randomUUID(),
-        capturedAt: this.deps.now().toISOString(),
-        folders: catalog,
-      };
-      await this.deps.api.uploadFolderCatalog(catalogReq);
     }
   }
 
@@ -150,7 +138,6 @@ export class SyncCoordinator {
           extensionClientId: this.extensionClientId ?? config.extensionClientId,
           configVersion: newConfig.configVersion,
           pollIntervalSeconds: newConfig.pollIntervalSeconds,
-          trackedRoots: newConfig.trackedRoots,
           snapshotRequest: newConfig.snapshotRequest,
         });
       }
@@ -169,13 +156,12 @@ export class SyncCoordinator {
     }
 
     const roots: SnapshotRootPayload[] = [];
-    for (const trackedRoot of config.trackedRoots) {
-      const subtree = await this.deps.adapter.getSubtree(trackedRoot.browserNodeId);
-      roots.push({
-        trackedRootId: trackedRoot.trackedRootId,
-        root: subtree,
-      });
-    }
+    
+    // Always sync from the root "0"
+    const subtree = await this.deps.adapter.getSubtree("0");
+    roots.push({
+      root: subtree,
+    });
 
     if (roots.length === 0) return;
 
@@ -251,17 +237,6 @@ export class SyncCoordinator {
   }
 }
 
-export async function uploadFolderCatalog(
-  api: ApiClient,
-  adapter: BookmarkAdapter,
-  now: () => Date,
-): Promise<void> {
-  const catalog = await adapter.getFolderCatalog();
-  await api.uploadFolderCatalog({
-    catalogId: crypto.randomUUID(),
-    capturedAt: now().toISOString(),
-    folders: catalog as FolderCatalogNode[],
-  });
-}
+
 
 export { type ExtensionConfig };

@@ -16,7 +16,6 @@ function assertBaseEvent(
   expect(event.eventId).toBeTruthy();
   expect(event.eventType).toBe(eventType);
   expect(event.browserNodeId).toBe(browserNodeId);
-  expect(event.trackedRootBrowserNodeId).toBeNull();
   expect(event.occurredAt).toBeTruthy();
   expect(event.causedByOperationId).toBeNull();
 }

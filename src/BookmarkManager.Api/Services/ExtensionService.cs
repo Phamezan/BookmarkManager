@@ -22,7 +22,6 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
         client.LastSuccessfulSyncAt = request.LastSuccessfulSyncAt;
 
         var config = await GetOrCreateAppConfigAsync(ct);
-        var trackedRootCount = await db.TrackedRoots.CountAsync(ct);
 
         await db.SaveChangesAsync(ct);
 
@@ -31,8 +30,7 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
             ExtensionClientId = client.Id,
             ServerTime = now,
             ConfigVersion = config.ConfigVersion,
-            PollIntervalSeconds = config.PollIntervalSeconds,
-            TrackedRootCount = trackedRootCount
+            PollIntervalSeconds = config.PollIntervalSeconds
         };
     }
 
@@ -61,91 +59,6 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
         return client;
     }
 
-    public async Task<FolderCatalogResponse> StoreFolderCatalogAsync(FolderCatalogRequest request, CancellationToken ct)
-    {
-        var client = await GetOrCreateDefaultClientAsync(ct);
-        var existing = await db.FolderCatalogBatches
-            .FirstOrDefaultAsync(b => b.ExtensionClientId == client.Id && b.CatalogId == request.CatalogId, ct);
-        if (existing is not null)
-        {
-            return new FolderCatalogResponse
-            {
-                CatalogId = existing.CatalogId,
-                AcceptedAt = existing.AcceptedAt
-            };
-        }
-
-        var now = DateTime.UtcNow;
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-
-        db.FolderCatalogBatches.Add(new FolderCatalogBatch
-        {
-            Id = Guid.NewGuid(),
-            CatalogId = request.CatalogId,
-            ExtensionClientId = client.Id,
-            CapturedAt = request.CapturedAt,
-            AcceptedAt = now
-        });
-
-        var prior = await db.FolderCatalogEntries
-            .Where(e => e.ExtensionClientId == client.Id)
-            .ToListAsync(ct);
-        if (prior.Count > 0)
-        {
-            db.FolderCatalogEntries.RemoveRange(prior);
-        }
-
-        foreach (var folder in request.Folders)
-        {
-            db.FolderCatalogEntries.Add(new FolderCatalogEntry
-            {
-                ExtensionClientId = client.Id,
-                BrowserNodeId = folder.BrowserNodeId,
-                ParentBrowserNodeId = folder.ParentBrowserNodeId,
-                Title = folder.Title,
-                Position = folder.Position,
-                IsProtected = folder.IsProtected
-            });
-        }
-
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-
-        if (!await db.TrackedRoots.AnyAsync(ct))
-        {
-            var rootFolders = await db.FolderCatalogEntries
-                .Where(e => e.ExtensionClientId == client.Id && e.ParentBrowserNodeId == "0")
-                .ToListAsync(ct);
-
-            foreach (var rf in rootFolders)
-            {
-                db.TrackedRoots.Add(new TrackedRoot
-                {
-                    Id = Guid.NewGuid(),
-                    Title = rf.Title,
-                    BrowserNodeId = rf.BrowserNodeId,
-                    AddedAt = DateTime.UtcNow,
-                    LastSyncedAt = DateTime.MinValue
-                });
-            }
-            await db.SaveChangesAsync(ct);
-
-            var cfg = await GetOrCreateAppConfigAsync(ct);
-            cfg.ConfigVersion++;
-            cfg.UpdatedAt = DateTime.UtcNow;
-            await db.SaveChangesAsync(ct);
-        }
-
-
-
-        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
-
-        return new FolderCatalogResponse
-        {
-            CatalogId = request.CatalogId,
-            AcceptedAt = now
-        };
-    }
 
     public async Task<ExtensionStatusDto> GetStatusAsync(CancellationToken ct)
     {
@@ -171,24 +84,19 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
     public async Task<ExtensionConfigDto> GetConfigAsync(CancellationToken ct)
     {
         var config = await GetOrCreateAppConfigAsync(ct);
-        var trackedRoots = await db.TrackedRoots
-            .OrderBy(r => r.Title)
-            .ToListAsync(ct);
-
-        var requestSnapshot = trackedRoots.Any(r => r.LastSyncedAt == DateTime.MinValue);
+        var requiresSnapshot = false;
+        
+        // Simple heuristic: if we have zero bookmarks, request a snapshot.
+        if (!await db.BookmarkNodes.AnyAsync(n => !n.IsDeleted, ct))
+        {
+            requiresSnapshot = true;
+        }
 
         return new ExtensionConfigDto
         {
             ConfigVersion = config.ConfigVersion,
             PollIntervalSeconds = config.PollIntervalSeconds,
-            TrackedRoots = trackedRoots.Select(r => new ExtensionTrackedRootDto
-            {
-                TrackedRootId = r.Id,
-                BrowserNodeId = r.BrowserNodeId ?? string.Empty,
-                DisplayName = r.Title,
-                DefaultCategory = string.Empty
-            }).ToList(),
-            SnapshotRequest = requestSnapshot ? new SnapshotRequestDto
+            SnapshotRequest = requiresSnapshot ? new SnapshotRequestDto
             {
                 RequestId = Guid.NewGuid(),
                 Reason = SnapshotReason.InitialImport
@@ -590,14 +498,6 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
             });
         }
 
-        foreach (var root in request.Roots)
-        {
-            var trackedRoot = await db.TrackedRoots.FindAsync(new object[] { root.TrackedRootId }, ct);
-            if (trackedRoot is not null)
-            {
-                trackedRoot.LastSyncedAt = now;
-            }
-        }
 
         await db.SaveChangesAsync(ct);
         await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
@@ -887,9 +787,6 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
             db.ExtensionEvents.RemoveRange(db.ExtensionEvents);
             db.SnapshotNodeMappings.RemoveRange(db.SnapshotNodeMappings);
             db.SnapshotBatches.RemoveRange(db.SnapshotBatches);
-            db.FolderCatalogEntries.RemoveRange(db.FolderCatalogEntries);
-            db.FolderCatalogBatches.RemoveRange(db.FolderCatalogBatches);
-            db.TrackedRoots.RemoveRange(db.TrackedRoots);
             db.ExtensionClients.RemoveRange(db.ExtensionClients);
             db.ActivityLog.RemoveRange(db.ActivityLog);
             db.AppConfig.RemoveRange(db.AppConfig);

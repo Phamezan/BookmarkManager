@@ -6,8 +6,6 @@ import type {
   EventBatchRequest,
   EventBatchResponse,
   ExtensionConfig,
-  FolderCatalogRequest,
-  FolderCatalogResponse,
   HeartbeatRequest,
   HeartbeatResponse,
   SnapshotRequestPayload,
@@ -110,16 +108,6 @@ export class HttpApiClient implements ApiClient {
     return this.request<HeartbeatResponse>(
       "POST",
       "/api/extension/heartbeat",
-      input,
-    );
-  }
-
-  uploadFolderCatalog(
-    input: FolderCatalogRequest,
-  ): Promise<FolderCatalogResponse> {
-    return this.request<FolderCatalogResponse>(
-      "POST",
-      "/api/extension/folders",
       input,
     );
   }

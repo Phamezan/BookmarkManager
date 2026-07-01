@@ -201,120 +201,36 @@
                 return;
             }
 
-            // Calculate Differences for Preview
-            var activeItems = await GetCurrentActiveItemsAsync();
-            
-            var activeByUrl = new Dictionary<string, BookmarkNodeDto>(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in activeItems.Where(i => i.Type == NodeType.Bookmark && i.Url != null))
-            {
-                activeByUrl[item.Url!] = item;
-            }
+            var sourceKind = MapDetectedFormatToSourceKind(detectedFormat);
+            Guid? destinationFolderId = null;
 
-            var activeByTitleFolder = new Dictionary<string, BookmarkNodeDto>(StringComparer.OrdinalIgnoreCase);
-            foreach (var item in activeItems.Where(i => i.Type == NodeType.Folder))
+            if (!string.Equals(sourceKind, "AppBackup", StringComparison.Ordinal))
             {
-                activeByTitleFolder[item.Title] = item;
-            }
-
-            var diffItems = new List<BackupDiffItem>();
-            int createCount = 0;
-            int updateCount = 0;
-            int skipCount = 0;
-            int deleteCount = 0;
-
-            if (_overwriteMode)
-            {
-                deleteCount = activeItems.Count;
-                foreach (var item in activeItems)
+                if (_overwriteMode)
                 {
-                    diffItems.Add(new BackupDiffItem
-                    {
-                        Title = item.Title,
-                        Url = item.Url,
-                        Type = item.Type.ToString(),
-                        Action = "Delete",
-                        Details = "Will be deleted to perform clean overwrite"
-                    });
+                    Snackbar.Add("Overwrite import is only supported for app backup snapshots. Browser and tree imports must be merged into a destination folder.", Severity.Warning);
+                    return;
+                }
+
+                destinationFolderId = await PromptForDestinationFolderAsync(detectedFormat);
+                if (!destinationFolderId.HasValue)
+                {
+                    return;
                 }
             }
 
-            foreach (var node in importedNodes)
+            var request = new ImportBackupRequest
             {
-                if (node.Type == NodeType.Bookmark)
-                {
-                    if (!_overwriteMode && node.Url != null && activeByUrl.TryGetValue(node.Url, out var existing))
-                    {
-                        if (existing.Title == node.Title)
-                        {
-                            skipCount++;
-                            diffItems.Add(new BackupDiffItem
-                            {
-                                Title = node.Title,
-                                Url = node.Url,
-                                Type = "Bookmark",
-                                Action = "Skip",
-                                Details = "Identical bookmark already exists"
-                            });
-                        }
-                        else
-                        {
-                            updateCount++;
-                            diffItems.Add(new BackupDiffItem
-                            {
-                                Title = node.Title,
-                                Url = node.Url,
-                                Type = "Bookmark",
-                                Action = "Update",
-                                Details = $"Title will be updated from '{existing.Title}'"
-                            });
-                        }
-                    }
-                    else
-                    {
-                        createCount++;
-                        diffItems.Add(new BackupDiffItem
-                        {
-                            Title = node.Title,
-                            Url = node.Url,
-                            Type = "Bookmark",
-                            Action = "Create"
-                        });
-                    }
-                }
-                else // Folder
-                {
-                    if (!_overwriteMode && activeByTitleFolder.TryGetValue(node.Title, out _))
-                    {
-                        skipCount++;
-                        diffItems.Add(new BackupDiffItem
-                        {
-                            Title = node.Title,
-                            Type = "Folder",
-                            Action = "Skip",
-                            Details = "Identical folder already exists"
-                        });
-                    }
-                    else
-                    {
-                        createCount++;
-                        diffItems.Add(new BackupDiffItem
-                        {
-                            Title = node.Title,
-                            Type = "Folder",
-                            Action = "Create"
-                        });
-                    }
-                }
-            }
+                Nodes = importedNodes,
+                Overwrite = _overwriteMode,
+                SourceKind = sourceKind,
+                DestinationFolderId = destinationFolderId
+            };
 
-            // Open dialog
+            var preview = await BookmarkService.PreviewBackupImportAsync(request);
             var parameters = new DialogParameters<BackupDiffDialog>
             {
-                { x => x.Items, diffItems },
-                { x => x.CreateCount, createCount },
-                { x => x.UpdateCount, updateCount },
-                { x => x.DeleteCount, deleteCount },
-                { x => x.SkipCount, skipCount }
+                { x => x.Preview, preview }
             };
 
             var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
@@ -327,12 +243,6 @@
                 StateHasChanged();
                 try
                 {
-                    var request = new ImportBackupRequest
-                    {
-                        Nodes = importedNodes,
-                        Overwrite = _overwriteMode
-                    };
-
                     var success = await BookmarkService.ImportBackupAsync(request);
                     if (success)
                     {
@@ -401,38 +311,43 @@
         }
     }
 
-    private async Task<List<BookmarkNodeDto>> GetCurrentActiveItemsAsync()
+    private async Task<Guid?> PromptForDestinationFolderAsync(string detectedFormat)
     {
-        var result = new List<BookmarkNodeDto>();
-        try
+        var folderTree = await BookmarkService.GetFolderTreeAsync();
+        if (folderTree.Count == 0)
         {
-            var bookmarksResult = await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = "", PageSize = 100000 });
-            result.AddRange(bookmarksResult.Items);
+            Snackbar.Add("No destination folders are available yet. Create a folder first, then retry the import.", Severity.Warning);
+            return null;
+        }
 
-            var foldersTree = await BookmarkService.GetFolderTreeAsync();
-            AddFoldersRecursive(foldersTree, result);
-        }
-        catch
+        var parameters = new DialogParameters<ImportDestinationDialog>
         {
-            // Ignore API fetch errors in diff calculator
-        }
-        return result;
+            { x => x.SourceLabel, detectedFormat },
+            { x => x.FolderTree, folderTree }
+        };
+
+        var dialog = await DialogService.ShowAsync<ImportDestinationDialog>("Choose Destination Folder", parameters, new DialogOptions
+        {
+            CloseButton = true,
+            MaxWidth = MaxWidth.Small,
+            FullWidth = true
+        });
+
+        var result = await dialog.Result;
+        return result is not null && !result.Canceled && result.Data is Guid destinationFolderId
+            ? destinationFolderId
+            : null;
     }
 
-    private void AddFoldersRecursive(List<FolderTreeNodeDto> folders, List<BookmarkNodeDto> result)
-    {
-        foreach (var f in folders)
+    private static string MapDetectedFormatToSourceKind(string detectedFormat)
+        => detectedFormat switch
         {
-            result.Add(new BookmarkNodeDto
-            {
-                Id = f.Id,
-                Title = f.Title,
-                Type = NodeType.Folder,
-                ParentId = null
-            });
-            AddFoldersRecursive(f.Children, result);
-        }
-    }
+            "App Backup" => "AppBackup",
+            "Chrome Bookmarks" => "ChromeBookmarks",
+            "Flat Bookmarks List" => "FlatBookmarksList",
+            "Simple Bookmarks Tree" => "SimpleBookmarksTree",
+            _ => "Unknown"
+        };
 
     private List<BookmarkNodeDto> ParseAndFlattenJson(string json, out string fileType)
     {

@@ -35,6 +35,5 @@ public class MappingProfile : Profile
 
         CreateMap<ActivityLogEntry, ActivityEntryDto>();
         CreateMap<BackupManifest, BackupManifestDto>();
-        CreateMap<TrackedRoot, TrackedRootDto>();
     }
 }

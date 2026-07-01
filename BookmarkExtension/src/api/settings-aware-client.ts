@@ -6,8 +6,6 @@ import type {
   EventBatchRequest,
   EventBatchResponse,
   ExtensionConfig,
-  FolderCatalogRequest,
-  FolderCatalogResponse,
   HeartbeatRequest,
   HeartbeatResponse,
   SnapshotRequestPayload,
@@ -31,12 +29,6 @@ export class SettingsAwareApiClient implements ApiClient {
 
   heartbeat(input: HeartbeatRequest): Promise<HeartbeatResponse> {
     return this.getClient().then((c) => c.heartbeat(input));
-  }
-
-  uploadFolderCatalog(
-    input: FolderCatalogRequest,
-  ): Promise<FolderCatalogResponse> {
-    return this.getClient().then((c) => c.uploadFolderCatalog(input));
   }
 
   getConfig(): Promise<ExtensionConfig> {

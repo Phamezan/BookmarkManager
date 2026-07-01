@@ -11,14 +11,6 @@ export interface BrowserNode {
   children?: BrowserNode[];
 }
 
-export interface FolderCatalogNode {
-  browserNodeId: string;
-  parentBrowserNodeId: string | null;
-  title: string;
-  position: number;
-  isProtected: boolean;
-}
-
 /**
  * Transient state written by the `quick-bookmark` command and consumed by the
  * popup to render the bookmark editor. Lives in `chrome.storage.local` under
@@ -39,14 +31,12 @@ export type ExtensionEventType =
   | "Changed"
   | "Moved"
   | "Reordered"
-  | "Removed"
-  | "Archived";
+  | "Removed";
 
 export interface ExtensionEvent {
   eventId: string;
   eventType: ExtensionEventType;
   browserNodeId: string;
-  trackedRootBrowserNodeId: string | null;
   occurredAt: string;
   causedByOperationId: string | null;
   payload: unknown;
@@ -72,13 +62,6 @@ export interface ExtensionCommand {
   payload: unknown;
 }
 
-export interface TrackedRoot {
-  trackedRootId: string;
-  browserNodeId: string;
-  displayName: string;
-  defaultCategory: string;
-}
-
 export type SnapshotReason = "InitialImport" | "Repair" | "ImportCompleted";
 
 export interface SnapshotRequest {
@@ -89,7 +72,6 @@ export interface SnapshotRequest {
 export interface ExtensionConfig {
   configVersion: number;
   pollIntervalSeconds: number;
-  trackedRoots: TrackedRoot[];
   snapshotRequest: SnapshotRequest | null;
 }
 
@@ -106,22 +88,9 @@ export interface HeartbeatResponse {
   serverTime: string;
   configVersion: number;
   pollIntervalSeconds: number;
-  trackedRootCount: number;
-}
-
-export interface FolderCatalogRequest {
-  catalogId: string;
-  capturedAt: string;
-  folders: FolderCatalogNode[];
-}
-
-export interface FolderCatalogResponse {
-  catalogId: string;
-  acceptedAt: string;
 }
 
 export interface SnapshotRootPayload {
-  trackedRootId: string;
   root: BrowserNode;
 }
 
@@ -186,7 +155,6 @@ export interface ServerConfig {
   extensionClientId: string;
   configVersion: number;
   pollIntervalSeconds: number;
-  trackedRoots: TrackedRoot[];
   snapshotRequest: SnapshotRequest | null;
 }
 
@@ -237,7 +205,6 @@ export interface CommandExecutionResult {
 
 export interface ApiClient {
   heartbeat(input: HeartbeatRequest): Promise<HeartbeatResponse>;
-  uploadFolderCatalog(input: FolderCatalogRequest): Promise<FolderCatalogResponse>;
   getConfig(): Promise<ExtensionConfig>;
   uploadSnapshot(input: SnapshotRequestPayload): Promise<SnapshotResponse>;
   sendEvents(input: EventBatchRequest): Promise<EventBatchResponse>;
@@ -249,7 +216,6 @@ export interface ApiClient {
 }
 
 export interface BookmarkAdapter {
-  getFolderCatalog(): Promise<FolderCatalogNode[]>;
   getSubtree(browserNodeId: string): Promise<BrowserNode>;
   apply(command: ExtensionCommand): Promise<CommandExecutionResult>;
 }
@@ -259,8 +225,6 @@ export interface StorageRepository {
   saveSettings(value: ExtensionSettings): Promise<void>;
   getServerConfig(): Promise<ServerConfig | null>;
   saveServerConfig(value: ServerConfig): Promise<void>;
-  getFolderCatalog(): Promise<FolderCatalogNode[] | null>;
-  saveFolderCatalog(folders: FolderCatalogNode[]): Promise<void>;
   getShortcutEditorState(): Promise<ShortcutEditorState | null>;
   saveShortcutEditorState(state: ShortcutEditorState): Promise<void>;
   clearShortcutEditorState(): Promise<void>;

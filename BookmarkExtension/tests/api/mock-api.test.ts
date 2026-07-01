@@ -3,7 +3,6 @@ import { MockApiServer, DETERMINISTIC_GUIDS } from "../../src/api/mock-api";
 import type {
   ExtensionCommand,
   HeartbeatRequest,
-  FolderCatalogRequest,
   SnapshotRequestPayload,
   EventBatchRequest,
   ClaimRequest,
@@ -15,14 +14,6 @@ describe("MockApiServer", () => {
 
   beforeEach(() => {
     mock = new MockApiServer();
-    mock.setTrackedRoots([
-      {
-        trackedRootId: "root-1",
-        browserNodeId: "42",
-        displayName: "Manga",
-        defaultCategory: "Manga",
-      },
-    ]);
   });
 
   describe("heartbeat", () => {
@@ -37,7 +28,6 @@ describe("MockApiServer", () => {
       const res = await mock.heartbeat(req);
       expect(res.extensionClientId).toBe(DETERMINISTIC_GUIDS.extensionClientId);
       expect(res.configVersion).toBe(4);
-      expect(res.trackedRootCount).toBe(1);
     });
 
     it("throws on retryable failure then recovers", async () => {
@@ -63,33 +53,11 @@ describe("MockApiServer", () => {
     });
   });
 
-  describe("folder catalog", () => {
-    it("returns accepted response", async () => {
-      const req: FolderCatalogRequest = {
-        catalogId: "catalog-1",
-        capturedAt: "2026-06-22T09:32:00Z",
-        folders: [
-          {
-            browserNodeId: "1",
-            parentBrowserNodeId: null,
-            title: "Bookmarks bar",
-            position: 0,
-            isProtected: true,
-          },
-        ],
-      };
-      const res = await mock.uploadFolderCatalog(req);
-      expect(res.catalogId).toBe("catalog-1");
-      expect(res.acceptedAt).toBeTruthy();
-    });
-  });
 
   describe("getConfig", () => {
-    it("returns config with tracked roots", async () => {
+    it("returns config", async () => {
       const config = await mock.getConfig();
       expect(config.configVersion).toBe(4);
-      expect(config.trackedRoots).toHaveLength(1);
-      expect(config.trackedRoots[0]!.browserNodeId).toBe("42");
     });
 
     it("returns changed config version", async () => {
@@ -124,7 +92,6 @@ describe("MockApiServer", () => {
         capturedAt: "2026-06-22T09:34:00Z",
         roots: [
           {
-            trackedRootId: "root-1",
             root: {
               browserNodeId: "42",
               parentBrowserNodeId: "1",
@@ -166,7 +133,6 @@ describe("MockApiServer", () => {
             eventId: "evt-1",
             eventType: "Changed",
             browserNodeId: "84",
-            trackedRootBrowserNodeId: "42",
             occurredAt: "2026-06-22T09:35:00Z",
             causedByOperationId: null,
             payload: {},
@@ -188,7 +154,6 @@ describe("MockApiServer", () => {
             eventId: "evt-1",
             eventType: "Changed",
             browserNodeId: "84",
-            trackedRootBrowserNodeId: "42",
             occurredAt: "2026-06-22T09:35:00Z",
             causedByOperationId: null,
             payload: {},

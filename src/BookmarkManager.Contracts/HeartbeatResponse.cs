@@ -6,5 +6,4 @@ public sealed class HeartbeatResponse
     public DateTime ServerTime { get; set; }
     public int ConfigVersion { get; set; }
     public int PollIntervalSeconds { get; set; }
-    public int TrackedRootCount { get; set; }
 }

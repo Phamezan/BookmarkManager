@@ -2,7 +2,6 @@ import type {
   CommandCorrelation,
   ExtensionEvent,
   ExtensionSettings,
-  FolderCatalogNode,
   OutboxEntry,
   ServerConfig,
   ShortcutEditorState,
@@ -45,15 +44,6 @@ export class ChromeStorageRepository implements StorageRepository {
 
   async saveServerConfig(value: ServerConfig): Promise<void> {
     await this.storage.set({ "bm.serverConfig": value });
-  }
-
-  async getFolderCatalog(): Promise<FolderCatalogNode[] | null> {
-    const result = await this.storage.get("bm.folderCatalog");
-    return (result["bm.folderCatalog"] as FolderCatalogNode[] | undefined) ?? null;
-  }
-
-  async saveFolderCatalog(folders: FolderCatalogNode[]): Promise<void> {
-    await this.storage.set({ "bm.folderCatalog": folders });
   }
 
   async getShortcutEditorState(): Promise<ShortcutEditorState | null> {
@@ -200,7 +190,6 @@ export class ChromeStorageRepository implements StorageRepository {
     await this.storage.remove([
       "bm.settings",
       "bm.serverConfig",
-      "bm.folderCatalog",
       "bm.outbox",
       "bm.correlations",
       "bm.snapshotState",

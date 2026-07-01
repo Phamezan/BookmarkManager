@@ -17,20 +17,6 @@ public class ExtensionController(IExtensionService extensionService) : Controlle
         return Ok(response);
     }
 
-    [HttpPost("folders")]
-    public async Task<ActionResult<FolderCatalogResponse>> UploadFoldersAsync(
-        [FromBody] FolderCatalogRequest request, CancellationToken ct)
-    {
-        if (request.CatalogId == Guid.Empty)
-        {
-            return ApiProblem.Result(
-                StatusCodes.Status400BadRequest, ApiProblem.ValidationCode,
-                "Invalid request", "catalogId is required.");
-        }
-
-        var response = await extensionService.StoreFolderCatalogAsync(request, ct);
-        return Accepted(response);
-    }
 
     [HttpGet("config")]
     public async Task<ExtensionConfigDto> GetConfigAsync(CancellationToken ct)

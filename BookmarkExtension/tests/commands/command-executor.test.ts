@@ -45,7 +45,7 @@ function makeResult(overrides: Partial<CommandExecutionResult> = {}): CommandExe
 }
 
 describe("CommandExecutor", () => {
-  let adapter: { apply: ReturnType<typeof vi.fn> } & Pick<BookmarkAdapter, "getFolderCatalog" | "getSubtree">;
+  let adapter: { apply: ReturnType<typeof vi.fn> } & Pick<BookmarkAdapter, "getSubtree">;
   let storage: Pick<StorageRepository, "saveCorrelation" | "pruneExpiredCorrelations" | "getCorrelation">;
   let completions: { operationId: string; input: CompletionRequest }[];
   let executor: CommandExecutor;
@@ -53,7 +53,6 @@ describe("CommandExecutor", () => {
   beforeEach(() => {
     adapter = {
       apply: vi.fn().mockResolvedValue(makeResult()),
-      getFolderCatalog: vi.fn(),
       getSubtree: vi.fn(),
     } as never;
     storage = {

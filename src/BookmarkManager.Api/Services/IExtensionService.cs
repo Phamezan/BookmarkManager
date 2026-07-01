@@ -5,7 +5,6 @@ namespace BookmarkManager.Api.Services;
 public interface IExtensionService
 {
     Task<HeartbeatResponse> HandleHeartbeatAsync(HeartbeatRequest request, CancellationToken ct);
-    Task<FolderCatalogResponse> StoreFolderCatalogAsync(FolderCatalogRequest request, CancellationToken ct);
     Task<ExtensionConfigDto> GetConfigAsync(CancellationToken ct);
     Task<ExtensionStatusDto> GetStatusAsync(CancellationToken ct);
     Task<ClaimResponse> ClaimCommandsAsync(ClaimRequest request, CancellationToken ct);

@@ -3,7 +3,6 @@ import type {
   BrowserNode,
   CommandExecutionResult,
   ExtensionCommand,
-  FolderCatalogNode,
   NodeMapping,
 } from "../api/contracts";
 
@@ -67,26 +66,7 @@ function toBrowserNode(
   };
 }
 
-function toFolderCatalogNode(
-  node: BraveBookmarkTreeNode,
-  parentProtected: boolean,
-): FolderCatalogNode[] {
-  if (node.url !== undefined) {
-    return [];
-  }
-  const protectedNode = parentProtected || isProtectedNode(node.id);
-  const self: FolderCatalogNode = {
-    browserNodeId: node.id,
-    parentBrowserNodeId: node.parentId ?? null,
-    title: node.title,
-    position: node.index ?? 0,
-    isProtected: protectedNode,
-  };
-  const childNodes = (node.children ?? []).flatMap((c) =>
-    toFolderCatalogNode(c, protectedNode),
-  );
-  return [self, ...childNodes];
-}
+
 
 interface CreatePayload {
   type: "Bookmark" | "Folder";
@@ -149,11 +129,6 @@ function retryableError(code: string, message: string): CommandExecutionResult {
 
 export class ChromeBookmarkAdapter implements BookmarkAdapter {
   constructor(private bookmarks: BraveBookmarksApi) {}
-
-  async getFolderCatalog(): Promise<FolderCatalogNode[]> {
-    const tree = await this.bookmarks.getTree();
-    return tree.flatMap((node) => toFolderCatalogNode(node, false));
-  }
 
   async getSubtree(browserNodeId: string): Promise<BrowserNode> {
     const subtrees = await this.bookmarks.getSubTree(browserNodeId);
