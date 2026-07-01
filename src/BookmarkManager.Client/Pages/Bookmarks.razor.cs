@@ -1225,6 +1225,24 @@ public partial class Bookmarks : IDisposable
 
     public sealed record TagGroup(string CategoryName, List<TagCountDto> Tags);
 
+    private List<BreadcrumbItem> GetBreadcrumbs()
+    {
+        var breadcrumbs = new List<BreadcrumbItem>();
+        if (!_selectedFolderId.HasValue) return breadcrumbs;
+
+        var path = new List<FolderTreeNodeDto>();
+        if (FindPath(_folderTree, _selectedFolderId.Value, path))
+        {
+            foreach (var folder in path)
+            {
+                breadcrumbs.Add(new BreadcrumbItem(folder.Id, folder.Title));
+            }
+        }
+        return breadcrumbs;
+    }
+
+    private sealed record BreadcrumbItem(Guid Id, string Title);
+
     public static class TagCategorizer
     {
         private static readonly HashSet<string> MediumTags = new(StringComparer.OrdinalIgnoreCase)

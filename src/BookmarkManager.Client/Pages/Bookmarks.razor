@@ -133,9 +133,43 @@ else
                          }
                      }
                  </div>
-             </section>
+              </section>
 
-             <!-- Toolbar & Selection Row -->
+              <!-- Breadcrumbs Navigation -->
+              @{
+                  var breadcrumbs = GetBreadcrumbs();
+                  if (breadcrumbs.Count > 0)
+                  {
+                      <div class="bookmark-breadcrumbs" style="margin-top: 8px;">
+                          <div class="breadcrumbs-container" style="padding-left: 8px;">
+                              <span class="breadcrumb-item link" @onclick="@(() => OnFolderSelected(breadcrumbs[0].Id))" title="Go to Root">
+                                  <MudIcon Icon="@Icons.Material.Filled.Home" Size="Size.Small" Style="margin-right: 4px; color: var(--bm-text-secondary);" />
+                                  Home
+                              </span>
+                              @for (int i = 0; i < breadcrumbs.Count; i++)
+                              {
+                                  var crumb = breadcrumbs[i];
+                                  var isLast = i == breadcrumbs.Count - 1;
+                                  
+                                  <span class="breadcrumb-separator">/</span>
+                                  
+                                  if (isLast)
+                                  {
+                                      <span class="breadcrumb-item active">@crumb.Title</span>
+                                  }
+                                  else
+                                  {
+                                      <span class="breadcrumb-item link" @onclick="@(() => OnFolderSelected(crumb.Id))">
+                                          @crumb.Title
+                                      </span>
+                                  }
+                              }
+                          </div>
+                      </div>
+                  }
+              }
+
+              <!-- Toolbar & Selection Row -->
              <div class="header-select-row" style="display: block;">
                  <div class="header-content-container">
                      @if (_selectedBookmarkIds.Count > 0)
