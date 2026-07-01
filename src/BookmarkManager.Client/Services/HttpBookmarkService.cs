@@ -138,8 +138,11 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<RetagAllResult>(HttpMethod.Post, $"api/bookmarks/retag-all?overwrite={overwrite.ToString().ToLowerInvariant()}", null, cancellationToken)
            ?? new RetagAllResult();
 
-    public async Task<List<TagCountDto>> GetTagsAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<List<TagCountDto>>("api/bookmarks/tags", cancellationToken) ?? [];
+    public async Task<List<TagCountDto>> GetTagsAsync(Guid? folderId = null, CancellationToken cancellationToken = default)
+    {
+        var url = folderId.HasValue ? $"api/bookmarks/tags?folderId={folderId.Value}" : "api/bookmarks/tags";
+        return await _apiClient.GetAsync<List<TagCountDto>>(url, cancellationToken) ?? [];
+    }
 
     public async Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<BatchTagResponse>(HttpMethod.Post, "api/bookmarks/ai-tags/batch", request, cancellationToken)

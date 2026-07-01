@@ -211,9 +211,11 @@ public partial class Bookmarks : IDisposable
         _selectedFolderId = folderId;
         _searchQuery = "";
         _loading = true;
+        ClearTagFilters();
         try
         {
             _items = await BookmarkService.GetBookmarksAsync(folderId);
+            await LoadTagsAsync();
         }
         catch (ApiException ex)
         {
@@ -231,6 +233,7 @@ public partial class Bookmarks : IDisposable
         _currentPage = 1;
         _loading = true;
         _selectedFolderId = null;
+        ClearTagFilters();
         StateHasChanged();
 
         try
@@ -238,6 +241,7 @@ public partial class Bookmarks : IDisposable
             _items = string.IsNullOrWhiteSpace(_searchQuery)
                 ? []
                 : (await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = _searchQuery })).Items;
+            await LoadTagsAsync();
         }
         catch (ApiException ex)
         {
@@ -254,7 +258,7 @@ public partial class Bookmarks : IDisposable
     {
         try
         {
-            _availableTags = await BookmarkService.GetTagsAsync();
+            _availableTags = await BookmarkService.GetTagsAsync(_selectedFolderId);
         }
         catch
         {
@@ -288,6 +292,7 @@ public partial class Bookmarks : IDisposable
         if (_selectedFolderId.HasValue)
         {
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+            await LoadTagsAsync();
         }
         StateHasChanged();
     }
@@ -474,6 +479,7 @@ public partial class Bookmarks : IDisposable
 
         _items.RemoveAll(i => idsToDelete.Contains(i.Id));
         _selectedBookmarkIds.Clear();
+        await LoadTagsAsync();
 
         await RefreshFolderTreeAsync();
         ShowUndoSnackbar($"Deleted {idsToDelete.Count} bookmarks", async () =>
@@ -509,7 +515,10 @@ public partial class Bookmarks : IDisposable
         _selectedBookmarkIds.Clear();
 
         if (_selectedFolderId.HasValue)
+        {
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+            await LoadTagsAsync();
+        }
 
         await RefreshFolderTreeAsync();
         ShowUndoSnackbar($"Moved {count} bookmark(s)", async () =>
@@ -613,6 +622,7 @@ public partial class Bookmarks : IDisposable
         }
 
         _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+        await LoadTagsAsync();
         await RefreshFolderTreeAsync();
         Snackbar.Add("Bookmark created", Severity.Success);
     }
@@ -630,7 +640,10 @@ public partial class Bookmarks : IDisposable
         await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
 
         if (_selectedFolderId.HasValue)
+        {
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+            await LoadTagsAsync();
+        }
 
         await RefreshFolderTreeAsync();
         Snackbar.Add("Bookmark updated", Severity.Success);
@@ -649,6 +662,7 @@ public partial class Bookmarks : IDisposable
 
         await BookmarkService.DeleteBookmarkAsync(item.Id);
         _items.Remove(item);
+        await LoadTagsAsync();
         await RefreshFolderTreeAsync();
         ShowUndoSnackbar($"Bookmark \"{item.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(item.Id));
     }
@@ -774,7 +788,10 @@ public partial class Bookmarks : IDisposable
         await BookmarkService.MoveBookmarkAsync(item.Id, targetFolderId);
         
         if (_selectedFolderId.HasValue)
+        {
             _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+            await LoadTagsAsync();
+        }
 
         await RefreshFolderTreeAsync();
         
@@ -837,6 +854,7 @@ public partial class Bookmarks : IDisposable
         if (_selectedFolderId == folderId)
         {
             _items = await BookmarkService.GetBookmarksAsync(folderId);
+            await LoadTagsAsync();
         }
         await RefreshFolderTreeAsync();
         Snackbar.Add("Bookmark created", Severity.Success);
@@ -894,6 +912,7 @@ public partial class Bookmarks : IDisposable
                                     else
                                     {
                                         _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value, ct);
+                                        await LoadTagsAsync();
                                     }
                                     StateHasChanged();
                                 }
@@ -1170,5 +1189,72 @@ public partial class Bookmarks : IDisposable
         if (lower.Contains("other"))
             return "/root/other";
         return "/root/bar";
+    }
+
+    private List<TagGroup> GroupTags(List<TagCountDto> tags)
+    {
+        var groups = new List<TagGroup>();
+        
+        var mediumTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Medium").ToList();
+        var originTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Origin").ToList();
+        var genreTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Genre").ToList();
+        var otherTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Other").Take(15).ToList();
+
+        if (mediumTags.Count > 0)
+            groups.Add(new TagGroup("Format", mediumTags));
+        if (originTags.Count > 0)
+            groups.Add(new TagGroup("Origin", originTags));
+        if (genreTags.Count > 0)
+            groups.Add(new TagGroup("Genres", genreTags));
+        if (otherTags.Count > 0)
+            groups.Add(new TagGroup("Tags", otherTags));
+
+        return groups;
+    }
+
+    private Color GetCategoryColor(string categoryName)
+    {
+        return categoryName switch
+        {
+            "Format" => Color.Primary,
+            "Origin" => Color.Secondary,
+            "Genres" => Color.Info,
+            _ => Color.Default
+        };
+    }
+
+    public sealed record TagGroup(string CategoryName, List<TagCountDto> Tags);
+
+    public static class TagCategorizer
+    {
+        private static readonly HashSet<string> MediumTags = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Manga", "Manhwa", "Manhua", "Novel", "Artbook", "OEL", "Doujinshi", "Anime"
+        };
+
+        private static readonly HashSet<string> OriginTags = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Japanese", "Korean", "Chinese"
+        };
+
+        private static readonly HashSet<string> GenreTags = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "Action", "Adventure", "Comedy", "Drama", "Ecchi", "Fantasy", "Harem", "Historical",
+            "Horror", "Mahou Shoujo", "Mecha", "Music", "Mystery", "Psychological", "Romance",
+            "Sci-Fi", "Slice of Life", "Sports", "Supernatural", "Thriller", "Yaoi", "Yuri",
+            "Shounen", "Shoujo", "Seinen", "Josei", "Gender Bender", "Tragedy", "School Life",
+            "Martial Arts", "Wuxia", "Xianxia", "Xuanhuan", "Magic", "Isekai"
+        };
+
+        public static string GetCategory(string tag)
+        {
+            if (MediumTags.Contains(tag))
+                return "Medium";
+            if (OriginTags.Contains(tag))
+                return "Origin";
+            if (GenreTags.Contains(tag))
+                return "Genre";
+            return "Other";
+        }
     }
 }

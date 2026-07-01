@@ -611,10 +611,20 @@ public class BookmarksController : ControllerBase
     /// Powers the tag-filter chips in the client.
     /// </summary>
     [HttpGet("tags")]
-    public async Task<ActionResult<List<TagCountDto>>> GetTagsAsync(CancellationToken ct)
+    public async Task<ActionResult<List<TagCountDto>>> GetTagsAsync([FromQuery] Guid? folderId, CancellationToken ct)
     {
-        var rows = await _db.BookmarkNodes
-            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && n.Tags != null && n.Tags != "")
+        IQueryable<BookmarkNode> query = _db.BookmarkNodes
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && n.Tags != null && n.Tags != "");
+
+        if (folderId.HasValue)
+        {
+            var descendantIds = await GetDescendantFolderIdsAsync(folderId.Value, ct);
+            descendantIds.Add(folderId.Value);
+
+            query = query.Where(n => n.ParentId != null && descendantIds.Contains(n.ParentId.Value));
+        }
+
+        var rows = await query
             .Select(n => n.Tags!)
             .ToListAsync(ct);
 
@@ -627,6 +637,30 @@ public class BookmarksController : ControllerBase
             .ToList();
 
         return Ok(counts);
+    }
+
+    private async Task<List<Guid>> GetDescendantFolderIdsAsync(Guid parentId, CancellationToken ct)
+    {
+        var result = new List<Guid>();
+        var queue = new Queue<Guid>();
+        queue.Enqueue(parentId);
+
+        while (queue.Count > 0)
+        {
+            var currentId = queue.Dequeue();
+            var children = await _db.BookmarkNodes
+                .Where(n => n.ParentId == currentId && n.Type == NodeType.Folder && !n.IsDeleted)
+                .Select(n => n.Id)
+                .ToListAsync(ct);
+
+            foreach (var child in children)
+            {
+                result.Add(child);
+                queue.Enqueue(child);
+            }
+        }
+
+        return result;
     }
 
 

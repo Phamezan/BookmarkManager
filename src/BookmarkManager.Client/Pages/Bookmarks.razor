@@ -211,35 +211,46 @@ else
                              }
                              @if (_availableTags.Count > 0 || _retagBusy)
                              {
-                             <MudPaper Elevation="0" Class="tag-bar">
-                             <div class="tag-bar-chips">
-                                 <span class="tag-bar-label">Tags:</span>
-                                 @foreach (var tag in _availableTags.Take(24))
+                             <MudPaper Elevation="0" Class="tag-bar" Style="flex-wrap: wrap; height: auto; padding: 12px; gap: 12px;">
+                             <div class="tag-categories-container" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                                 @foreach (var group in GroupTags(_availableTags))
                                  {
-                                     var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
-                                     <MudChip T="string"
-                                              Variant="@(active ? Variant.Filled : Variant.Outlined)"
-                                              Color="Color.Primary"
-                                              Size="Size.Small"
-                                              OnClick="@(() => ToggleTagFilter(tag.Tag))"
-                                              Style="cursor:pointer;">
-                                         @tag.Tag <span class="tag-count">@tag.Count</span>
-                                     </MudChip>
+                                     <div class="tag-category-row" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
+                                         <span class="tag-bar-label" style="font-weight: 600; min-width: 70px; color: var(--bm-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">@group.CategoryName:</span>
+                                         <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                                             @foreach (var tag in group.Tags)
+                                             {
+                                                 var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
+                                                 <MudChip T="string"
+                                                          Variant="@(active ? Variant.Filled : Variant.Outlined)"
+                                                          Color="@GetCategoryColor(group.CategoryName)"
+                                                          Size="Size.Small"
+                                                          OnClick="@(() => ToggleTagFilter(tag.Tag))"
+                                                          Style="cursor:pointer; margin: 0;">
+                                                     @tag.Tag <span class="tag-count" style="opacity: 0.6; font-size: 0.75rem; margin-left: 3px;">@tag.Count</span>
+                                                 </MudChip>
+                                             }
+                                         </div>
+                                     </div>
                                  }
-                                 @if (_activeTagFilters.Count > 0)
-                                 {
-                                     <MudChip T="string" Variant="Variant.Text" Size="Size.Small" OnClick="ClearTagFilters" Style="cursor:pointer;">Clear</MudChip>
-                                 }
-                             </div>
-                             <MudButton Variant="Variant.Text"
-                                        Color="Color.Default"
-                                        Size="Size.Small"
-                                        StartIcon="@Icons.Material.Filled.AutoAwesome"
-                                        OnClick="OpenAutoTaggerDialog"
-                                        Disabled="@_loading">
-                                 Auto Tag
-                             </MudButton>
-                             </MudPaper>
+                                  @if (_activeTagFilters.Count > 0)
+                                  {
+                                      <div style="margin-top: 4px;">
+                                          <MudChip T="string" Variant="Variant.Text" Size="Size.Small" OnClick="ClearTagFilters" Style="cursor:pointer; margin: 0;">Clear Active Filters</MudChip>
+                                      </div>
+                                  }
+                              </div>
+                              <div style="display: flex; justify-content: flex-end; width: 100%; margin-top: 4px;">
+                                  <MudButton Variant="Variant.Text"
+                                             Color="Color.Default"
+                                             Size="Size.Small"
+                                             StartIcon="@Icons.Material.Filled.AutoAwesome"
+                                             OnClick="OpenAutoTaggerDialog"
+                                             Disabled="@_loading">
+                                      Auto Tag
+                                  </MudButton>
+                              </div>
+                              </MudPaper>
                              }
                              else if (!_loading && _items.Count > 0)
                              {
