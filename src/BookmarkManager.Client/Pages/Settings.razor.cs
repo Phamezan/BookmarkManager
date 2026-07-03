@@ -24,13 +24,21 @@ public partial class Settings
     private string _triageActionType = "ManualFolder";
     private string _triageFolderName = string.Empty;
     private bool _triageRunning;
-    private TriageDomainResponse? _triageResult;
+    private TriageJobStatusDto? _triageResult;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
             _linkCheckerRunning = await BookmarkService.IsLinkCheckRunningAsync();
+
+            var triageStatus = await BookmarkService.GetTriageStatusAsync();
+            if (triageStatus.IsRunning)
+            {
+                _triageRunning = true;
+                _triageResult = triageStatus;
+                _ = PollTriageStatusAsync();
+            }
         }
         catch
         {
@@ -73,20 +81,45 @@ public partial class Settings
             var request = new TriageDomainRequest(_triageMatchBaseUrl, _triageActionType, _triageFolderName);
             _triageResult = await BookmarkService.TriageDomainAsync(request);
             
-            if (_triageResult.TotalFound == 0)
-            {
-                Snackbar.Add($"No bookmarks matched '{_triageMatchBaseUrl}'.", Severity.Info);
-            }
-            else
-            {
-                Snackbar.Add($"Triage complete! Processed {_triageResult.SuccessfullyProcessed} of {_triageResult.TotalFound} bookmarks.", Severity.Success);
-            }
+            _ = PollTriageStatusAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to run domain triage: {ex.Message}", Severity.Error);
+            Snackbar.Add($"Failed to start domain triage: {ex.Message}", Severity.Error);
+            _triageRunning = false;
+            StateHasChanged();
         }
-        finally
+    }
+
+    private async Task PollTriageStatusAsync()
+    {
+        try
+        {
+            while (_triageRunning)
+            {
+                await Task.Delay(1000);
+                var status = await BookmarkService.GetTriageStatusAsync();
+                
+                _triageResult = status;
+                _triageRunning = status.IsRunning;
+                
+                StateHasChanged();
+            }
+
+            if (_triageResult != null && !string.IsNullOrEmpty(_triageResult.ErrorMessage))
+            {
+                Snackbar.Add($"Domain triage failed: {_triageResult.ErrorMessage}", Severity.Error);
+            }
+            else if (_triageResult != null && _triageResult.TotalFound > 0)
+            {
+                Snackbar.Add($"Triage complete! Processed {_triageResult.SuccessfullyProcessed} of {_triageResult.TotalFound} bookmarks.", Severity.Success);
+            }
+            else if (_triageResult != null)
+            {
+                Snackbar.Add("Triage complete! No matching bookmarks found.", Severity.Info);
+            }
+        }
+        catch
         {
             _triageRunning = false;
             StateHasChanged();

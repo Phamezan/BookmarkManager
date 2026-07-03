@@ -1242,13 +1242,28 @@ a.root-card:hover {
 }
 
 .bookmark-card-folder-path {
-    font-size: 0.66rem;
-    color: var(--bm-text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--mud-palette-primary-text, #ffffff);
+    background-color: rgba(var(--mud-palette-primary-rgb, 89, 74, 226), 0.15);
+    border: 1px solid rgba(var(--mud-palette-primary-rgb, 89, 74, 226), 0.3);
+    padding: 2px 7px;
+    border-radius: var(--bm-radius-sm, 4px);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     line-height: 1.3;
-    font-family: "JetBrains Mono", ui-monospace, monospace;
+    max-width: 140px;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.bookmark-card-folder-path::before {
+    content: "📁";
+    font-size: 0.75rem;
+    line-height: 1;
 }
 
 .bookmark-card-time {

@@ -11,3 +11,13 @@ public record TriageDomainResponse(
     int SuccessfullyProcessed,
     string TargetFolder
 );
+
+public class TriageJobStatusDto
+{
+    public bool IsRunning { get; set; }
+    public int TotalFound { get; set; }
+    public int SuccessfullyProcessed { get; set; }
+    public string? TargetFolder { get; set; }
+    public string? CurrentDomain { get; set; }
+    public string? ErrorMessage { get; set; }
+}

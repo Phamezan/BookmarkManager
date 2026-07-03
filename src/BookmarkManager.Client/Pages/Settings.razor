@@ -226,11 +226,26 @@
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
             }
 
-            @if (_triageResult != null)
+            @if (_triageRunning && _triageResult != null)
             {
-                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Class="mt-2" OnClick="@(() => _triageResult = null)">
-                    Triage completed successfully! Matched @_triageResult.TotalFound bookmarks. Processed @_triageResult.SuccessfullyProcessed bookmarks into folder "@_triageResult.TargetFolder".
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-2">
+                    Triaging bookmarks matching "@_triageResult.CurrentDomain"... Found @_triageResult.TotalFound bookmarks. Processed @_triageResult.SuccessfullyProcessed / @_triageResult.TotalFound.
                 </MudAlert>
+            }
+            else if (!_triageRunning && _triageResult != null)
+            {
+                @if (!string.IsNullOrEmpty(_triageResult.ErrorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true" Class="mt-2" OnClick="@(() => _triageResult = null)">
+                        Triage failed: @_triageResult.ErrorMessage
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Class="mt-2" OnClick="@(() => _triageResult = null)">
+                        Triage completed successfully! Matched @_triageResult.TotalFound bookmarks. Processed @_triageResult.SuccessfullyProcessed bookmarks into folder "@_triageResult.TargetFolder".
+                    </MudAlert>
+                }
             }
         </MudStack>
     </MudPaper>

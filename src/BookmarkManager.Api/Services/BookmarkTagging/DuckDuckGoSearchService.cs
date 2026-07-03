@@ -261,9 +261,15 @@ public class DuckDuckGoSearchService : IDuckDuckGoSearchService
     private static string? ExtractHost(string? url)
     {
         if (string.IsNullOrWhiteSpace(url)) return null;
+        var cleaned = url.Trim();
+        if (!cleaned.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && 
+            !cleaned.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            cleaned = "https://" + cleaned;
+        }
         try
         {
-            var uri = new Uri(url);
+            var uri = new Uri(cleaned);
             return uri.Host;
         }
         catch

@@ -64,6 +64,8 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.AutoTaggerBackgroundJ
 builder.Services.AddHostedService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
+builder.Services.AddSingleton<BookmarkManager.Api.Services.DomainTriageBackgroundJob>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.DomainTriageBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.DomainTriageBackgroundJob>());
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.AddAutoMapper(typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>
