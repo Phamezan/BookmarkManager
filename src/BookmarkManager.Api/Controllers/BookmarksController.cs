@@ -1,5 +1,6 @@
 using AutoMapper;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -604,6 +605,74 @@ public class BookmarksController : ControllerBase
     {
         var result = await autoTagger.ProcessAsync(overwrite, folderIds: null, ct);
         return Ok(result);
+    }
+
+    [HttpPost("{folderId:guid}/ai-auto-tag")]
+    public async Task<ActionResult<AiAutoTagSummaryDto>> AiAutoTagAsync(
+        Guid folderId,
+        [FromQuery] bool forceRefresh = false,
+        CancellationToken ct = default)
+    {
+        var folderExists = await _db.BookmarkNodes.AnyAsync(
+            n => n.Id == folderId && n.Type == NodeType.Folder && !n.IsDeleted,
+            ct);
+        if (!folderExists)
+            return NotFound();
+
+        var aiAutoTagging = HttpContext.RequestServices.GetRequiredService<AiBookmarkAutoTaggingService>();
+        try
+        {
+            var summary = await aiAutoTagging.TagFolderAsync(folderId, forceRefresh, ct);
+            return Ok(summary);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is not null)
+        {
+            return Problem(
+                title: "OpenRouter API error",
+                statusCode: (int)ex.StatusCode,
+                detail: $"OpenRouter returned {ex.StatusCode}.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(title: "AI auto-tagging failed", statusCode: 400, detail: ex.Message);
+        }
+    }
+
+    [HttpPost("{folderId:guid}/ai-auto-tag/batch")]
+    public async Task<ActionResult<AiAutoTagSummaryDto>> AiAutoTagBatchAsync(
+        Guid folderId,
+        AiAutoTagBatchRequestDto request,
+        CancellationToken ct = default)
+    {
+        var folderExists = await _db.BookmarkNodes.AnyAsync(
+            n => n.Id == folderId && n.Type == NodeType.Folder && !n.IsDeleted,
+            ct);
+        if (!folderExists)
+            return NotFound();
+
+        var maxCandidates = request.MaxCandidates <= 0 ? 25 : Math.Min(request.MaxCandidates, 50);
+        var aiAutoTagging = HttpContext.RequestServices.GetRequiredService<AiBookmarkAutoTaggingService>();
+        try
+        {
+            var summary = await aiAutoTagging.TagFolderAsync(
+                folderId,
+                request.ForceRefresh,
+                maxCandidates,
+                request.ExcludedBookmarkIds,
+                ct);
+            return Ok(summary);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode is not null)
+        {
+            return Problem(
+                title: "OpenRouter API error",
+                statusCode: (int)ex.StatusCode,
+                detail: $"OpenRouter returned {ex.StatusCode}.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(title: "AI auto-tagging failed", statusCode: 400, detail: ex.Message);
+        }
     }
 
     /// <summary>

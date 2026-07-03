@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace BookmarkManager.Api.Services;
 
-public sealed class AnilistTaggingService : IAnilistTagProvider
+public sealed partial class AnilistTaggingService : IAnilistTagProvider
 {
     private static readonly TimeSpan SuccessCacheDuration = TimeSpan.FromHours(12);
     private static readonly TimeSpan EmptyCacheDuration = TimeSpan.FromMinutes(30);
@@ -27,76 +27,96 @@ public sealed class AnilistTaggingService : IAnilistTagProvider
         _logger = logger;
     }
 
-    public Task<List<string>> GetTagsForTitleAsync(string title, string? url, CancellationToken cancellationToken)
-        => GetTagsForTitleAsync(title, url, BookmarkTagDomain.Anime, cancellationToken);
+    public Task<ProviderTagResult> GetTagsForTitleAsync(string title, string? url, CancellationToken cancellationToken)
+        => GetTagsForTitleAsync(new MediaTagLookupContext(
+            title,
+            url,
+            BookmarkTagDomain.Anime,
+            null,
+            MediaTitleNormalizer.Normalize(title, url, BookmarkTagDomain.Anime)), cancellationToken);
 
-    public async Task<List<string>> GetTagsForTitleAsync(string title, string? url, BookmarkTagDomain domain, CancellationToken cancellationToken)
+    public async Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
     {
-        if (domain != BookmarkTagDomain.Anime)
-            return [];
+        if (context.Domain != BookmarkTagDomain.Anime)
+            return new ProviderTagResult([], false, null);
 
-        var cleanQuery = CleanTitleForSearch(title);
+        var candidate = context.NormalizedTitle.Candidates.FirstOrDefault()?.Query ?? string.Empty;
+        var cleanQuery = MediaTitleNormalizer.BuildLooseQuery(candidate);
         if (string.IsNullOrWhiteSpace(cleanQuery) || cleanQuery.Length < 2)
-            return [];
+            return new ProviderTagResult([], false, null);
 
-        var cacheKey = $"{domain}:{cleanQuery}";
+        var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
         var now = DateTimeOffset.UtcNow;
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
-            return cached.Tags.ToList();
+            return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason);
 
         try
         {
             await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            var body = CreateGraphQlBody(cleanQuery);
+            var body = CreateGraphQlBody(cleanQuery, context.Domain);
             var http = _httpFactory.CreateClient(nameof(AnilistTaggingService));
             http.DefaultRequestHeaders.Accept.Clear();
             http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             http.DefaultRequestHeaders.UserAgent.ParseAdd("BookmarkManager/2.0");
 
-            _logger.LogInformation("Querying AniList anime tags with cleaned query: '{Query}' (original: '{Original}')", cleanQuery, title);
+            _logger.LogInformation("Querying AniList tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
 
             using var resp = await http.PostAsJsonAsync("https://graphql.anilist.co", body, cancellationToken).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
                 var error = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 _logger.LogWarning("AniList API returned non-success code: {Status}. Response: {Error}", resp.StatusCode, error);
-                _cache[cacheKey] = new CacheEntry([], now.Add(EmptyCacheDuration));
-                return [];
+                _cache[cacheKey] = new CacheEntry([], false, $"HTTP error {resp.StatusCode}", now.Add(EmptyCacheDuration));
+                return new ProviderTagResult([], false, $"HTTP error {resp.StatusCode}");
             }
 
             using var doc = await resp.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
             if (doc == null)
-                return [];
+            {
+                var emptyResult = new ProviderTagResult([], false, "Response was not valid JSON");
+                _cache[cacheKey] = new CacheEntry([], false, emptyResult.RejectionReason, now.Add(EmptyCacheDuration));
+                return emptyResult;
+            }
 
-            var result = ExtractTags(doc.RootElement);
-            _cache[cacheKey] = new CacheEntry(result, now.Add(result.Count == 0 ? EmptyCacheDuration : SuccessCacheDuration));
-            return result.ToList();
+            var processed = ProcessCandidates(doc.RootElement, candidate);
+            _cache[cacheKey] = new CacheEntry(
+                processed.Tags,
+                processed.WasRejected,
+                processed.RejectionReason,
+                now.Add((processed.Tags.Count == 0 && !processed.WasRejected) ? EmptyCacheDuration : SuccessCacheDuration));
+            return new ProviderTagResult(processed.Tags, processed.WasRejected, processed.RejectionReason);
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to query AniList for tags of '{Title}'", title);
-            _cache[cacheKey] = new CacheEntry([], now.Add(EmptyCacheDuration));
-            return [];
+            _logger.LogWarning(ex, "Failed to query AniList for tags of '{Title}'", context.OriginalTitle);
+            _cache[cacheKey] = new CacheEntry([], false, ex.Message, now.Add(EmptyCacheDuration));
+            return new ProviderTagResult([], false, ex.Message);
         }
     }
 
-    public static object CreateGraphQlBody(string cleanQuery)
+    public static object CreateGraphQlBody(string cleanQuery, BookmarkTagDomain domain)
     {
-        var query = @"
-            query ($search: String) {
-              Page(page: 1, perPage: 1) {
-                media(search: $search, type: ANIME) {
+        var type = domain == BookmarkTagDomain.Manga ? "MANGA" : "ANIME";
+        var query = $@"
+            query ($search: String) {{
+              Page(page: 1, perPage: 5) {{
+                media(search: $search, type: {type}) {{
+                  title {{
+                    romaji
+                    english
+                    native
+                  }}
                   genres
-                  tags {
+                  tags {{
                     name
                     rank
                     isMediaSpoiler
                     isGeneralSpoiler
-                  }
-                }
-              }
-            }";
+                  }}
+                }}
+              }}
+            }}";
 
         return new
         {
@@ -105,159 +125,149 @@ public sealed class AnilistTaggingService : IAnilistTagProvider
         };
     }
 
-    private static List<string> ExtractTags(JsonElement root)
+    public static (List<string> Tags, bool WasRejected, string? RejectionReason) ProcessCandidates(JsonElement root, string cleanQuery)
     {
-        if (root.TryGetProperty("data", out var dataEl) &&
-            dataEl.TryGetProperty("Page", out var pageEl) &&
-            pageEl.TryGetProperty("media", out var mediaEl) &&
-            mediaEl.ValueKind == JsonValueKind.Array &&
-            mediaEl.GetArrayLength() > 0)
+        if (!root.TryGetProperty("data", out var dataEl) ||
+            !dataEl.TryGetProperty("Page", out var pageEl) ||
+            !pageEl.TryGetProperty("media", out var mediaEl) ||
+            mediaEl.ValueKind != JsonValueKind.Array)
         {
-            var firstMatch = mediaEl[0];
-            var tags = new List<string>();
-
-            if (firstMatch.TryGetProperty("genres", out var genresEl) && genresEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var genre in genresEl.EnumerateArray())
-                {
-                    if (genre.ValueKind == JsonValueKind.String)
-                        tags.Add(genre.GetString()!);
-                }
-            }
-
-            if (firstMatch.TryGetProperty("tags", out var tagsArrayEl) && tagsArrayEl.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var tagEl in tagsArrayEl.EnumerateArray())
-                {
-                    var name = tagEl.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
-                    var rank = tagEl.TryGetProperty("rank", out var rankEl) ? rankEl.GetInt32() : 0;
-                    var isMediaSpoiler = tagEl.TryGetProperty("isMediaSpoiler", out var msEl) && msEl.GetBoolean();
-                    var isGeneralSpoiler = tagEl.TryGetProperty("isGeneralSpoiler", out var gsEl) && gsEl.GetBoolean();
-
-                    if (!string.IsNullOrWhiteSpace(name) && rank >= 60 && !isMediaSpoiler && !isGeneralSpoiler)
-                        tags.Add(name);
-                }
-            }
-
-            return tags
-                .Select(t => t.Trim())
-                .Where(t => t.Length > 1)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Take(6)
-                .ToList();
+            return ([], false, "Invalid JSON structure from AniList.");
         }
 
-        return [];
+        var arrayLength = mediaEl.GetArrayLength();
+        if (arrayLength == 0)
+        {
+            return ([], false, "No candidates returned by AniList.");
+        }
+
+        var bestScore = -1.0;
+        JsonElement bestCandidate = default;
+        bool hasBest = false;
+
+        foreach (var item in mediaEl.EnumerateArray())
+        {
+            var score = ScoreCandidate(item, cleanQuery);
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestCandidate = item;
+                hasBest = true;
+            }
+        }
+
+        if (!hasBest || bestScore < 0.55)
+        {
+            return ([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold 0.55.");
+        }
+
+        var tags = ExtractTagsFromMedia(bestCandidate);
+        return (tags, false, null);
     }
 
-    // Separators that delimit the real title from site/brand suffixes and
-    // episode markers. " · " and " • " are common on anime streaming sites
-    // (e.g. "Watch MARRIAGETOXIN · Miruro - Episode 13").
-    private static readonly string[] TitleSeparators = { " - ", " | ", " :: ", " : ", " · ", " • " };
-
-    // Leading/trailing tokens that are pure noise and must be stripped from a
-    // segment before it is used as a search query. Without this, queries like
-    // "Watch MARRIAGETOXIN Miruro" return zero results from AniList.
-    private static readonly HashSet<string> NoiseTokens = new(StringComparer.OrdinalIgnoreCase)
+    private static List<string> ExtractTagsFromMedia(JsonElement mediaItem)
     {
-        // verbs / actions
-        "watch", "read", "view", "stream", "online", "free", "official",
-        // site / brand noise commonly appended to page titles
-        "miruro", "crunchyroll", "gogoanime", "gogo", "animepahe", "9anime", "9animetv",
-        "zoro", "zorox", "kaido", "aniwave", "aniwatch", "aniwatchtv", "hianime", "animesge",
-        "kickassanime", "allanime", "mangadex", "comick", "asura", "flame", "reaper",
-        "subs", "dub", "sub", "hd",
-        // generic web words
-        "home", "page", "website", "site", "com", "net", "org", "www",
-        "http", "https", "new", "best", "top", "via", "more", "see", "get",
-        "latest", "update", "updates", "blog", "post", "review", "guide",
-    };
+        var tags = new List<string>();
 
-    private static readonly string[] NoisePhrases =
-    {
-        "novel updates", "webtoon xyz", "read online", "official site"
-    };
-
-    public static string CleanTitleForSearch(string title)
-    {
-        if (string.IsNullOrWhiteSpace(title))
-            return string.Empty;
-
-        var segments = new List<string> { title };
-        foreach (var sep in TitleSeparators)
+        if (mediaItem.TryGetProperty("genres", out var genresEl) && genresEl.ValueKind == JsonValueKind.Array)
         {
-            var nextSegments = new List<string>();
-            foreach (var seg in segments)
+            foreach (var genre in genresEl.EnumerateArray())
             {
-                var parts = seg.Split(new[] { sep }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var part in parts)
-                {
-                    var trimmed = part.Trim();
-                    if (!string.IsNullOrEmpty(trimmed))
-                        nextSegments.Add(trimmed);
-                }
+                if (genre.ValueKind == JsonValueKind.String)
+                    tags.Add(genre.GetString()!);
             }
-            segments = nextSegments;
         }
 
-        var scoredSegments = new List<(string Cleaned, int Score, int Index)>();
-        for (int i = 0; i < segments.Count; i++)
+        if (mediaItem.TryGetProperty("tags", out var tagsArrayEl) && tagsArrayEl.ValueKind == JsonValueKind.Array)
         {
-            var cleanedSeg = Regex.Replace(segments[i], @"\[[^\]]*\]", "").Trim();
-            cleanedSeg = Regex.Replace(cleanedSeg, @"\([^\)]*\)", "").Trim();
-            cleanedSeg = Regex.Replace(cleanedSeg, @"(?i)\b(?:episode|ep|chapter|ch|vol|volume|v)\.?\s*\d+(?:\.\d+)?\b", "").Trim();
+            foreach (var tagEl in tagsArrayEl.EnumerateArray())
+            {
+                var name = tagEl.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null;
+                var rank = tagEl.TryGetProperty("rank", out var rankEl) ? rankEl.GetInt32() : 0;
+                var isMediaSpoiler = tagEl.TryGetProperty("isMediaSpoiler", out var msEl) && msEl.GetBoolean();
+                var isGeneralSpoiler = tagEl.TryGetProperty("isGeneralSpoiler", out var gsEl) && gsEl.GetBoolean();
 
-            // Strip whole noise phrases ("Read Online", "Novel Updates", …).
-            foreach (var phrase in NoisePhrases)
-                cleanedSeg = Regex.Replace(cleanedSeg, Regex.Escape(phrase), "", RegexOptions.IgnoreCase).Trim();
+                if (!string.IsNullOrWhiteSpace(name) && rank >= 60 && !isMediaSpoiler && !isGeneralSpoiler)
+                    tags.Add(name);
+            }
+        }
 
-            // Strip leading/trailing noise tokens so "Watch MARRIAGETOXIN" → "MARRIAGETOXIN".
-            cleanedSeg = StripNoiseTokens(cleanedSeg);
-            cleanedSeg = Regex.Replace(cleanedSeg, @"\s+", " ").Trim();
-            cleanedSeg = cleanedSeg.Trim(',', '.', '-', '_', ':', ' ');
+        return tags
+            .Select(t => t.Trim())
+            .Where(t => t.Length > 1)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(6)
+            .ToList();
+    }
 
-            if (string.IsNullOrWhiteSpace(cleanedSeg) || cleanedSeg.Length < 2)
+    [GeneratedRegex(@"(?i)\b(?:chapter|ch|episode|ep|volume|vol)\.?\s*\d+(?:\.\d+)?\b")]
+    private static partial Regex SearchNoiseRegex();
+
+    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
+    private static partial Regex SearchPunctuationRegex();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex SearchWhitespaceRegex();
+
+    private static string NormalizeTitleForSearch(string value)
+    {
+        var cleaned = MediaTitleNormalizer.NormalizeForSearch(value);
+        cleaned = SearchNoiseRegex().Replace(cleaned, " ");
+        cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
+        return SearchWhitespaceRegex().Replace(cleaned, " ").Trim();
+    }
+
+    public static double ScoreCandidate(JsonElement mediaElement, string cleanQuery)
+    {
+        var query = NormalizeTitleForSearch(cleanQuery);
+        if (query.Length == 0)
+            return 0;
+
+        var candidates = new List<string>();
+        if (mediaElement.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.Object)
+        {
+            AddStringProperty(titleProp, "romaji", candidates);
+            AddStringProperty(titleProp, "english", candidates);
+            AddStringProperty(titleProp, "native", candidates);
+        }
+
+        var best = 0.0;
+        foreach (var candidate in candidates)
+        {
+            var normalized = NormalizeTitleForSearch(candidate);
+            if (normalized.Length == 0)
+                continue;
+            if (string.Equals(normalized, query, StringComparison.Ordinal))
+                return 1.0;
+
+            var queryTokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+            var candidateTokens = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+            var intersection = queryTokens.Intersect(candidateTokens).Count();
+            var union = queryTokens.Union(candidateTokens).Count();
+            if (union == 0)
                 continue;
 
-            var score = 0;
-            if (Regex.IsMatch(segments[i], @"(?i)\b(?:episode|ep|chapter|ch|vol|volume|season|v)\b|\b(?:ep|ch|vol|s|v)\.?\s*\d+\b"))
-                score += 100;
+            var jaccard = (double)intersection / union;
+            var queryCoverage = (double)intersection / queryTokens.Count;
+            var score = (jaccard + queryCoverage) / 2;
+            if (candidateTokens.Count > queryTokens.Count)
+                score -= Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04);
 
-            var lower = cleanedSeg.ToLowerInvariant();
-            if (lower.Contains(".com") || lower.Contains(".gg") || lower.Contains("xyz") ||
-                lower.Contains("home") || lower.Contains("read") || lower.Contains("watch") ||
-                lower.Contains("official") || lower.Contains("chess") || lower.Contains("discussion") ||
-                lower.Contains("overview") || lower.Contains("set 16") || lower.Contains("set 17"))
-            {
-                score += 50;
-            }
-
-            scoredSegments.Add((cleanedSeg, score, i));
+            best = Math.Max(best, score);
         }
 
-        if (scoredSegments.Count == 0)
-        {
-            var clean = Regex.Replace(title, @"\[[^\]]*\]", "").Trim();
-            clean = Regex.Replace(clean, @"\([^\)]*\)", "").Trim();
-            clean = Regex.Replace(clean, @"(?i)\b(?:episode|ep|chapter|ch|vol|volume|v)\.?\s*\d+(?:\.\d+)?\b", "").Trim();
-            clean = Regex.Replace(clean, @"\s+", " ").Trim();
-            return clean.Trim(',', '.', '-', '_', ':', ' ');
-        }
-
-        var best = scoredSegments.OrderBy(s => s.Score).ThenBy(s => s.Index).ThenBy(s => s.Cleaned.Length).First();
-        return best.Cleaned;
+        return best;
     }
 
-    private static string StripNoiseTokens(string text)
+    private static void AddStringProperty(JsonElement element, string propertyName, List<string> values)
     {
-        var tokens = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var list = new List<string>(tokens);
-        while (list.Count > 0 && NoiseTokens.Contains(list[0].Trim(',', '.', '-', '_', ':')))
-            list.RemoveAt(0);
-        while (list.Count > 0 && NoiseTokens.Contains(list[^1].Trim(',', '.', '-', '_', ':')))
-            list.RemoveAt(list.Count - 1);
-        return string.Join(' ', list);
+        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
+        {
+            var value = property.GetString();
+            if (!string.IsNullOrWhiteSpace(value))
+                values.Add(value);
+        }
     }
 
-    private sealed record CacheEntry(List<string> Tags, DateTimeOffset ExpiresAt);
+    private sealed record CacheEntry(List<string> Tags, bool WasRejected, string? RejectionReason, DateTimeOffset ExpiresAt);
 }

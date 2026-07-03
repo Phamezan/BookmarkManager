@@ -25,6 +25,7 @@ public partial class Bookmarks : IDisposable
     private bool _treeLoading = true;
     private bool _loading;
     private Guid? _selectedFolderId;
+    private Guid? _preSearchFolderId;
     private string _searchQuery = "";
     private readonly HashSet<Guid> _selectedBookmarkIds = [];
     private string _dragType = "";
@@ -55,6 +56,7 @@ public partial class Bookmarks : IDisposable
     private HashSet<string> _activeTagFilters = [];
     private List<TagCountDto> _availableTags = [];
     private bool _retagBusy;
+    private bool ShouldShowTagBar => (_selectedFolderId.HasValue && !IsTopLevelFolder(_selectedFolderId.Value)) || !string.IsNullOrWhiteSpace(_searchQuery);
 
     private string _sortModeBacking = "TitleAsc";
     private string _sortMode
@@ -137,7 +139,7 @@ public partial class Bookmarks : IDisposable
         _treeLoading = true;
         StateHasChanged();
         await LoadFavoritesAsync();
-        await LoadTagsAsync();
+        _availableTags = [];
         try
         {
             _folderTree = await BookmarkService.GetFolderTreeAsync();
@@ -209,6 +211,7 @@ public partial class Bookmarks : IDisposable
         _currentPage = 1;
         _debounceCts?.Cancel();
         _selectedFolderId = folderId;
+        _preSearchFolderId = folderId;
         _searchQuery = "";
         _loading = true;
         ClearTagFilters();
@@ -229,18 +232,53 @@ public partial class Bookmarks : IDisposable
 
     private async Task OnSearchChanged(string? value)
     {
+        var oldQuery = _searchQuery;
         _searchQuery = value ?? "";
         _currentPage = 1;
         _loading = true;
+
+        if (string.IsNullOrWhiteSpace(oldQuery) && !string.IsNullOrWhiteSpace(_searchQuery) && _selectedFolderId.HasValue)
+        {
+            _preSearchFolderId = _selectedFolderId;
+        }
+
+        if (string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            _selectedFolderId = _preSearchFolderId;
+            ClearTagFilters();
+            StateHasChanged();
+
+            try
+            {
+                if (_selectedFolderId.HasValue)
+                {
+                    _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+                }
+                else
+                {
+                    _items = [];
+                }
+                await LoadTagsAsync();
+            }
+            catch (ApiException ex)
+            {
+                Snackbar.Add($"Failed to load bookmarks: {ex.Message}", Severity.Error);
+            }
+            finally
+            {
+                _loading = false;
+                StateHasChanged();
+            }
+            return;
+        }
+
         _selectedFolderId = null;
         ClearTagFilters();
         StateHasChanged();
 
         try
         {
-            _items = string.IsNullOrWhiteSpace(_searchQuery)
-                ? []
-                : (await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = _searchQuery })).Items;
+            _items = (await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = _searchQuery })).Items;
             await LoadTagsAsync();
         }
         catch (ApiException ex)
@@ -256,15 +294,37 @@ public partial class Bookmarks : IDisposable
 
     private async Task LoadTagsAsync()
     {
+        if (!ShouldShowTagBar)
+        {
+            _availableTags = [];
+            return;
+        }
+
         try
         {
-            _availableTags = await BookmarkService.GetTagsAsync(_selectedFolderId);
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                _availableTags = _items
+                    .Where(item => item.Metadata?.Tags != null)
+                    .SelectMany(item => item.Metadata!.Tags)
+                    .GroupBy(tag => tag, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => new TagCountDto { Tag = group.Key, Count = group.Count() })
+                    .OrderByDescending(t => t.Count)
+                    .ThenBy(t => t.Tag)
+                    .ToList();
+            }
+            else
+            {
+                _availableTags = await BookmarkService.GetTagsAsync(_selectedFolderId);
+            }
         }
         catch
         {
             _availableTags = [];
         }
     }
+
+    private bool IsTopLevelFolder(Guid folderId) => _folderTree.Any(folder => folder.Id == folderId);
 
     private void ToggleTagFilter(string tag)
     {
@@ -285,7 +345,11 @@ public partial class Bookmarks : IDisposable
     private async Task OpenAutoTaggerDialog()
     {
         var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium, CloseButton = true };
-        var dialog = await DialogService.ShowAsync<AutoTaggerDialog>("Auto Tagger", options);
+        var parameters = new DialogParameters<AutoTaggerDialog>
+        {
+            { dialog => dialog.CurrentFolderId, _selectedFolderId }
+        };
+        var dialog = await DialogService.ShowAsync<AutoTaggerDialog>("Auto Tagger", parameters, options);
         var result = await dialog.Result;
         
         await LoadTagsAsync();

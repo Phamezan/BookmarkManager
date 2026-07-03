@@ -1,11 +1,28 @@
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
+public record ProviderTagResult(List<string> Tags, bool WasRejected, string? RejectionReason);
+
 public interface IAnilistTagProvider
 {
-    Task<List<string>> GetTagsForTitleAsync(string title, string? url, BookmarkTagDomain domain, CancellationToken cancellationToken);
+    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
 }
 
 public interface IMangaUpdatesTagProvider
 {
-    Task<List<string>> GetTagsForTitleAsync(string title, string? url, BookmarkTagDomain domain, CancellationToken cancellationToken);
+    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
+}
+
+public interface IKitsuTagProvider
+{
+    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
+}
+
+public interface INovelFullTagProvider
+{
+    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
+}
+
+public interface INovelUpdatesTagProvider
+{
+    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
 }

@@ -29,15 +29,34 @@ builder.Services.Configure<HostOptions>(options =>
 
 builder.Services.AddScoped<IExtensionService, ExtensionService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.TagExtractorService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.AiTaggingSettingsService>();
+builder.Services.AddSingleton<AiRequestThrottle>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient(nameof(OpenRouterSeriesIdentificationClient))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<IAiSeriesIdentificationClient, OpenRouterSeriesIdentificationClient>();
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.AnilistTaggingService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.MangaUpdatesTaggingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.KitsuTaggingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelFullTaggingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelUpdatesTaggingService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AnilistTaggingService>();
 builder.Services.AddSingleton<IAnilistTagProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
 builder.Services.AddSingleton<MangaUpdatesTaggingService>();
 builder.Services.AddSingleton<IMangaUpdatesTagProvider>(provider => provider.GetRequiredService<MangaUpdatesTaggingService>());
+builder.Services.AddSingleton<KitsuTaggingService>();
+builder.Services.AddSingleton<IKitsuTagProvider>(provider => provider.GetRequiredService<KitsuTaggingService>());
+builder.Services.AddSingleton<NovelFullTaggingService>();
+builder.Services.AddSingleton<INovelFullTagProvider>(provider => provider.GetRequiredService<NovelFullTaggingService>());
+builder.Services.AddSingleton<NovelUpdatesTaggingService>();
+builder.Services.AddSingleton<INovelUpdatesTagProvider>(provider => provider.GetRequiredService<NovelUpdatesTaggingService>());
+builder.Services.AddScoped<AiSeriesIdentifierService>();
+builder.Services.AddScoped<AiBookmarkAutoTaggingService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.BookmarkTaggingService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.AutoTaggerService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>();

@@ -1,4 +1,6 @@
+using System.Text.Json;
 using BookmarkManager.Api.Services;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using Xunit;
 
 namespace BookmarkManager.UnitTests;
@@ -17,9 +19,100 @@ public sealed class AnilistTaggingTests
     [InlineData("One Piece 1092 discussion", "One Piece 1092 discussion")]
     [InlineData("Watch MARRIAGETOXIN · Miruro - Episode 13", "MARRIAGETOXIN")]
     [InlineData("Watch Naruto · Crunchyroll - Episode 1", "Naruto")]
-    public void CleanTitleForSearch_StripsCommonJunkCorrectly(string title, string expected)
+    public void CentralTitleNormalizer_StripsCommonJunkCorrectly(string title, string expected)
     {
-        var cleaned = AnilistTaggingService.CleanTitleForSearch(title);
+        var cleaned = MediaTitleNormalizer.CleanTitle(title);
         Assert.Equal(expected, cleaned);
+    }
+
+    [Fact]
+    public void ScoreCandidate_CalculatesExpectedSimilarity()
+    {
+        const string json = """
+        {
+          "title": {
+            "romaji": "One Piece",
+            "english": "One Piece",
+            "native": "ワンピース"
+          }
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+
+        // Exact match
+        var score1 = AnilistTaggingService.ScoreCandidate(doc.RootElement, "One Piece");
+        Assert.Equal(1.0, score1);
+
+        // Close match
+        var score2 = AnilistTaggingService.ScoreCandidate(doc.RootElement, "One Piece anime");
+        Assert.True(score2 >= 0.55);
+
+        // Bad match
+        var score3 = AnilistTaggingService.ScoreCandidate(doc.RootElement, "Attack on Titan");
+        Assert.True(score3 < 0.55);
+    }
+
+    [Fact]
+    public void ProcessCandidates_SelectsBestAboveThreshold()
+    {
+        const string json = """
+        {
+          "data": {
+            "Page": {
+              "media": [
+                {
+                  "title": { "romaji": "Attack on Titan", "english": "Attack on Titan", "native": "" },
+                  "genres": ["Action"],
+                  "tags": [
+                    { "name": "Gore", "rank": 90, "isMediaSpoiler": false, "isGeneralSpoiler": false }
+                  ]
+                },
+                {
+                  "title": { "romaji": "One Piece", "english": "One Piece", "native": "" },
+                  "genres": ["Action", "Adventure"],
+                  "tags": [
+                    { "name": "Pirates", "rank": 95, "isMediaSpoiler": false, "isGeneralSpoiler": false }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+
+        var (tags, wasRejected, rejectionReason) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
+
+        Assert.False(wasRejected);
+        Assert.Null(rejectionReason);
+        Assert.Contains("Adventure", tags);
+        Assert.Contains("Pirates", tags);
+    }
+
+    [Fact]
+    public void ProcessCandidates_RejectsWhenAllBelowThreshold()
+    {
+        const string json = """
+        {
+          "data": {
+            "Page": {
+              "media": [
+                {
+                  "title": { "romaji": "Attack on Titan", "english": "Attack on Titan", "native": "" },
+                  "genres": ["Action"],
+                  "tags": []
+                }
+              ]
+            }
+          }
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+
+        var (tags, wasRejected, rejectionReason) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
+
+        Assert.False(wasRejected);
+        Assert.NotNull(rejectionReason);
+        Assert.Empty(tags);
     }
 }

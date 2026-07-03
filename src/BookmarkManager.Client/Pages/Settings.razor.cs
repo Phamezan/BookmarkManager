@@ -16,6 +16,9 @@ public partial class Settings
     private ExtensionStatusDto? _extensionStatus;
     private bool _statusLoading = true;
     private bool _linkCheckerRunning;
+    private AiTaggingSettingsDto _aiSettings = new();
+    private bool _aiSettingsLoading = true;
+    private bool _aiSettingsSaving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -28,7 +31,7 @@ public partial class Settings
             // Ignore failure
         }
 
-        await LoadExtensionStatusAsync();
+        await Task.WhenAll(LoadExtensionStatusAsync(), LoadAiTaggingSettingsAsync());
     }
 
     private async Task RunLinkCheckerAsync()
@@ -61,6 +64,41 @@ public partial class Settings
         finally
         {
             _statusLoading = false;
+        }
+    }
+
+    private async Task LoadAiTaggingSettingsAsync()
+    {
+        _aiSettingsLoading = true;
+        try
+        {
+            _aiSettings = await BookmarkService.GetAiTaggingSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load AI tagging settings: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _aiSettingsLoading = false;
+        }
+    }
+
+    private async Task SaveAiTaggingSettingsAsync()
+    {
+        _aiSettingsSaving = true;
+        try
+        {
+            _aiSettings = await BookmarkService.SaveAiTaggingSettingsAsync(_aiSettings);
+            Snackbar.Add("AI tagging settings saved.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save AI tagging settings: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _aiSettingsSaving = false;
         }
     }
 

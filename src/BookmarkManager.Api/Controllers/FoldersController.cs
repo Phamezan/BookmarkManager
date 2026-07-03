@@ -79,15 +79,26 @@ public class FoldersController : ControllerBase
 
     private static List<FolderTreeNodeDto> BuildTree(List<BookmarkNode> nodes, Guid? parentId, Dictionary<Guid, int> bookmarkCounts)
     {
-        return nodes
-            .Where(n => n.ParentId == parentId)
-            .Select(n => new FolderTreeNodeDto
+        var result = new List<FolderTreeNodeDto>();
+
+        foreach (var node in nodes.Where(n => n.ParentId == parentId))
+        {
+            var children = BuildTree(nodes, node.Id, bookmarkCounts);
+            if (parentId is null && string.IsNullOrWhiteSpace(node.Title))
             {
-                Id = n.Id,
-                Title = n.Title,
-                BookmarkCount = bookmarkCounts.TryGetValue(n.Id, out var count) ? count : 0,
-                Children = BuildTree(nodes, n.Id, bookmarkCounts)
-            })
-            .ToList();
+                result.AddRange(children);
+                continue;
+            }
+
+            result.Add(new FolderTreeNodeDto
+            {
+                Id = node.Id,
+                Title = node.Title,
+                BookmarkCount = bookmarkCounts.TryGetValue(node.Id, out var count) ? count : 0,
+                Children = children
+            });
+        }
+
+        return result;
     }
 }

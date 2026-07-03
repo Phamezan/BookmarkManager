@@ -134,6 +134,22 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<BatchTagResponse>(HttpMethod.Post, "api/bookmarks/ai-tags/batch", request, cancellationToken)
            ?? new BatchTagResponse();
 
+    public async Task<AiAutoTagSummaryDto> AiAutoTagFolderAsync(Guid folderId, bool forceRefresh = false, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<AiAutoTagSummaryDto>(HttpMethod.Post, $"api/bookmarks/{folderId}/ai-auto-tag?forceRefresh={forceRefresh.ToString().ToLowerInvariant()}", null, cancellationToken)
+           ?? new AiAutoTagSummaryDto();
+
+    public async Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<AiAutoTagSummaryDto>(HttpMethod.Post, $"api/bookmarks/{folderId}/ai-auto-tag/batch", request, cancellationToken)
+           ?? new AiAutoTagSummaryDto();
+
+    public async Task<AiTaggingSettingsDto> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<AiTaggingSettingsDto>("api/settings/ai-tagging", cancellationToken)
+           ?? new AiTaggingSettingsDto();
+
+    public async Task<AiTaggingSettingsDto> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<AiTaggingSettingsDto>(HttpMethod.Put, "api/settings/ai-tagging", settings, cancellationToken)
+           ?? settings;
+
     public async Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<Dictionary<Guid, int>>("api/bookmarks/untagged-counts", cancellationToken)
            ?? new Dictionary<Guid, int>();

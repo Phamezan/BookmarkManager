@@ -129,4 +129,47 @@ public sealed class TagExtractorTests
         Assert.DoesNotContain("Kaido", tags, StringComparer.OrdinalIgnoreCase);
         Assert.Contains("Frieren", tags);
     }
+
+    [Fact]
+    public void DomainSpecific_SuppressesGeneralCategoryRules()
+    {
+        // Title contains keywords that would normally match "Development" (github), "Video" (youtube), "Shopping" (shop).
+        // Since the domain is Anime, these general categories must be suppressed.
+        var tags = _svc.ExtractTags(
+            "Frieren github youtube shop", 
+            "https://miruro.tv/watch/frieren", 
+            BookmarkTagDomain.Anime);
+
+        Assert.Contains("Anime", tags);
+        Assert.DoesNotContain("Development", tags);
+        Assert.DoesNotContain("Video", tags);
+        Assert.DoesNotContain("Shopping", tags);
+    }
+
+    [Fact]
+    public void MatchCategoryRules_UsesWordBoundaries()
+    {
+        // "chapters" contains "chapter" as a substring but shouldn't trigger the Manga category rule.
+        // "codebooks" contains "code" as a substring but shouldn't trigger the Development category rule.
+        var tags = _svc.ExtractTags(
+            "Book of chapters and codebooks",
+            "https://example.com/books",
+            BookmarkTagDomain.General);
+
+        Assert.DoesNotContain("Manga", tags);
+        Assert.DoesNotContain("Development", tags);
+    }
+
+    [Fact]
+    public void MatchCategoryRules_NovelSignalsTakePrecedenceOverChapterMangaSignal()
+    {
+        // A novel bookmark with "chapter" in the title should yield "Novel", not "Manga"
+        var tags = _svc.ExtractTags(
+            "Player Who Returned 10,000 Years Later Chapter 132 - Novel Cool",
+            "https://www.novelcool.com/chapter/Player/9775214/",
+            BookmarkTagDomain.General);
+
+        Assert.Contains("Novel", tags);
+        Assert.DoesNotContain("Manga", tags);
+    }
 }

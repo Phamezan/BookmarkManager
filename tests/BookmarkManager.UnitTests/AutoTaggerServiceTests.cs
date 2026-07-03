@@ -51,7 +51,7 @@ public sealed class AutoTaggerServiceTests
 
         var anilist = new FakeAnilistProvider(["Shounen"]);
         var mangaUpdates = new FakeMangaUpdatesProvider(["Manga"]);
-        var tagging = new BookmarkTaggingService(anilist, mangaUpdates, new TagExtractorService(), NullLogger<BookmarkTaggingService>.Instance);
+        var tagging = new BookmarkTaggingService(anilist, mangaUpdates, new FakeKitsuProvider([]), new FakeNovelFullProvider([]), new TagExtractorService(), NullLogger<BookmarkTaggingService>.Instance);
         var service = new AutoTaggerService(db, tagging, NullLogger<AutoTaggerService>.Instance);
 
         var result = await service.ProcessUntaggedAsync(CancellationToken.None);
@@ -60,7 +60,7 @@ public sealed class AutoTaggerServiceTests
         Assert.Equal(1, result.Tagged);
         Assert.Equal(1, result.Total);
         Assert.Equal(0, result.Skipped);
-        Assert.Equal("Shounen", bookmark.Tags);
+        Assert.Equal("Anime,Shounen", bookmark.Tags);
         Assert.Equal(SyncState.Synced, bookmark.SyncState);
         Assert.Empty(await db.ExtensionCommands.ToListAsync());
         Assert.Equal(1, anilist.CallCount);
@@ -73,11 +73,11 @@ public sealed class AutoTaggerServiceTests
         public int CallCount { get; private set; }
         public BookmarkTagDomain? LastDomain { get; private set; }
 
-        public Task<List<string>> GetTagsForTitleAsync(string title, string? url, BookmarkTagDomain domain, CancellationToken cancellationToken)
+        public Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
         {
             CallCount++;
-            LastDomain = domain;
-            return Task.FromResult(tags);
+            LastDomain = context.Domain;
+            return Task.FromResult(new ProviderTagResult(tags, false, null));
         }
     }
 
@@ -85,10 +85,32 @@ public sealed class AutoTaggerServiceTests
     {
         public int CallCount { get; private set; }
 
-        public Task<List<string>> GetTagsForTitleAsync(string title, string? url, BookmarkTagDomain domain, CancellationToken cancellationToken)
+        public Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
         {
             CallCount++;
-            return Task.FromResult(tags);
+            return Task.FromResult(new ProviderTagResult(tags, false, null));
+        }
+    }
+
+    private sealed class FakeKitsuProvider(List<string> tags) : IKitsuTagProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(new ProviderTagResult(tags, false, null));
+        }
+    }
+
+    private sealed class FakeNovelFullProvider(List<string> tags) : INovelFullTagProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(new ProviderTagResult(tags, false, null));
         }
     }
 }

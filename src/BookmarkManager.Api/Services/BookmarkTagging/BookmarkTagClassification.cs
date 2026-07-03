@@ -5,4 +5,5 @@ public sealed record BookmarkTagClassification(
     string CleanTitle,
     bool ShouldUseAniList,
     bool ShouldUseMangaUpdates,
+    bool IsEligibleForDualProviderLookup,
     string Reason);

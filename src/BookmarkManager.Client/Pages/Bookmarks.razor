@@ -207,9 +207,12 @@ else
                              <MudTooltip Text="Create bookmark">
                                  <MudIconButton Icon="@Icons.Material.Filled.AddLink" Color="Color.Primary" OnClick="@CreateBookmark" aria-label="Create bookmark" />
                              </MudTooltip>
+                             <MudTooltip Text="Auto-tag bookmarks">
+                                 <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" OnClick="OpenAutoTaggerDialog" aria-label="Auto tag" />
+                             </MudTooltip>
                              </MudPaper>
                              }
-                             @if (_selectedFolderId.HasValue)
+                             @if (ShouldShowTagBar)
                              {
                                  <MudPaper Elevation="0" Class="tag-bar" Style="flex-wrap: wrap; height: auto; padding: 12px; gap: 12px;">
                                      @if (_availableTags.Count > 0 || _retagBusy)

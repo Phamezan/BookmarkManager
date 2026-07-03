@@ -85,6 +85,75 @@
     </MudPaper>
 
 
+    <!-- AI Auto Tagging Section -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">AI Auto Tagging</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Save"
+                           OnClick="SaveAiTaggingSettingsAsync"
+                           Disabled="@_aiSettingsSaving">
+                    @(_aiSettingsSaving ? "Saving..." : "Save")
+                </MudButton>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Configure OpenRouter for the Auto Tagger's AI series-title matching mode. Tags still come from source providers.
+            </MudText>
+            @if (_aiSettingsLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else
+            {
+                <MudCheckBox T="bool" @bind-Value="_aiSettings.Enabled" Label="Enable OpenRouter AI auto-tagging mode" Color="Color.Primary" />
+                
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.BaseUrl"
+                                      Label="Base URL"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      HelperText="OpenRouter API Base URL, e.g. https://openrouter.ai/api/v1" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.Model"
+                                      Label="Model"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      HelperText="OpenRouter model ID, e.g. google/gemini-2.5-flash:free" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_aiSettings.ApiKey"
+                                      Label="OpenRouter API Key"
+                                      Variant="Variant.Outlined"
+                                      InputType="InputType.Password"
+                                      Immediate="true"
+                                      HelperText="Stored locally on this API server." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_aiSettings.RequestsPerMinute"
+                                         Label="Requests Per Minute (RPM)"
+                                         Variant="Variant.Outlined"
+                                         Min="1"
+                                         HelperText="Pacing limit for API calls." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_aiSettings.PreferredBatchSize"
+                                         Label="Preferred Batch Size"
+                                         Variant="Variant.Outlined"
+                                         Min="1"
+                                         HelperText="Number of bookmarks to process per batch." />
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudStack>
+    </MudPaper>
+
+
     <!-- Link Checker Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">

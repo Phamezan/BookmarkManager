@@ -5,12 +5,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services;
 
 namespace BookmarkManager.Api.IntegrationTests;
 
 public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory<Program>
 {
     private readonly string _connectionString = $"Data Source={Path.Combine(Path.GetTempPath(), $"bm-tests-{Guid.NewGuid():N}.db")}";
+    private readonly string _tempDataDir = Path.Combine(Path.GetTempPath(), $"bm-data-{Guid.NewGuid():N}");
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -26,6 +28,19 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             }
 
             services.AddDbContext<AppDbContext>(options => options.UseSqlite(_connectionString));
+
+            // Replace AiTaggingSettingsService with an isolated temp-dir instance
+            // so integration tests never clobber C:\data\ai-tagging-settings.json.
+            var settingsDescriptor = services.SingleOrDefault(
+                d => d.ServiceType == typeof(AiTaggingSettingsService));
+            if (settingsDescriptor is not null)
+            {
+                services.Remove(settingsDescriptor);
+            }
+
+            Directory.CreateDirectory(_tempDataDir);
+            var settingsPath = Path.Combine(_tempDataDir, "ai-tagging-settings.json");
+            services.AddSingleton<AiTaggingSettingsService>(new TestAiTaggingSettingsService(settingsPath));
 
             var sp = services.BuildServiceProvider();
             using var scope = sp.CreateScope();
@@ -50,5 +65,13 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
         }
 
         base.Dispose(disposing);
+    }
+}
+
+internal sealed class TestAiTaggingSettingsService : AiTaggingSettingsService
+{
+    public TestAiTaggingSettingsService(string settingsPath)
+        : base(Microsoft.Extensions.Logging.Abstractions.NullLogger<AiTaggingSettingsService>.Instance, settingsPath)
+    {
     }
 }

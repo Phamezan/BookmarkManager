@@ -24,6 +24,61 @@ public sealed class MangaUpdatesTaggingTests
     }
 
     [Fact]
+    public void TryExtractBestSeriesId_SkipsConflictingPreviewMediumAndSelectsMatchingResult()
+    {
+        const string json = """
+        {
+          "results": [
+            { "record": { "series_id": 1, "title": "The Lone Necromancer", "type": "Manga" } },
+            { "record": { "series_id": 2, "title": "The Lone Necromancer", "type": "Novel" } }
+          ]
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        var seriesId = MangaUpdatesTaggingService.TryExtractBestSeriesId(doc.RootElement, "The Lone Necromancer", BookmarkTagDomain.Novel, null, null);
+
+        Assert.Equal(2L, seriesId);
+    }
+
+    [Fact]
+    public void TryExtractBestSeriesId_RejectsConflictingPreviewMedium()
+    {
+        const string json = """
+        {
+          "results": [
+            { "record": { "series_id": 1, "title": "The Lone Necromancer", "type": "Manga" } }
+          ]
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        var seriesId = MangaUpdatesTaggingService.TryExtractBestSeriesId(doc.RootElement, "The Lone Necromancer", BookmarkTagDomain.Novel, null, null);
+
+        Assert.Null(seriesId);
+    }
+
+    [Fact]
+    public void TryExtractBestSeriesId_RejectsWeakTitleMatch()
+    {
+        const string json = """
+        {
+          "results": [
+            { "record": { "series_id": 1, "title": "Completely Different Title", "type": "Novel" } }
+          ]
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        var seriesId = MangaUpdatesTaggingService.TryExtractBestSeriesId(doc.RootElement, "The Lone Necromancer", BookmarkTagDomain.Novel, null, null);
+
+        Assert.Null(seriesId);
+    }
+
+    [Fact]
     public void ExtractTags_CombinesGenresAndCategoriesWithVoteSorting()
     {
         const string json = """
@@ -137,5 +192,30 @@ public sealed class MangaUpdatesTaggingTests
         var country = MangaUpdatesTaggingService.DetectNovelOrigin(doc.RootElement);
 
         Assert.Equal(expectedCountry, country);
+    }
+
+    [Fact]
+    public void TryExtractBestSeriesId_PrefersMatchesToFolderPreferredMedium()
+    {
+        const string json = """
+        {
+          "results": [
+            { "record": { "series_id": 10, "title": "The Breaker", "type": "Manga" } },
+            { "record": { "series_id": 20, "title": "The Breaker", "type": "Manhwa" } }
+          ]
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        // When folder contains "Manhwa", we should select the Manhwa candidate (ID 20) over the Manga candidate (ID 10)
+        var seriesId = MangaUpdatesTaggingService.TryExtractBestSeriesId(
+            doc.RootElement, 
+            "The Breaker", 
+            BookmarkTagDomain.Manga, 
+            "Bookmarks/Manhwa", 
+            null);
+
+        Assert.Equal(20L, seriesId);
     }
 }

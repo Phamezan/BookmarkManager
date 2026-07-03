@@ -137,6 +137,34 @@ public sealed class TagExtractorService
     public List<string> ExtractTags(string title, string? url)
         => ExtractTags(title, url, BookmarkTagDomain.General, null).ToList();
 
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Regex> RegexCache = new();
+
+    private static Regex GetOrCreateRegex(string needle)
+    {
+        return RegexCache.GetOrAdd(needle, n =>
+        {
+            var pattern = Regex.Escape(n);
+            if (n.Length > 0)
+            {
+                if (char.IsLetterOrDigit(n[0]))
+                    pattern = @"\b" + pattern;
+                if (char.IsLetterOrDigit(n[^1]))
+                    pattern = pattern + @"\b";
+            }
+            return new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        });
+    }
+
+    private static bool HasAnyWord(string haystack, params string[] needles)
+    {
+        foreach (var n in needles)
+        {
+            if (GetOrCreateRegex(n).IsMatch(haystack))
+                return true;
+        }
+        return false;
+    }
+
     // ── Category rules ──────────────────────────────────────────────────────
 
     private static IEnumerable<string> MatchCategoryRules(string combined, string? url, BookmarkTagDomain domain)
@@ -144,21 +172,25 @@ public sealed class TagExtractorService
         if (domain == BookmarkTagDomain.Anime)
         {
             yield return "Anime";
+            yield break;
         }
         else if (domain == BookmarkTagDomain.Manga)
         {
             yield return "Manga";
+            yield break;
         }
         else if (domain == BookmarkTagDomain.Novel)
         {
             yield return "Novel";
+            yield break;
         }
         else
         {
             // URL-based hints first to prevent false format tagging
             string? urlLower = url?.ToLowerInvariant();
-            bool isAnimeUrl = urlLower != null && HasAny(urlLower, "crunchyroll.com", "miruro.tv", "gogoanime", "9anime", "animepahe", "hianime", "animesge", "kickassanime", "allanime");
-            bool isMangaUrl = urlLower != null && HasAny(urlLower, "mangadex.org", "mangafox", "mangakakalot", "mangaplus", "webtoons.com");
+            bool isAnimeUrl = urlLower != null && HasAnyWord(urlLower, "crunchyroll.com", "miruro.tv", "gogoanime", "9anime", "animepahe", "hianime", "animesge", "kickassanime", "allanime");
+            bool isMangaUrl = urlLower != null && HasAnyWord(urlLower, "mangadex.org", "mangafox", "mangakakalot", "mangaplus", "webtoons.com");
+            bool isNovelUrl = urlLower != null && HasAnyWord(urlLower, "novelupdates.com", "royalroad.com", "scribblehub.com", "novelbin", "novelusb", "novelcool", "novelhall", "novelfull");
 
             if (isAnimeUrl)
             {
@@ -168,51 +200,50 @@ public sealed class TagExtractorService
             {
                 yield return "Manga";
             }
+            else if (isNovelUrl)
+            {
+                yield return "Novel";
+            }
             else
             {
-                if (HasAny(combined, "anime", "crunchyroll", "miruro", "gogoanime", "anilist",
+                if (HasAnyWord(combined, "anime", "crunchyroll", "miruro", "gogoanime", "anilist",
                            "myanimelist", "kitsu", "9anime", "animepahe", "hianime", "animesge"))
                     yield return "Anime";
 
-                else if (HasAny(combined, "manga", "mangadex", "mangafox", "mangakakalot",
+                else if (HasAnyWord(combined, "novel", "novelupdates", "novelbin", "royalroad", "scribblehub", "wuxia", "light novel", "web novel", "ln", "wn"))
+                    yield return "Novel";
+
+                else if (HasAnyWord(combined, "manga", "mangadex", "mangafox", "mangakakalot",
                                 "mangaplus", "chapter", "manhwa", "manhua", "webtoon"))
                     yield return "Manga";
             }
         }
 
-        if (HasAny(combined, "github", "gitlab", "bitbucket", "stackoverflow",
+        if (HasAnyWord(combined, "github", "gitlab", "bitbucket", "stackoverflow",
                    "stack overflow", "developer", "developing", "documentation",
                    "api reference", "programming", "code", "coding", "tutorial"))
             yield return "Development";
 
-        if (HasAny(combined, "youtube", "youtu.be", "vimeo", "twitch.tv", "dailymotion"))
+        if (HasAnyWord(combined, "youtube", "youtu.be", "vimeo", "twitch.tv", "dailymotion"))
             yield return "Video";
 
-        if (HasAny(combined, "reddit.com", "discord", "twitter", "x.com", "mastodon",
+        if (HasAnyWord(combined, "reddit.com", "discord", "twitter", "x.com", "mastodon",
                    "forum", "community"))
             yield return "Social";
 
-        if (HasAny(combined, "news", "bbc", "cnn", "reuters", "nytimes", "washingtonpost"))
+        if (HasAnyWord(combined, "news", "bbc", "cnn", "reuters", "nytimes", "washingtonpost"))
             yield return "News";
 
-        if (HasAny(combined, "shop", "store", "amazon", "ebay", "etsy", "buy",
+        if (HasAnyWord(combined, "shop", "store", "amazon", "ebay", "etsy", "buy",
                    "price", "product", "cart"))
             yield return "Shopping";
 
-        if (HasAny(combined, "wiki", "wikipedia", "encyclopedia"))
+        if (HasAnyWord(combined, "wiki", "wikipedia", "encyclopedia"))
             yield return "Reference";
 
         // Domain-only signals (url may be null when the tagger is called with just a title).
-        if (url is not null && HasAny(combined, "wikipedia.org", ".edu", "scholar.google"))
+        if (url is not null && HasAnyWord(combined, "wikipedia.org", ".edu", "scholar.google"))
             yield return "Reference";
-    }
-
-    private static bool HasAny(string haystack, params string[] needles)
-    {
-        foreach (var n in needles)
-            if (haystack.Contains(n))
-                return true;
-        return false;
     }
 
     // ── Domain intelligence ─────────────────────────────────────────────────

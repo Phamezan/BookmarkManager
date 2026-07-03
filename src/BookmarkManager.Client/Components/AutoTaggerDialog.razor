@@ -32,6 +32,13 @@
                         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">SELECT FOLDERS TO TAG</MudText>
                         <MudCheckBox T="bool" Value="_selectAll" ValueChanged="OnSelectAllChanged" Label="Select All" Color="Color.Primary" Dense="true" />
                     </div>
+                    <MudSwitch T="bool"
+                               @bind-Value="_useAiSeriesAutoTagging"
+                               Color="Color.Primary"
+                               Label="Use OpenRouter series matching (saves tags directly)" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Turn this on to use OpenRouter only for canonical title matching; source providers still supply the tags.
+                    </MudText>
                     <div style="max-height: 160px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
                         <MudGrid Spacing="1">
                             @foreach (var folder in _selectableFolders)
@@ -63,9 +70,34 @@
                 <MudStack Spacing="2">
                     <div class="d-flex justify-space-between align-center">
                         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">@_statusText</MudText>
-                        <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">@_processedCount / @_totalCount bookmarks</MudText>
+                        @if (_useAiSeriesAutoTagging && !_taggingFinished)
+                        {
+                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace; color: #a5b4fc;">AI processing @_processedCount / @_totalCount bookmarks</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">@_processedCount / @_totalCount bookmarks</MudText>
+                        }
                     </div>
-                    <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                    @if (_useAiSeriesAutoTagging && !_taggingFinished)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                    }
+                    else
+                    {
+                        <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                    }
+
+                    @if (_rateLimitStopped)
+                    {
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="my-2">
+                            Rate limit hit! AI auto-tagging has been paused.
+                            <br />
+                            <strong>@_remainingCount</strong> bookmark(s) remain to be tagged.
+                            <br />
+                            Please wait a bit (e.g. 60 seconds), close this dialog, and run the Auto Tagger again to resume.
+                        </MudAlert>
+                    }
 
                     <div id="tagger-terminal-log" style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
                         @foreach (var log in _logs)
@@ -134,12 +166,24 @@
             else
             {
                 <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-                <MudButton Variant="Variant.Filled"
-                           Style="background-color: #10b981; color: white;"
-                           StartIcon="@Icons.Material.Filled.ArrowForward"
-                           OnClick="GoToReview">
-                    Next
-                </MudButton>
+                @if (_useAiSeriesAutoTagging)
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color: #10b981; color: white;"
+                               StartIcon="@Icons.Material.Filled.Check"
+                               OnClick="Cancel">
+                        Close
+                    </MudButton>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Style="background-color: #10b981; color: white;"
+                               StartIcon="@Icons.Material.Filled.ArrowForward"
+                               OnClick="GoToReview">
+                        Next
+                    </MudButton>
+                }
             }
         }
         else if (_currentState == TaggerState.Review)
@@ -157,6 +201,7 @@
 
 @code {
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Guid? CurrentFolderId { get; set; }
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
@@ -177,6 +222,10 @@
     private int _processedCount;
     private int _totalCount;
     private bool _selectAll;
+    private bool _useAiSeriesAutoTagging = true;
+    private bool _rateLimitStopped;
+    private int _remainingCount;
+    private int _preferredBatchSize = 25;
 
     private List<FolderTreeNodeDto> _selectableFolders = [];
     private Dictionary<Guid, int> _untaggedCounts = new();
@@ -197,6 +246,9 @@
         {
             var rawFolders = await BookmarkService.GetFolderTreeAsync();
             _untaggedCounts = await BookmarkService.GetUntaggedCountsAsync();
+            var aiSettings = await BookmarkService.GetAiTaggingSettingsAsync();
+            _useAiSeriesAutoTagging = aiSettings.Enabled;
+            _preferredBatchSize = aiSettings.PreferredBatchSize > 0 ? aiSettings.PreferredBatchSize : 25;
 
             var flatFolders = new List<FolderTreeNodeDto>();
             FlattenFolders(rawFolders, flatFolders);
@@ -205,11 +257,12 @@
                 .Where(f => _untaggedCounts.TryGetValue(f.Id, out var count) && count > 0)
                 .ToList();
 
-            foreach (var f in _selectableFolders)
+            _selectedFolderIds.Clear();
+            if (CurrentFolderId.HasValue && _selectableFolders.Any(folder => folder.Id == CurrentFolderId.Value))
             {
-                _selectedFolderIds.Add(f.Id);
+                _selectedFolderIds.Add(CurrentFolderId.Value);
             }
-            _selectAll = true;
+            _selectAll = _selectableFolders.Count > 0 && _selectedFolderIds.Count == _selectableFolders.Count;
         }
         catch (Exception ex)
         {
@@ -223,10 +276,20 @@
 
     private void FlattenFolders(List<FolderTreeNodeDto> nodes, List<FolderTreeNodeDto> flatList)
     {
+        // Skip root-level nodes (Bookmarks Bar, Other Bookmarks, Mobile Bookmarks)
+        // — selecting them would tag every descendant folder at once.
+        foreach (var node in nodes)
+        {
+            FlattenChildren(node.Children, flatList);
+        }
+    }
+
+    private void FlattenChildren(List<FolderTreeNodeDto> nodes, List<FolderTreeNodeDto> flatList)
+    {
         foreach (var node in nodes)
         {
             flatList.Add(node);
-            FlattenFolders(node.Children, flatList);
+            FlattenChildren(node.Children, flatList);
         }
     }
 
@@ -264,11 +327,21 @@
         _logs.Clear();
         _reviewItems.Clear();
         _cts = new CancellationTokenSource();
+        _rateLimitStopped = false;
+        _remainingCount = 0;
 
-        AddLog("Initializing Auto Tagger...", LogType.Info);
+        AddLog(_useAiSeriesAutoTagging
+            ? "Initializing OpenRouter series-matching Auto Tagger..."
+            : "Initializing Auto Tagger...", LogType.Info);
 
         try
         {
+            if (_useAiSeriesAutoTagging)
+            {
+                await RunAiSeriesAutoTaggingAsync();
+                return;
+            }
+
             foreach (var folderId in _selectedFolderIds)
             {
                 _cts.Token.ThrowIfCancellationRequested();
@@ -308,8 +381,8 @@
                         {
                             Items = candidates,
                             FolderId = folderId,
-                            FolderPath = folder.Title,
-                            Domain = GuessDefaultDomain(folder.Title)
+                            FolderPath = null,
+                            Domain = BookmarkTagDomainDto.Auto
                         };
 
                         var response = await BookmarkService.TagBatchAsync(req, _cts.Token);
@@ -380,6 +453,117 @@
         }
     }
 
+    private async Task RunAiSeriesAutoTaggingAsync()
+    {
+        int batchSize = _preferredBatchSize;
+        bool stoppedEarly = false;
+
+        foreach (var folderId in _selectedFolderIds)
+        {
+            _cts!.Token.ThrowIfCancellationRequested();
+
+            var folder = _selectableFolders.First(f => f.Id == folderId);
+            var excludedBookmarkIds = new HashSet<Guid>();
+            var folderProcessed = 0;
+            var totalTagged = 0;
+            var totalAlreadyTagged = 0;
+            var totalLowConfidence = 0;
+            var totalNoSourceTags = 0;
+            var totalFailedChunks = 0;
+            var folderTotal = _untaggedCounts.GetValueOrDefault(folderId, 0);
+
+            _statusText = $"AI tagging '{folder.Title}'...";
+            AddLog($"Running OpenRouter series matching for '{folder.Title}'...", LogType.Info);
+            AddLog($"Processing in batches of {batchSize}; activity will appear after each server batch.", LogType.Info);
+            StateHasChanged();
+
+            var batchNumber = 1;
+            while (true)
+            {
+                _cts.Token.ThrowIfCancellationRequested();
+                AddLog($"→ Batch {batchNumber}: requesting up to {batchSize} bookmark(s) from server...", LogType.Info);
+                StateHasChanged();
+                await ScrollTerminalToBottomAsync();
+
+                var summary = await BookmarkService.AiAutoTagFolderBatchAsync(folderId, new AiAutoTagBatchRequestDto
+                {
+                    ForceRefresh = false,
+                    MaxCandidates = batchSize,
+                    ExcludedBookmarkIds = excludedBookmarkIds.ToList()
+                }, _cts.Token);
+
+                if (summary.StopForRateLimit)
+                {
+                    _rateLimitStopped = true;
+                    _remainingCount = _totalCount - _processedCount;
+                    AddLog("OpenRouter rate limit reached. Pausing tagging to avoid further errors.", LogType.Error);
+                    AddLog($"[INFO] {_remainingCount} bookmark(s) remain untagged.", LogType.Info);
+                    AddLog("[INFO] Please wait a moment (e.g. 60 seconds) and run the Auto Tagger again to resume.", LogType.Info);
+                    stoppedEarly = true;
+                    break;
+                }
+
+                foreach (var id in summary.ProcessedBookmarkIds)
+                    excludedBookmarkIds.Add(id);
+
+                var processedThisBatch = summary.ProcessedBookmarkIds.Count;
+                folderProcessed += processedThisBatch;
+                _processedCount += processedThisBatch;
+                totalTagged += summary.Tagged;
+                totalAlreadyTagged += summary.SkippedAlreadyTagged;
+                totalLowConfidence += summary.SkippedLowConfidence;
+                totalNoSourceTags += summary.SkippedNoSourceTags;
+                totalFailedChunks += summary.FailedChunks;
+
+                foreach (var message in summary.Messages)
+                    AddLog(message, LogType.Info);
+
+                AddLog(
+                    $"✓ Batch {batchNumber} returned: processed {processedThisBatch}, tagged {summary.Tagged}, low confidence {summary.SkippedLowConfidence}, no source tags {summary.SkippedNoSourceTags}, failed chunks {summary.FailedChunks}.",
+                    summary.Tagged > 0 ? LogType.Success : LogType.Info);
+
+                _statusText = $"AI tagging '{folder.Title}' ({folderProcessed} / {folderTotal})...";
+                StateHasChanged();
+                await ScrollTerminalToBottomAsync();
+
+                if (processedThisBatch == 0)
+                {
+                    _rateLimitStopped = false;
+                    _remainingCount = _totalCount - _processedCount;
+                    AddLog("No bookmarks were processed in this batch. Stopping so these bookmarks can be retried later instead of being skipped.", summary.FailedChunks > 0 ? LogType.Error : LogType.Info);
+                    stoppedEarly = true;
+                    break;
+                }
+
+                if (!summary.HasMore)
+                    break;
+
+                batchNumber++;
+            }
+
+            if (stoppedEarly)
+            {
+                break;
+            }
+
+            AddLog(
+                $"✓ '{folder.Title}' complete: tagged {totalTagged}, already tagged {totalAlreadyTagged}, low confidence {totalLowConfidence}, no source tags {totalNoSourceTags}, failed chunks {totalFailedChunks}.",
+                totalTagged > 0 ? LogType.Success : LogType.Info);
+            StateHasChanged();
+            await ScrollTerminalToBottomAsync();
+        }
+
+        if (!stoppedEarly)
+        {
+            AddLog("AI auto-tagging complete. Tags were saved directly to the database.", LogType.Success);
+        }
+        else
+        {
+            AddLog("AI auto-tagging paused. Some bookmarks could not be processed.", LogType.Error);
+        }
+        _taggingFinished = true;
+    }
+
     private void GoToReview()
     {
         _currentState = TaggerState.Review;
@@ -439,15 +623,6 @@
             Type = type
         });
         StateHasChanged();
-    }
-
-    private static BookmarkTagDomainDto GuessDefaultDomain(string folderTitle)
-    {
-        var value = $" {folderTitle} ".ToLowerInvariant();
-        if (value.Contains(" anime ")) return BookmarkTagDomainDto.Anime;
-        if (value.Contains(" manga ") || value.Contains(" manhwa ") || value.Contains(" manhua ") || value.Contains(" webtoon ")) return BookmarkTagDomainDto.Manga;
-        if (value.Contains(" novel ") || value.Contains(" novels ") || value.Contains(" light novel ") || value.Contains(" web novel ") || value.Contains(" ln ") || value.Contains(" wn ") || value.Contains(" wuxia ") || value.Contains(" xianxia ")) return BookmarkTagDomainDto.Novel;
-        return BookmarkTagDomainDto.General;
     }
 
     private async Task ScrollTerminalToBottomAsync()

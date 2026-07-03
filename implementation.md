@@ -1,92 +1,511 @@
-# Precise Origin Tagging & Series ID Fix — MangaUpdates Type & Novel Country Detection
+# Simplified AI-Assisted Bookmark Autotagging Implementation Plan
 
-## The Critical Discovery (64-bit Series IDs)
+## Goal
 
-During investigation of why tags like Action, Romance, Slice of Life, etc. were not appearing for bookmarks, we found a silent failure in `MangaUpdatesTaggingService.TryExtractFirstSeriesId`:
-* Modern MangaUpdates series IDs are 64-bit integers (e.g. `33408692186`).
-* The existing code was calling `id.TryGetInt32(out var value)`. For these large IDs, this failed and returned `null`.
-* Because the ID was `null`, the service always aborted the API fetch and fell back to the local tag extractor, which lacks the rich database of MangaUpdates.
-* **Fix**: Change all series ID representations in the service, cache keys, signatures, and tests from `int` to `long` and use `id.TryGetInt64`.
+Implement a small, owner-only autotagging workflow that uses AI only to identify the canonical series title from messy bookmark titles, then uses trusted source providers/scrapers to fetch real tags. Save results into the existing `BookmarkNode.Tags` field. Do not build job infrastructure, polling UI, persistent cache tables, or a new tag data model for v1.
 
----
+## Core decision
 
-## Refined Tagging Strategy
+AI must not generate bookmark tags.
 
-### 1. Comic Bookmarks (manga domain)
-* Map type values from MangaUpdates:
-  * `"Manga"` -> `"Manga"`
-  * `"Manhwa"` -> `"Manhwa"`
-  * `"Manhua"` -> `"Manhua"`
-  * `"OEL"` (Original English Language) -> `"Manga"` (per user request)
-* Inject this medium tag at position 0 of the bookmark's tags.
+AI is used only for fuzzy series identification:
 
-### 2. Novel Bookmarks (novel domain)
-* Always inject the `"Novel"` tag.
-* Detect and inject the country of origin (e.g. `"Japanese"`, `"Korean"`, `"Chinese"`).
-* **Important**: Do *not* output publisher names as tags (e.g., "Qidian" will not be a tag). Publisher keywords are strictly used internally for country detection.
-* Prepend the detected origin country first, followed by the `"Novel"` tag, then the rest.
-
-### 3. Expanded Script Detection for Novel Origin
-Check all alternative titles in the `associated` array. A character-by-character scan classifies language:
-* **Japanese**: Hiragana/Katakana (`U+3040`–`U+30FF`) or Halfwidth Katakana (`U+FF65`–`U+FF9F`).
-* **Korean**: Hangul Syllables (`U+AC00`–`U+D7AF`), Hangul Jamo (`U+1100`–`U+11FF`), or Hangul Compatibility Jamo (`U+3130`–`U+318F`).
-* **Chinese**: CJK Unified Ideographs (`U+4E00`–`U+9FFF`) only if no Japanese or Korean script characters are present anywhere in the associated titles.
-
-### 4. Expanded Publisher Map
-Use an internal mapping list for Original publishers to assign the country:
-* **Chinese**: `qidian`, `yuewen`, `zongheng`, `sfacg`, `faloo`, `jinjiang`, `jjwxc`, `sf light novel`
-* **Japanese**: `syosetu`, `media factory`, `media works`, `kadokawa`, `enterbrain`, `ascii`, `shueisha`, `square enix`, `shogakukan`, `kodansha`, `overlap`, `alphapolis`, `hobby japan`, `hobbyjapan`, `futabasha`, `sb creative`, `ga bunko`, `hj bunko`
-* **Korean**: `kakaopage`, `naver`, `munpia`, `dnc media`, `ridibooks`, `daum`, `joara`
-
-### 5. Smart Category Sorting & Genre Prioritization
-To prevent noisy, low-value tags from crowding out high-quality ones:
-1. Extract official `genres` (e.g., Action, Romance, Slice of Life) first.
-2. Extract `categories` and compute net votes (`votes_plus - votes_minus`). Filter for positive net votes (`net votes > 0`) and sort descending.
-3. Combine genres first, then sorted categories.
-4. Take the top **15** total tags (up from 8, to allow easier filtering).
-5. Prepend the medium and origin tags as specified.
-
----
-
-## Proposed Changes
-
-### 1. `MangaUpdatesTaggingService`
-
-**File**: `src/BookmarkManager.Api/Services/BookmarkTagging/MangaUpdatesTaggingService.cs`
-
-#### [MODIFY] [MangaUpdatesTaggingService.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Services/BookmarkTagging/MangaUpdatesTaggingService.cs)
-* Change cache type: `ConcurrentDictionary<long, TagsCacheEntry> _tagsCache`.
-* Change method signatures to accept/return `long` and `long?` for `seriesId`.
-* Update `TryExtractFirstSeriesId` to parse as `long` via `TryGetInt64`.
-* Update `ExtractTags` to:
-  * Extract genres.
-  * Extract categories, sorting them by `votes_plus - votes_minus` descending (where net votes > 0).
-  * Combine genres and categories up to 15 items.
-* Update `FetchSeriesTagsAsync` post-processing:
-  * Read `type`.
-  * If domain is Novel or type is `"Novel"`, insert `"Novel"` and the detected origin.
-  * If type is Manga/Manhwa/Manhua/OEL, insert the mapped value.
-* Implement internal methods `DetectNovelOrigin`, `DetectOriginFromPublishers`, and `DetectOriginFromAssociatedScripts` with the expanded lists and Unicode ranges.
-
-### 2. Unit Tests
-
-**File**: `tests/BookmarkManager.UnitTests/MangaUpdatesTaggingTests.cs`
-
-#### [MODIFY] [MangaUpdatesTaggingTests.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/tests/BookmarkManager.UnitTests/MangaUpdatesTaggingTests.cs)
-* Update tests to assert 64-bit series IDs (e.g. `Assert.Equal(12345L, seriesId)`).
-* Add test cases verifying:
-  * Category sorting by votes and genre prioritization.
-  * Medium mapping (including OEL to Manga).
-  * Novel origin country detection + `"Novel"` tag injection.
-  * Expanded script detection (Halfwidth Katakana, Hangul Jamo).
-
----
-
-## Verification Plan
-
-### Automated Tests
-Run the test suite:
-```powershell
-dotnet test BookmarkManager.sln
+```json
+{
+  "id": "bookmark-guid",
+  "canonicalTitle": "A Monster Who Levels Up",
+  "confidence": 0.91,
+  "domainHint": "Novel"
+}
 ```
-All tests must pass.
+
+Tags come from source data:
+
+- Anime: existing AniList/Kitsu provider path.
+- Manga/Manhwa/Manhua: existing MangaUpdates/Kitsu provider path.
+- Light novel / web novel: new lightweight NovelUpdates scraper, with existing NovelFull provider as possible fallback.
+- General/non-media bookmarks: skip for this feature unless later explicitly supported.
+
+## Explicit non-goals for v1
+
+Do not add:
+
+- new cache tables
+- job tracker
+- polling/status UI
+- start/status/cancel endpoint suite
+- persistent job logs
+- separate genre/tag database fields
+- full “AI Tagging Command Center” rewrite
+- AI-generated free-text tags
+- static closed vocabulary maintenance
+- external lookup cache tables
+
+This feature is for one local user. A single callable endpoint/method that runs to completion and returns/logs a summary is enough.
+
+## Current project constraints to preserve
+
+- Bookmark IDs and folder IDs are `Guid`, not `int`.
+- Tags are stored as a comma-separated string on `src/BookmarkManager.Api/Data/BookmarkNode.cs` via `BookmarkNode.Tags`.
+- DTOs expose tags through `BookmarkMetadataDto.Tags`.
+- Tags are manager-only metadata and must not enqueue `ExtensionCommandEntry` rows.
+- The implementation should update `BookmarkNode.Tags` and `UpdatedAt` directly from backend service code.
+- Do not call the API’s own bulk-save HTTP endpoint from inside backend code.
+- Folder context matters. Use existing folder/domain logic where possible.
+
+## Proposed final shape
+
+Add three focused pieces:
+
+1. `AiSeriesIdentifierService`
+   - Builds compact AI payloads.
+   - Sends chunks to hosted AI.
+   - Validates returned IDs exactly.
+   - Returns canonical title + confidence + domain/media hint.
+
+2. `NovelUpdatesTaggingService`
+   - Searches NovelUpdates by canonical title.
+   - Verifies title similarity before accepting a result.
+   - Scrapes series page genres/tags.
+   - Returns source-derived tags.
+   - Uses only in-memory/per-run dedupe in the orchestrator; no persistent cache.
+
+3. `AiBookmarkAutoTaggingService`
+   - Orchestrates folder loading, AI identification, provider routing, tag fetch, diff, save, and summary.
+
+Add one endpoint:
+
+```http
+POST /api/bookmarks/{folderId:guid}/ai-auto-tag?forceRefresh=false
+```
+
+or an equivalent simple route under `BookmarksController`.
+
+Return a summary object, not a job ID.
+
+## Task 1: Add compact AI identification payload
+
+### Objective
+
+Turn selected bookmarks into a cheap, compact payload for AI title matching.
+
+### Files
+
+- Create: `src/BookmarkManager.Api/Services/BookmarkTagging/AiSeriesIdentifierService.cs`
+- Create: `tests/BookmarkManager.UnitTests/AiSeriesIdentifierServiceTests.cs`
+
+### Payload per bookmark
+
+Use only:
+
+```csharp
+internal sealed record AiSeriesIdentifyPayload(
+    Guid Id,
+    string Title,
+    string? UrlHost,
+    string? FolderPath,
+    BookmarkTagDomainDto DomainHint);
+```
+
+Do not use deep title cleaning. Do not rebuild `MediaTitleNormalizer` logic here. The AI should see the messy title.
+
+### Domain hint
+
+Use existing folder context logic:
+
+```csharp
+var domainHint = BookmarkTagClassifier.GuessDefaultDomainFromFolderTitle(folderPath ?? string.Empty);
+```
+
+This is a strong prior, but not a complete classifier.
+
+### Test
+
+Given bookmarks like:
+
+- `Lightnovels.me - read A Monster Who Levels Up Chapter 48 Online`
+- `Solo Leveling Chapter 12 - Asura Scans`
+- `One Piece Episode 1092`
+
+verify payload contains:
+
+- same `Guid` id
+- original title unchanged
+- parsed `url_host`
+- folder path
+- expected `domain_hint` from folder path
+
+Run:
+
+```bash
+dotnet test tests/BookmarkManager.UnitTests/BookmarkManager.UnitTests.csproj --filter AiSeriesIdentifierServiceTests
+```
+
+## Task 2: Add strict AI identification contract
+
+### Objective
+
+Use AI only to identify canonical series title and confidence, never tags.
+
+### Files
+
+- Modify: `src/BookmarkManager.Api/Services/BookmarkTagging/AiSeriesIdentifierService.cs`
+- Add contract records either inside the service or as private/internal records if not reused.
+
+### AI prompt rules
+
+The prompt should instruct the model:
+
+- Return JSON only.
+- Return exactly one result for each input id.
+- Do not add or drop ids.
+- Do not generate tags.
+- Identify the canonical series title from noisy bookmark titles.
+- Use `folder_path` and `domain_hint` as strong prior context.
+- If uncertain, return low confidence rather than guessing.
+
+Expected response shape:
+
+```json
+{
+  "items": [
+    {
+      "id": "00000000-0000-0000-0000-000000000000",
+      "canonicalTitle": "A Monster Who Levels Up",
+      "confidence": 0.91,
+      "sourceHint": "Novel"
+    }
+  ]
+}
+```
+
+Allowed `sourceHint` values:
+
+- `Anime`
+- `Manga`
+- `Manhwa`
+- `Manhua`
+- `Novel`
+- `Unknown`
+
+### Important routing rule
+
+`sourceHint` from AI is not authoritative. Actual routing should prefer deterministic context:
+
+1. Folder path/domain hint.
+2. URL host if clearly media-specific.
+3. AI `sourceHint` only when folder/URL context is ambiguous.
+
+### Validation
+
+For every chunk:
+
+- returned ID set must equal sent ID set exactly
+- no missing IDs
+- no duplicate IDs
+- no extra IDs
+- confidence must be between 0 and 1
+- empty canonical title means skip that item
+
+On mismatch:
+
+- retry the chunk once
+- if still invalid, log/record failed chunk and skip it
+- do not crash the whole run
+- do not silently save partial chunk output
+
+### Tests
+
+Use fake HTTP handler responses for:
+
+- valid result
+- missing ID
+- duplicate ID
+- extra ID
+- invalid confidence
+- invalid JSON
+
+Run:
+
+```bash
+dotnet test tests/BookmarkManager.UnitTests/BookmarkManager.UnitTests.csproj --filter AiSeriesIdentifierServiceTests
+```
+
+## Task 3: Add NovelUpdates scraper provider
+
+### Objective
+
+Fetch real web/light novel genres and tags from NovelUpdates instead of asking AI to invent them.
+
+### Files
+
+- Create: `src/BookmarkManager.Api/Services/BookmarkTagging/NovelUpdatesTaggingService.cs`
+- Create or extend: `src/BookmarkManager.Api/Services/BookmarkTagging/ProviderInterfaces.cs`
+- Create: `tests/BookmarkManager.UnitTests/NovelUpdatesTaggingServiceTests.cs`
+- Modify: `src/BookmarkManager.Api/Program.cs`
+
+### Service behavior
+
+Pattern it after existing provider services like:
+
+- `NovelFullTaggingService.cs`
+- `MangaUpdatesTaggingService.cs`
+- `KitsuTaggingService.cs`
+
+Flow:
+
+1. Search NovelUpdates for the canonical title.
+2. Pick best matching series result.
+3. Verify similarity before accepting.
+4. Fetch the series page.
+5. Extract both broad genres and granular tags from the page.
+6. Return a single flat `List<string>` for v1.
+
+### Storage decision for v1
+
+Do not add separate DB fields for genres vs tags yet.
+
+Internally, the scraper can distinguish:
+
+```csharp
+Genres = ["Action", "Fantasy"]
+Tags = ["Level System", "Weak to Strong"]
+```
+
+But save as existing flat tags:
+
+```text
+Novel,Action,Fantasy,Level System,Weak To Strong
+```
+
+Reason: keeping genres/trope tags separate would require DB, DTO, UI, filtering, and edit-dialog changes. That should be a later feature if the flat version proves useful.
+
+### Tests
+
+Use local HTML fixtures or fake HTTP responses to verify extraction.
+
+Test cases:
+
+- search result with strong title match returns tags
+- weak title match is rejected
+- series page extracts genre links
+- series page extracts tag/sidebar fields
+- duplicate tags are removed case-insensitively
+- service handles page/network failure by returning empty tags
+
+Run:
+
+```bash
+dotnet test tests/BookmarkManager.UnitTests/BookmarkManager.UnitTests.csproj --filter NovelUpdatesTaggingServiceTests
+```
+
+## Task 4: Add the orchestrator service
+
+### Objective
+
+Create the one method that performs the full owner-only autotagging workflow.
+
+### Files
+
+- Create: `src/BookmarkManager.Api/Services/BookmarkTagging/AiBookmarkAutoTaggingService.cs`
+- Create: `src/BookmarkManager.Contracts/AiAutoTagSummaryDto.cs`
+- Create: `tests/BookmarkManager.UnitTests/AiBookmarkAutoTaggingServiceTests.cs`
+- Modify: `src/BookmarkManager.Api/Program.cs`
+
+### Public method
+
+```csharp
+public Task<AiAutoTagSummaryDto> TagFolderAsync(
+    Guid folderId,
+    bool forceRefresh,
+    CancellationToken cancellationToken);
+```
+
+### Flow
+
+1. Load selected folder.
+2. Load descendant folder IDs recursively.
+3. Load bookmarks under selected folder and descendants.
+4. Filter to untagged bookmarks unless `forceRefresh == true`.
+5. Build folder path for each bookmark.
+6. Build AI identification payloads.
+7. Send AI identification in sequential chunks of about 40-75.
+8. Skip low-confidence items, e.g. confidence `< 0.70`.
+9. Route each accepted canonical title:
+   - Anime -> existing `BookmarkTaggingService` / AniList/Kitsu path.
+   - Manga/Manhwa/Manhua -> existing `BookmarkTaggingService` / MangaUpdates/Kitsu path.
+   - Novel -> new `NovelUpdatesTaggingService`, with optional NovelFull fallback.
+10. Use an in-run dictionary cache keyed by `(domain, canonicalTitle)` so multiple chapters of the same series fetch tags once.
+11. Merge/cap tags.
+12. Save directly to `BookmarkNode.Tags` and update `UpdatedAt`.
+13. Do not create `ExtensionCommandEntry` rows.
+14. Return summary.
+
+### Summary DTO
+
+Add fields like:
+
+```csharp
+public sealed class AiAutoTagSummaryDto
+{
+    public int TotalCandidates { get; set; }
+    public int Tagged { get; set; }
+    public int SkippedAlreadyTagged { get; set; }
+    public int SkippedLowConfidence { get; set; }
+    public int SkippedNoSourceTags { get; set; }
+    public int FailedChunks { get; set; }
+    public List<string> Messages { get; set; } = [];
+}
+```
+
+Do not persist this summary.
+
+### Tag merge/cap behavior
+
+For v1, keep it simple:
+
+- remove null/empty tags
+- trim whitespace
+- de-dupe case-insensitively
+- put media type first (`Anime`, `Manga`, `Manhwa`, `Manhua`, `Novel`) if known
+- cap total tags, e.g. 12 or 15
+
+Do not create a full standalone tag taxonomy unless this logic grows beyond the service.
+
+### Tests
+
+Test:
+
+- recursive folder loading tags descendant bookmarks
+- already-tagged bookmarks skipped by default
+- `forceRefresh=true` overwrites existing tags
+- low-confidence AI matches skipped
+- duplicate chapters of same canonical title trigger one provider fetch
+- direct save updates `BookmarkNode.Tags`
+- no `ExtensionCommandEntry` rows are created
+- summary counters are correct
+
+Run:
+
+```bash
+dotnet test tests/BookmarkManager.UnitTests/BookmarkManager.UnitTests.csproj --filter AiBookmarkAutoTaggingServiceTests
+```
+
+## Task 5: Add a single trigger endpoint
+
+### Objective
+
+Make the workflow runnable without new job infrastructure.
+
+### Files
+
+- Modify: `src/BookmarkManager.Api/Controllers/BookmarksController.cs`
+- Modify: `src/BookmarkManager.Client/Services/IBookmarkService.cs` only if the UI/client needs to call it now
+- Modify: `src/BookmarkManager.Client/Services/HttpBookmarkService.cs` only if the UI/client needs to call it now
+- Create or modify: `tests/BookmarkManager.Api.IntegrationTests/AiAutoTagEndpointTests.cs`
+
+### Endpoint
+
+Add one simple endpoint:
+
+```http
+POST /api/bookmarks/{folderId:guid}/ai-auto-tag?forceRefresh=false
+```
+
+Response:
+
+```json
+{
+  "totalCandidates": 500,
+  "tagged": 420,
+  "skippedAlreadyTagged": 20,
+  "skippedLowConfidence": 30,
+  "skippedNoSourceTags": 25,
+  "failedChunks": 1,
+  "messages": []
+}
+```
+
+### Controller rule
+
+The controller should only:
+
+- validate folder exists through the service or DB
+- call `AiBookmarkAutoTaggingService.TagFolderAsync(...)`
+- return the summary
+
+No AI prompt logic in the controller.
+
+### Tests
+
+Integration tests:
+
+- invalid folder returns 404 or clear problem response
+- valid folder returns summary
+- endpoint saves tags
+- endpoint does not enqueue extension commands
+
+Run:
+
+```bash
+dotnet test tests/BookmarkManager.Api.IntegrationTests/BookmarkManager.Api.IntegrationTests.csproj --filter AiAutoTagEndpointTests
+```
+
+## Task 6: Real-world smoke test with one folder
+
+### Objective
+
+Confirm the AI identification + source scraping approach works on actual messy bookmarks.
+
+### Steps
+
+1. Pick a small folder with 5-10 bookmarks.
+2. Include messy titles such as:
+   - `Lightnovels.me - read A Monster Who Levels Up Chapter 48 Online`
+   - chapter/episode URLs from manga/anime sites
+3. Run the endpoint manually.
+4. Inspect returned summary.
+5. Inspect saved `BookmarkNode.Tags`.
+6. Confirm skipped low-confidence items are reasonable.
+7. Confirm no extension commands were created.
+
+### Expected result
+
+- AI identifies canonical series titles.
+- Tags come from providers/scrapers.
+- No hallucinated AI tags are saved.
+- Multiple chapters of the same series only fetch source tags once during the run.
+
+## Verification commands
+
+Before finalizing implementation, run:
+
+```bash
+dotnet restore BookmarkManager.sln
+dotnet build BookmarkManager.sln --no-restore
+dotnet test BookmarkManager.sln --no-build
+```
+
+If build/test fails with MSB3021 file lock, stop the running `BookmarkManager.Api` / `dotnet run` process and retry.
+
+## Final recommended v1 behavior
+
+The v1 implementation should be boring:
+
+- one backend service
+- one endpoint
+- AI identifies titles only
+- real sources provide tags
+- no persistent cache
+- no job state
+- no UI overhaul
+- no new tag schema
+- tags save into existing `BookmarkNode.Tags`
+
+If this proves useful, possible later phases are:
+
+1. UI button in the existing Auto Tagger dialog to call the endpoint.
+2. Separate `Genres` vs `Tags` storage/UI.
+3. Persistent source lookup cache.
+4. Review-before-save mode.
+5. Job/status/cancel infrastructure only if the run time becomes annoying.
