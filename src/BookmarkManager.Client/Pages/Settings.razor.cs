@@ -22,7 +22,6 @@ public partial class Settings
 
     private string _triageMatchBaseUrl = string.Empty;
     private string _triageActionType = "ManualFolder";
-    private string _triageFolderName = string.Empty;
     private bool _triageRunning;
     private TriageJobStatusDto? _triageResult;
 
@@ -33,11 +32,14 @@ public partial class Settings
             _linkCheckerRunning = await BookmarkService.IsLinkCheckRunningAsync();
 
             var triageStatus = await BookmarkService.GetTriageStatusAsync();
-            if (triageStatus.IsRunning)
+            if (triageStatus.IsRunning || triageStatus.TotalFound > 0)
             {
-                _triageRunning = true;
                 _triageResult = triageStatus;
-                _ = PollTriageStatusAsync();
+                _triageRunning = triageStatus.IsRunning;
+                if (_triageRunning)
+                {
+                    _ = PollTriageStatusAsync();
+                }
             }
         }
         catch
@@ -78,7 +80,7 @@ public partial class Settings
 
         try
         {
-            var request = new TriageDomainRequest(_triageMatchBaseUrl, _triageActionType, _triageFolderName);
+            var request = new TriageDomainRequest(_triageMatchBaseUrl, _triageActionType, "Broken Links");
             _triageResult = await BookmarkService.TriageDomainAsync(request);
             
             _ = PollTriageStatusAsync();

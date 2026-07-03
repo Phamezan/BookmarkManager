@@ -212,13 +212,7 @@
                         <MudSelectItem Value="@("AutoSearch")">Auto-Search Alternatives (DuckDuckGo)</MudSelectItem>
                     </MudSelect>
                 </MudItem>
-                <MudItem xs="12">
-                    <MudTextField @bind-Value="_triageFolderName"
-                                  Label="Triage Folder Name (Optional)"
-                                  Placeholder="e.g., Fix - reaperscans.com"
-                                  Variant="Variant.Outlined"
-                                  Immediate="true" />
-                </MudItem>
+
             </MudGrid>
 
             @if (_triageRunning)

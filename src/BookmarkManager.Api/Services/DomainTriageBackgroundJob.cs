@@ -162,9 +162,8 @@ public sealed class DomainTriageBackgroundJob : BackgroundService
             throw new InvalidOperationException("Root folder not found in database.");
         }
 
-        var folderName = string.IsNullOrWhiteSpace(request.FolderName) 
-            ? $"Fix - {ExtractDomain(request.MatchBaseUrl)}" 
-            : request.FolderName;
+        // Folder is always "Broken Links"
+        var folderName = "Broken Links";
 
         lock (_statusLock)
         {
@@ -211,7 +210,9 @@ public sealed class DomainTriageBackgroundJob : BackgroundService
                 Status = "Pending"
             });
 
+            // Save and broadcast immediately so that Brave starts creating the folder
             await db.SaveChangesAsync(ct);
+            await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
         }
 
         var deadDomain = ExtractDomain(request.MatchBaseUrl);
@@ -307,14 +308,15 @@ public sealed class DomainTriageBackgroundJob : BackgroundService
                 });
             }
 
+            // Save and broadcast progress incrementally for each processed bookmark
+            await db.SaveChangesAsync(ct);
+            await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+
             lock (_statusLock)
             {
                 _successfullyProcessed++;
             }
         }
-
-        await db.SaveChangesAsync(ct);
-        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
     }
 
     private static string ExtractDomain(string url)
