@@ -398,6 +398,29 @@ public partial class Bookmarks : IDisposable
         }
     }
 
+    private void ToggleSelectAllButton()
+    {
+        var items = VisibleItems;
+        if (items.Count == 0) return;
+
+        var allSelected = IsAllSelected();
+        if (allSelected)
+        {
+            foreach (var item in items)
+            {
+                _selectedBookmarkIds.Remove(item.Id);
+            }
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                _selectedBookmarkIds.Add(item.Id);
+            }
+        }
+        StateHasChanged();
+    }
+
     private void OnCheckboxClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, Guid id)
     {
         if (e.ShiftKey && _lastSelectedId.HasValue)

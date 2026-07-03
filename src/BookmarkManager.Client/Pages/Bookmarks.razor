@@ -143,13 +143,11 @@ else
                          <div class="selection-bar">
                              <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                                  <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                                     <div class="bookmark-select mr-2" style="display: flex; align-items: center; padding-left: 4px;">
-                                         <input type="checkbox"
-                                                checked="@IsAllSelected()"
-                                                @onchange="ToggleSelectAll"
-                                                class="bm-checkbox master-checkbox"
-                                                aria-label="Select all" />
-                                     </div>
+                                     <MudIconButton Icon="@(IsAllSelected() ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
+                                                    Size="Size.Small"
+                                                    Color="Color.Primary"
+                                                    OnClick="@ToggleSelectAllButton"
+                                                    aria-label="Toggle select all" />
                                      <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" OnClick="@(() => _selectedBookmarkIds.Clear())" aria-label="Clear selection" />
                                      <MudText Typo="Typo.subtitle2" Class="ml-2">@_selectedBookmarkIds.Count selected</MudText>
                                  </MudStack>
@@ -175,13 +173,14 @@ else
                      else
                      {
                          <MudPaper Elevation="0" Class="explorer-toolbar">
-                             <div class="bookmark-select mr-2" style="display: flex; align-items: center; height: 100%; padding-left: 4px;">
-                                 <input type="checkbox"
-                                        checked="@IsAllSelected()"
-                                        @onchange="ToggleSelectAll"
-                                        class="bm-checkbox master-checkbox"
-                                        aria-label="Select all" />
-                             </div>
+                             <MudButton Variant="Variant.Outlined"
+                                        Color="Color.Primary"
+                                        Size="Size.Small"
+                                        StartIcon="@(IsAllSelected() ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
+                                        OnClick="@ToggleSelectAllButton"
+                                        Class="mr-2 select-all-btn">
+                                 @(IsAllSelected() ? "Deselect All" : "Select All")
+                             </MudButton>
                              <MudTextField Value="_searchQuery"
                                            ValueChanged="@((string? v) => OnSearchChanged(v))"
                                            Placeholder="Search title or URL"
