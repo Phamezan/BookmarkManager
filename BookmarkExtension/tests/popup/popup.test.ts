@@ -40,7 +40,7 @@ describe("PopupController", () => {
 
     it("returns configured state when settings exist", async () => {
       await repo.saveSettings({
-        apiBaseUrl: "http://localhost:8080",
+        apiBaseUrl: "http://localhost:5080",
         setupComplete: true,
       });
       await repo.updateSyncStatus({
@@ -53,7 +53,7 @@ describe("PopupController", () => {
 
       const state = await controller.loadState();
       expect(state.setupComplete).toBe(true);
-      expect(state.apiBaseUrl).toBe("http://localhost:8080");
+      expect(state.apiBaseUrl).toBe("http://localhost:5080");
       expect(state.syncState).toBe("Healthy");
       expect(state.pendingCount).toBe(3);
     });
@@ -62,15 +62,25 @@ describe("PopupController", () => {
   describe("saveConnection", () => {
     it("saves valid connection and triggers sync", async () => {
       const result = await controller.saveConnection(
-        "http://localhost:8080",
+        DEFAULT_API_BASE_URL,
       );
       expect(result.success).toBe(true);
 
       const settings = await repo.getSettings();
-      expect(settings?.apiBaseUrl).toBe("http://localhost:8080");
+      expect(settings?.apiBaseUrl).toBe(DEFAULT_API_BASE_URL);
       expect(settings?.setupComplete).toBe(true);
 
       expect(messages).toContainEqual({ type: "manualSync" });
+    });
+
+    it("saves the LAN host option and normalizes it", async () => {
+      const result = await controller.saveConnection(
+        "http://192.168.1.100:8080/",
+      );
+      expect(result.success).toBe(true);
+
+      const settings = await repo.getSettings();
+      expect(settings?.apiBaseUrl).toBe("http://192.168.1.100:8080");
     });
 
     it("rejects invalid URL", async () => {
@@ -82,7 +92,7 @@ describe("PopupController", () => {
     it("rejects when permission not granted", async () => {
       permissionGranted = false;
       const result = await controller.saveConnection(
-        "http://localhost:8080",
+        DEFAULT_API_BASE_URL,
       );
       expect(result.success).toBe(false);
       expect(result.error).toContain("permission");
@@ -90,10 +100,10 @@ describe("PopupController", () => {
 
     it("normalizes URL by stripping trailing slash", async () => {
       await controller.saveConnection(
-        "http://localhost:8080/",
+        `${DEFAULT_API_BASE_URL}/`,
       );
       const settings = await repo.getSettings();
-      expect(settings?.apiBaseUrl).toBe("http://localhost:8080");
+      expect(settings?.apiBaseUrl).toBe(DEFAULT_API_BASE_URL);
     });
   });
 
@@ -114,7 +124,7 @@ describe("PopupController", () => {
   describe("clearLocalData", () => {
     it("clears all extension state", async () => {
       await repo.saveSettings({
-        apiBaseUrl: "http://localhost:8080",
+        apiBaseUrl: "http://localhost:5080",
         setupComplete: true,
       });
       await controller.clearLocalData();

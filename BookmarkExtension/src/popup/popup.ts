@@ -1,7 +1,17 @@
 import type { ShortcutEditorState, StorageRepository } from "../api/contracts";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
-export const DEFAULT_API_BASE_URL = "http://192.168.1.100:8080";
+type ApiBaseUrlOption = {
+  label: string;
+  value: string;
+};
+
+const API_BASE_URL_OPTIONS: ApiBaseUrlOption[] = [
+  { label: "localhost", value: "http://localhost:5080" },
+  { label: "192.168.1.100", value: "http://192.168.1.100:8080" },
+];
+
+export const DEFAULT_API_BASE_URL = API_BASE_URL_OPTIONS[0].value;
 
 /** Subset of chrome.bookmarks used by the editor. Injectable for testability. */
 export interface PopupBookmarkApi {
@@ -263,7 +273,7 @@ if (isBrowser) {
   const els = {
     normalMode:    document.getElementById("normal-mode")     as HTMLElement | null,
     editorMode:    document.getElementById("editor-mode")     as HTMLElement | null,
-    apiUrl:        document.getElementById("api-url")         as HTMLInputElement | null,
+    apiUrl:        document.getElementById("api-url")         as HTMLSelectElement | null,
     saveBtn:       document.getElementById("save-btn")        as HTMLButtonElement | null,
     clearBtn:      document.getElementById("clear-btn")       as HTMLButtonElement | null,
     configShortcut:document.getElementById("configure-shortcut-btn") as HTMLButtonElement | null,
@@ -331,17 +341,54 @@ if (isBrowser) {
     els.connMsg.className = `message${type ? " " + type : ""}`;
   }
 
-  // ── UI refresh ──────────────────────────────────────────────────────────────
+  function populateApiBaseUrlSelect(select: HTMLSelectElement, selectedValue: string): void {
+    select.options.length = 0;
 
-  let inputsInitialized = false;
+    const presetValues = new Set(API_BASE_URL_OPTIONS.map((option) => option.value));
+    const activeValue = presetValues.has(selectedValue) ? selectedValue : DEFAULT_API_BASE_URL;
+
+    for (const option of API_BASE_URL_OPTIONS) {
+      const el = document.createElement("option");
+      el.value = option.value;
+      el.textContent = option.label;
+      if (option.value === activeValue) {
+        el.selected = true;
+      }
+      select.appendChild(el);
+    }
+
+    select.value = activeValue;
+  }
+
+  function getApiBaseUrlLabel(baseUrl: string): string {
+    const preset = API_BASE_URL_OPTIONS.find((option) => option.value === baseUrl);
+    if (preset) return preset.label;
+
+    try {
+      return new URL(baseUrl).host;
+    } catch {
+      return baseUrl;
+    }
+  }
+
+  function syncOpenManagerButtonLabel(): void {
+    if (!els.openManagerBtn) return;
+    const activeBaseUrl = els.apiUrl?.value?.trim() ?? DEFAULT_API_BASE_URL;
+    els.openManagerBtn.textContent = `Open Manager (${getApiBaseUrlLabel(activeBaseUrl)})`;
+    els.openManagerBtn.title = `Open ${activeBaseUrl}`;
+  }
+
+
+  // ── UI refresh ──────────────────────────────────────────────────────────────
 
   async function refreshNormalStatus(): Promise<void> {
     const state = await controller.loadState();
 
-    if (!inputsInitialized) {
-      if (els.apiUrl) els.apiUrl.value = state.apiBaseUrl;
-      inputsInitialized = true;
+    if (els.apiUrl) {
+      populateApiBaseUrlSelect(els.apiUrl, state.apiBaseUrl);
     }
+
+    syncOpenManagerButtonLabel();
 
     applyStatusDot(state.syncState);
 
@@ -486,6 +533,10 @@ if (isBrowser) {
     }
   });
 
+  els.apiUrl?.addEventListener("change", () => {
+    syncOpenManagerButtonLabel();
+  });
+
   els.clearBtn?.addEventListener("click", async () => {
     const confirmed = confirm("WARNING: This will clear local settings AND completely reset the server database. Are you sure?");
     if (!confirmed) return;
@@ -495,9 +546,9 @@ if (isBrowser) {
   });
 
   els.openManagerBtn?.addEventListener("click", async () => {
-    const state = await controller.loadState();
-    if (state.apiBaseUrl) {
-      chrome.tabs.create({ url: state.apiBaseUrl });
+    const targetUrl = els.apiUrl?.value?.trim() ?? (await controller.loadState()).apiBaseUrl;
+    if (targetUrl) {
+      chrome.tabs.create({ url: targetUrl });
     } else {
       setConnMsg("Configure API Base URL first", "error");
     }

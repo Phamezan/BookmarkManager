@@ -142,7 +142,8 @@ label {
   align-items: center;
 }
 
-input[type="url"] {
+input[type="url"],
+select#api-url {
   flex: 1;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -155,9 +156,26 @@ input[type="url"] {
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
+select#api-url {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 28px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% - 2px),
+    calc(100% - 9px) calc(50% - 2px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
 input[type="url"]::placeholder { color: var(--text-muted); }
 
-input[type="url"]:focus {
+input[type="url"]:focus,
+select#api-url:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
