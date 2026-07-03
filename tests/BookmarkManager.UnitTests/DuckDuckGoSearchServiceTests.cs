@@ -98,6 +98,54 @@ public class DuckDuckGoSearchServiceTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task FindAlternativeUrlAsync_FallsBackToYahooWhenDuckDuckGoBlocked()
+    {
+        var requestCount = 0;
+        var mockHandler = new MockHttpMessageHandler(req =>
+        {
+            requestCount++;
+            var url = req.RequestUri?.ToString() ?? "";
+            if (url.Contains("duckduckgo.com"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("<html><body><div class='anomaly-modal'>bots use DuckDuckGo too</div></body></html>", Encoding.UTF8, "text/html")
+                };
+            }
+            else if (url.Contains("yahoo.com"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(@"
+                        <html>
+                        <body>
+                            <a href='https://r.search.yahoo.com/_ylt=123/RU=https%3a%2f%2fmangadex.org%2ftitle%2fpeerless-dad%2fchapter-50/RK=2'>MangaDex Target Match</a>
+                            <a href='https://r.search.yahoo.com/_ylt=123/RU=https%3a%2f%2freaperscans.com%2fseries%2fpeerless-dad%2fchapter-50/RK=2'>Dead Domain Link</a>
+                        </body>
+                        </html>", Encoding.UTF8, "text/html")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+
+        var httpClient = new HttpClient(mockHandler);
+        var factory = new MockHttpClientFactory(httpClient);
+        var service = new DuckDuckGoSearchService(factory, NullLogger<DuckDuckGoSearchService>.Instance);
+
+        var result = await service.FindAlternativeUrlAsync(
+            "Peerless Dad - Chapter 50 - Reaper Scans", 
+            "Manga", 
+            "https://reaperscans.com", 
+            CancellationToken.None
+        );
+
+        Assert.NotNull(result);
+        Assert.Equal("https://mangadex.org/title/peerless-dad/chapter-50", result);
+        Assert.Equal(2, requestCount);
+    }
+
     // Helper Mock classes
     private class MockHttpClientFactory : IHttpClientFactory
     {
