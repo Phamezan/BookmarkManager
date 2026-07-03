@@ -179,5 +179,61 @@
         </MudStack>
     </MudPaper>
 
+    <!-- Domain Triage & URL Migrator Section -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Domain Triage & URL Migrator</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="RunDomainTriageAsync"
+                           Disabled="@_triageRunning">
+                    @(_triageRunning ? "Running..." : "Run Triage")
+                </MudButton>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Find all bookmarks matching a specific base URL and move them to a target folder. You can choose to manually fix them, or automatically find alternative reading sources via DuckDuckGo.
+            </MudText>
+
+            <MudGrid>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="_triageMatchBaseUrl"
+                                  Label="Base URL to Match"
+                                  Placeholder="e.g., https://reaperscans.com"
+                                  Variant="Variant.Outlined"
+                                  Immediate="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" @bind-Value="_triageActionType" Label="Triage Action" Variant="Variant.Outlined">
+                        <MudSelectItem Value="@("ManualFolder")">Move to Folder (Manual Fix)</MudSelectItem>
+                        <MudSelectItem Value="@("AutoSearch")">Auto-Search Alternatives (DuckDuckGo)</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="_triageFolderName"
+                                  Label="Triage Folder Name (Optional)"
+                                  Placeholder="e.g., Fix - reaperscans.com"
+                                  Variant="Variant.Outlined"
+                                  Immediate="true" />
+                </MudItem>
+            </MudGrid>
+
+            @if (_triageRunning)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+
+            @if (_triageResult != null)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Dense="true" Class="mt-2" OnClick="@(() => _triageResult = null)">
+                    Triage completed successfully! Matched @_triageResult.TotalFound bookmarks. Processed @_triageResult.SuccessfullyProcessed bookmarks into folder "@_triageResult.TargetFolder".
+                </MudAlert>
+            }
+        </MudStack>
+    </MudPaper>
+
 
 </MudStack>

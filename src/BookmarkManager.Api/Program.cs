@@ -55,6 +55,7 @@ builder.Services.AddSingleton<NovelFullTaggingService>();
 builder.Services.AddSingleton<INovelFullTagProvider>(provider => provider.GetRequiredService<NovelFullTaggingService>());
 builder.Services.AddSingleton<NovelUpdatesTaggingService>();
 builder.Services.AddSingleton<INovelUpdatesTagProvider>(provider => provider.GetRequiredService<NovelUpdatesTaggingService>());
+builder.Services.AddSingleton<IDuckDuckGoSearchService, DuckDuckGoSearchService>();
 builder.Services.AddScoped<AiSeriesIdentifierService>();
 builder.Services.AddScoped<AiBookmarkAutoTaggingService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.BookmarkTaggingService>();

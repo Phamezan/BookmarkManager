@@ -26,6 +26,7 @@ public interface IBookmarkService
     Task<BookmarkNodeDto?> ArchiveBookmarkAsync(Guid id, CancellationToken cancellationToken = default);
     Task<bool> TriggerLinkCheckAsync(CancellationToken cancellationToken = default);
     Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default);
+    Task<TriageDomainResponse> TriageDomainAsync(TriageDomainRequest request, CancellationToken cancellationToken = default);
     Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default);
     Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default);
 

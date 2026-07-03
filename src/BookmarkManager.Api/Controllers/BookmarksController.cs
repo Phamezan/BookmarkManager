@@ -502,6 +502,221 @@ public class BookmarksController : ControllerBase
         return Ok(linkChecker.IsRunning);
     }
 
+    [HttpPost("triage-domain")]
+    public async Task<ActionResult<TriageDomainResponse>> TriageDomain(
+        [FromBody] TriageDomainRequest request,
+        [FromServices] IDuckDuckGoSearchService searchService,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.MatchBaseUrl))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Match base URL cannot be empty.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var bookmarks = await _db.BookmarkNodes
+            .Where(n => n.Type == NodeType.Bookmark && !n.IsDeleted && n.Url != null)
+            .ToListAsync(ct);
+
+        var matchedBookmarks = bookmarks
+            .Where(n => n.Url!.StartsWith(request.MatchBaseUrl, StringComparison.OrdinalIgnoreCase) || 
+                        n.Url!.Contains(request.MatchBaseUrl, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (matchedBookmarks.Count == 0)
+        {
+            return Ok(new TriageDomainResponse(0, 0, request.FolderName));
+        }
+
+        var rootFolder = await _db.BookmarkNodes
+            .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.ParentId == null && !n.IsDeleted, ct);
+        if (rootFolder == null)
+        {
+            rootFolder = await _db.BookmarkNodes
+                .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && !n.IsDeleted, ct);
+        }
+
+        if (rootFolder == null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Root folder not found in database.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var folderName = string.IsNullOrWhiteSpace(request.FolderName) 
+            ? $"Fix - {ExtractDomain(request.MatchBaseUrl)}" 
+            : request.FolderName;
+
+        var triageFolder = await _db.BookmarkNodes
+            .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.ParentId == rootFolder.Id && n.Title == folderName && !n.IsDeleted, ct);
+
+        if (triageFolder == null)
+        {
+            var maxPosRoot = await _db.BookmarkNodes
+                .Where(n => n.ParentId == rootFolder.Id)
+                .MaxAsync(n => (int?)n.Position, ct) ?? -1;
+
+            triageFolder = new BookmarkNode
+            {
+                Id = Guid.NewGuid(),
+                ParentId = rootFolder.Id,
+                Type = NodeType.Folder,
+                Title = folderName,
+                Position = maxPosRoot + 1,
+                SyncState = SyncState.Pending,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            };
+            _db.BookmarkNodes.Add(triageFolder);
+
+            var createPayload = new
+            {
+                parentId = rootFolder.BrowserNodeId ?? "1",
+                title = folderName
+            };
+            _db.ExtensionCommands.Add(new ExtensionCommandEntry
+            {
+                Id = Guid.NewGuid(),
+                OperationId = Guid.NewGuid(),
+                CommandType = "Create",
+                BookmarkId = triageFolder.Id,
+                BrowserNodeId = null,
+                ExpectedVersion = 0,
+                PayloadJson = System.Text.Json.JsonSerializer.Serialize(createPayload),
+                CreatedAt = DateTime.UtcNow,
+                Status = "Pending"
+            });
+
+            await _db.SaveChangesAsync(ct);
+        }
+
+        int successfullyProcessed = 0;
+        var deadDomain = ExtractDomain(request.MatchBaseUrl);
+
+        var maxPosTriage = await _db.BookmarkNodes
+            .Where(n => n.ParentId == triageFolder.Id)
+            .MaxAsync(n => (int?)n.Position, ct) ?? -1;
+
+        int nextPosition = maxPosTriage + 1;
+
+        foreach (var bm in matchedBookmarks)
+        {
+            bool urlUpdated = false;
+            string? newUrl = null;
+
+            if (request.ActionType.Equals("AutoSearch", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    newUrl = await searchService.FindAlternativeUrlAsync(bm.Title, bm.Category, deadDomain, ct);
+                    if (!string.IsNullOrEmpty(newUrl))
+                    {
+                        bm.Url = newUrl;
+                        bm.Version++;
+                        urlUpdated = true;
+                    }
+                    else
+                    {
+                        var searchNote = $"[Triage System] DuckDuckGo search returned no alternative links on {DateTime.UtcNow:g} UTC.";
+                        bm.Notes = string.IsNullOrWhiteSpace(bm.Notes) 
+                            ? searchNote 
+                            : $"{bm.Notes}\n{searchNote}";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var searchNote = $"[Triage System] Search failed: {ex.Message}";
+                    bm.Notes = string.IsNullOrWhiteSpace(bm.Notes) 
+                        ? searchNote 
+                        : $"{bm.Notes}\n{searchNote}";
+                }
+            }
+
+            bm.ParentId = triageFolder.Id;
+            bm.Position = nextPosition++;
+            bm.SyncState = SyncState.Pending;
+            bm.UpdatedAt = DateTime.UtcNow;
+
+            if (urlUpdated && !string.IsNullOrEmpty(bm.BrowserNodeId))
+            {
+                var updatePayload = new
+                {
+                    title = bm.Title,
+                    url = bm.Url
+                };
+                _db.ExtensionCommands.Add(new ExtensionCommandEntry
+                {
+                    Id = Guid.NewGuid(),
+                    OperationId = Guid.NewGuid(),
+                    CommandType = "Update",
+                    BookmarkId = bm.Id,
+                    BrowserNodeId = bm.BrowserNodeId,
+                    ExpectedVersion = bm.Version - 1,
+                    PayloadJson = System.Text.Json.JsonSerializer.Serialize(updatePayload),
+                    CreatedAt = DateTime.UtcNow,
+                    Status = "Pending"
+                });
+            }
+
+            // Only queue move command immediately if the triage folder is already synced in Brave
+            if (!string.IsNullOrEmpty(triageFolder.BrowserNodeId) && !string.IsNullOrEmpty(bm.BrowserNodeId))
+            {
+                bm.ParentBrowserNodeId = triageFolder.BrowserNodeId;
+                
+                var movePayload = new
+                {
+                    parentBrowserNodeId = triageFolder.BrowserNodeId,
+                    position = bm.Position
+                };
+                _db.ExtensionCommands.Add(new ExtensionCommandEntry
+                {
+                    Id = Guid.NewGuid(),
+                    OperationId = Guid.NewGuid(),
+                    CommandType = "Move",
+                    BookmarkId = bm.Id,
+                    BrowserNodeId = bm.BrowserNodeId,
+                    ExpectedVersion = bm.Version,
+                    PayloadJson = System.Text.Json.JsonSerializer.Serialize(movePayload),
+                    CreatedAt = DateTime.UtcNow,
+                    Status = "Pending"
+                });
+            }
+
+            successfullyProcessed++;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+
+        return Ok(new TriageDomainResponse(
+            matchedBookmarks.Count,
+            successfullyProcessed,
+            folderName
+        ));
+    }
+
+    private static string ExtractDomain(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return string.Empty;
+        try
+        {
+            var uri = new Uri(url);
+            return uri.Host;
+        }
+        catch
+        {
+            var clean = url.Replace("https://", "").Replace("http://", "");
+            var idx = clean.IndexOf('/');
+            if (idx >= 0) clean = clean.Substring(0, idx);
+            return clean;
+        }
+    }
+
     [HttpPost("auto-tagger/run")]
     public IActionResult TriggerAutoTagger([FromServices] BookmarkManager.Api.Services.AutoTaggerBackgroundJob autoTagger)
     {

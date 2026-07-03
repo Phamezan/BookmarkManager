@@ -687,6 +687,43 @@ public sealed class ExtensionService(AppDbContext db, BookmarkTaggingService boo
                     {
                         node.BrowserNodeId = request.BrowserNodeId;
                     }
+
+                    if (node.Type == NodeType.Folder && cmd.CommandType == "Create")
+                    {
+                        var pendingChildren = await db.BookmarkNodes
+                            .Where(n => n.ParentId == node.Id && !n.IsDeleted)
+                            .ToListAsync(ct);
+
+                        foreach (var child in pendingChildren)
+                        {
+                            child.ParentBrowserNodeId = node.BrowserNodeId;
+                            child.SyncState = SyncState.Pending;
+
+                            var hasPendingMove = await db.ExtensionCommands
+                                .AnyAsync(c => c.BookmarkId == child.Id && c.CommandType == "Move" && c.Status == "Pending", ct);
+
+                            if (!hasPendingMove && !string.IsNullOrEmpty(child.BrowserNodeId))
+                            {
+                                var movePayload = new
+                                {
+                                    parentBrowserNodeId = node.BrowserNodeId,
+                                    position = child.Position
+                                };
+                                db.ExtensionCommands.Add(new ExtensionCommandEntry
+                                {
+                                    Id = Guid.NewGuid(),
+                                    OperationId = Guid.NewGuid(),
+                                    CommandType = "Move",
+                                    BookmarkId = child.Id,
+                                    BrowserNodeId = child.BrowserNodeId,
+                                    ExpectedVersion = child.Version,
+                                    PayloadJson = System.Text.Json.JsonSerializer.Serialize(movePayload),
+                                    CreatedAt = DateTime.UtcNow,
+                                    Status = "Pending"
+                                });
+                            }
+                        }
+                    }
                 }
                 else if (request.Status == "PermanentFailure" || request.Status == "Failed")
                 {

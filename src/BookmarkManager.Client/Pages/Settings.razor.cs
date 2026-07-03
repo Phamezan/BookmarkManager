@@ -20,6 +20,12 @@ public partial class Settings
     private bool _aiSettingsLoading = true;
     private bool _aiSettingsSaving;
 
+    private string _triageMatchBaseUrl = string.Empty;
+    private string _triageActionType = "ManualFolder";
+    private string _triageFolderName = string.Empty;
+    private bool _triageRunning;
+    private TriageDomainResponse? _triageResult;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -47,6 +53,43 @@ public partial class Settings
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to start link checker: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RunDomainTriageAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_triageMatchBaseUrl))
+        {
+            Snackbar.Add("Please enter a base URL to match.", Severity.Warning);
+            return;
+        }
+
+        _triageRunning = true;
+        _triageResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var request = new TriageDomainRequest(_triageMatchBaseUrl, _triageActionType, _triageFolderName);
+            _triageResult = await BookmarkService.TriageDomainAsync(request);
+            
+            if (_triageResult.TotalFound == 0)
+            {
+                Snackbar.Add($"No bookmarks matched '{_triageMatchBaseUrl}'.", Severity.Info);
+            }
+            else
+            {
+                Snackbar.Add($"Triage complete! Processed {_triageResult.SuccessfullyProcessed} of {_triageResult.TotalFound} bookmarks.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to run domain triage: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _triageRunning = false;
+            StateHasChanged();
         }
     }
 

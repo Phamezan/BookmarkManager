@@ -111,6 +111,10 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<bool>("api/bookmarks/check-links/status", cancellationToken);
 
+    public async Task<TriageDomainResponse> TriageDomainAsync(TriageDomainRequest request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<TriageDomainResponse>(HttpMethod.Post, "api/bookmarks/triage-domain", request, cancellationToken)
+           ?? new TriageDomainResponse(0, 0, request.FolderName);
+
     public async Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/auto-tagger/run", cancellationToken));
 
