@@ -1,0 +1,84 @@
+<div class="header-select-row" style="display: block;">
+    <div class="header-content-container">
+        @if (SelectedCount > 0)
+        {
+            <div class="selection-bar">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                        <MudIconButton Icon="@(IsAllSelected ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
+                                       Size="Size.Small" Color="Color.Primary" OnClick="ToggleSelectAll"
+                                       aria-label="Toggle select all" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                       OnClick="ClearSelection" aria-label="Clear selection" />
+                        <MudText Typo="Typo.subtitle2" Class="ml-2">@SelectedCount selected</MudText>
+                    </MudStack>
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small"
+                                   OnClick="MoveSelected">
+                            Move
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Error"
+                                   StartIcon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   OnClick="DeleteSelected">
+                            Delete
+                        </MudButton>
+                    </MudStack>
+                </MudStack>
+            </div>
+        }
+        else
+        {
+            <MudPaper Elevation="0" Class="explorer-toolbar">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                           StartIcon="@(IsAllSelected ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
+                           OnClick="ToggleSelectAll" Class="mr-2 select-all-btn">
+                    @(IsAllSelected ? "Deselect All" : "Select All")
+                </MudButton>
+                <MudTextField Value="SearchQuery" ValueChanged="SearchChanged"
+                              Placeholder="Search title or URL" Variant="Variant.Outlined" Immediate="true"
+                              DebounceInterval="400" Margin="Margin.Dense" Class="toolbar-search"
+                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" />
+                <MudSelect Value="TypeFilter" ValueChanged="TypeFilterChanged" Label="Filter" Margin="Margin.Dense" Dense="true"
+                           Class="toolbar-select filter-select">
+                    <MudSelectItem Value="@("All")">All Types</MudSelectItem>
+                    <MudSelectItem Value="@("Folders")">Folders Only</MudSelectItem>
+                    <MudSelectItem Value="@("Bookmarks")">Bookmarks Only</MudSelectItem>
+                    <MudSelectItem Value="@("Favorites")">Favorites Only</MudSelectItem>
+                </MudSelect>
+                <MudSelect Value="SortMode" ValueChanged="SortModeChanged" Label="Sort" Margin="Margin.Dense" Dense="true"
+                           Class="toolbar-select sort-select">
+                    <MudSelectItem Value="@("TitleAsc")">Title A-Z</MudSelectItem>
+                    <MudSelectItem Value="@("TitleDesc")">Title Z-A</MudSelectItem>
+                    <MudSelectItem Value="@("UpdatedDesc")">Newest First</MudSelectItem>
+                    <MudSelectItem Value="@("UpdatedAsc")">Oldest First</MudSelectItem>
+                </MudSelect>
+                <MudTooltip Text="Create bookmark">
+                    <MudIconButton Icon="@Icons.Material.Filled.AddLink" Color="Color.Primary"
+                                   OnClick="CreateBookmark" aria-label="Create bookmark" />
+                </MudTooltip>
+                <MudTooltip Text="Auto-tag bookmarks">
+                    <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary"
+                                   OnClick="OpenAutoTaggerDialog" aria-label="Auto tag" />
+                </MudTooltip>
+            </MudPaper>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public int SelectedCount { get; set; }
+    [Parameter] public bool IsAllSelected { get; set; }
+    [Parameter] public string SearchQuery { get; set; } = string.Empty;
+    [Parameter] public string TypeFilter { get; set; } = "All";
+    [Parameter] public string SortMode { get; set; } = "TitleAsc";
+    [Parameter] public EventCallback ToggleSelectAll { get; set; }
+    [Parameter] public EventCallback ClearSelection { get; set; }
+    [Parameter] public EventCallback MoveSelected { get; set; }
+    [Parameter] public EventCallback DeleteSelected { get; set; }
+    [Parameter] public EventCallback<string?> SearchChanged { get; set; }
+    [Parameter] public EventCallback<string> TypeFilterChanged { get; set; }
+    [Parameter] public EventCallback<string> SortModeChanged { get; set; }
+    [Parameter] public EventCallback CreateBookmark { get; set; }
+    [Parameter] public EventCallback OpenAutoTaggerDialog { get; set; }
+}

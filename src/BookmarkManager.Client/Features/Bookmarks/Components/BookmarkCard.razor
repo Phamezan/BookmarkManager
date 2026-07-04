@@ -1,0 +1,144 @@
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+@using Microsoft.AspNetCore.Components.Web
+
+<div @oncontextmenu="@((MouseEventArgs e) => ContextMenuOpened(e, Item))" @oncontextmenu:preventDefault="true"
+     @oncontextmenu:stopPropagation="true" style="display: contents;">
+    <div class="@($"bookmark-card {(IsSelected ? "is-selected" : "")}")" role="listitem"
+         draggable="true" data-drag-type="bookmark" data-drag-id="@Item.Id"
+         @ondragstart="@(() => DragStarted(Item.Id))" @onclick="@((MouseEventArgs e) => RowClicked(e, Item))">
+        <div class="bookmark-select" @onclick:stopPropagation>
+            <input type="checkbox" checked="@IsSelected"
+                   @onclick="@((MouseEventArgs e) => CheckboxClicked(e, Item.Id))" class="bm-checkbox"
+                   aria-label="@($"Select {Item.Title}")" />
+        </div>
+
+        <div class="bookmark-card-header">
+            <div class="bookmark-card-title-group">
+                <div class="bookmark-card-icon">
+                    @if (Item.Type == NodeType.Folder)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small"
+                                 Style="@($"color: {FolderColorHelper.GetFolderColor(Item.Title)};")" />
+                    }
+                    else if (!string.IsNullOrEmpty(Item.Url))
+                    {
+                        var faviconUrl = GetFaviconUrl(Item.Url);
+                        @if (faviconUrl != null)
+                        {
+                            <img src="@faviconUrl" alt="" width="16" height="16" onerror="this.style.display='none'" />
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Small" />
+                        }
+                    }
+                </div>
+                <h3 class="bookmark-card-title" title="@Item.Title">
+                    @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
+                    {
+                        <a href="@Item.Url" target="_blank" rel="noopener noreferrer" @onclick:stopPropagation>@Item.Title</a>
+                    }
+                    else
+                    {
+                        <span>@Item.Title</span>
+                    }
+                    @if (Item.Metadata?.IsFavorite == true)
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small"
+                                 Style="color: #fbbf24; margin-left: 6px; vertical-align: middle;" />
+                    }
+                </h3>
+            </div>
+        </div>
+
+        @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
+        {
+            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" @onclick:stopPropagation>@Item.Url</a>
+        }
+
+        <div class="bookmark-card-footer">
+            <div class="bookmark-card-footer-left">
+                <div class="bookmark-card-tags">
+                    @if (Item.Metadata?.Category != null)
+                    {
+                        <span class="tag-badge">@Item.Metadata.Category</span>
+                    }
+                    @if (Item.Metadata?.Tags != null)
+                    {
+                        @foreach (var tag in Item.Metadata.Tags.Take(2))
+                        {
+                            <span class="tag-badge">@tag</span>
+                        }
+                    }
+                </div>
+                @{
+                    var folderPath = Item.Type == NodeType.Folder
+                        ? GetFolderPath(Item.ParentId)
+                        : GetParentFolderName(Item.ParentId);
+                }
+                @if (!string.IsNullOrEmpty(folderPath))
+                {
+                    <span class="bookmark-card-folder-path" title="@folderPath">@folderPath</span>
+                }
+            </div>
+            <span class="bookmark-card-time">@FormatUpdatedAt(Item.UpdatedAt)</span>
+        </div>
+
+        <div class="bookmark-card-actions" @onclick:stopPropagation>
+            <MudTooltip Text="@(Item.Metadata?.IsFavorite == true ? "Remove from Favorites" : "Add to Favorites")">
+                <MudIconButton Icon="@(Item.Metadata?.IsFavorite == true ? Icons.Material.Filled.Star : Icons.Material.Filled.StarBorder)"
+                               Size="Size.Small"
+                               Style="@(Item.Metadata?.IsFavorite == true ? "color: #fbbf24;" : "")"
+                               OnClick="@(() => ToggleFavoriteAsync(Item))" />
+            </MudTooltip>
+            @if (Item.Type == NodeType.Folder)
+            {
+                <MudTooltip Text="Move folder">
+                    <MudIconButton Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small"
+                                   OnClick="@(() => MoveFolderAsync(Item.Id))" aria-label="@($"Move {Item.Title}")" />
+                </MudTooltip>
+                <MudTooltip Text="Delete folder">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(() => DeleteFolderAsync(Item.Id))"
+                                   aria-label="@($"Delete {Item.Title}")" />
+                </MudTooltip>
+            }
+            else
+            {
+                <MudTooltip Text="Edit fields">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                   OnClick="@(() => EditBookmarkAsync(Item))" aria-label="@($"Edit {Item.Title}")" />
+                </MudTooltip>
+                <MudTooltip Text="Move bookmark">
+                    <MudIconButton Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small"
+                                   OnClick="@(() => MoveBookmarkAsync(Item))" aria-label="@($"Move {Item.Title}")" />
+                </MudTooltip>
+                <MudTooltip Text="Delete bookmark">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                   Color="Color.Error" OnClick="@(() => DeleteBookmarkAsync(Item))"
+                                   aria-label="@($"Delete {Item.Title}")" />
+                </MudTooltip>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BookmarkNodeDto Item { get; set; } = default!;
+    [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public Func<string, string?> GetFaviconUrl { get; set; } = _ => null;
+    [Parameter] public Func<Guid?, string> GetParentFolderName { get; set; } = _ => string.Empty;
+    [Parameter] public Func<Guid?, string> GetFolderPath { get; set; } = _ => string.Empty;
+    [Parameter] public Func<DateTime, string> FormatUpdatedAt { get; set; } = _ => string.Empty;
+    [Parameter] public Func<MouseEventArgs, BookmarkNodeDto, Task> RowClicked { get; set; } = (_, _) => Task.CompletedTask;
+    [Parameter] public Action<MouseEventArgs, Guid> CheckboxClicked { get; set; } = (_, _) => { };
+    [Parameter] public Action<MouseEventArgs, BookmarkNodeDto> ContextMenuOpened { get; set; } = (_, _) => { };
+    [Parameter] public Action<Guid> DragStarted { get; set; } = _ => { };
+    [Parameter] public Func<BookmarkNodeDto, Task> ToggleFavoriteAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<BookmarkNodeDto, Task> EditBookmarkAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<BookmarkNodeDto, Task> MoveBookmarkAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
+}

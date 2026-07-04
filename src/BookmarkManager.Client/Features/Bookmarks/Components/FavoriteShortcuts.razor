@@ -1,0 +1,85 @@
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+
+<section class="tracked-roots-section">
+    <div class="tracked-roots-list" data-drop-target="true" @ondragover:prevent
+         @ondragover="FavoritesDragOver" @ondragleave="FavoritesDragLeave" @ondrop="FavoritesDrop"
+         style="@($"margin-top: 8px; min-height: 72px; align-items: center; border-radius: 8px; transition: all 0.2s ease; {FavoritesDragOverStyle}")">
+        @if (Favorites.Count == 0)
+        {
+            <div class="favorites-empty-placeholder"
+                 style="color: var(--bm-text-secondary); font-size: 0.85rem; padding: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; border: 2px dashed rgba(148, 163, 184, 0.2); border-radius: 8px; min-height: 60px;">
+                <MudIcon Icon="@Icons.Material.Filled.StarBorder" Size="Size.Small" Style="color: #fbbf24;" />
+                <span>No shortcuts pinned to favorites yet. Drag folders here from the tree, or drag cards here to pin them.</span>
+            </div>
+        }
+        else
+        {
+            @foreach (var fav in Favorites)
+            {
+                @if (fav.Type == NodeType.Folder)
+                {
+                    <div class="root-card @(fav.Id == SelectedFolderId ? "active" : "")"
+                         @onclick="@(() => FolderSelected.InvokeAsync(fav.Id))" style="padding-right: 8px;">
+                        <div class="root-card-icon">
+                            <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Medium"
+                                     Style="@($"color: {FolderColorHelper.GetFolderColor(fav.Title)};")" />
+                        </div>
+                        <div class="root-card-info">
+                            <div class="root-card-title" title="@fav.Title">@fav.Title</div>
+                            <div class="root-card-path">Folder Shortcut</div>
+                        </div>
+                        <div class="root-card-remove" @onclick:stopPropagation @onclick="@(() => ToggleFavoriteAsync(fav))"
+                             style="cursor: pointer;" title="Remove from Shortcuts">
+                            <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <a href="@fav.Url" target="_blank" rel="noopener noreferrer" class="root-card"
+                       style="text-decoration: none; padding-right: 8px;" @onclick:stopPropagation>
+                        <div class="root-card-icon">
+                            @if (!string.IsNullOrEmpty(fav.Url))
+                            {
+                                var faviconUrl = GetFaviconUrl(fav.Url);
+                                @if (faviconUrl != null)
+                                {
+                                    <img src="@faviconUrl" alt="" width="20" height="20" onerror="this.style.display='none'" />
+                                }
+                                else
+                                {
+                                    <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Medium" Style="color: var(--bm-accent);" />
+                                }
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Size="Size.Medium" Style="color: var(--bm-accent);" />
+                            }
+                        </div>
+                        <div class="root-card-info">
+                            <div class="root-card-title" title="@fav.Title">@fav.Title</div>
+                            <div class="root-card-path">Link Shortcut</div>
+                        </div>
+                        <div class="root-card-remove" @onclick:stopPropagation @onclick="@(() => ToggleFavoriteAsync(fav))"
+                             style="cursor: pointer;" title="Remove from Shortcuts">
+                            <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                        </div>
+                    </a>
+                }
+            }
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public List<BookmarkNodeDto> Favorites { get; set; } = [];
+    [Parameter] public Guid? SelectedFolderId { get; set; }
+    [Parameter] public string FavoritesDragOverStyle { get; set; } = string.Empty;
+    [Parameter] public Func<string, string?> GetFaviconUrl { get; set; } = _ => null;
+    [Parameter] public Func<BookmarkNodeDto, Task> ToggleFavoriteAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public EventCallback<Guid> FolderSelected { get; set; }
+    [Parameter] public EventCallback<DragEventArgs> FavoritesDragOver { get; set; }
+    [Parameter] public EventCallback<DragEventArgs> FavoritesDragLeave { get; set; }
+    [Parameter] public EventCallback<DragEventArgs> FavoritesDrop { get; set; }
+}

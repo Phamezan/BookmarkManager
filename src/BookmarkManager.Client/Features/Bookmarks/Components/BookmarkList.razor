@@ -1,0 +1,116 @@
+@using BookmarkManager.Contracts
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="bookmark-list">
+    @if (Loading)
+    {
+        <div class="bookmark-grid" aria-label="Loading bookmarks...">
+            @for (int i = 0; i < 6; i++)
+            {
+                <div class="skeleton-card" />
+            }
+        </div>
+    }
+    else if (Items.Count == 0)
+    {
+        <div class="empty-state">
+            <div class="empty-state-icon-wrap" aria-hidden="true">
+                <MudIcon Icon="@(string.IsNullOrWhiteSpace(SearchQuery) ? Icons.Material.Filled.FolderOpen : Icons.Material.Filled.SearchOff)" />
+            </div>
+            <div class="empty-state-copy">
+                <MudText Typo="Typo.h6" Class="empty-state-title">
+                    @(string.IsNullOrWhiteSpace(SearchQuery) ? "No bookmarks to show" : "No matches found")
+                </MudText>
+                <MudText Typo="Typo.body2" Class="empty-state-sub">
+                    @(string.IsNullOrWhiteSpace(SearchQuery)
+                        ? "Pick a folder on the left, or create your first bookmark to get started."
+                        : "Try a different keyword, or clear the filters above.")
+                </MudText>
+            </div>
+            @if (string.IsNullOrWhiteSpace(SearchQuery))
+            {
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AddLink"
+                           OnClick="CreateBookmark" Class="empty-state-cta">
+                    New Bookmark
+                </MudButton>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="bookmark-grid" role="list" aria-label="Bookmarks">
+            @foreach (var item in PaginatedItems.Where(i => i.Type == NodeType.Folder))
+            {
+                <BookmarkCard Item="item"
+                              IsSelected="IsSelected(item.Id)"
+                              GetFaviconUrl="GetFaviconUrl"
+                              GetParentFolderName="GetParentFolderName"
+                              GetFolderPath="GetFolderPath"
+                              FormatUpdatedAt="FormatUpdatedAt"
+                              RowClicked="RowClicked"
+                              CheckboxClicked="CheckboxClicked"
+                              ContextMenuOpened="ContextMenuOpened"
+                              DragStarted="DragStarted"
+                              ToggleFavoriteAsync="ToggleFavoriteAsync"
+                              EditBookmarkAsync="EditBookmarkAsync"
+                              MoveBookmarkAsync="MoveBookmarkAsync"
+                              DeleteBookmarkAsync="DeleteBookmarkAsync"
+                              MoveFolderAsync="MoveFolderAsync"
+                              DeleteFolderAsync="DeleteFolderAsync" />
+            }
+
+            @foreach (var item in PaginatedItems.Where(i => i.Type != NodeType.Folder))
+            {
+                <BookmarkCard Item="item"
+                              IsSelected="IsSelected(item.Id)"
+                              GetFaviconUrl="GetFaviconUrl"
+                              GetParentFolderName="GetParentFolderName"
+                              GetFolderPath="GetFolderPath"
+                              FormatUpdatedAt="FormatUpdatedAt"
+                              RowClicked="RowClicked"
+                              CheckboxClicked="CheckboxClicked"
+                              ContextMenuOpened="ContextMenuOpened"
+                              DragStarted="DragStarted"
+                              ToggleFavoriteAsync="ToggleFavoriteAsync"
+                              EditBookmarkAsync="EditBookmarkAsync"
+                              MoveBookmarkAsync="MoveBookmarkAsync"
+                              DeleteBookmarkAsync="DeleteBookmarkAsync"
+                              MoveFolderAsync="MoveFolderAsync"
+                              DeleteFolderAsync="DeleteFolderAsync" />
+            }
+        </div>
+        @if (PageCount > 1)
+        {
+            <div class="d-flex justify-center mt-4 mb-4">
+                <MudPagination SelectedChanged="PageChanged" Count="PageCount" Selected="CurrentPage"
+                               Color="Color.Primary" Variant="Variant.Filled" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public List<BookmarkNodeDto> Items { get; set; } = [];
+    [Parameter] public List<BookmarkNodeDto> PaginatedItems { get; set; } = [];
+    [Parameter] public string SearchQuery { get; set; } = string.Empty;
+    [Parameter] public int PageCount { get; set; }
+    [Parameter] public int CurrentPage { get; set; }
+    [Parameter] public EventCallback<int> PageChanged { get; set; }
+    [Parameter] public EventCallback CreateBookmark { get; set; }
+    [Parameter] public Func<Guid, bool> IsSelected { get; set; } = _ => false;
+    [Parameter] public Func<string, string?> GetFaviconUrl { get; set; } = _ => null;
+    [Parameter] public Func<Guid?, string> GetParentFolderName { get; set; } = _ => string.Empty;
+    [Parameter] public Func<Guid?, string> GetFolderPath { get; set; } = _ => string.Empty;
+    [Parameter] public Func<DateTime, string> FormatUpdatedAt { get; set; } = _ => string.Empty;
+    [Parameter] public Func<MouseEventArgs, BookmarkNodeDto, Task> RowClicked { get; set; } = (_, _) => Task.CompletedTask;
+    [Parameter] public Action<MouseEventArgs, Guid> CheckboxClicked { get; set; } = (_, _) => { };
+    [Parameter] public Action<MouseEventArgs, BookmarkNodeDto> ContextMenuOpened { get; set; } = (_, _) => { };
+    [Parameter] public Action<Guid> DragStarted { get; set; } = _ => { };
+    [Parameter] public Func<BookmarkNodeDto, Task> ToggleFavoriteAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<BookmarkNodeDto, Task> EditBookmarkAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<BookmarkNodeDto, Task> MoveBookmarkAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
+}

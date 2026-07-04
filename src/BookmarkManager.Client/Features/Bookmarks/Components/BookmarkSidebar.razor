@@ -1,0 +1,50 @@
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Components
+
+<MudPaper Elevation="0" Class="folder-zone">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="zone-heading">
+        <div>
+            <MudText Typo="Typo.subtitle1">Tracked Roots</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Protected Brave folders stay scoped.</MudText>
+        </div>
+        <MudTooltip Text="Create folder">
+            <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Size="Size.Small" OnClick="CreateFolder"
+                           aria-label="Create folder" />
+        </MudTooltip>
+    </MudStack>
+
+    <div class="overflow-auto flex-grow-1 pa-2">
+        @if (TreeLoading)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else if (FolderTree.Count == 0)
+        {
+            <div class="empty-state empty-state-compact">
+                <div class="empty-state-icon-wrap empty-state-icon-wrap-sm" aria-hidden="true">
+                    <MudIcon Icon="@Icons.Material.Filled.FolderOpen" />
+                </div>
+                <MudText Typo="Typo.body2" Class="empty-state-sub">No folders yet</MudText>
+            </div>
+        }
+        else
+        {
+            <FolderTree Folders="FolderTree" SelectedFolderId="SelectedFolderId" FolderSelected="FolderSelected"
+                        FolderDrop="FolderDrop" FolderDragStart="FolderDragStart" FolderContextMenu="FolderContextMenu"
+                        ExpandedItems="ExpandedItems" ExpandedItemsChanged="ExpandedItemsChanged" />
+        }
+    </div>
+</MudPaper>
+
+@code {
+    [Parameter] public bool TreeLoading { get; set; }
+    [Parameter] public List<FolderTreeNodeDto> FolderTree { get; set; } = [];
+    [Parameter] public Guid? SelectedFolderId { get; set; }
+    [Parameter] public HashSet<Guid> ExpandedItems { get; set; } = [];
+    [Parameter] public EventCallback<HashSet<Guid>> ExpandedItemsChanged { get; set; }
+    [Parameter] public EventCallback CreateFolder { get; set; }
+    [Parameter] public EventCallback<Guid> FolderSelected { get; set; }
+    [Parameter] public EventCallback<Guid> FolderDrop { get; set; }
+    [Parameter] public EventCallback<Guid> FolderDragStart { get; set; }
+    [Parameter] public EventCallback<(MouseEventArgs MouseEvent, Guid FolderId)> FolderContextMenu { get; set; }
+}
