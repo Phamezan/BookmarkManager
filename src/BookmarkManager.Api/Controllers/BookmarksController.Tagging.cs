@@ -1,0 +1,205 @@
+using AutoMapper;
+using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.BookmarkTagging;
+using BookmarkManager.Contracts;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+namespace BookmarkManager.Api.Controllers;
+
+public partial class BookmarksController
+{
+    // ── Tagging ─────────────────────────────────────────────────────────────
+
+    [HttpPost("ai-tags/batch")]
+    public async Task<ActionResult<BookmarkManager.Contracts.BatchTagResponse>> SuggestBatchTagsAsync(
+    [FromBody] BookmarkManager.Contracts.BatchTagRequest request,
+    CancellationToken ct)
+    {
+    try
+    {
+        var folderPath = request.FolderPath;
+        if (string.IsNullOrWhiteSpace(folderPath) && request.FolderId.HasValue)
+            folderPath = await BuildFolderPathAsync(request.FolderId.Value, ct);
+
+        var resultMapping = await _bookmarkTagging.GetTagsForBatchAsync(request.Items, folderPath, request.Domain, ct);
+
+        return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
+    }
+    catch (Exception ex)
+    {
+        return Problem(
+            detail: ex.Message,
+            statusCode: 500,
+            title: "Batch Tagging Error"
+        );
+    }
+    }
+
+    [HttpPost("tags/bulk-save")]
+    public async Task<ActionResult> BulkSaveTagsAsync(
+    [FromBody] BookmarkManager.Contracts.BulkSaveTagsRequest request,
+    CancellationToken ct)
+    {
+    if (request.Tags.Count > 0)
+    {
+        var ids = request.Tags.Keys.ToList();
+        var nodes = await _db.BookmarkNodes.Where(n => ids.Contains(n.Id)).ToListAsync(ct);
+        foreach (var node in nodes)
+        {
+            if (request.Tags.TryGetValue(node.Id, out var tags))
+            {
+                node.Tags = string.Join(",", tags);
+                node.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        await _db.SaveChangesAsync(ct);
+    }
+    return Ok();
+    }
+
+    [HttpGet("untagged-counts")]
+    public async Task<ActionResult<Dictionary<Guid, int>>> GetUntaggedCountsAsync(CancellationToken ct)
+    {
+    var bookmarks = await _db.BookmarkNodes
+        .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && (n.Tags == null || n.Tags == ""))
+        .ToListAsync(ct);
+
+    var counts = bookmarks
+        .Where(b => b.ParentId.HasValue)
+        .GroupBy(b => b.ParentId!.Value)
+        .ToDictionary(g => g.Key, g => g.Count());
+
+    return Ok(counts);
+    }
+
+    [HttpPost("{id:guid}/ai-tags")]
+    public async Task<ActionResult<List<string>>> AiRetagAsync(
+    Guid id,
+    CancellationToken ct)
+    {
+    var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
+    if (node is null) return NotFound();
+
+    var folderPath = await BuildFolderPathAsync(node.ParentId, ct);
+    var tags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
+    return Ok(tags);
+    }
+
+    /// <summary>
+    /// Backfill tags on active bookmarks through the same folder-aware provider routing
+    /// used by the manual Auto Tagger. This is explicit work and is never triggered
+    /// by extension reconnect or snapshot restore.
+    /// </summary>
+    [HttpPost("retag-all")]
+    public async Task<ActionResult<object>> RetagAllAsync(
+    [FromQuery] bool overwrite = false,
+    [FromServices] BookmarkManager.Api.Services.AutoTaggerService autoTagger = default!,
+    CancellationToken ct = default)
+    {
+    var result = await autoTagger.ProcessAsync(overwrite, folderIds: null, ct);
+    return Ok(result);
+    }
+
+    [HttpPost("{folderId:guid}/ai-auto-tag")]
+    public async Task<ActionResult<AiAutoTagSummaryDto>> AiAutoTagAsync(
+    Guid folderId,
+    [FromQuery] bool forceRefresh = false,
+    CancellationToken ct = default)
+    {
+    var folderExists = await _db.BookmarkNodes.AnyAsync(
+        n => n.Id == folderId && n.Type == NodeType.Folder && !n.IsDeleted,
+        ct);
+    if (!folderExists)
+        return NotFound();
+
+    var aiAutoTagging = HttpContext.RequestServices.GetRequiredService<AiBookmarkAutoTaggingService>();
+    try
+    {
+        var summary = await aiAutoTagging.TagFolderAsync(folderId, forceRefresh, ct);
+        return Ok(summary);
+    }
+    catch (HttpRequestException ex) when (ex.StatusCode is not null)
+    {
+        return Problem(
+            title: "OpenRouter API error",
+            statusCode: (int)ex.StatusCode,
+            detail: $"OpenRouter returned {ex.StatusCode}.");
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Problem(title: "AI auto-tagging failed", statusCode: 400, detail: ex.Message);
+    }
+    }
+
+    [HttpPost("{folderId:guid}/ai-auto-tag/batch")]
+    public async Task<ActionResult<AiAutoTagSummaryDto>> AiAutoTagBatchAsync(
+    Guid folderId,
+    AiAutoTagBatchRequestDto request,
+    CancellationToken ct = default)
+    {
+    var folderExists = await _db.BookmarkNodes.AnyAsync(
+        n => n.Id == folderId && n.Type == NodeType.Folder && !n.IsDeleted,
+        ct);
+    if (!folderExists)
+        return NotFound();
+
+    var maxCandidates = request.MaxCandidates <= 0 ? 25 : Math.Min(request.MaxCandidates, 50);
+    var aiAutoTagging = HttpContext.RequestServices.GetRequiredService<AiBookmarkAutoTaggingService>();
+    try
+    {
+        var summary = await aiAutoTagging.TagFolderAsync(
+            folderId,
+            request.ForceRefresh,
+            maxCandidates,
+            request.ExcludedBookmarkIds,
+            ct);
+        return Ok(summary);
+    }
+    catch (HttpRequestException ex) when (ex.StatusCode is not null)
+    {
+        return Problem(
+            title: "OpenRouter API error",
+            statusCode: (int)ex.StatusCode,
+            detail: $"OpenRouter returned {ex.StatusCode}.");
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Problem(title: "AI auto-tagging failed", statusCode: 400, detail: ex.Message);
+    }
+    }
+
+    /// <summary>
+    /// Returns the distinct set of tags currently in use, with usage counts.
+    /// Powers the tag-filter chips in the client.
+    /// </summary>
+    [HttpGet("tags")]
+    public async Task<ActionResult<List<TagCountDto>>> GetTagsAsync([FromQuery] Guid? folderId, CancellationToken ct)
+    {
+    IQueryable<BookmarkNode> query = _db.BookmarkNodes
+        .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && n.Tags != null && n.Tags != "");
+
+    if (folderId.HasValue)
+    {
+        var descendantIds = await GetDescendantFolderIdsAsync(folderId.Value, ct);
+        descendantIds.Add(folderId.Value);
+
+        query = query.Where(n => n.ParentId != null && descendantIds.Contains(n.ParentId.Value));
+    }
+
+    var rows = await query
+        .Select(n => n.Tags!)
+        .ToListAsync(ct);
+
+    var counts = rows
+        .SelectMany(s => s.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        .GroupBy(t => t, StringComparer.OrdinalIgnoreCase)
+        .Select(g => new TagCountDto { Tag = g.Key, Count = g.Count() })
+        .OrderByDescending(t => t.Count)
+        .ThenBy(t => t.Tag)
+        .ToList();
+
+    return Ok(counts);
+    }
+
+}
