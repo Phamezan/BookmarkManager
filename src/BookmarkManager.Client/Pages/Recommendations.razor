@@ -1,0 +1,202 @@
+@page "/recommendations"
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+@inject IBookmarkService BookmarkService
+@inject ISnackbar Snackbar
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<PageTitle>Recommendations</PageTitle>
+
+<div class="bookmarks-workspace">
+    <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
+        <div class="rec-eyebrow">
+            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Class="rec-eyebrow-icon" Size="Size.Small" />
+            Rediscover
+        </div>
+        <h1 class="rec-headline">Recommendations</h1>
+        <p class="rec-subtitle">Through folders you choose &mdash; forgotten bookmarks worth another look.</p>
+
+        <div class="rec-controls-row">
+            @if (_flatFolders.Count == 0)
+            {
+                <span class="rec-subtitle" style="margin-bottom: 0;">No folders yet.</span>
+            }
+            else
+            {
+                <div class="rec-folder-chips">
+                    @foreach (var folder in _flatFolders)
+                    {
+                        var isSelected = _selectedFolderIds.Contains(folder.Id);
+                        <button type="button" class="@($"rec-folder-chip{(isSelected ? " is-checked" : "")}")"
+                                @onclick="@(() => ToggleFolderAsync(folder.Id, !isSelected))">
+                            @folder.Title
+                        </button>
+                    }
+                </div>
+
+                <div class="rec-chip-actions">
+                    <button type="button" class="rec-clear-btn" disabled="@(_selectedFolderIds.Count == 0)" @onclick="ClearFoldersAsync">
+                        Clear all
+                    </button>
+                    <MudTooltip Text="Show a new random set">
+                        <button type="button" class="@($"rec-reshuffle-btn{(_spinning ? " spinning" : "")}")"
+                                disabled="@(_selectedFolderIds.Count == 0)" @onclick="ReshuffleAsync">
+                            <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
+                            Reshuffle
+                        </button>
+                    </MudTooltip>
+                </div>
+            }
+        </div>
+
+        <div class="rec-divider"></div>
+
+        <div class="bookmark-list">
+            @if (_loading)
+            {
+                <div class="rec-featured-skeleton"></div>
+                <div class="rec-more-list" aria-label="Loading recommendations...">
+                    @for (int i = 0; i < 6; i++)
+                    {
+                        <div class="skeleton-card"></div>
+                    }
+                </div>
+            }
+            else if (_selectedFolderIds.Count == 0)
+            {
+                <div class="empty-state">
+                    <div class="empty-state-icon-wrap" aria-hidden="true">
+                        <MudIcon Icon="@Icons.Material.Filled.FolderSpecial" />
+                    </div>
+                    <div class="empty-state-copy">
+                        <MudText Typo="Typo.h6" Class="empty-state-title">Choose folders to get recommendations</MudText>
+                        <MudText Typo="Typo.body2" Class="empty-state-sub">Select one or more folders above. Bookmarks in their subfolders are included automatically.</MudText>
+                    </div>
+                </div>
+            }
+            else if (_recommendations.Count == 0)
+            {
+                <div class="empty-state">
+                    <div class="empty-state-icon-wrap" aria-hidden="true">
+                        <MudIcon Icon="@Icons.Material.Filled.History" />
+                    </div>
+                    <div class="empty-state-copy">
+                        <MudText Typo="Typo.h6" Class="empty-state-title">No bookmarks found</MudText>
+                        <MudText Typo="Typo.body2" Class="empty-state-sub">The selected folders don't contain any bookmarks yet.</MudText>
+                    </div>
+                </div>
+            }
+            else
+            {
+                @if (SpotlightItem is { } spotlight)
+                {
+                    <section class="rec-featured" @key="spotlight.Id" @onmouseenter="PauseSpotlight" @onmouseleave="ResumeSpotlight">
+                        <div class="rec-featured-eyebrow">Featured pick</div>
+                        <h2 class="rec-featured-title">@spotlight.Title</h2>
+                        @if (!string.IsNullOrEmpty(spotlight.Url))
+                        {
+                            <div class="rec-featured-url">@spotlight.Url</div>
+                        }
+
+                        @if (spotlight.Metadata is { } meta && (!string.IsNullOrEmpty(meta.Category) || meta.Tags.Count > 0 || meta.IsFavorite))
+                        {
+                            <div class="rec-featured-tags">
+                                @if (meta.IsFavorite)
+                                {
+                                    <span class="rec-featured-tag rec-featured-favorite">
+                                        <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" /> Favorite
+                                    </span>
+                                }
+                                @if (!string.IsNullOrEmpty(meta.Category))
+                                {
+                                    <span class="rec-featured-tag">@meta.Category</span>
+                                }
+                                @foreach (var tag in meta.Tags.Take(10))
+                                {
+                                    <span class="rec-featured-tag">@tag</span>
+                                }
+                            </div>
+                        }
+
+                        <div class="rec-featured-actions">
+                            <a class="rec-visit-btn" href="@spotlight.Url" target="_blank" rel="noopener noreferrer">
+                                <MudIcon Icon="@Icons.Material.Filled.Launch" Size="Size.Small" /> Visit
+                            </a>
+                            <button type="button" class="@($"rec-reshuffle-btn{(_spinning ? " spinning" : "")}")" @onclick="ReshuffleAsync">
+                                <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
+                                Reshuffle
+                            </button>
+
+                            @if (_recommendations.Count > 1)
+                            {
+                                <div class="rec-featured-nav">
+                                    <button type="button" class="rec-featured-nav-arrow" @onclick="PrevSpotlight" aria-label="Previous pick">
+                                        <MudIcon Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small" />
+                                    </button>
+                                    <span class="rec-featured-position">@((_recommendations.FindIndex(r => r.Id == spotlight.Id) + 1).ToString("00")) / @_recommendations.Count.ToString("00")</span>
+                                    <button type="button" class="rec-featured-nav-arrow" @onclick="NextSpotlight" aria-label="Next pick">
+                                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" />
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    </section>
+                }
+
+                @if (GridItems.Count > 0)
+                {
+                    <h3 class="rec-more-heading">More to rediscover</h3>
+                    <div class="rec-more-list" role="list" aria-label="Recommended Bookmarks">
+                        @for (int i = 0; i < GridItems.Count; i++)
+                        {
+                            var item = GridItems[i];
+                            <div class="rec-more-row" style="@($"--rec-index: {i};")" role="listitem" @key="item.Id">
+                                <div class="rec-more-index">@((i + 1).ToString("00"))</div>
+                                <div class="rec-more-body">
+                                    <div class="rec-more-title" title="@item.Title">
+                                        <span>@item.Title</span>
+                                        @if (item.Metadata?.IsFavorite == true)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" Style="color: var(--bm-warning);" />
+                                        }
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(item.Url))
+                                    {
+                                        <div class="rec-more-host">@GetHost(item.Url)</div>
+                                    }
+                                    @if (item.Metadata is { } cardMeta && (!string.IsNullOrEmpty(cardMeta.Category) || cardMeta.Tags.Count > 0))
+                                    {
+                                        <div class="rec-more-tags">
+                                            @if (!string.IsNullOrEmpty(cardMeta.Category))
+                                            {
+                                                <span class="rec-more-tag">@cardMeta.Category</span>
+                                            }
+                                            @foreach (var tag in cardMeta.Tags.Take(10))
+                                            {
+                                                <span class="rec-more-tag">@tag</span>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="rec-more-actions">
+                                    <MudTooltip Text="Visit URL">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="Color.Info" Size="Size.Small" Href="@item.Url" Target="_blank" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Feature this pick">
+                                        <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Small" OnClick="@(() => GoToSpotlight(item.Id))" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Archive bookmark">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Warning" Size="Size.Small" OnClick="@(() => ArchiveAsync(item))" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Delete bookmark">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteAsync(item))" />
+                                    </MudTooltip>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </main>
+</div>

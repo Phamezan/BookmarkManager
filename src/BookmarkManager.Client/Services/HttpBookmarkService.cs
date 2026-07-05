@@ -98,8 +98,12 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<List<string>> SuggestTagsAsync(string title, string? url, CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<string>>($"api/bookmarks/suggest-tags?title={Uri.EscapeDataString(title)}&url={Uri.EscapeDataString(url ?? string.Empty)}", cancellationToken) ?? [];
 
-    public async Task<List<BookmarkNodeDto>> GetStaleBookmarksAsync(int days, CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<List<BookmarkNodeDto>>($"api/bookmarks/stale?days={days}", cancellationToken) ?? [];
+    public async Task<List<BookmarkNodeDto>> GetRecommendationsAsync(List<Guid> folderIds, int count = 30, CancellationToken cancellationToken = default)
+    {
+        if (folderIds.Count == 0) return [];
+        var query = string.Join("&", folderIds.Select(id => $"folderIds={id}"));
+        return await _apiClient.GetAsync<List<BookmarkNodeDto>>($"api/bookmarks/recommendations?{query}&count={count}", cancellationToken) ?? [];
+    }
 
     public async Task<BookmarkNodeDto?> ArchiveBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
         => await InvokeOrNullAsync<BookmarkNodeDto>(

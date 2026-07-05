@@ -48,16 +48,34 @@ public partial class BookmarksController
     return _mapper.Map<List<BookmarkNodeDto>>(nodes);
     }
 
-    [HttpGet("stale")]
-    public async Task<ActionResult<List<BookmarkNodeDto>>> GetStaleAsync([FromQuery] int days = 180, CancellationToken ct = default)
+    [HttpGet("recommendations")]
+    public async Task<ActionResult<List<BookmarkNodeDto>>> GetRecommendationsAsync(
+    [FromQuery] Guid[] folderIds, [FromQuery] int count = 30, CancellationToken ct = default)
     {
-    var cutoff = DateTime.UtcNow.AddDays(-days);
-    var staleBookmarks = await _db.BookmarkNodes
-        .Where(n => n.Type == NodeType.Bookmark && !n.IsDeleted && n.UpdatedAt <= cutoff)
-        .OrderBy(n => n.UpdatedAt)
+    if (folderIds.Length == 0) return new List<BookmarkNodeDto>();
+
+    var allFolderIds = new HashSet<Guid>(folderIds);
+    foreach (var folderId in folderIds)
+    {
+        var descendants = await GetDescendantFolderIdsAsync(folderId, ct);
+        allFolderIds.UnionWith(descendants);
+    }
+
+    var matchingIds = await _db.BookmarkNodes
+        .Where(n => n.Type == NodeType.Bookmark && !n.IsDeleted && n.ParentId != null && allFolderIds.Contains(n.ParentId.Value))
+        .Select(n => n.Id)
         .ToListAsync(ct);
 
-    return _mapper.Map<List<BookmarkNodeDto>>(staleBookmarks);
+    var sampledIds = matchingIds
+        .OrderBy(_ => Random.Shared.Next())
+        .Take(count)
+        .ToList();
+
+    var nodes = await _db.BookmarkNodes
+        .Where(n => sampledIds.Contains(n.Id))
+        .ToListAsync(ct);
+
+    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
     }
 
     [HttpPost("{id:guid}/archive")]
@@ -125,24 +143,31 @@ public partial class BookmarksController
     node.SyncState = SyncState.Pending;
     node.UpdatedAt = DateTime.UtcNow;
 
-    var movePayload = new
+    // If the Archive folder was just created above, its BrowserNodeId is still null —
+    // the extension hasn't confirmed it yet. Queuing a Move now would fall back to a
+    // wrong parent. Skip it; ExtensionService.Commands.cs enqueues the Move automatically
+    // once the folder's "Create" command completes and its real BrowserNodeId is known.
+    if (!string.IsNullOrEmpty(archiveFolder.BrowserNodeId))
     {
-        parentBrowserNodeId = archiveFolder.BrowserNodeId ?? "1",
-        position = node.Position
-    };
+        var movePayload = new
+        {
+            parentBrowserNodeId = archiveFolder.BrowserNodeId,
+            position = node.Position
+        };
 
-    _db.ExtensionCommands.Add(new ExtensionCommandEntry
-    {
-        Id = Guid.NewGuid(),
-        OperationId = Guid.NewGuid(),
-        CommandType = "Move",
-        BookmarkId = node.Id,
-        BrowserNodeId = node.BrowserNodeId,
-        ExpectedVersion = node.Version,
-        PayloadJson = System.Text.Json.JsonSerializer.Serialize(movePayload),
-        CreatedAt = DateTime.UtcNow,
-        Status = "Pending"
-    });
+        _db.ExtensionCommands.Add(new ExtensionCommandEntry
+        {
+            Id = Guid.NewGuid(),
+            OperationId = Guid.NewGuid(),
+            CommandType = "Move",
+            BookmarkId = node.Id,
+            BrowserNodeId = node.BrowserNodeId,
+            ExpectedVersion = node.Version,
+            PayloadJson = System.Text.Json.JsonSerializer.Serialize(movePayload),
+            CreatedAt = DateTime.UtcNow,
+            Status = "Pending"
+        });
+    }
 
     await _db.SaveChangesAsync(ct);
     await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
