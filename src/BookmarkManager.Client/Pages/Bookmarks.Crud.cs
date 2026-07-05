@@ -21,6 +21,7 @@ public partial class Bookmarks
 
         _expandedFolderIds.Add(parentId);
         await RefreshFolderTreeAsync();
+        StateHasChanged();
         Snackbar.Add("Folder created", Severity.Success);
     }
 
@@ -47,6 +48,7 @@ public partial class Bookmarks
         _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
         await LoadTagsAsync();
         await RefreshFolderTreeAsync();
+        StateHasChanged();
         Snackbar.Add("Bookmark created", Severity.Success);
     }
 
@@ -69,6 +71,7 @@ public partial class Bookmarks
         }
 
         await RefreshFolderTreeAsync();
+        StateHasChanged();
         Snackbar.Add("Bookmark updated", Severity.Success);
     }
 
@@ -87,6 +90,7 @@ public partial class Bookmarks
         _items.Remove(item);
         await LoadTagsAsync();
         await RefreshFolderTreeAsync();
+        StateHasChanged();
         ShowUndoSnackbar($"Bookmark \"{item.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(item.Id));
     }
 
@@ -113,6 +117,7 @@ public partial class Bookmarks
         }
 
         await RefreshFolderTreeAsync();
+        StateHasChanged();
         ShowUndoSnackbar($"Folder \"{folder.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(folderId));
     }
 
@@ -142,10 +147,12 @@ public partial class Bookmarks
     
         if (originalParentId.HasValue)
         {
+            StateHasChanged();
             ShowUndoSnackbar($"Bookmark \"{item.Title}\" moved", () => BookmarkService.MoveBookmarkAsync(item.Id, originalParentId.Value));
         }
         else
         {
+            StateHasChanged();
             Snackbar.Add("Bookmark moved", Severity.Success);
         }
     }
@@ -174,10 +181,12 @@ public partial class Bookmarks
     
         if (originalParentId.HasValue)
         {
+            StateHasChanged();
             ShowUndoSnackbar($"Folder \"{folder.Title}\" moved", () => BookmarkService.MoveFolderAsync(folderId, originalParentId.Value));
         }
         else
         {
+            StateHasChanged();
             Snackbar.Add("Folder moved", Severity.Success);
         }
     }
@@ -202,6 +211,7 @@ public partial class Bookmarks
             await LoadTagsAsync();
         }
         await RefreshFolderTreeAsync();
+        StateHasChanged();
         Snackbar.Add("Bookmark created", Severity.Success);
     }
 

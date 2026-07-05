@@ -90,6 +90,7 @@ public partial class Bookmarks
             ToggleSelection(id);
         }
         _lastSelectedId = id;
+        StateHasChanged();
     }
 
     private async Task OnRowClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, BookmarkNodeDto item)
@@ -119,6 +120,7 @@ public partial class Bookmarks
         {
             await OnItemClick(item);
         }
+        StateHasChanged();
     }
 
     private async Task OnItemClick(BookmarkNodeDto item)

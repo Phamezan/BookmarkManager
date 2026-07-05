@@ -13,21 +13,21 @@
 else
 {
     <div class="bookmarks-workspace">
-        <BookmarkSidebar TreeLoading="_treeLoading"
-                         FolderTree="_folderTree"
-                         SelectedFolderId="_selectedFolderId"
-                         @bind-ExpandedItems="_expandedFolderIds"
-                         CreateFolder="CreateFolder"
-                         FolderSelected="OnFolderSelected"
-                         FolderDrop="OnFolderDrop"
-                         FolderDragStart="OnFolderDragStart"
-                         FolderContextMenu="OnFolderContextMenu" />
+        <BookmarkSidebar TreeLoading="@_treeLoading"
+                         FolderTree="@_folderTree"
+                         SelectedFolderId="@_selectedFolderId"
+                         @bind-ExpandedItems="@_expandedFolderIds"
+                         CreateFolder="@CreateFolder"
+                         FolderSelected="@OnFolderSelected"
+                         FolderDrop="@OnFolderDrop"
+                         FolderDragStart="@OnFolderDragStart"
+                         FolderContextMenu="@OnFolderContextMenu" />
 
         <main class="bookmark-zone">
             <div class="bookmark-header">
-                <FavoriteShortcuts Favorites="_favorites"
-                                   SelectedFolderId="_selectedFolderId"
-                                   FavoritesDragOverStyle="FavoritesDragOverStyle"
+                <FavoriteShortcuts Favorites="@_favorites"
+                                   SelectedFolderId="@_selectedFolderId"
+                                   FavoritesDragOverStyle="@FavoritesDragOverStyle"
                                    GetFaviconUrl="GetFaviconUrl"
                                    ToggleFavoriteAsync="ToggleFavorite"
                                    FolderSelected="OnFolderSelected"
@@ -35,13 +35,13 @@ else
                                    FavoritesDragLeave="OnFavoritesDragLeave"
                                    FavoritesDrop="OnFavoritesDrop" />
 
-                <BookmarksToolbar SelectedCount="_selectedBookmarkIds.Count"
+                <BookmarksToolbar SelectedCount="@_selectedBookmarkIds.Count"
                                   IsAllSelected="IsAllSelected()"
-                                  SearchQuery="_searchQuery"
+                                  SearchQuery="@_searchQuery"
                                   SearchChanged="OnSearchChanged"
-                                  TypeFilter="_typeFilter"
+                                  TypeFilter="@_typeFilter"
                                   TypeFilterChanged="@((string value) => _typeFilter = value)"
-                                  SortMode="_sortMode"
+                                  SortMode="@_sortMode"
                                   SortModeChanged="@((string value) => _sortMode = value)"
                                   ToggleSelectAll="ToggleSelectAllButton"
                                   ClearSelection="@(() => _selectedBookmarkIds.Clear())"
@@ -133,12 +133,12 @@ else
                 }
             </div>
 
-            <BookmarkList Loading="_loading"
-                          Items="_items"
-                          PaginatedItems="PaginatedItems"
-                          SearchQuery="_searchQuery"
-                          PageCount="PageCount"
-                          CurrentPage="_currentPage"
+            <BookmarkList Loading="@_loading"
+                          Items="@_items"
+                          PaginatedItems="@PaginatedItems"
+                          SearchQuery="@_searchQuery"
+                          PageCount="@PageCount"
+                          CurrentPage="@_currentPage"
                           PageChanged="OnPageChanged"
                           CreateBookmark="CreateBookmark"
                           IsSelected="IsSelected"

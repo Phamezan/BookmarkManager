@@ -5,8 +5,8 @@
              Items="@_treeItems"
              Hover="true"
              SelectionMode="SelectionMode.SingleSelection"
-             @bind-ExpandedItems="_expandedFolderIds"
-             SelectedValue="_selectedFolderId"
+             @bind-ExpandedItems="@_expandedFolderIds"
+             SelectedValue="@_selectedFolderId"
              SelectedValueChanged="@OnSelectedChanged">
     <ItemTemplate Context="item">
         <MudTreeViewItem T="Guid?"
@@ -20,6 +20,7 @@
                      draggable="true"
                      data-drag-type="folder"
                      data-drag-id="@item.Value"
+                     @onclick="@(() => OnSelectedChanged(item.Value))"
                      @ondragover:prevent
                      @ondrop="@(() => OnDrop(item.Value))"
                      @ondragstart="@(() => OnFolderDragStart(item.Value))"

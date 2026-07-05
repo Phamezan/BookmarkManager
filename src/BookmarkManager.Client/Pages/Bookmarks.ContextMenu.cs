@@ -16,6 +16,7 @@ public partial class Bookmarks
         _contextMenuType = "bookmark";
         _contextMenuBookmark = item;
         _contextMenuFolderId = Guid.Empty;
+        StateHasChanged();
     }
 
     private void OnFolderContextMenu((Microsoft.AspNetCore.Components.Web.MouseEventArgs MouseEvent, Guid FolderId) args)
