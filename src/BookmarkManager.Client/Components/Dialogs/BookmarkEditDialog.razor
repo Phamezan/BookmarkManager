@@ -6,7 +6,7 @@
     </TitleContent>
 
     <DialogContent>
-        <MudForm @ref="_form" @bind-IsValid="_valid">
+        <MudForm @ref="_form">
             <MudTextField @bind-Value="_title" Label="Title" Variant="Variant.Outlined"
                           Required="true" RequiredError="Title is required" Class="mb-4" />
 
@@ -61,7 +61,7 @@
 
     <DialogActions>
         <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="@(!_valid)">Save</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save" Disabled="@(string.IsNullOrWhiteSpace(_title))">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -72,7 +72,6 @@
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
 
     private MudForm _form = default!;
-    private bool _valid;
 
     private string _title = "";
     private string? _url;
@@ -161,7 +160,7 @@
     private async Task Save()
     {
         await _form.ValidateAsync();
-        if (!_valid) return;
+        if (!_form.IsValid) return;
 
         var result = new BookmarkEditResult
         {

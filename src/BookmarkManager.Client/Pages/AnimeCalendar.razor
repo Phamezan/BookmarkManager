@@ -1,0 +1,92 @@
+@page "/anime-calendar"
+@using BookmarkManager.Client.Features.AnimeCalendar
+
+<PageTitle>Anime Calendar</PageTitle>
+
+<div class="bookmarks-workspace">
+    <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
+        <div class="rec-controls-row">
+            @if (_flatFolders.Count == 0)
+            {
+                <span class="rec-subtitle" style="margin-bottom: 0;">No folders yet.</span>
+            }
+            else
+            {
+                <div class="rec-folder-chips">
+                    @foreach (var folder in _flatFolders)
+                    {
+                        var isSelected = _selectedFolderIds.Contains(folder.Id);
+                        <button type="button" class="@($"rec-folder-chip{(isSelected ? " is-checked" : "")}")"
+                                @onclick="@(() => ToggleFolderAsync(folder.Id, !isSelected))">
+                            @folder.Title
+                        </button>
+                    }
+                </div>
+
+                <div class="rec-chip-actions">
+                    @if (_unmatchedBookmarks.Count > 0)
+                    {
+                        <button type="button" class="rec-clear-btn" disabled="@_autoMatching" @onclick="AutoMatchAllAsync">
+                            @if (_autoMatching)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                            }
+                            Match @_unmatchedBookmarks.Count new
+                        </button>
+                    }
+                    <button type="button" class="rec-clear-btn" disabled="@(_selectedFolderIds.Count == 0)" @onclick="ClearFoldersAsync">
+                        Clear all
+                    </button>
+                </div>
+            }
+        </div>
+
+        @if (_selectedFolderIds.Count > 0 && !_loading)
+        {
+            <p class="rec-subtitle" style="margin-bottom: var(--bm-space-4);">
+                @_airingCount airing anime found &middot; @_finishedCount with no upcoming episodes.
+            </p>
+        }
+
+        <div class="rec-divider"></div>
+
+        @if (_selectedFolderIds.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon-wrap" aria-hidden="true">
+                    <MudIcon Icon="@Icons.Material.Filled.FolderSpecial" />
+                </div>
+                <div class="empty-state-copy">
+                    <MudText Typo="Typo.h6" Class="empty-state-title">Choose folders to build your calendar</MudText>
+                    <MudText Typo="Typo.body2" Class="empty-state-sub">Select one or more folders above. Only bookmarks tagged "Anime" are scanned.</MudText>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="anime-cal">
+                <CalendarToolbar Current="_view" CurrentChanged="SetView"
+                                 Eyebrow="@ToolbarEyebrow" Title="@ToolbarTitle"
+                                 OnPrev="GoPrev" OnNext="GoNext" OnToday="GoToday" />
+
+                @if (_loading)
+                {
+                    <MudProgressLinear Indeterminate="true" Class="mb-2" />
+                }
+
+                @switch (_view)
+                {
+                    case AnimeCalendarView.Month:
+                        <MonthView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />
+                        break;
+                    case AnimeCalendarView.Day:
+                        <DayView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />
+                        break;
+                    default:
+                        <WeekView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />
+                        break;
+                }
+            </div>
+        }
+    </main>
+</div>

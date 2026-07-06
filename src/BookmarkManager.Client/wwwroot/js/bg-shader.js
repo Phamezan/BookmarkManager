@@ -20,7 +20,10 @@ window.initBgShader = function() {
     // Shader Uniforms
     const uniforms = {
         u_time: { value: 0.0 },
-        u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+        u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+        u_color1: { value: new THREE.Color('#0C0E17') },
+        u_color2: { value: new THREE.Color('#121524') },
+        u_glowColor: { value: new THREE.Color('#27355c') }
     };
 
     // Handle resize
@@ -42,6 +45,9 @@ window.initBgShader = function() {
             precision highp float;
             uniform float u_time;
             uniform vec2 u_resolution;
+            uniform vec3 u_color1;
+            uniform vec3 u_color2;
+            uniform vec3 u_glowColor;
             varying vec2 v_texCoord;
 
             void main() {
@@ -51,10 +57,10 @@ window.initBgShader = function() {
                 float noise = sin(uv.x * 8.0 + u_time * 0.35) * cos(uv.y * 8.0 - u_time * 0.22);
                 noise += 0.5 * sin(uv.x * 18.0 - u_time * 0.6) * cos(uv.y * 13.0 + u_time * 0.3);
 
-                // Deep near-black base with a subtle indigo undertone
-                vec3 color1 = vec3(0.030, 0.031, 0.043); // base shadow
-                vec3 color2 = vec3(0.055, 0.058, 0.082); // raised
-                vec3 indigo = vec3(0.14, 0.16, 0.30);     // accent tint
+                // Theme-responsive background colors
+                vec3 color1 = u_color1;
+                vec3 color2 = u_color2;
+                vec3 indigo = u_glowColor;
 
                 vec3 finalColor = mix(color1, color2, noise * 0.5 + 0.5);
 
@@ -78,8 +84,28 @@ window.initBgShader = function() {
 
     // Animation loop
     const clock = new THREE.Clock();
+    let lastThemeAttr = '';
+
+    function updateThemeColors() {
+        const themeAttr = document.documentElement.getAttribute('data-theme') || 'default';
+        if (themeAttr !== lastThemeAttr) {
+            lastThemeAttr = themeAttr;
+            const styles = getComputedStyle(document.documentElement);
+            
+            const bg = styles.getPropertyValue('--bm-bg').trim() || '#0C0E17';
+            const bgElevated = styles.getPropertyValue('--bm-bg-elevated').trim() || '#121524';
+            const accent = styles.getPropertyValue('--bm-accent').trim() || '#818CF8';
+            
+            // Set Color values
+            uniforms.u_color1.value.set(bg);
+            uniforms.u_color2.value.set(bgElevated);
+            uniforms.u_glowColor.value.set(accent);
+        }
+    }
+
     function animate() {
         requestAnimationFrame(animate);
+        updateThemeColors();
         uniforms.u_time.value = clock.getElapsedTime();
         renderer.render(scene, camera);
     }

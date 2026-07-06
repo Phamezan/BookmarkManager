@@ -71,6 +71,43 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("AdminAccounts");
                 });
 
+            modelBuilder.Entity("BookmarkManager.Api.Data.AnimeScheduleCache", b =>
+                {
+                    b.Property<int>("AniListId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EpisodesJson")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ResolvedAniListId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ResolvedCoverImageUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ResolvedTitle")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AniListId");
+
+                    b.HasIndex("ExpiresAtUtc");
+
+                    b.ToTable("AnimeScheduleCaches");
+                });
+
             modelBuilder.Entity("BookmarkManager.Api.Data.AppConfig", b =>
                 {
                     b.Property<int>("Id")
@@ -126,6 +163,12 @@ namespace BookmarkManager.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<int?>("AniListId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("AniListMatchedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("BrowserNodeId")
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
@@ -153,6 +196,12 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<bool>("IsProtected")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("LastMatchAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MediaStatus")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Notes")
                         .HasMaxLength(4000)
                         .HasColumnType("TEXT");
@@ -172,6 +221,9 @@ namespace BookmarkManager.Api.Migrations
 
                     b.Property<int?>("Rating")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ScheduleCheckedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Status")
                         .HasMaxLength(100)

@@ -30,6 +30,7 @@ public partial class Bookmarks
         var expanded = new HashSet<Guid>(_expandedFolderIds);
         _folderTree = await BookmarkService.GetFolderTreeAsync();
         _expandedFolderIds.IntersectWith(GetAllFolderIds(_folderTree));
+        BuildFolderCaches();
         StateHasChanged();
     }
 
@@ -66,26 +67,38 @@ public partial class Bookmarks
         return null;
     }
 
+    private readonly Dictionary<Guid, string> _folderNamesCache = [];
+    private readonly Dictionary<Guid, string> _folderPathsCache = [];
+
+    private void BuildFolderCaches()
+    {
+        _folderNamesCache.Clear();
+        _folderPathsCache.Clear();
+        var currentPath = new List<string>();
+        TraverseAndCache(_folderTree, currentPath);
+    }
+
+    private void TraverseAndCache(List<FolderTreeNodeDto> folders, List<string> parentPath)
+    {
+        foreach (var folder in folders)
+        {
+            _folderNamesCache[folder.Id] = folder.Title;
+            var newPath = new List<string>(parentPath) { folder.Title };
+            _folderPathsCache[folder.Id] = string.Join(" / ", newPath);
+            TraverseAndCache(folder.Children, newPath);
+        }
+    }
+
     private string GetParentFolderName(Guid? parentId)
     {
         if (parentId is null) return string.Empty;
-        var folder = FindFolderById(_folderTree, parentId.Value);
-        return folder?.Title ?? string.Empty;
+        return _folderNamesCache.TryGetValue(parentId.Value, out var title) ? title : string.Empty;
     }
 
     private string GetFolderPath(Guid? parentId)
     {
         if (parentId is null) return string.Empty;
-        var path = GetBreadcrumbPath(parentId.Value);
-        if (path.Count == 0) return string.Empty;
-        return string.Join(" / ", path.Select(p => p.Title));
-    }
-
-    private List<FolderTreeNodeDto> GetBreadcrumbPath(Guid targetId)
-    {
-        var path = new List<FolderTreeNodeDto>();
-        FindPath(_folderTree, targetId, path);
-        return path;
+        return _folderPathsCache.TryGetValue(parentId.Value, out var path) ? path : string.Empty;
     }
 
     private bool FindPath(List<FolderTreeNodeDto> folders, Guid targetId, List<FolderTreeNodeDto> path)

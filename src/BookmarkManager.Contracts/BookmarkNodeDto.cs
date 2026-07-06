@@ -18,5 +18,9 @@ public class BookmarkNodeDto
     public DateTime? PurgeAfter { get; set; }
     public string? BrowserNodeId { get; set; }
     public string? ParentBrowserNodeId { get; set; }
+    public int? AniListId { get; set; }
+    public DateTime? AniListMatchedAt { get; set; }
+    public string? MediaStatus { get; set; }
+    public DateTime? LastMatchAttemptAt { get; set; }
     public List<BookmarkNodeDto>? Children { get; set; }
 }

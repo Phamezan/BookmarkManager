@@ -1,6 +1,7 @@
 using BookmarkManager.Client.Components;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
+using Microsoft.JSInterop;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
 
@@ -12,6 +13,7 @@ public partial class Settings
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private IBookmarkManagerApiClient ApiClient { get; set; } = default!;
+    [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
 
     private ExtensionStatusDto? _extensionStatus;
     private bool _statusLoading = true;
@@ -19,6 +21,30 @@ public partial class Settings
     private AiTaggingSettingsDto _aiSettings = new();
     private bool _aiSettingsLoading = true;
     private bool _aiSettingsSaving;
+    private bool _aiKeyTesting;
+    private TestAiKeyResponse? _aiKeyTestResult;
+
+    private class ThemeOption
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public string BgColor { get; set; } = string.Empty;
+        public string BorderColor { get; set; } = string.Empty;
+        public string TextColor { get; set; } = string.Empty;
+        public string AccentColor { get; set; } = string.Empty;
+    }
+
+    private readonly List<ThemeOption> _availableThemes = new()
+    {
+        new ThemeOption { Id = "default", Name = "Premium Dark", Description = "Default indigo & deep obsidian style", BgColor = "#08090D", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#F4F4F6", AccentColor = "#818CF8" },
+        new ThemeOption { Id = "catppuccin-mocha", Name = "Catppuccin Mocha", Description = "Cozy dark pastel cappuccino palette", BgColor = "#1e1e2e", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#cdd6f4", AccentColor = "#cba6f7" },
+        new ThemeOption { Id = "catppuccin-latte", Name = "Catppuccin Latte", Description = "Warm cream light cappuccino style", BgColor = "#eff1f5", BorderColor = "rgba(0,0,0,0.08)", TextColor = "#4c4f69", AccentColor = "#8839ef" },
+        new ThemeOption { Id = "sakura", Name = "Sakura Sunset", Description = "Vibrant dark cherry & pink blossom theme", BgColor = "#1a1016", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#fff3f8", AccentColor = "#ff79c6" },
+        new ThemeOption { Id = "cyberpunk", Name = "Cyberpunk Neon", Description = "Futuristic neon pink and cyan layout", BgColor = "#030008", BorderColor = "rgba(0,255,255,0.15)", TextColor = "#00ffff", AccentColor = "#ff007f" }
+    };
+
+    private string _selectedThemeId = "default";
 
     private string _triageMatchBaseUrl = string.Empty;
     private string _triageActionType = "ManualFolder";
@@ -162,6 +188,36 @@ public partial class Settings
         }
     }
 
+    private async Task TestAiKeyAsync()
+    {
+        _aiKeyTesting = true;
+        _aiKeyTestResult = null;
+        try
+        {
+            // Test the values currently in the form (not the saved ones) so a bad key is
+            // caught before the user commits it.
+            var request = new TestAiKeyRequest
+            {
+                BaseUrl = _aiSettings.BaseUrl,
+                Model = _aiSettings.Model,
+                ApiKey = _aiSettings.ApiKey
+            };
+            _aiKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
+            Snackbar.Add(
+                _aiKeyTestResult.Success ? "AI key test passed." : "AI key test failed.",
+                _aiKeyTestResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _aiKeyTestResult = new TestAiKeyResponse { Success = false, Message = ex.Message };
+            Snackbar.Add($"Failed to run key test: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _aiKeyTesting = false;
+        }
+    }
+
     private async Task SaveAiTaggingSettingsAsync()
     {
         _aiSettingsSaving = true;
@@ -180,6 +236,37 @@ public partial class Settings
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var currentTheme = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "selected-theme");
+                if (!string.IsNullOrEmpty(currentTheme) && _availableThemes.Any(t => t.Id == currentTheme))
+                {
+                    _selectedThemeId = currentTheme;
+                    StateHasChanged();
+                }
+            }
+            catch
+            {
+                // Ignore failure
+            }
+        }
+    }
 
-
+    private async Task SelectThemeAsync(string themeId)
+    {
+        _selectedThemeId = themeId;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("applyTheme", themeId);
+            Snackbar.Add($"Theme switched to {_availableThemes.First(t => t.Id == themeId).Name}.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to apply theme: {ex.Message}", Severity.Error);
+        }
+    }
 }

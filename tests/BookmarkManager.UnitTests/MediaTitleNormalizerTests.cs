@@ -19,6 +19,30 @@ public sealed class MediaTitleNormalizerTests
     }
 
     [Theory]
+    // Streaming-site slugs carry the clean series title even when the page <title> is junk;
+    // the trailing site id/hash is stripped, real numeric title tokens are kept.
+    [InlineData("https://zorox.to/watch/mob-psycho-100-iii-yqqv0/ep-1", "mob psycho 100 iii")]
+    [InlineData("https://9animetv.to/watch/pluto-15516?ep=108996", "pluto")]
+    [InlineData("https://9animetv.to/watch/witch-hat-atelier-20578?ep=169840", "witch hat atelier")]
+    [InlineData("https://aniwatchtv.to/watch/eighty-six-2nd-season-17760?ep=88228", "eighty six 2nd season")]
+    [InlineData("https://www4.gogoanime.pro/anime/noblesse-540q/ep-3", "noblesse")]
+    [InlineData("https://zorox.to/watch/fruits-basket-2019-kn86/ep-1", "fruits basket 2019")]
+    public void TryTitleFromStreamingUrl_ExtractsCleanTitle(string url, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.TryTitleFromStreamingUrl(url));
+    }
+
+    [Theory]
+    // Non-streaming hosts must not be slug-mined - their paths are not canonical titles.
+    [InlineData("https://asurascans.com/solo-leveling-chapter-12")]
+    [InlineData("https://example.com/some/random/page")]
+    [InlineData("not-a-url")]
+    public void TryTitleFromStreamingUrl_ReturnsNullForNonStreamingHosts(string url)
+    {
+        Assert.Null(MediaTitleNormalizer.TryTitleFromStreamingUrl(url));
+    }
+
+    [Theory]
     [InlineData("Re:Zero")]
     [InlineData("Sword Art Online: Alicization")]
     [InlineData("Fate/stay night: Unlimited Blade Works")]

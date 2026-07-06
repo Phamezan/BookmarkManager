@@ -1,0 +1,49 @@
+@* Shared header for all four views: eyebrow + title + view switch + prev/next/today.
+   Matches the toolbar in designs 2a/2b/2c, plus an Agenda button for 1d. *@
+
+<div class="acal-toolbar">
+    <div>
+        <div class="acal-eyebrow">@Eyebrow</div>
+        <h2 class="acal-title">@Title</h2>
+    </div>
+    <div class="acal-toolbar-actions">
+        <button type="button" class="acal-nav-btn" title="Previous" @onclick="OnPrev">&lsaquo;</button>
+        @foreach (var view in Views)
+        {
+            var isActive = view == Current;
+            <button type="button" class="acal-view-btn@(isActive ? " is-active" : "")"
+                    @onclick="() => SelectAsync(view)">
+                @Label(view)
+            </button>
+        }
+        <button type="button" class="acal-nav-btn" title="Next" @onclick="OnNext">&rsaquo;</button>
+        <button type="button" class="acal-today-btn" @onclick="OnToday">Today</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public AnimeCalendarView Current { get; set; }
+    [Parameter] public EventCallback<AnimeCalendarView> CurrentChanged { get; set; }
+    [Parameter] public string Eyebrow { get; set; } = "Calendar";
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnPrev { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+    [Parameter] public EventCallback OnToday { get; set; }
+
+    private static readonly AnimeCalendarView[] Views =
+    [
+        AnimeCalendarView.Month,
+        AnimeCalendarView.Week,
+        AnimeCalendarView.Day
+    ];
+
+    private static string Label(AnimeCalendarView view) => view switch
+    {
+        AnimeCalendarView.Month => "Month",
+        AnimeCalendarView.Week => "Week",
+        AnimeCalendarView.Day => "Day",
+        _ => view.ToString()
+    };
+
+    private Task SelectAsync(AnimeCalendarView view) => CurrentChanged.InvokeAsync(view);
+}

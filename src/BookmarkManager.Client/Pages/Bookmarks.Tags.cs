@@ -8,54 +8,98 @@ namespace BookmarkManager.Client.Pages;
 
 public partial class Bookmarks
 {
-    private async Task LoadTagsAsync()
+    private Task LoadTagsAsync()
     {
-        if (!ShouldShowTagBar)
+        RecalculateAvailableTags();
+        return Task.CompletedTask;
+    }
+
+    private void RecalculateAvailableTags()
+    {
+        if (!ShouldShowTagBar || _items == null)
         {
             _availableTags = [];
             return;
         }
 
-        try
+        var query = _items.Where(i => i.Type == NodeType.Bookmark);
+
+        if (_typeFilter == "Favorites")
         {
-            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            query = query.Where(i => i.Metadata?.IsFavorite == true);
+        }
+
+        if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            query = query.Where(i =>
+                (i.Title != null && i.Title.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                (i.Url != null && i.Url.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)) ||
+                (i.Metadata?.Tags != null && i.Metadata.Tags.Any(t => t.Contains(_searchQuery, StringComparison.OrdinalIgnoreCase)))
+            );
+        }
+
+        if (_activeTagFilters.Count > 0)
+        {
+            query = query.Where(i =>
+                i.Metadata != null && _activeTagFilters.All(f =>
+                    (i.Metadata.Tags != null && i.Metadata.Tags.Contains(f, StringComparer.OrdinalIgnoreCase)) ||
+                    (i.Metadata.Category != null && i.Metadata.Category.Equals(f, StringComparison.OrdinalIgnoreCase))
+                )
+            );
+        }
+
+        var matching = query.ToList();
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in matching)
+        {
+            if (item.Metadata?.Category != null)
             {
-                _availableTags = _items
-                    .Where(item => item.Metadata?.Tags != null)
-                    .SelectMany(item => item.Metadata!.Tags)
-                    .GroupBy(tag => tag, StringComparer.OrdinalIgnoreCase)
-                    .Select(group => new TagCountDto { Tag = group.Key, Count = group.Count() })
-                    .OrderByDescending(t => t.Count)
-                    .ThenBy(t => t.Tag)
-                    .ToList();
+                var cat = item.Metadata.Category;
+                counts[cat] = counts.TryGetValue(cat, out var c) ? c + 1 : 1;
             }
-            else
+
+            if (item.Metadata?.Tags != null)
             {
-                _availableTags = await BookmarkService.GetTagsAsync(_selectedFolderId);
+                foreach (var tag in item.Metadata.Tags)
+                {
+                    counts[tag] = counts.TryGetValue(tag, out var c) ? c + 1 : 1;
+                }
             }
         }
-        catch
-        {
-            _availableTags = [];
-        }
+
+        _availableTags = counts
+            .Select(kvp => new TagCountDto { Tag = kvp.Key, Count = kvp.Value })
+            .OrderByDescending(t => t.Count)
+            .ThenBy(t => t.Tag)
+            .ToList();
     }
 
     private bool IsTopLevelFolder(Guid folderId) => _folderTree.Any(folder => folder.Id == folderId);
 
+    private static readonly HashSet<string> _exclusiveFormatTags = new(StringComparer.OrdinalIgnoreCase)
+        { "Manga", "Manhwa", "Manhua" };
+
     private void ToggleTagFilter(string tag)
     {
-        if (!_activeTagFilters.Remove(tag))
+        if (_activeTagFilters.Contains(tag))
+        {
+            _activeTagFilters.Remove(tag);
+        }
+        else
+        {
+            if (_exclusiveFormatTags.Contains(tag))
+            {
+                foreach (var t in _exclusiveFormatTags)
+                    _activeTagFilters.Remove(t);
+            }
             _activeTagFilters.Add(tag);
-        _currentPage = 1;
+        }
     }
 
     private void ClearTagFilters()
     {
-        if (_activeTagFilters.Count > 0)
-        {
-            _activeTagFilters.Clear();
-            _currentPage = 1;
-        }
+        _activeTagFilters.Clear();
     }
 
     private async Task OpenAutoTaggerDialog()

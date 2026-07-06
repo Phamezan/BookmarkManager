@@ -110,7 +110,13 @@ public sealed class BookmarkTagsVisibilityTests
         public Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default) => Task.FromResult(new AiAutoTagSummaryDto());
         public Task<AiTaggingSettingsDto> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new AiTaggingSettingsDto());
         public Task<AiTaggingSettingsDto> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default) => Task.FromResult(settings);
+        public Task<TestAiKeyResponse> TestAiTaggingKeyAsync(TestAiKeyRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new TestAiKeyResponse { Success = true, Message = "fake" });
         public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<Guid, int>());
         public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult(new List<AnimeMatchCandidateDto>());
+        public Task<BookmarkNodeDto?> ConfirmAnimeMatchAsync(Guid bookmarkId, AnimeMatchCandidateDto candidate, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
+        public Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
+        public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default) => Task.FromResult(new AnimeCalendarScheduleResponse());
+        public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, CancellationToken cancellationToken = default) => Task.FromResult(new AutoMatchAnimeResponse());
     }
 }

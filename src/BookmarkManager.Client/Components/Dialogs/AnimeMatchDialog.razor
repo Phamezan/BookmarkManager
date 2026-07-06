@@ -1,0 +1,71 @@
+@namespace BookmarkManager.Client.Components
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Match "@BookmarkTitle"</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" Class="my-4" />
+        }
+        else if (_candidates.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">No AniList matches found for this title.</MudText>
+        }
+        else
+        {
+            <MudList T="string" Clickable="true">
+                @foreach (var candidate in _candidates)
+                {
+                    <MudListItem T="string" OnClick="@(() => Confirm(candidate))">
+                        <div class="d-flex align-center gap-3">
+                            @if (!string.IsNullOrEmpty(candidate.CoverImageUrl))
+                            {
+                                <img src="@candidate.CoverImageUrl" alt="" style="width:40px;height:56px;object-fit:cover;border-radius:4px;" />
+                            }
+                            <div>
+                                <MudText Typo="Typo.body1">@candidate.RomajiTitle</MudText>
+                                @if (!string.IsNullOrEmpty(candidate.EnglishTitle) && candidate.EnglishTitle != candidate.RomajiTitle)
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@candidate.EnglishTitle</MudText>
+                                }
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@candidate.Status &middot; @candidate.Source</MudText>
+                            </div>
+                        </div>
+                    </MudListItem>
+                }
+            </MudList>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Skip">Skip</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+    [Parameter] public Guid BookmarkId { get; set; }
+    [Parameter] public string BookmarkTitle { get; set; } = "";
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private bool _loading = true;
+    private List<AnimeMatchCandidateDto> _candidates = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        _candidates = await BookmarkService.GetAnimeMatchCandidatesAsync(BookmarkId);
+        _loading = false;
+    }
+
+    private async Task Confirm(AnimeMatchCandidateDto candidate)
+    {
+        await BookmarkService.ConfirmAnimeMatchAsync(BookmarkId, candidate);
+        MudDialog.Close(DialogResult.Ok(true));
+    }
+
+    private void Skip() => MudDialog.Cancel();
+}

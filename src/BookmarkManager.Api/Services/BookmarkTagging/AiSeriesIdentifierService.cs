@@ -6,20 +6,20 @@ using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
-internal sealed record AiSeriesIdentifyPayload(
+public sealed record AiSeriesIdentifyPayload(
     Guid Id,
     string Title,
     string? UrlHost,
     string? FolderPath,
     BookmarkTagDomainDto DomainHint);
 
-internal sealed record AiSeriesIdentifyCandidate(
+public sealed record AiSeriesIdentifyCandidate(
     Guid Id,
     string Title,
     string? Url,
     string? FolderPath);
 
-internal enum AiSeriesSourceHint
+public enum AiSeriesSourceHint
 {
     Anime,
     Manga,
@@ -29,20 +29,20 @@ internal enum AiSeriesSourceHint
     Unknown
 }
 
-internal sealed record AiSeriesIdentification(
+public sealed record AiSeriesIdentification(
     Guid Id,
     string CanonicalTitle,
     double Confidence,
     AiSeriesSourceHint SourceHint);
 
-internal sealed record AiSeriesIdentificationSummary(
+public sealed record AiSeriesIdentificationSummary(
     IReadOnlyList<AiSeriesIdentification> Items,
     int FailedChunks,
     IReadOnlyList<string> Messages,
     bool IsRateLimited = false,
     TimeSpan? RetryAfter = null);
 
-internal sealed class AiSeriesIdentifierService
+public sealed class AiSeriesIdentifierService
 {
     private const int MaxPayloadsPerRequest = 50;
     private const int MaxInvalidResponseAttempts = 2;
@@ -366,6 +366,10 @@ internal sealed class AiSeriesIdentifierService
             var json = await directResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             return new AiProviderResponse(json);
         }
+
+        // The Settings "Test key" flow only runs against the DI-registered OpenRouter client.
+        public Task<TestAiKeyResponse> TestConnectionAsync(TestAiKeyRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(new TestAiKeyResponse { Success = false, Message = "Key testing is not supported for this provider." });
     }
 
     private sealed class GeminiSeriesIdentificationClient : IAiSeriesIdentificationClient
@@ -409,6 +413,10 @@ internal sealed class AiSeriesIdentifierService
 
             return new AiProviderResponse(text);
         }
+
+        // The Settings "Test key" flow only runs against the DI-registered OpenRouter client.
+        public Task<TestAiKeyResponse> TestConnectionAsync(TestAiKeyRequest request, CancellationToken cancellationToken)
+            => Task.FromResult(new TestAiKeyResponse { Success = false, Message = "Key testing is not supported for this provider." });
     }
 
     private sealed record GeminiGenerateContentRequest(

@@ -9,29 +9,8 @@ namespace BookmarkManager.Api.Controllers;
 
 public partial class BookmarksController
 {
-    private async Task<List<Guid>> GetDescendantFolderIdsAsync(Guid parentId, CancellationToken ct)
-    {
-    var result = new List<Guid>();
-    var queue = new Queue<Guid>();
-    queue.Enqueue(parentId);
-
-    while (queue.Count > 0)
-    {
-        var currentId = queue.Dequeue();
-        var children = await _db.BookmarkNodes
-            .Where(n => n.ParentId == currentId && n.Type == NodeType.Folder && !n.IsDeleted)
-            .Select(n => n.Id)
-            .ToListAsync(ct);
-
-        foreach (var child in children)
-        {
-            result.Add(child);
-            queue.Enqueue(child);
-        }
-    }
-
-    return result;
-    }
+    private Task<List<Guid>> GetDescendantFolderIdsAsync(Guid parentId, CancellationToken ct)
+        => FolderHierarchy.GetDescendantFolderIdsAsync(_db, parentId, ct);
 
 
 

@@ -56,17 +56,17 @@
     private HashSet<Guid> _expandedFolderIds = [];
     private List<TreeItemData<Guid?>> _treeItems = [];
     private Guid? _selectedFolderId;
-
-    protected override void OnInitialized()
-    {
-        _expandedFolderIds = ExpandedItems;
-    }
+    private List<FolderTreeNodeDto>? _lastFolders;
 
     protected override void OnParametersSet()
     {
         _selectedFolderId = SelectedFolderId;
         _expandedFolderIds = ExpandedItems;
-        _treeItems = Folders.Select(ToTreeItemData).Select(x => (TreeItemData<Guid?>)x).ToList();
+        if (Folders != _lastFolders)
+        {
+            _lastFolders = Folders;
+            _treeItems = Folders.Select(ToTreeItemData).Select(x => (TreeItemData<Guid?>)x).ToList();
+        }
     }
 
     private void OnSelectedChanged(Guid? id)

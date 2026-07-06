@@ -79,6 +79,46 @@ public static partial class MediaTitleNormalizer
     public static string CleanTitle(string title, string? url = null, BookmarkTagDomain domain = BookmarkTagDomain.General)
         => Normalize(title, url, domain).Candidates.FirstOrDefault()?.Query ?? string.Empty;
 
+    // Streaming sites encode the canonical series title in the URL path as a slug
+    // ("/watch/mob-psycho-100-iii-yqqv0", "/anime/noblesse-540q") - a far cleaner query
+    // source than the noisy, boilerplate-laden page <title>. When the host is a known
+    // streaming site, prefer the de-slugged path over title-based cleaning.
+    private static readonly string[] StreamingHostStems =
+    {
+        "9anime", "zoro", "aniwatch", "hianime", "gogoanime", "gogoanimes", "miruro",
+        "kickassanime", "allanime", "animepahe", "aniwave", "animesuge", "aniwatchtv"
+    };
+
+    public static string? TryTitleFromStreamingUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+
+        var host = uri.Host.ToLowerInvariant();
+        if (!StreamingHostStems.Any(stem => host.Contains(stem, StringComparison.Ordinal)))
+            return null;
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        // The slug is the segment right after the "watch"/"anime" marker; fall back to the
+        // longest hyphenated segment when the marker layout differs between sites.
+        var markerIndex = Array.FindIndex(segments, s =>
+            s.Equals("watch", StringComparison.OrdinalIgnoreCase) || s.Equals("anime", StringComparison.OrdinalIgnoreCase));
+        var slug = markerIndex >= 0 && markerIndex + 1 < segments.Length
+            ? segments[markerIndex + 1]
+            : segments.Where(s => s.Contains('-')).OrderByDescending(s => s.Length).FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(slug))
+            return null;
+
+        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries).ToList();
+        // Drop a trailing site id/hash ("15516", "yqqv0", "540q") but keep meaningful
+        // numeric tokens that are part of the title (e.g. "fruits-basket-2019").
+        if (tokens.Count > 1 && SlugIdTokenRegex().IsMatch(tokens[^1]))
+            tokens.RemoveAt(tokens.Count - 1);
+
+        var query = string.Join(' ', tokens).Trim();
+        return query.Length >= 2 ? query : null;
+    }
+
     public static IReadOnlyList<MediaTitleCandidate> GetProviderCandidates(MediaTagLookupContext context)
         => context.NormalizedTitle.Candidates.Take(MaxProviderCandidates).ToList();
 
@@ -380,6 +420,12 @@ public static partial class MediaTitleNormalizer
 
     [GeneratedRegex(@"\b(?:com|org|net|me|info|xyz|to|tv|co|ru)\b")]
     private static partial Regex DomainSuffixRegex();
+
+    // A trailing slug id/hash: pure digits ("15516") or a short mixed alphanumeric token
+    // that has both a letter and a digit ("yqqv0", "540q", "kn86"). Pure-letter tokens
+    // (real title words like "atelier") are intentionally excluded.
+    [GeneratedRegex(@"(?i)^(?:\d+|(?=[a-z0-9]{3,7}$)(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+)$")]
+    private static partial Regex SlugIdTokenRegex();
 
     [GeneratedRegex(@"[\u0027\u2019\u2018`'""]")]
     private static partial Regex ApostropheRegex();

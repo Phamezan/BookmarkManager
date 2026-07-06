@@ -43,87 +43,110 @@ public partial class Bookmarks : IDisposable
     private string _typeFilter
     {
         get => _typeFilterBacking;
-        set
-        {
-            if (_typeFilterBacking != value)
-            {
-                _typeFilterBacking = value;
-                _currentPage = 1;
-            }
-        }
+        set => _typeFilterBacking = value;
     }
 
     private HashSet<string> _activeTagFilters = [];
     private List<TagCountDto> _availableTags = [];
     private bool _retagBusy;
     private bool ShouldShowTagBar => (_selectedFolderId.HasValue && !IsTopLevelFolder(_selectedFolderId.Value)) || !string.IsNullOrWhiteSpace(_searchQuery);
+    private bool _tagsCollapsed = true;
+    private readonly HashSet<string> _expandedCategories = [];
 
-    private string _sortModeBacking = "TitleAsc";
+    private void ToggleCollapse() => _tagsCollapsed = !_tagsCollapsed;
+    private void ToggleCategoryExpand(string category)
+    {
+        if (!_expandedCategories.Remove(category))
+            _expandedCategories.Add(category);
+    }
+
+    private string _sortModeBacking = "UpdatedDesc";
     private string _sortMode
     {
         get => _sortModeBacking;
-        set
-        {
-            if (_sortModeBacking != value)
-            {
-                _sortModeBacking = value;
-                _currentPage = 1;
-            }
-        }
+        set => _sortModeBacking = value;
     }
 
-    private int _currentPage = 1;
-    private const int PageSize = 50;
+    private List<BookmarkNodeDto>? _cachedVisibleItems;
+    private List<BookmarkNodeDto>? _lastVisibleSourceItems;
+    private int _lastVisibleSourceItemsCount;
+    private string? _lastVisibleTypeFilter;
+    private string? _lastVisibleSortMode;
+    private int _lastVisibleActiveTagFiltersCount;
+    private readonly HashSet<string> _lastVisibleActiveTagFilters = [];
 
-    protected List<BookmarkNodeDto> FilteredItems
+    protected List<BookmarkNodeDto> VisibleItems
     {
         get
         {
-            var items = _items.AsEnumerable();
-            if (_typeFilter == "Folders")
+            bool isDirty = _cachedVisibleItems == null 
+                           || _items != _lastVisibleSourceItems 
+                           || _items.Count != _lastVisibleSourceItemsCount
+                           || _typeFilter != _lastVisibleTypeFilter 
+                           || _sortMode != _lastVisibleSortMode
+                           || _activeTagFilters.Count != _lastVisibleActiveTagFiltersCount
+                           || !_activeTagFilters.SetEquals(_lastVisibleActiveTagFilters);
+
+            if (isDirty)
             {
-                items = items.Where(i => i.Type == NodeType.Folder);
-            }
-            else if (_typeFilter == "Bookmarks")
-            {
-                items = items.Where(i => i.Type == NodeType.Bookmark);
-            }
-            else if (_typeFilter == "Favorites")
-            {
-                items = items.Where(i => i.Metadata?.IsFavorite == true);
+                var items = _items.AsEnumerable();
+                if (_typeFilter == "Folders")
+                {
+                    items = items.Where(i => i.Type == NodeType.Folder);
+                }
+                else if (_typeFilter == "Bookmarks")
+                {
+                    items = items.Where(i => i.Type == NodeType.Bookmark);
+                }
+                else if (_typeFilter == "Favorites")
+                {
+                    items = items.Where(i => i.Metadata?.IsFavorite == true);
+                }
+
+                if (_activeTagFilters.Count > 0)
+                {
+                    items = items.Where(i =>
+                        i.Metadata != null && _activeTagFilters.All(f =>
+                            (i.Metadata.Tags != null && i.Metadata.Tags.Contains(f, StringComparer.OrdinalIgnoreCase)) ||
+                            (i.Metadata.Category != null && i.Metadata.Category.Equals(f, StringComparison.OrdinalIgnoreCase))
+                        )
+                    );
+                }
+
+                var sorted = _sortMode switch
+                {
+                    "TitleDesc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
+                                       .ThenByDescending(item => item.Title),
+                    "UpdatedAsc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
+                                        .ThenBy(item => item.UpdatedAt),
+                    "UpdatedDesc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
+                                         .ThenByDescending(item => item.UpdatedAt),
+                    _ => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
+                              .ThenBy(item => item.Title)
+                };
+
+                _cachedVisibleItems = sorted.ToList();
+                RecalculateAvailableTags(); // Recalculate dynamic tag counts
+
+                _lastVisibleSourceItems = _items;
+                _lastVisibleSourceItemsCount = _items.Count;
+                _lastVisibleTypeFilter = _typeFilter;
+                _lastVisibleSortMode = _sortMode;
+                _lastVisibleActiveTagFiltersCount = _activeTagFilters.Count;
+                
+                _lastVisibleActiveTagFilters.Clear();
+                foreach (var tag in _activeTagFilters)
+                {
+                    _lastVisibleActiveTagFilters.Add(tag);
+                }
             }
 
-            if (_activeTagFilters.Count > 0)
-            {
-                items = items.Where(i =>
-                    i.Metadata?.Tags != null
-                    && _activeTagFilters.All(f =>
-                        i.Metadata.Tags.Contains(f, StringComparer.OrdinalIgnoreCase)));
-            }
-
-            return items.ToList();
+            return _cachedVisibleItems!;
         }
-    }
-
-    protected List<BookmarkNodeDto> VisibleItems => _sortMode switch
-    {
-        "TitleDesc" => FilteredItems.OrderByDescending(item => item.Title).ToList(),
-        "UpdatedAsc" => FilteredItems.OrderBy(item => item.UpdatedAt).ToList(),
-        "UpdatedDesc" => FilteredItems.OrderByDescending(item => item.UpdatedAt).ToList(),
-        _ => FilteredItems.OrderBy(item => item.Title).ToList()
-    };
-
-    protected List<BookmarkNodeDto> PaginatedItems => VisibleItems.Skip((_currentPage - 1) * PageSize).Take(PageSize).ToList();
-    protected int PageCount => (int)Math.Ceiling((double)VisibleItems.Count / PageSize);
-
-    private void OnPageChanged(int page)
-    {
-        _currentPage = page;
     }
 
     private async Task OnFolderSelected(Guid folderId)
     {
-        _currentPage = 1;
         _debounceCts?.Cancel();
         _selectedFolderId = folderId;
         _preSearchFolderId = folderId;
@@ -149,7 +172,6 @@ public partial class Bookmarks : IDisposable
     {
         var oldQuery = _searchQuery;
         _searchQuery = value ?? "";
-        _currentPage = 1;
         _loading = true;
 
         if (string.IsNullOrWhiteSpace(oldQuery) && !string.IsNullOrWhiteSpace(_searchQuery) && _selectedFolderId.HasValue)

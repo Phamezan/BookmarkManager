@@ -25,24 +25,10 @@ else
 
         <main class="bookmark-zone">
             <div class="bookmark-header">
-                <FavoriteShortcuts Favorites="@_favorites"
-                                   SelectedFolderId="@_selectedFolderId"
-                                   FavoritesDragOverStyle="@FavoritesDragOverStyle"
-                                   GetFaviconUrl="GetFaviconUrl"
-                                   ToggleFavoriteAsync="ToggleFavorite"
-                                   FolderSelected="OnFolderSelected"
-                                   FavoritesDragOver="OnFavoritesDragOver"
-                                   FavoritesDragLeave="OnFavoritesDragLeave"
-                                   FavoritesDrop="OnFavoritesDrop" />
-
                 <BookmarksToolbar SelectedCount="@_selectedBookmarkIds.Count"
                                   IsAllSelected="IsAllSelected()"
                                   SearchQuery="@_searchQuery"
                                   SearchChanged="OnSearchChanged"
-                                  TypeFilter="@_typeFilter"
-                                  TypeFilterChanged="@((string value) => _typeFilter = value)"
-                                  SortMode="@_sortMode"
-                                  SortModeChanged="@((string value) => _sortMode = value)"
                                   ToggleSelectAll="ToggleSelectAllButton"
                                   ClearSelection="@(() => _selectedBookmarkIds.Clear())"
                                   MoveSelected="MoveSelected"
@@ -52,44 +38,86 @@ else
 
                 @if (ShouldShowTagBar)
                 {
-                    <MudPaper Elevation="0" Class="tag-bar" Style="flex-wrap: wrap; height: auto; padding: 12px; gap: 12px;">
-                        @if (_availableTags.Count > 0 || _retagBusy)
-                        {
-                            <div class="tag-categories-container" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                                @foreach (var group in GroupTags(_availableTags))
-                                {
-                                    <div class="tag-category-row" style="display: flex; align-items: center; flex-wrap: wrap; gap: 6px;">
-                                        <span class="tag-bar-label" style="font-weight: 600; min-width: 70px; color: var(--bm-text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">@group.CategoryName:</span>
-                                        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
-                                            @foreach (var tag in group.Tags)
-                                            {
-                                                var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
-                                                <MudChip T="string" Variant="@(active ? Variant.Filled : Variant.Outlined)"
-                                                         Color="@GetCategoryColor(group.CategoryName)" Size="Size.Small"
-                                                         OnClick="@(() => ToggleTagFilter(tag.Tag))" Style="cursor:pointer; margin: 0;">
-                                                    @tag.Tag <span class="tag-count" style="opacity: 0.6; font-size: 0.75rem; margin-left: 3px;">@tag.Count</span>
-                                                </MudChip>
-                                            }
-                                        </div>
-                                    </div>
-                                }
+                    <div class="tag-filter-workspace">
+                        <div class="active-filters-row">
+                            <div class="active-filters-left">
+                                <span class="filter-label">FILTERS</span>
+                                <div class="active-chips-container">
+                                    @foreach (var tag in _activeTagFilters)
+                                    {
+                                        <button class="active-chip" @onclick="@(() => ToggleTagFilter(tag))" type="button">
+                                            @tag
+                                            <span class="active-chip-close">×</span>
+                                        </button>
+                                    }
+                                    @if (_activeTagFilters.Count == 0)
+                                    {
+                                        <span class="no-filters-placeholder">Select tags below to filter</span>
+                                    }
+                                </div>
+                            </div>
+                            <div class="tag-bar-actions">
                                 @if (_activeTagFilters.Count > 0)
                                 {
-                                    <div style="margin-top: 4px;">
-                                        <MudChip T="string" Variant="Variant.Text" Size="Size.Small" OnClick="ClearTagFilters"
-                                                 Style="cursor:pointer; margin: 0;">Clear Active Filters</MudChip>
-                                    </div>
+                                    <button class="clear-all-filters-btn" @onclick="ClearTagFilters" type="button">
+                                        Clear All
+                                    </button>
                                 }
+                                <button class="collapse-toggle-btn" @onclick="ToggleCollapse" type="button">
+                                    @(_tagsCollapsed ? "Expand ▼" : "Collapse ▲")
+                                </button>
                             </div>
-                        }
-                        else if (!_loading)
+                        </div>
+
+                        @if (!_tagsCollapsed)
                         {
-                            <div class="tag-categories-container" style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
-                                <span class="mud-text-secondary" style="font-size: 0.875rem; padding-left: 8px;">No tags found. Run auto tagger to automatically scan and tag your bookmarks.</span>
-                            </div>
+                            @if (_availableTags.Count > 0 || _retagBusy)
+                            {
+                                <div class="tag-categories-grid">
+                                    @foreach (var group in GroupTags(_availableTags))
+                                    {
+                                        <div class="category-row">
+                                            <span class="category-label">@group.CategoryName</span>
+                                            <div class="category-tags-container">
+                                                @{
+                                                    var isExpanded = _expandedCategories.Contains(group.CategoryName);
+                                                    var visibleTags = isExpanded ? group.Tags : group.Tags.Take(6).ToList();
+                                                    var hiddenCount = group.Tags.Count - visibleTags.Count;
+                                                }
+                                                @foreach (var tag in visibleTags)
+                                                {
+                                                    var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
+                                                    <button class="category-tag-btn @(active ? "active" : "")" 
+                                                            @onclick="@(() => ToggleTagFilter(tag.Tag))" type="button">
+                                                        @tag.Tag <span class="tag-btn-count">@tag.Count</span>
+                                                    </button>
+                                                }
+                                                @if (hiddenCount > 0)
+                                                {
+                                                    <button class="expand-more-link" @onclick="@(() => ToggleCategoryExpand(group.CategoryName))" type="button">
+                                                        +@hiddenCount more
+                                                    </button>
+                                                }
+                                                else if (isExpanded && group.Tags.Count > 6)
+                                                {
+                                                    <button class="expand-more-link" @onclick="@(() => ToggleCategoryExpand(group.CategoryName))" type="button">
+                                                        show less
+                                                    </button>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            else if (!_loading)
+                            {
+                                <div style="padding: 12px 8px; color: var(--bm-text-secondary); font-size: 0.875rem;">
+                                    No tags found. Run auto tagger to automatically scan and tag your bookmarks.
+                                </div>
+                            }
                         }
 
-                        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 8px; border-top: 1px solid rgba(148, 163, 184, 0.1); padding-top: 8px;">
+                        <div class="tag-footer-row">
                             <div style="display: flex; align-items: center;">
                                 @{
                                     var breadcrumbs = GetBreadcrumbs();
@@ -129,17 +157,13 @@ else
                                 Auto Tag
                             </MudButton>
                         </div>
-                    </MudPaper>
+                    </div>
                 }
             </div>
 
             <BookmarkList Loading="@_loading"
-                          Items="@_items"
-                          PaginatedItems="@PaginatedItems"
+                          Items="@VisibleItems"
                           SearchQuery="@_searchQuery"
-                          PageCount="@PageCount"
-                          CurrentPage="@_currentPage"
-                          PageChanged="OnPageChanged"
                           CreateBookmark="CreateBookmark"
                           IsSelected="IsSelected"
                           GetFaviconUrl="GetFaviconUrl"

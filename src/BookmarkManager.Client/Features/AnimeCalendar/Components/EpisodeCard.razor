@@ -1,0 +1,36 @@
+@* Shared episode card used by the Agenda, Day and Week timelines. Cover + title
+   + episode/time line + optional source links. Clicking raises OnClick. *@
+
+<div class="acal-ep-card@(Emphasized ? " is-emphasized" : "")" @onclick="HandleClick">
+    <CoverPoster CoverImageUrl="@Item.CoverImageUrl" Title="@Item.Title"
+                 Width="@CoverWidth" Height="@CoverHeight" />
+    <div class="acal-ep-body">
+        <div class="acal-ep-title">@Item.Title</div>
+        <div class="acal-ep-meta">@MetaLine</div>
+        @if (ShowSourceLinks)
+        {
+            <div class="acal-ep-source">AniList · MyAnimeList</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public AnimeCalendarItem Item { get; set; } = default!;
+    [Parameter] public EventCallback<AnimeCalendarItem> OnClick { get; set; }
+
+    /// <summary>Amber-accented "today" styling (design 1d/2c).</summary>
+    [Parameter] public bool Emphasized { get; set; }
+
+    /// <summary>Show the "Episode N of ?" long form + source links (Day view).</summary>
+    [Parameter] public bool Detailed { get; set; }
+    [Parameter] public bool ShowSourceLinks { get; set; }
+
+    [Parameter] public string CoverWidth { get; set; } = "36px";
+    [Parameter] public string CoverHeight { get; set; } = "48px";
+
+    private string MetaLine => Detailed
+        ? $"Episode {Item.EpisodeNumber} of ?"
+        : $"Ep {Item.EpisodeNumber} · {Item.AiringAtLocal:h:mm tt}";
+
+    private Task HandleClick() => OnClick.InvokeAsync(Item);
+}

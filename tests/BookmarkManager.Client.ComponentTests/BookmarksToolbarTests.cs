@@ -31,24 +31,5 @@ public sealed class BookmarksToolbarTests
         Assert.Equal(query, inputElement.GetAttribute("value"));
     }
 
-    [Fact]
-    public async Task BookmarksToolbar_TypeFilterBinding_RendersValue()
-    {
-        await using var context = new BunitContext();
-        context.JSInterop.Mode = JSRuntimeMode.Loose;
-        context.Services.AddMudServices();
 
-        var typeFilter = "Bookmarks";
-        var page = context.Render(builder =>
-        {
-            builder.OpenComponent<MudPopoverProvider>(0);
-            builder.CloseComponent();
-            builder.OpenComponent<BookmarksToolbar>(1);
-            builder.AddAttribute(2, "TypeFilter", typeFilter);
-            builder.CloseComponent();
-        });
-
-        // Verify that the component was rendered successfully
-        Assert.NotNull(page);
-    }
 }

@@ -28,6 +28,16 @@ public class BookmarkNode
     public DateTime? PurgeAfter { get; set; }
     public string? BrowserNodeId { get; set; }
     public string? ParentBrowserNodeId { get; set; }
+    public int? AniListId { get; set; }
+    public DateTime? AniListMatchedAt { get; set; }
+    public string? MediaStatus { get; set; }
+    public DateTime? LastMatchAttemptAt { get; set; }
+
+    // When AniList last confirmed this series (following any sequel chain) has NO upcoming
+    // episodes. Lets the calendar skip re-querying finished/no-sequel series for days instead of
+    // hammering AniList's rate limit with 100+ lookups on every load. Null = never confirmed empty
+    // (never checked, or currently airing), so it is always queried.
+    public DateTime? ScheduleCheckedAt { get; set; }
 
     public BookmarkNode? Parent { get; set; }
     public List<BookmarkNode> Children { get; set; } = [];

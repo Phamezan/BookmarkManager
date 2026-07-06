@@ -18,6 +18,7 @@ public class AppDbContext : DbContext
     public DbSet<SnapshotBatch> SnapshotBatches => Set<SnapshotBatch>();
     public DbSet<SnapshotNodeMapping> SnapshotNodeMappings => Set<SnapshotNodeMapping>();
     public DbSet<ExtensionCommandEntry> ExtensionCommands => Set<ExtensionCommandEntry>();
+    public DbSet<AnimeScheduleCache> AnimeScheduleCaches => Set<AnimeScheduleCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -115,6 +116,17 @@ public class AppDbContext : DbContext
             entity.Property(e => e.CommandType).HasMaxLength(32).IsRequired();
             entity.Property(e => e.BrowserNodeId).HasMaxLength(128);
             entity.Property(e => e.Status).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<AnimeScheduleCache>(entity =>
+        {
+            // Keyed by the queried AniList media id; not database-generated.
+            entity.HasKey(e => e.AniListId);
+            entity.Property(e => e.AniListId).ValueGeneratedNever();
+            entity.Property(e => e.Status).HasMaxLength(64);
+            entity.Property(e => e.ResolvedTitle).HasMaxLength(500);
+            entity.Property(e => e.ResolvedCoverImageUrl).HasMaxLength(2048);
+            entity.HasIndex(e => e.ExpiresAtUtc);
         });
     }
 }

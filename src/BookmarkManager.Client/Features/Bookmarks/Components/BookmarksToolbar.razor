@@ -39,20 +39,7 @@
                               Placeholder="Search title or URL" Variant="Variant.Outlined" Immediate="true"
                               DebounceInterval="400" Margin="Margin.Dense" Class="toolbar-search"
                               Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" />
-                <MudSelect Value="TypeFilter" ValueChanged="TypeFilterChanged" Label="Filter" Margin="Margin.Dense" Dense="true"
-                           Class="toolbar-select filter-select">
-                    <MudSelectItem Value="@("All")">All Types</MudSelectItem>
-                    <MudSelectItem Value="@("Folders")">Folders Only</MudSelectItem>
-                    <MudSelectItem Value="@("Bookmarks")">Bookmarks Only</MudSelectItem>
-                    <MudSelectItem Value="@("Favorites")">Favorites Only</MudSelectItem>
-                </MudSelect>
-                <MudSelect Value="SortMode" ValueChanged="SortModeChanged" Label="Sort" Margin="Margin.Dense" Dense="true"
-                           Class="toolbar-select sort-select">
-                    <MudSelectItem Value="@("TitleAsc")">Title A-Z</MudSelectItem>
-                    <MudSelectItem Value="@("TitleDesc")">Title Z-A</MudSelectItem>
-                    <MudSelectItem Value="@("UpdatedDesc")">Newest First</MudSelectItem>
-                    <MudSelectItem Value="@("UpdatedAsc")">Oldest First</MudSelectItem>
-                </MudSelect>
+
                 <MudTooltip Text="Create bookmark">
                     <MudIconButton Icon="@Icons.Material.Filled.AddLink" Color="Color.Primary"
                                    OnClick="CreateBookmark" aria-label="Create bookmark" />
@@ -70,15 +57,11 @@
     [Parameter] public int SelectedCount { get; set; }
     [Parameter] public bool IsAllSelected { get; set; }
     [Parameter] public string SearchQuery { get; set; } = string.Empty;
-    [Parameter] public string TypeFilter { get; set; } = "All";
-    [Parameter] public string SortMode { get; set; } = "TitleAsc";
     [Parameter] public EventCallback ToggleSelectAll { get; set; }
     [Parameter] public EventCallback ClearSelection { get; set; }
     [Parameter] public EventCallback MoveSelected { get; set; }
     [Parameter] public EventCallback DeleteSelected { get; set; }
     [Parameter] public EventCallback<string?> SearchChanged { get; set; }
-    [Parameter] public EventCallback<string> TypeFilterChanged { get; set; }
-    [Parameter] public EventCallback<string> SortModeChanged { get; set; }
     [Parameter] public EventCallback CreateBookmark { get; set; }
     [Parameter] public EventCallback OpenAutoTaggerDialog { get; set; }
 }

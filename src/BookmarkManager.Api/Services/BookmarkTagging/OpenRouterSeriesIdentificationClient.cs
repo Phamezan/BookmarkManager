@@ -124,6 +124,95 @@ internal sealed class OpenRouterSeriesIdentificationClient : IAiSeriesIdentifica
         return new AiProviderResponse(text);
     }
 
+    public async Task<TestAiKeyResponse> TestConnectionAsync(TestAiKeyRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.ApiKey))
+            return new TestAiKeyResponse { Success = false, StatusCode = 0, Message = "API key is empty." };
+        if (string.IsNullOrWhiteSpace(request.Model))
+            return new TestAiKeyResponse { Success = false, StatusCode = 0, Message = "Model is empty." };
+
+        var baseUrl = string.IsNullOrWhiteSpace(request.BaseUrl) ? "https://openrouter.ai/api/v1" : request.BaseUrl;
+        var uri = new Uri($"{baseUrl.TrimEnd('/')}/chat/completions");
+
+        // Smallest possible real chat call: one token out. Enough to exercise auth + model
+        // resolution and surface the exact provider error, cheap enough to run on a button click.
+        var body = new OpenRouterChatRequest(
+            Model: request.Model,
+            Temperature: 0.0,
+            Messages: new[] { new OpenRouterMessage("user", "ping") });
+
+        try
+        {
+            var httpClient = _httpClientFactory.CreateClient(nameof(OpenRouterSeriesIdentificationClient));
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri);
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
+            httpRequest.Content = JsonContent.Create(body, options: JsonOptions);
+
+            using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+            var status = (int)response.StatusCode;
+            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            if (response.IsSuccessStatusCode)
+                return new TestAiKeyResponse { Success = true, StatusCode = status, Message = $"OK - key accepted and model '{request.Model}' responded." };
+
+            var providerMessage = ExtractProviderError(content);
+
+            // 429 means auth + model resolved fine; the request was only throttled. That's a
+            // working key, so report it as success with a heads-up rather than a hard failure.
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                var note = string.IsNullOrWhiteSpace(providerMessage) ? "" : $" ({providerMessage})";
+                return new TestAiKeyResponse
+                {
+                    Success = true,
+                    StatusCode = status,
+                    Message = $"Key is valid and '{request.Model}' resolved, but you hit OpenRouter's rate limit. " +
+                              $"Free models are capped per minute/day - wait a bit, or add credits for higher limits.{note}"
+                };
+            }
+
+            var hint = response.StatusCode switch
+            {
+                System.Net.HttpStatusCode.Unauthorized => "Key rejected (invalid or revoked). Generate a new key at openrouter.ai/keys.",
+                System.Net.HttpStatusCode.Forbidden => "Key forbidden for this model or endpoint.",
+                System.Net.HttpStatusCode.PaymentRequired => "Out of credits. Add credits or pick a ':free' model.",
+                System.Net.HttpStatusCode.NotFound => $"Model '{request.Model}' not found - check the id (needs a vendor prefix, e.g. 'google/gemini-2.5-flash:free').",
+                System.Net.HttpStatusCode.BadRequest => $"Bad request - often an invalid model id ('{request.Model}').",
+                _ => "Request failed."
+            };
+
+            var message = string.IsNullOrWhiteSpace(providerMessage) ? hint : $"{hint} ({providerMessage})";
+            return new TestAiKeyResponse { Success = false, StatusCode = status, Message = message };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI key test request failed to reach the provider.");
+            return new TestAiKeyResponse { Success = false, StatusCode = 0, Message = $"Could not reach provider: {ex.Message}" };
+        }
+    }
+
+    private static string? ExtractProviderError(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(content);
+            if (doc.RootElement.TryGetProperty("error", out var error))
+            {
+                if (error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out var msg))
+                    return msg.GetString();
+                if (error.ValueKind == JsonValueKind.String)
+                    return error.GetString();
+            }
+        }
+        catch (JsonException)
+        {
+            // Non-JSON error body - fall through to a trimmed raw snippet.
+        }
+        return content.Length > 200 ? content[..200] : content;
+    }
+
     private sealed record OpenRouterChatRequest(
         [property: JsonPropertyName("model")] string Model,
         [property: JsonPropertyName("temperature")] double Temperature,

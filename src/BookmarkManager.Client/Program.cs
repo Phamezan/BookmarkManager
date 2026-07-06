@@ -10,6 +10,7 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddMudServices();
+builder.Services.AddLocalization();
 
 var baseAddress = new Uri(builder.HostEnvironment.BaseAddress);
 

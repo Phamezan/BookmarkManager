@@ -12,10 +12,14 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
 {
     private static readonly TimeSpan SuccessCacheDuration = TimeSpan.FromHours(12);
     private static readonly TimeSpan EmptyCacheDuration = TimeSpan.FromMinutes(30);
+    // AniList advertises 90 req/min but has run in a degraded ~30 req/min mode for a long time,
+    // returning 429s well below 90. Bursting the full 90 self-inflicts those 429s, which the
+    // schedule/match paths can't recover mid-load. Stay comfortably under the degraded ceiling: a
+    // small burst plus a steady ~24/min drip means calls actually succeed instead of being rejected.
     private static readonly ProviderRateLimiter RateLimiter = new(
-        tokenLimit: 90,
-        tokensPerPeriod: 90,
-        replenishmentPeriod: TimeSpan.FromMinutes(1));
+        tokenLimit: 8,
+        tokensPerPeriod: 2,
+        replenishmentPeriod: TimeSpan.FromSeconds(5));
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<AnilistTaggingService> _logger;

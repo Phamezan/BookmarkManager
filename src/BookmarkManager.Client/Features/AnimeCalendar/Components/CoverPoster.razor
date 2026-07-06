@@ -1,0 +1,42 @@
+@* Poster thumbnail: real AniList cover when available, otherwise the design's
+   diagonal-stripe gradient placeholder with a hue derived from a stable hash of
+   the title (so a given series always gets the same colour). *@
+
+@if (!string.IsNullOrEmpty(CoverImageUrl))
+{
+    <div class="acal-pstr @CssClass" style="@SizeStyle">
+        <img src="@CoverImageUrl" alt="" loading="lazy" onerror="this.style.display='none'" />
+    </div>
+}
+else
+{
+    <div class="acal-pstr acal-pstr--placeholder @CssClass" style="@($"{SizeStyle}background:{PlaceholderGradient};")">
+        <span>cover</span>
+    </div>
+}
+
+@code {
+    [Parameter] public string? CoverImageUrl { get; set; }
+    [Parameter] public string Title { get; set; } = string.Empty;
+
+    /// <summary>e.g. "36px" / "48px". Applied as width/height.</summary>
+    [Parameter] public string Width { get; set; } = "36px";
+    [Parameter] public string Height { get; set; } = "48px";
+    [Parameter] public string? CssClass { get; set; }
+
+    private string SizeStyle => $"width:{Width};height:{Height};";
+
+    private int Hue => (int)((uint)StableHash(Title) % 360u);
+
+    private string PlaceholderGradient =>
+        $"repeating-linear-gradient(135deg,hsl({Hue} 45% 34%),hsl({Hue} 45% 34%) 6px,hsl({Hue} 40% 26%) 6px,hsl({Hue} 40% 26%) 12px)";
+
+    // djb2 — deterministic across renders (unlike string.GetHashCode in some runtimes).
+    private static int StableHash(string s)
+    {
+        var hash = 5381;
+        foreach (var c in s)
+            hash = unchecked((hash << 5) + hash + c);
+        return hash;
+    }
+}

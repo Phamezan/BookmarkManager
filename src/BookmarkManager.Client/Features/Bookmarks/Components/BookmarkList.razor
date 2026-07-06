@@ -1,7 +1,9 @@
 @using BookmarkManager.Contracts
 @using Microsoft.AspNetCore.Components.Web
+@implements IAsyncDisposable
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<div class="bookmark-list">
+<div class="bookmark-list" @ref="_gridContainerRef">
     @if (Loading)
     {
         <div class="bookmark-grid" aria-label="Loading bookmarks...">
@@ -38,65 +40,45 @@
     }
     else
     {
-        <div class="bookmark-grid" role="list" aria-label="Bookmarks">
-            @foreach (var item in PaginatedItems.Where(i => i.Type == NodeType.Folder))
-            {
-                <BookmarkCard Item="item"
-                              IsSelected="IsSelected(item.Id)"
-                              GetFaviconUrl="GetFaviconUrl"
-                              GetParentFolderName="GetParentFolderName"
-                              GetFolderPath="GetFolderPath"
-                              FormatUpdatedAt="FormatUpdatedAt"
-                              RowClicked="RowClicked"
-                              CheckboxClicked="CheckboxClicked"
-                              ContextMenuOpened="ContextMenuOpened"
-                              DragStarted="DragStarted"
-                              ToggleFavoriteAsync="ToggleFavoriteAsync"
-                              EditBookmarkAsync="EditBookmarkAsync"
-                              MoveBookmarkAsync="MoveBookmarkAsync"
-                              DeleteBookmarkAsync="DeleteBookmarkAsync"
-                              MoveFolderAsync="MoveFolderAsync"
-                              DeleteFolderAsync="DeleteFolderAsync" />
-            }
-
-            @foreach (var item in PaginatedItems.Where(i => i.Type != NodeType.Folder))
-            {
-                <BookmarkCard Item="item"
-                              IsSelected="IsSelected(item.Id)"
-                              GetFaviconUrl="GetFaviconUrl"
-                              GetParentFolderName="GetParentFolderName"
-                              GetFolderPath="GetFolderPath"
-                              FormatUpdatedAt="FormatUpdatedAt"
-                              RowClicked="RowClicked"
-                              CheckboxClicked="CheckboxClicked"
-                              ContextMenuOpened="ContextMenuOpened"
-                              DragStarted="DragStarted"
-                              ToggleFavoriteAsync="ToggleFavoriteAsync"
-                              EditBookmarkAsync="EditBookmarkAsync"
-                              MoveBookmarkAsync="MoveBookmarkAsync"
-                              DeleteBookmarkAsync="DeleteBookmarkAsync"
-                              MoveFolderAsync="MoveFolderAsync"
-                              DeleteFolderAsync="DeleteFolderAsync" />
-            }
-        </div>
-        @if (PageCount > 1)
-        {
-            <div class="d-flex justify-center mt-4 mb-4">
-                <MudPagination SelectedChanged="PageChanged" Count="PageCount" Selected="CurrentPage"
-                               Color="Color.Primary" Variant="Variant.Filled" />
+        <Virtualize Items="@_rows" Context="row" ItemSize="136" OverscanCount="8">
+            <div class="bookmark-grid" role="list" aria-label="Bookmarks">
+                @foreach (var item in row)
+                {
+                    <BookmarkCard @key="item.Id"
+                                  Item="item"
+                                  IsSelected="IsSelected(item.Id)"
+                                  GetFaviconUrl="GetFaviconUrl"
+                                  GetParentFolderName="GetParentFolderName"
+                                  GetFolderPath="GetFolderPath"
+                                  FormatUpdatedAt="FormatUpdatedAt"
+                                  RowClicked="RowClicked"
+                                  CheckboxClicked="CheckboxClicked"
+                                  ContextMenuOpened="ContextMenuOpened"
+                                  DragStarted="DragStarted"
+                                  ToggleFavoriteAsync="ToggleFavoriteAsync"
+                                  EditBookmarkAsync="EditBookmarkAsync"
+                                  MoveBookmarkAsync="MoveBookmarkAsync"
+                                  DeleteBookmarkAsync="DeleteBookmarkAsync"
+                                  MoveFolderAsync="MoveFolderAsync"
+                                  DeleteFolderAsync="DeleteFolderAsync" />
+                }
             </div>
-        }
+        </Virtualize>
     }
 </div>
 
 @code {
+    private const int MinCardWidthPx = 280;
+    private const int GapPx = 12;
+
+    private ElementReference _gridContainerRef;
+    private Microsoft.JSInterop.IJSObjectReference? _resizeObserver;
+    private Microsoft.JSInterop.DotNetObjectReference<BookmarkList>? _dotNetRef;
+    private int _columns = 3;
+
     [Parameter] public bool Loading { get; set; }
     [Parameter] public List<BookmarkNodeDto> Items { get; set; } = [];
-    [Parameter] public List<BookmarkNodeDto> PaginatedItems { get; set; } = [];
     [Parameter] public string SearchQuery { get; set; } = string.Empty;
-    [Parameter] public int PageCount { get; set; }
-    [Parameter] public int CurrentPage { get; set; }
-    [Parameter] public EventCallback<int> PageChanged { get; set; }
     [Parameter] public EventCallback CreateBookmark { get; set; }
     [Parameter] public Func<Guid, bool> IsSelected { get; set; } = _ => false;
     [Parameter] public Func<string, string?> GetFaviconUrl { get; set; } = _ => null;
@@ -113,4 +95,78 @@
     [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
+
+    private List<BookmarkNodeDto[]> _rows = [];
+    private List<BookmarkNodeDto>? _lastItems;
+    private int _lastColumns;
+
+    protected override void OnParametersSet()
+    {
+        UpdateRows();
+    }
+
+    private void UpdateRows()
+    {
+        if (_lastItems != null && Items == _lastItems && _columns == _lastColumns)
+            return;
+
+        _lastItems = Items;
+        _lastColumns = _columns;
+        _rows = Items.OrderBy(i => i.Type == NodeType.Folder ? 0 : 1)
+                     .Chunk(Math.Max(1, _columns))
+                     .ToList();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+
+        try
+        {
+            _dotNetRef = Microsoft.JSInterop.DotNetObjectReference.Create(this);
+            _columns = await JSRuntime.InvokeAsync<int>("BookmarkGridInterop.getColumnCount", _gridContainerRef, MinCardWidthPx, GapPx);
+            _resizeObserver = await JSRuntime.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                "BookmarkGridInterop.observeResize", _gridContainerRef, _dotNetRef, MinCardWidthPx, GapPx);
+            UpdateRows();
+            StateHasChanged();
+        }
+        catch
+        {
+            // Safe fallback during unmounting
+        }
+    }
+
+    [Microsoft.JSInterop.JSInvokable]
+    public void OnColumnsChanged(int columns)
+    {
+        try
+        {
+            columns = Math.Max(1, columns);
+            if (columns == _columns) return;
+            _columns = columns;
+            UpdateRows();
+            StateHasChanged();
+        }
+        catch
+        {
+            // Safe fallback
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_resizeObserver is not null)
+        {
+            try
+            {
+                await _resizeObserver.InvokeVoidAsync("disconnect");
+                await _resizeObserver.DisposeAsync();
+            }
+            catch
+            {
+                // Safe fallback during dispose
+            }
+        }
+        _dotNetRef?.Dispose();
+    }
 }

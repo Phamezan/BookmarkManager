@@ -14,7 +14,9 @@ coverage/
 *.tsbuildinfo
 
 # Local runtime data, backups, and secrets
-data/
+# Anchored to repo root so it does not also match src/BookmarkManager.Api/Data/
+# (case-insensitive on Windows), which is real source code.
+/data/
 backups/
 *.db
 *.db-shm
@@ -49,3 +51,8 @@ GEMINI.md
 kickbacks.vsix
 implementation.md
 .hermes
+
+# Playwright MCP debug dumps (console logs, page snapshots)
+.playwright-mcp/
+
+calendar.md

@@ -1,0 +1,107 @@
+@* Design 2a — month grid. Six week-rows for the anchor's month; leading/trailing
+   days dimmed. Days with episodes show small cover-image badges (one per series,
+   overflow collapsed to "+N") so the month reads as a visual overview. Clicking a
+   populated day opens its first episode. *@
+
+<div class="acal-month-grid">
+    @foreach (var name in DayHeaders)
+    {
+        <div class="acal-month-head">@name</div>
+    }
+    @foreach (var cell in _cells)
+    {
+        <div class="@CellClass(cell)" @onclick="() => OpenDay(cell)">
+            <div class="acal-month-daynum">@cell.Date.Day.ToString("00")</div>
+            @if (cell.Count > 0)
+            {
+                <div class="acal-month-covers">
+                    @foreach (var item in cell.Visible)
+                    {
+                        <span class="acal-cover-badge">
+                            <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
+                                         Width="34px" Height="46px" CssClass="acal-month-cover" />
+                            <span class="acal-cover-tip">@item.Title · Ep @item.EpisodeNumber</span>
+                        </span>
+                    }
+                    @if (cell.Overflow > 0)
+                    {
+                        <span class="acal-month-more">+@cell.Overflow</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="acal-month-empty">—</div>
+            }
+        </div>
+    }
+</div>
+
+<div class="acal-month-footer">@_totalEpisodes episode@(_totalEpisodes == 1 ? "" : "s") airing this month</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AnimeCalendarItem> Items { get; set; } = [];
+    [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<AnimeCalendarItem> OnItemClick { get; set; }
+
+    private static readonly string[] DayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    // How many cover badges fit a cell before collapsing the rest into "+N".
+    private const int MaxCovers = 3;
+
+    private List<Cell> _cells = [];
+    private int _totalEpisodes;
+
+    protected override void OnParametersSet()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var first = new DateOnly(Anchor.Year, Anchor.Month, 1);
+        var gridStart = first.AddDays(-(int)first.DayOfWeek); // back up to the Sunday
+
+        // Count episodes per day within the visible month; drive both cell badges
+        // and the footer total off the same in-month tally.
+        var perDay = Items
+            .Where(i => i.AiringDay.Year == Anchor.Year && i.AiringDay.Month == Anchor.Month)
+            .GroupBy(i => i.AiringDay)
+            .ToDictionary(
+                g => g.Key,
+                // One badge per series per day (the user bookmarks per-episode, so the
+                // same show can appear multiple times); keep the earliest airing of each.
+                g => g.OrderBy(i => i.AiringAtLocal)
+                      .GroupBy(SeriesKey)
+                      .Select(s => s.First())
+                      .ToList());
+
+        _totalEpisodes = perDay.Values.Sum(v => v.Count);
+
+        _cells = Enumerable.Range(0, 42).Select(offset =>
+        {
+            var date = gridStart.AddDays(offset);
+            var inMonth = date.Month == Anchor.Month && date.Year == Anchor.Year;
+            var items = inMonth && perDay.TryGetValue(date, out var list) ? list : [];
+            return new Cell(date, inMonth, date == today, items);
+        }).ToList();
+    }
+
+    private Task OpenDay(Cell cell)
+        => cell.Items.Count > 0 ? OnItemClick.InvokeAsync(cell.Items[0]) : Task.CompletedTask;
+
+    private static string SeriesKey(AnimeCalendarItem item)
+        => item.AniListId?.ToString() ?? item.Title;
+
+    private static string CellClass(Cell cell)
+    {
+        var cls = "acal-month-cell";
+        if (!cell.InMonth) cls += " is-outside";
+        if (cell.Count > 0) cls += " is-populated";
+        if (cell.IsToday) cls += " is-today";
+        return cls;
+    }
+
+    private sealed record Cell(DateOnly Date, bool InMonth, bool IsToday, List<AnimeCalendarItem> Items)
+    {
+        public int Count => Items.Count;
+        public IEnumerable<AnimeCalendarItem> Visible => Items.Take(MaxCovers);
+        public int Overflow => Math.Max(0, Items.Count - MaxCovers);
+    }
+}

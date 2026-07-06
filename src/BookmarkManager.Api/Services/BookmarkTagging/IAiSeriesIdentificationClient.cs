@@ -3,27 +3,33 @@ using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
-internal interface IAiSeriesIdentificationClient
+public interface IAiSeriesIdentificationClient
 {
     Task<AiProviderResponse> IdentifyAsync(
         AiSeriesIdentifyRequest request,
         CancellationToken cancellationToken);
+
+    // Verify a specific baseUrl/model/apiKey with a minimal live request, without touching
+    // saved settings - lets the Settings page validate credentials before persisting them.
+    Task<TestAiKeyResponse> TestConnectionAsync(
+        TestAiKeyRequest request,
+        CancellationToken cancellationToken);
 }
 
-internal sealed record AiProviderResponse(
+public sealed record AiProviderResponse(
     string Json,
     AiProviderRateLimit? RateLimit = null);
 
-internal sealed record AiProviderRateLimit(
+public sealed record AiProviderRateLimit(
     bool IsRateLimited,
     TimeSpan? RetryAfter,
     string? Message);
 
-internal sealed record AiSeriesIdentifyRequest(
+public sealed record AiSeriesIdentifyRequest(
     string Instructions,
     IReadOnlyList<AiSeriesIdentifyRequestItem> Items);
 
-internal sealed record AiSeriesIdentifyRequestItem(
+public sealed record AiSeriesIdentifyRequestItem(
     Guid Id,
     string Title,
     [property: JsonPropertyName("url_host")] string? UrlHost,

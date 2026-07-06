@@ -1,0 +1,46 @@
+@* Design 2c — the anchor day's episodes as a rich vertical timeline with a time
+   label per slot and source links. Footer counts the day's episodes. *@
+
+<div class="acal-timeline acal-timeline--day">
+    <div class="acal-timeline-rail"></div>
+    @if (_items.Count == 0)
+    {
+        <div class="acal-empty">Nothing airing @(_isToday ? "today" : "this day").</div>
+    }
+    else
+    {
+        @foreach (var item in _items)
+        {
+            <div class="acal-timeline-slot">
+                <span class="acal-timeline-node is-small"></span>
+                <div class="acal-timeline-time">@item.AiringAtLocal.ToString("h:mm tt")</div>
+                <EpisodeCard Item="item" OnClick="OnItemClick" Detailed="true" ShowSourceLinks="true"
+                             CoverWidth="36px" CoverHeight="48px" />
+            </div>
+        }
+    }
+</div>
+
+@if (_items.Count > 0)
+{
+    <div class="acal-day-footer">@_items.Count episode@(_items.Count == 1 ? "" : "s") airing @(_isToday ? "today" : "this day")</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AnimeCalendarItem> Items { get; set; } = [];
+    [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<AnimeCalendarItem> OnItemClick { get; set; }
+
+    private List<AnimeCalendarItem> _items = [];
+    private bool _isToday;
+
+    protected override void OnParametersSet()
+    {
+        var day = DateOnly.FromDateTime(Anchor);
+        _isToday = day == DateOnly.FromDateTime(DateTime.Today);
+        _items = Items
+            .Where(i => i.AiringDay == day)
+            .OrderBy(i => i.AiringAtLocal)
+            .ToList();
+    }
+}

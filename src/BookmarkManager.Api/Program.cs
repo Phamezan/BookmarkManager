@@ -47,6 +47,7 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTaggi
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AnilistTaggingService>();
 builder.Services.AddSingleton<IAnilistTagProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
+builder.Services.AddSingleton<IAnilistScheduleProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
 builder.Services.AddSingleton<MangaUpdatesTaggingService>();
 builder.Services.AddSingleton<IMangaUpdatesTagProvider>(provider => provider.GetRequiredService<MangaUpdatesTaggingService>());
 builder.Services.AddSingleton<KitsuTaggingService>();

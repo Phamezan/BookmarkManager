@@ -17,6 +17,37 @@
         </MudChip>
     </MudStack>
 
+    <!-- Personalization / Theme Selection -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.Palette" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Personalization</MudText>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Select your preferred color theme. Catppuccin is a cozy, high-contrast palette for reading.
+            </MudText>
+            <div class="theme-selection-grid">
+                @foreach (var theme in _availableThemes)
+                {
+                    var active = theme.Id == _selectedThemeId;
+                    <button class="theme-card @(active ? "active" : "")" 
+                            @onclick="@(() => SelectThemeAsync(theme.Id))" 
+                            type="button">
+                        <div class="theme-preview-strip" style="background-color: @theme.BgColor; border-color: @theme.BorderColor;">
+                            <span class="theme-dot" style="background-color: @theme.AccentColor;" title="Accent"></span>
+                            <span class="theme-dot" style="background-color: @theme.TextColor;" title="Text"></span>
+                        </div>
+                        <div class="theme-details">
+                            <span class="theme-name" style="color: @(active ? "var(--bm-accent)" : "var(--bm-text)");">@theme.Name</span>
+                            <span class="theme-desc">@theme.Description</span>
+                        </div>
+                    </button>
+                }
+            </div>
+        </MudStack>
+    </MudPaper>
+
     <!-- Extension Connection Status Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
@@ -91,6 +122,14 @@
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
                 <MudText Typo="Typo.h6" Class="flex-grow-1">AI Auto Tagging</MudText>
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Bolt"
+                           OnClick="TestAiKeyAsync"
+                           Disabled="@(_aiKeyTesting || _aiSettingsLoading)">
+                    @(_aiKeyTesting ? "Testing..." : "Test key")
+                </MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            Size="Size.Small"
@@ -149,6 +188,17 @@
                                          HelperText="Number of bookmarks to process per batch." />
                     </MudItem>
                 </MudGrid>
+
+                @if (_aiKeyTestResult is not null)
+                {
+                    <MudAlert Severity="@(_aiKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                              Variant="Variant.Outlined"
+                              Dense="true"
+                              ShowCloseIcon="true"
+                              CloseIconClicked="@(() => _aiKeyTestResult = null)">
+                        @(_aiKeyTestResult.StatusCode > 0 ? $"[{_aiKeyTestResult.StatusCode}] " : "")@_aiKeyTestResult.Message
+                    </MudAlert>
+                }
             }
         </MudStack>
     </MudPaper>

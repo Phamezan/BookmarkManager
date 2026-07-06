@@ -30,6 +30,7 @@ public partial class Bookmarks
         try
         {
             _folderTree = await BookmarkService.GetFolderTreeAsync();
+            BuildFolderCaches();
         }
         catch (ApiException ex)
         {
@@ -71,6 +72,7 @@ public partial class Bookmarks
                 _items.Clear();
                 _favorites.Clear();
                 _selectedFolderId = null;
+                BuildFolderCaches();
                 StateHasChanged();
             }
         });
