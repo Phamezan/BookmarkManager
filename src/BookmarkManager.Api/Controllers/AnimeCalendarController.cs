@@ -199,7 +199,7 @@ public class AnimeCalendarController : ControllerBase
         foreach (var group in candidateGroups)
         {
             var id = group.First().AniListId!.Value;
-            if (cacheRows.TryGetValue(id, out var row) && row.ExpiresAtUtc > now)
+            if (cacheRows.TryGetValue(id, out var row) && row.ExpiresAtUtc > now && !string.IsNullOrEmpty(row.ResolvedTitle))
                 results[id] = FromCache(row);
             else
                 needFetch.Add(id);
