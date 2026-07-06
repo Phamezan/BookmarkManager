@@ -3108,10 +3108,11 @@ code {
     bottom: calc(100% + 6px);
     left: 50%;
     transform: translateX(-50%);
-    white-space: nowrap;
-    max-width: 240px;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    white-space: pre-wrap;
+    width: max-content;
+    max-width: 220px;
+    word-break: break-word;
+    text-align: center;
     padding: 5px 9px;
     background: #05040c;
     border: 1px solid var(--acal-border-hi);

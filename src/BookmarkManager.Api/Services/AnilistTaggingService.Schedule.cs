@@ -168,9 +168,7 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
             // Found the season that has episodes still to air - this is the one to display.
             if (media.Episodes.Count > 0)
             {
-                var result = followed
-                    ? new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl)
-                    : new AnimeScheduleResult(media.Status, media.Episodes);
+                var result = new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl);
                 return (result, true);
             }
 
@@ -182,9 +180,7 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
             }
 
             // End of the chain with nothing upcoming - a real, cacheable "nothing airing" answer.
-            var empty = followed
-                ? new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl)
-                : new AnimeScheduleResult(media.Status, media.Episodes);
+            var empty = new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl);
             return (empty, true);
         }
 
