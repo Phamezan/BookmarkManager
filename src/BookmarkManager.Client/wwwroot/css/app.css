@@ -2780,6 +2780,9 @@ code {
     padding: 28px;
     color: var(--acal-text);
     font-family: system-ui, -apple-system, sans-serif;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 /* Toolbar */
@@ -3071,64 +3074,125 @@ code {
     color: #3a3350;
 }
 
-.acal-month-covers {
+/* Hybrid Month Cell Event Row */
+.acal-month-events {
     display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 5px;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    margin-top: 4px;
 }
 
-.acal-month-cover {
-    border-radius: 4px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-}
-
-.acal-month-more {
-    font: 700 11px system-ui, sans-serif;
-    color: var(--acal-today);
-    align-self: flex-end;
-    padding-bottom: 2px;
-}
-
-/* Cover hover tooltip (month cells) */
-.acal-cover-badge {
+.acal-month-event {
     position: relative;
-    display: inline-flex;
-    line-height: 0;
-    transition: transform 0.12s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(42, 38, 80, 0.25);
+    border-left: 2px solid var(--acal-accent-bright);
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
 }
 
-.acal-cover-badge:hover {
-    transform: translateY(-2px);
+.acal-month-event:hover {
+    background: rgba(91, 82, 201, 0.35);
+    transform: translateX(1px);
     z-index: 5;
 }
 
-.acal-cover-tip {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    white-space: pre-wrap;
-    width: max-content;
-    max-width: 220px;
-    word-break: break-word;
-    text-align: center;
-    padding: 5px 9px;
-    background: #05040c;
-    border: 1px solid var(--acal-border-hi);
-    border-radius: 6px;
-    font: 600 11px system-ui, sans-serif;
-    line-height: 1.3;
-    color: var(--acal-text);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.12s ease;
-    z-index: 10;
+.acal-month-cover-mini {
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
 }
 
-.acal-cover-badge:hover .acal-cover-tip {
+.acal-event-title-text {
+    font: 500 10.5px system-ui, sans-serif;
+    color: var(--acal-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-grow: 1;
+}
+
+.acal-event-ep-text {
+    font: 600 9.5px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+    flex-shrink: 0;
+}
+
+.acal-event-more {
+    font: 600 9.5px system-ui, sans-serif;
+    color: var(--acal-label);
+    padding-left: 6px;
+    margin-top: 2px;
+}
+
+/* Rich hover popover card */
+.rich-tip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 12px;
+    width: 260px;
+    padding: 10px;
+    background: #090810;
+    border: 1px solid var(--acal-border-hi);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(91, 82, 201, 0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 100;
+    line-height: normal;
+}
+
+.acal-month-event:hover .rich-tip {
     opacity: 1;
+    transform: translateX(-50%) translateY(-2px);
+}
+
+.acal-tip-cover {
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.acal-tip-details {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+}
+
+.acal-tip-title {
+    font: 600 12.5px system-ui, sans-serif;
+    color: var(--acal-text);
+    line-height: 1.3;
+    margin-bottom: 4px;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.acal-tip-ep {
+    font: 600 11px system-ui, sans-serif;
+    color: var(--acal-today);
+    margin-bottom: 2px;
+}
+
+.acal-tip-time {
+    font: 500 10px system-ui, sans-serif;
+    color: var(--acal-text-dim);
 }
 
 .acal-month-footer {

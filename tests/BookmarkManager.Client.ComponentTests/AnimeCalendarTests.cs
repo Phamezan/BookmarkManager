@@ -157,7 +157,7 @@ public sealed class AnimeCalendarTests
         page.FindAll(".acal-view-btn").First(b => b.TextContent.Trim() == "Month").Click();
 
         // A day with an episode renders a cover-image badge in its cell (design 2a).
-        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".acal-month-cover")));
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".acal-month-cover-mini")));
     }
 
     private sealed class FakeAnimeBookmarkService : IBookmarkService

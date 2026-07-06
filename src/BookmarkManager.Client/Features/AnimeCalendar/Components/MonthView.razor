@@ -14,18 +14,29 @@
             <div class="acal-month-daynum">@cell.Date.Day.ToString("00")</div>
             @if (cell.Count > 0)
             {
-                <div class="acal-month-covers">
+                <div class="acal-month-events">
                     @foreach (var item in cell.Visible)
                     {
-                        <span class="acal-cover-badge">
+                        <div class="acal-month-event" @onclick:stopPropagation="true" @onclick="() => OnItemClick.InvokeAsync(item)">
                             <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
-                                         Width="34px" Height="46px" CssClass="acal-month-cover" />
-                            <span class="acal-cover-tip">@item.Title · Ep @item.EpisodeNumber</span>
-                        </span>
+                                         Width="16px" Height="22px" CssClass="acal-month-cover-mini" />
+                            <span class="acal-event-title-text">@item.Title</span>
+                            <span class="acal-event-ep-text">@item.EpisodeNumber</span>
+                            
+                            <div class="rich-tip">
+                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
+                                             Width="60px" Height="84px" CssClass="acal-tip-cover" />
+                                <div class="acal-tip-details">
+                                    <div class="acal-tip-title">@item.Title</div>
+                                    <div class="acal-tip-ep">Episode @item.EpisodeNumber</div>
+                                    <div class="acal-tip-time">Airing @item.AiringAtLocal.ToString("h:mm tt")</div>
+                                </div>
+                            </div>
+                        </div>
                     }
                     @if (cell.Overflow > 0)
                     {
-                        <span class="acal-month-more">+@cell.Overflow</span>
+                        <div class="acal-event-more">+@cell.Overflow more</div>
                     }
                 </div>
             }
