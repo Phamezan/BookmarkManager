@@ -1,6 +1,12 @@
 namespace BookmarkManager.Contracts;
 
-public record StartUrlMigrationRequest(string DeadHost);   // host only, e.g. "flamecomics.xyz"
+// Force = true skips the "domain still appears alive" liveness guard. Set when the user
+// manually names a host, since that's them asserting it's dead/unusable, not something
+// auto-detected from Link Checker that still needs a sanity check.
+// SuggestedHost = optional target domain the user already picked as the replacement -
+// search is restricted to that host instead of the open web, and every bookmark in the run
+// tries it first regardless of what earlier bookmarks resolved to.
+public record StartUrlMigrationRequest(string DeadHost, bool Force = false, string? SuggestedHost = null);   // host only, e.g. "flamecomics.xyz"
 
 public class UrlMigrationStatusDto
 {

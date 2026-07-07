@@ -11,6 +11,14 @@ namespace BookmarkManager.Api.Services.UrlMigration;
 public interface ICandidateVerificationService
 {
     Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct);
+
+    /// <summary>
+    /// Fetches <paramref name="seriesPageUrl"/> and returns every same-host link href found on the
+    /// page, resolved to absolute URLs. Used as a fallback when guessed chapter deep-link patterns
+    /// (e.g. "/chapter-35") don't match a site's actual URL scheme (e.g. fanfox's "/c035/1.html") —
+    /// the caller filters this list for links whose path plausibly names the target chapter.
+    /// </summary>
+    Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct);
 }
 
 /// <summary>

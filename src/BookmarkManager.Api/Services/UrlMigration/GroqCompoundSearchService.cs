@@ -48,7 +48,8 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<IReadOnlyList<SearchCandidate>> SearchAsync(SeriesExtraction extraction, string deadHost, CancellationToken ct)
+    public async Task<IReadOnlyList<SearchCandidate>> SearchAsync(
+        SeriesExtraction extraction, string deadHost, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false)
     {
         ArgumentNullException.ThrowIfNull(extraction);
         if (string.IsNullOrWhiteSpace(deadHost))
@@ -56,16 +57,22 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
             throw new ArgumentException("Dead host is required.", nameof(deadHost));
         }
 
+        restrictToPreferredHost = restrictToPreferredHost && !string.IsNullOrWhiteSpace(preferredHost);
+
         var settings = await _settings.GetAsync(ct).ConfigureAwait(false);
 
         if (!string.IsNullOrWhiteSpace(settings.GroqApiKey))
         {
             try
             {
-                var compoundCandidates = await SearchWithCompoundAsync(extraction, deadHost, settings, ct).ConfigureAwait(false);
+                var compoundCandidates = await SearchWithCompoundAsync(extraction, deadHost, preferredHost, restrictToPreferredHost, settings, ct).ConfigureAwait(false);
                 if (compoundCandidates.Count > 0)
                 {
-                    return SearchCandidateFilter.Filter(compoundCandidates, deadHost);
+                    var filtered = ApplyHostShaping(SearchCandidateFilter.Filter(compoundCandidates, deadHost), preferredHost, restrictToPreferredHost);
+                    if (filtered.Count > 0 || !restrictToPreferredHost)
+                    {
+                        return filtered;
+                    }
                 }
 
                 _logger.LogInformation(
@@ -88,18 +95,46 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
             _logger.LogInformation("Groq API key not configured; using DuckDuckGo + rerank fallback for search stage.");
         }
 
-        var fallbackCandidates = await SearchWithFallbackAsync(extraction, deadHost, settings, ct).ConfigureAwait(false);
-        return SearchCandidateFilter.Filter(fallbackCandidates, deadHost);
+        var fallbackCandidates = await SearchWithFallbackAsync(extraction, deadHost, preferredHost, restrictToPreferredHost, settings, ct).ConfigureAwait(false);
+        return ApplyHostShaping(SearchCandidateFilter.Filter(fallbackCandidates, deadHost), preferredHost, restrictToPreferredHost);
+    }
+
+    /// <summary>
+    /// When <paramref name="restrictToPreferredHost"/>, drops every candidate not on that host
+    /// (the user picked the target domain, so anything else is noise). Otherwise just moves
+    /// same-host candidates to the front, preserving relative order otherwise.
+    /// </summary>
+    private static IReadOnlyList<SearchCandidate> ApplyHostShaping(
+        IReadOnlyList<SearchCandidate> candidates, string? preferredHost, bool restrictToPreferredHost)
+    {
+        if (string.IsNullOrWhiteSpace(preferredHost) || candidates.Count == 0)
+        {
+            return candidates;
+        }
+
+        bool MatchesPreferredHost(SearchCandidate c) =>
+            Uri.TryCreate(c.Url, UriKind.Absolute, out var uri) &&
+            (uri.Host.Equals(preferredHost, StringComparison.OrdinalIgnoreCase) ||
+             uri.Host.EndsWith("." + preferredHost, StringComparison.OrdinalIgnoreCase));
+
+        if (restrictToPreferredHost)
+        {
+            return candidates.Where(MatchesPreferredHost).ToList();
+        }
+
+        return candidates.OrderByDescending(MatchesPreferredHost).ToList();
     }
 
     private async Task<IReadOnlyList<SearchCandidate>> SearchWithCompoundAsync(
         SeriesExtraction extraction,
         string deadHost,
+        string? preferredHost,
+        bool restrictToPreferredHost,
         BookmarkManager.Contracts.AiTaggingSettingsDto settings,
         CancellationToken ct)
     {
         var model = string.IsNullOrWhiteSpace(settings.MigrationSearchModel) ? "groq/compound-mini" : settings.MigrationSearchModel;
-        var prompt = BuildSearchPrompt(extraction, deadHost);
+        var prompt = BuildSearchPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost);
 
         var content = await CallGroqChatAsync(model, SystemPromptForCompound, prompt, settings, ct).ConfigureAwait(false);
         return ParseCandidatesJson(content);
@@ -108,10 +143,16 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     private async Task<IReadOnlyList<SearchCandidate>> SearchWithFallbackAsync(
         SeriesExtraction extraction,
         string deadHost,
+        string? preferredHost,
+        bool restrictToPreferredHost,
         BookmarkManager.Contracts.AiTaggingSettingsDto settings,
         CancellationToken ct)
     {
         var query = BuildDuckDuckGoQuery(extraction);
+        if (restrictToPreferredHost)
+        {
+            query = $"{query} site:{preferredHost}";
+        }
 
         IReadOnlyList<string> rawCandidateUrls;
         try
@@ -143,7 +184,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         try
         {
             var model = string.IsNullOrWhiteSpace(settings.GroqModel) ? "llama-3.3-70b-versatile" : settings.GroqModel;
-            var prompt = BuildRerankPrompt(extraction, deadHost, rawCandidateUrls);
+            var prompt = BuildRerankPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost, rawCandidateUrls);
             var content = await CallGroqChatAsync(model, SystemPromptForRerank, prompt, settings, ct).ConfigureAwait(false);
             var reranked = ParseCandidatesJson(content);
             if (reranked.Count > 0)
@@ -293,16 +334,32 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         return text.Substring(start, end - start + 1);
     }
 
-    private static string BuildSearchPrompt(SeriesExtraction extraction, string deadHost)
+    private static string BuildSearchPrompt(SeriesExtraction extraction, string deadHost, string? preferredHost, bool restrictToPreferredHost)
     {
         var chapterText = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? "an unspecified chapter" : extraction.ChapterNumber;
+        var preferredHostLine = BuildPreferredHostLine(preferredHost, restrictToPreferredHost);
         return
             $"Find working links to read {extraction.SeriesName} ({extraction.MediaType}) at chapter {chapterText}.\n" +
             $"The site {deadHost} is permanently offline - never return links on it.\n" +
+            preferredHostLine +
             "Prefer direct reader pages (the chapter itself), then the series overview page.\n" +
             "Avoid wikis, forums, Reddit, YouTube, social media, news, and store pages.\n" +
             "Return JSON: {\"candidates\": [{\"url\": \"...\", \"why\": \"...\"}]} with at most 5 candidates,\n" +
             "best first.";
+    }
+
+    private static string BuildPreferredHostLine(string? preferredHost, bool restrictToPreferredHost)
+    {
+        if (string.IsNullOrWhiteSpace(preferredHost))
+        {
+            return string.Empty;
+        }
+
+        return restrictToPreferredHost
+            ? $"ONLY return results on {preferredHost} - the user already picked this as the migration target. " +
+              "Do not return any other domain, even if you can't find the series there.\n"
+            : $"Strongly prefer {preferredHost} if it has this series - other bookmarks from this same batch were just " +
+              "migrated there, and manga/anime aggregator sites that host one series usually host most others too.\n";
     }
 
     private static string BuildDuckDuckGoQuery(SeriesExtraction extraction)
@@ -311,15 +368,18 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         return $"{extraction.SeriesName} {extraction.MediaType}{chapterText}".Trim();
     }
 
-    private static string BuildRerankPrompt(SeriesExtraction extraction, string deadHost, IReadOnlyList<string> searchResults)
+    private static string BuildRerankPrompt(
+        SeriesExtraction extraction, string deadHost, string? preferredHost, bool restrictToPreferredHost, IReadOnlyList<string> searchResults)
     {
         var chapterText = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? "an unspecified chapter" : extraction.ChapterNumber;
         var resultsList = string.Join("\n", searchResults.Select(url => $"- {url}"));
+        var preferredHostLine = BuildPreferredHostLine(preferredHost, restrictToPreferredHost);
         return
             $"Find working links to read {extraction.SeriesName} ({extraction.MediaType}) at chapter {chapterText}.\n" +
             $"The site {deadHost} is permanently offline - never return links on it.\n" +
             "Here are raw web search results to choose from:\n" +
             $"{resultsList}\n" +
+            preferredHostLine +
             "Prefer direct reader pages (the chapter itself), then the series overview page.\n" +
             "Avoid wikis, forums, Reddit, YouTube, social media, news, and store pages.\n" +
             "Return JSON: {\"candidates\": [{\"url\": \"...\", \"why\": \"...\"}]} with at most 5 candidates,\n" +

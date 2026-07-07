@@ -38,7 +38,7 @@ public sealed class UrlMigrationTests : IntegrationTestBase
 
     private sealed class StubSearchService : IAlternativeUrlSearchService
     {
-        public Task<IReadOnlyList<SearchCandidate>> SearchAsync(SeriesExtraction extraction, string deadHost, CancellationToken ct)
+        public Task<IReadOnlyList<SearchCandidate>> SearchAsync(SeriesExtraction extraction, string deadHost, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false)
             => Task.FromResult<IReadOnlyList<SearchCandidate>>(Array.Empty<SearchCandidate>());
     }
 
@@ -49,6 +49,9 @@ public sealed class UrlMigrationTests : IntegrationTestBase
     {
         public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct)
             => Task.FromResult(new VerificationResult(false, false, false, "n/a"));
+
+        public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
 
         public Task<bool> IsDomainAliveAsync(IEnumerable<string> urls, CancellationToken ct) => Task.FromResult(false);
     }

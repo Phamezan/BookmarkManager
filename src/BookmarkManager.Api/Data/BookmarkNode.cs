@@ -25,6 +25,9 @@ public class BookmarkNode
     // Manager-only metadata set on URL migration approval; enables one-click revert.
     // Never pushed to Brave — only Url changes flow to the extension as an Update command.
     public string? PreviousUrl { get; set; }
+    // Manager-only metadata set on URL migration approval, alongside PreviousUrl - lets a
+    // migration-cleaned title (old-site boilerplate stripped) be reverted along with the URL.
+    public string? PreviousTitle { get; set; }
     public string? CoverImageUrl { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }

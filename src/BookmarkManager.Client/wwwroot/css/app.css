@@ -194,8 +194,31 @@
     --bm-warning-soft: rgba(241, 250, 140, 0.12);
     --bm-danger: #ff5555;
     --bm-danger-soft: rgba(255, 85, 85, 0.12);
-    --bm-success: #50fa7b;
-    --bm-success-soft: rgba(80, 250, 123, 0.12);
+}
+
+[data-theme="grand-line"] {
+    --bm-bg: #0D0E12;
+    --bm-bg-elevated: #15171F;
+    --bm-surface: rgba(26, 30, 43, 0.65);
+    --bm-surface-raised: rgba(38, 44, 62, 0.8);
+    --bm-surface-muted: rgba(26, 30, 43, 0.45);
+    --bm-border: rgba(244, 208, 104, 0.12);
+    --bm-border-strong: rgba(244, 208, 104, 0.22);
+    --bm-border-accent: rgba(217, 56, 58, 0.35);
+    --bm-text: #F4ECD8;
+    --bm-text-secondary: #CBB998;
+    --bm-text-muted: #7E725C;
+    --bm-accent: #F4D068;
+    --bm-accent-hover: #FFDF85;
+    --bm-accent-soft: rgba(244, 208, 104, 0.12);
+    --bm-accent-glow: rgba(244, 208, 104, 0.25);
+    --bm-appbar-bg: rgba(13, 14, 18, 0.7);
+    --bm-warning: #F59E0B;
+    --bm-warning-soft: rgba(245, 158, 11, 0.12);
+    --bm-danger: #D9383A;
+    --bm-danger-soft: rgba(217, 56, 58, 0.12);
+    --bm-success: #10B981;
+    --bm-success-soft: rgba(16, 185, 129, 0.12);
 }
 
 body.theme-dark {
@@ -471,38 +494,6 @@ body {
     color: var(--bm-text);
     font-weight: 700;
     text-shadow: 0 0 10px var(--bm-accent-glow);
-}
-
-/* Anime katana slash — a tapered blade streak cuts across the indicator on
-   activation, like a speed-line sword swipe. Two crossing strokes, staggered,
-   spawned by nav-indicator.js on route change (never on first paint). */
-.nav-slash {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 130%;
-    height: 4px;
-    margin-top: -2px;
-    background: linear-gradient(90deg,
-        transparent 0%,
-        var(--bm-accent-glow) 12%,
-        rgba(255, 255, 255, 0.95) 50%,
-        var(--bm-accent-glow) 88%,
-        transparent 100%);
-    clip-path: polygon(0% 50%, 10% 15%, 90% 15%, 100% 50%, 90% 85%, 10% 85%);
-    filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.55)) drop-shadow(0 0 10px var(--bm-accent-glow));
-    pointer-events: none;
-    z-index: 5;
-    transform: translate(-50%, -50%) rotate(var(--nav-slash-angle, -22deg)) scaleX(0);
-    transform-origin: 50% 50%;
-    animation: navSlashSweep 300ms cubic-bezier(0.1, 0.9, 0.2, 1) forwards;
-}
-
-@keyframes navSlashSweep {
-    0% { transform: translate(-50%, -50%) rotate(var(--nav-slash-angle, -22deg)) scaleX(0); opacity: 0; }
-    12% { opacity: 1; }
-    50% { transform: translate(-50%, -50%) rotate(var(--nav-slash-angle, -22deg)) scaleX(1); opacity: 1; }
-    100% { transform: translate(-50%, -50%) rotate(var(--nav-slash-angle, -22deg)) scaleX(1.15); opacity: 0; }
 }
 
 /* Roundtable active indicator — outer handles the sliding position transition
@@ -3501,5 +3492,294 @@ code {
     color: var(--acal-text-dim);
 }
 
+/* ----------------------------------------------------------------------------
+   13. Grand Line Theme Custom Accents and Spring Animations
+   ---------------------------------------------------------------------------- */
+/* Luffy Gear Second style rubber bounce for buttons */
+.mud-button-root {
+    transition: transform 280ms cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 200ms var(--bm-ease) !important;
+}
+.mud-button-root:hover {
+    transform: translateY(-2px) scale(1.03);
+}
+.mud-button-root:active {
+    transform: translateY(0) scale(0.96);
+}
 
+/* Grand Line theme custom elements */
+[data-theme="grand-line"] .empty-state {
+    border: 1px dashed var(--bm-accent);
+    background: linear-gradient(135deg, rgba(26, 30, 43, 0.5) 0%, rgba(20, 22, 30, 0.5) 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Subtle Jolly Roger watermark inside empty state for Grand Line theme */
+[data-theme="grand-line"] .empty-state::after {
+    content: "";
+    position: absolute;
+    bottom: -20px;
+    right: -20px;
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.acal-month-cell.is-populated {
+    background: #111019;
+    border: 1px solid #3a3a6a;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.acal-month-cell.is-today .acal-month-daynum {
+    color: var(--acal-today);
+}
+
+.acal-month-cell.is-outside .acal-month-daynum {
+    color: var(--acal-text-mute);
+}
+
+.acal-month-daynum {
+    font: 600 13px system-ui, sans-serif;
+    color: var(--acal-text);
+}
+
+.acal-month-empty {
+    font: 500 10px system-ui, sans-serif;
+    color: #3a3350;
+}
+
+/* Hybrid Month Cell Event Row */
+.acal-month-events {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.acal-month-event {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(42, 38, 80, 0.25);
+    border-left: 2px solid var(--acal-accent-bright);
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+    transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.acal-month-event:hover {
+    background: rgba(91, 82, 201, 0.35);
+    transform: translateX(1px);
+    z-index: 5;
+}
+
+.acal-month-cover-mini {
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.acal-event-title-text {
+    font: 500 10.5px system-ui, sans-serif;
+    color: var(--acal-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-grow: 1;
+}
+
+.acal-event-ep-text {
+    font: 600 9.5px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+    flex-shrink: 0;
+}
+
+.acal-event-more {
+    font: 600 9.5px system-ui, sans-serif;
+    color: var(--acal-label);
+    padding-left: 6px;
+    margin-top: 2px;
+}
+
+/* Rich hover popover card */
+.rich-tip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 16px;
+    width: 420px;
+    padding: 16px;
+    background: #090810;
+    border: 1px solid var(--acal-border-hi);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(91, 82, 201, 0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease, transform 0.12s ease;
+    z-index: 100;
+    line-height: normal;
+}
+
+.acal-month-event:hover .rich-tip {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-2px);
+}
+
+.acal-tip-cover {
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.acal-tip-details {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+}
+
+.acal-tip-title {
+    font: 600 17px system-ui, sans-serif;
+    color: var(--acal-text);
+    line-height: 1.3;
+    margin-bottom: 8px;
+    word-break: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.acal-tip-ep {
+    font: 600 14px system-ui, sans-serif;
+    color: var(--acal-today);
+    margin-bottom: 4px;
+}
+
+.acal-tip-time {
+    font: 500 12px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+}
+
+.acal-tip-countdown {
+    font: 700 18px ui-monospace, monospace;
+    color: var(--acal-accent-bright);
+    letter-spacing: 0.03em;
+    margin-top: 8px;
+}
+
+.acal-month-footer {
+    margin-top: 16px;
+    font: 500 11px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+}
+
+/* ----------------------------------------------------------------------------
+   13. Grand Line Theme Custom Accents and Spring Animations
+   ---------------------------------------------------------------------------- */
+/* Luffy Gear Second style rubber bounce for buttons */
+.mud-button-root {
+    transition: transform 280ms cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 200ms var(--bm-ease) !important;
+}
+.mud-button-root:hover {
+    transform: translateY(-2px) scale(1.03);
+}
+.mud-button-root:active {
+    transform: translateY(0) scale(0.96);
+}
+
+/* Grand Line theme custom elements */
+[data-theme="grand-line"] .empty-state {
+    border: 1px dashed var(--bm-accent);
+    background: linear-gradient(135deg, rgba(26, 30, 43, 0.5) 0%, rgba(20, 22, 30, 0.5) 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Subtle Jolly Roger watermark inside empty state for Grand Line theme */
+[data-theme="grand-line"] .empty-state::after {
+    content: "";
+    position: absolute;
+    bottom: -20px;
+    right: -20px;
+    width: 120px;
+    height: 120px;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F4D068' stroke-width='1.5'%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3Cpath d='M12 13v4m-3-4v2m6-2v2M8 7l2 2m6-2l-2 2M4 20l3-3m13 3l-3-3M4 4l3 3m13-3l-3 3'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    pointer-events: none;
+}
+
+/* Subtle steam puff for Grand Line theme link switching (Gear Shift effect) */
+.nav-smoke-puff {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.75) 0%, rgba(217, 56, 58, 0.4) 70%, transparent 100%);
+    box-shadow: 0 0 8px rgba(217, 56, 58, 0.45);
+    border-radius: 50%;
+    filter: blur(3px);
+    pointer-events: none;
+    z-index: 4;
+    transform: translate(-50%, -50%) scale(0.3);
+    animation: navSmokeRise 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes navSmokeRise {
+    0% {
+        transform: translate(-50%, -50%) scale(0.3);
+        opacity: 0.8;
+    }
+    100% {
+        transform: translate(calc(-50% + var(--smoke-x)), calc(-50% + var(--smoke-y))) scale(var(--smoke-scale));
+        opacity: 0;
+    }
+}
+
+/* Custom styling for the tiny Wanted Poster image icon to make it pop */
+.nav-wanted-poster {
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 2px;
+    border: 1px solid rgba(244, 208, 104, 0.45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    object-fit: cover !important;
+    transition: transform 250ms cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 250ms var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-wanted-poster {
+    transform: scale(1.35) rotate(-6deg) !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), 0 0 8px var(--bm-accent-glow);
+}
+
+/* URL Migrator proposal rows: show the full old/new URL (no truncation) so the admin can
+   actually verify the target before approving. */
+.migrator-proposal-row {
+    min-width: 0;
+}
+
+.migrator-proposal-row > .mud-stack:first-child {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.migrator-url-text {
+    word-break: break-all;
+    white-space: normal;
+}
 

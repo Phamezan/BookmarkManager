@@ -57,7 +57,17 @@ public partial class BookmarksController
             });
         }
 
-        var enqueued = job.Enqueue(host!);
+        var suggestedHost = request!.SuggestedHost?.Trim();
+        if (!string.IsNullOrEmpty(suggestedHost) && !IsValidHost(suggestedHost))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "SuggestedHost must be a valid hostname (no scheme, path, or whitespace).",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var enqueued = job.Enqueue(host!, request.Force, string.IsNullOrEmpty(suggestedHost) ? null : suggestedHost);
         if (!enqueued)
         {
             return Conflict(new ProblemDetails
@@ -151,6 +161,22 @@ public partial class BookmarksController
         }
 
         var result = await approvalService.RejectAsync(request!.ProposalIds, ct);
+        return Ok(result);
+    }
+
+    [HttpPost("url-migration/proposals/cancel")]
+    public async Task<ActionResult<DecideProposalsResponse>> CancelUrlMigrationProposalsAsync(
+        [FromBody] DecideProposalsRequest request,
+        [FromServices] UrlMigrationApprovalService approvalService,
+        CancellationToken ct)
+    {
+        var validationError = ValidateProposalIds(request?.ProposalIds);
+        if (validationError != null)
+        {
+            return BadRequest(validationError);
+        }
+
+        var result = await approvalService.CancelAsync(request!.ProposalIds, ct);
         return Ok(result);
     }
 

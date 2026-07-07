@@ -218,8 +218,8 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<DeadDomainCandidateDto>>("api/bookmarks/url-migration/dead-domains", cancellationToken) ?? [];
 
-    public async Task<bool> StartUrlMigrationAsync(string deadHost, CancellationToken cancellationToken = default)
-        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost)));
+    public async Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost, force, suggestedHost)));
 
     public async Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<UrlMigrationStatusDto>("api/bookmarks/url-migration/status", cancellationToken);
@@ -238,6 +238,9 @@ public sealed class HttpBookmarkService : IBookmarkService
 
     public async Task<DecideProposalsResponse?> RejectProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, "api/bookmarks/url-migration/proposals/reject", new DecideProposalsRequest(ids), cancellationToken);
+
+    public async Task<DecideProposalsResponse?> CancelProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, "api/bookmarks/url-migration/proposals/cancel", new DecideProposalsRequest(ids), cancellationToken);
 
     public async Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/revert", cancellationToken));

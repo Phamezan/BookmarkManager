@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.RegularExpressions;
 using BookmarkManager.Api.Services.BookmarkTagging;
 
@@ -21,9 +22,24 @@ public static partial class SeriesExtractionFallback
 
     private static string ExtractSeriesName(string title, string? url)
     {
+        // Streaming site titles are usually boilerplate-heavy ("Watch X English Sub/Dub online
+        // Free on Site.to") with no delimiter to split on, which pollutes the generic
+        // title-cleaning path with noise words that never appear on the replacement page. The
+        // URL slug (e.g. "/watch/sentenced-to-be-a-hero-20385") is a cleaner source when the
+        // host is a known streaming site.
+        var fromSlug = MediaTitleNormalizer.TryTitleFromStreamingUrl(url);
+        if (!string.IsNullOrWhiteSpace(fromSlug))
+        {
+            return TitleCase(fromSlug);
+        }
+
         var cleaned = MediaTitleNormalizer.CleanTitle(title, url, BookmarkTagDomain.General);
         return string.IsNullOrWhiteSpace(cleaned) ? title.Trim() : cleaned;
     }
+
+    private static string TitleCase(string value) =>
+        string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
 
     private static string? ExtractChapterFromPath(string? url)
     {

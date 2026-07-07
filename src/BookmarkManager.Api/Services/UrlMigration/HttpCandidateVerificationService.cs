@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -18,6 +19,13 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
     private const int MaxBodyBytes = 512 * 1024; // 512 KB cap
     private const int MaxRedirects = 5;
     private const double SeriesTokenMatchThreshold = 0.60;
+
+    // Anime/movie titles vary more between catalog sites in subtitle phrasing ("Season 2" vs
+    // "2nd Season", "Movie" vs "The Movie", cour numbering) than manga chapter titles do, so the
+    // strict threshold produces more false-negative rejections there. Loosened, not dropped - still
+    // scoped to anime/movie extractions only, and callers stamp the proposal detail so a loose
+    // match is visible in review rather than silently indistinguishable from a strict one.
+    private const double LooseSeriesTokenMatchThreshold = 0.45;
 
     private const string BrowserUserAgent =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -74,12 +82,20 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
             return new VerificationResult(false, false, false, $"HTTP {(int)fetch.StatusCode} {fetch.StatusCode}");
         }
 
-        var seriesMatched = IsSeriesMatch(extraction.SeriesName, title) || IsSeriesMatch(extraction.SeriesName, ogTitle);
+        // Many streaming sites (e.g. Miruro) are client-rendered SPAs - a raw HTTP GET returns
+        // an app-shell <title> with no series info, so the URL slug is often the only reliable
+        // signal. Same idea chapter-matching already uses against the path.
+        var pathAsText = Uri.UnescapeDataString(fetch.FinalUri.AbsolutePath).Replace('-', ' ').Replace('_', ' ');
+        var threshold = ResolveSeriesTokenThreshold(extraction);
+        var seriesMatched = IsSeriesMatch(extraction.SeriesName, title, threshold) ||
+                             IsSeriesMatch(extraction.SeriesName, ogTitle, threshold) ||
+                             IsSeriesMatch(extraction.SeriesName, pathAsText, threshold);
         var chapterMatched = IsChapterMatch(extraction.ChapterNumber, fetch.FinalUri, title) ||
                               IsChapterMatch(extraction.ChapterNumber, fetch.FinalUri, ogTitle);
 
+        var loose = threshold != SeriesTokenMatchThreshold;
         var detail = seriesMatched
-            ? (chapterMatched ? "Series and chapter matched" : "Series matched, chapter unconfirmed")
+            ? (chapterMatched ? "Series and chapter matched" : "Series matched, chapter unconfirmed") + (loose ? " (loose title match)" : string.Empty)
             : "Reachable but series did not match";
 
         return new VerificationResult(true, seriesMatched, chapterMatched, detail);
@@ -111,7 +127,7 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
             try
             {
                 var fetch = await FetchWithRedirectsAsync(uri, ct);
-                if (fetch.IsSuccessStatusCode && !IsChallengeResponse(fetch))
+                if (fetch.IsSuccessStatusCode && !IsChallengeResponse(fetch) && !LooksLikeParkedDomain(fetch.Body))
                     aliveCount++;
             }
             catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
@@ -122,6 +138,50 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
 
         var aliveFraction = (double)aliveCount / urlList.Count;
         return aliveFraction >= LivenessAbortThreshold;
+    }
+
+    public async Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(seriesPageUrl, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return [];
+        }
+
+        FetchResult fetch;
+        try
+        {
+            fetch = await FetchWithRedirectsAsync(uri, ct);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
+        {
+            return [];
+        }
+
+        if (!fetch.IsSuccessStatusCode)
+            return [];
+
+        var host = fetch.FinalUri.Host;
+        var links = new List<string>();
+        foreach (Match match in HrefRegex().Matches(fetch.Body))
+        {
+            var href = WebUtility.HtmlDecode(match.Groups[1].Value).Trim();
+            if (string.IsNullOrEmpty(href) || href.StartsWith('#') || href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!Uri.TryCreate(fetch.FinalUri, href, out var resolved))
+                continue;
+
+            if (resolved.Scheme != Uri.UriSchemeHttp && resolved.Scheme != Uri.UriSchemeHttps)
+                continue;
+
+            if (!string.Equals(resolved.Host, host, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            links.Add(resolved.GetLeftPart(UriPartial.Query));
+        }
+
+        return links.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     private async Task<FetchResult> FetchWithRedirectsAsync(Uri uri, CancellationToken ct)
@@ -192,6 +252,33 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
                text.Contains("just a moment", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Expired/dead domains commonly get squatted by a registrar parking page or resold-domain
+    /// listing that still answers with HTTP 200, which would otherwise fool
+    /// <see cref="IsDomainAliveAsync"/> into thinking the site is still up.
+    /// </summary>
+    private static readonly string[] ParkedDomainMarkers =
+    [
+        "domain is for sale",
+        "buy this domain",
+        "this domain may be for sale",
+        "domain parking",
+        "godaddy.com/domains",
+        "hugedomains",
+        "sedo.com",
+        "dan.com",
+        "namecheap.com/domains",
+        "this domain has expired"
+    ];
+
+    private static bool LooksLikeParkedDomain(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+            return false;
+
+        return ParkedDomainMarkers.Any(marker => body.Contains(marker, StringComparison.OrdinalIgnoreCase));
+    }
+
     private static string? ExtractTitle(string html)
     {
         var match = TitleTagRegex().Match(html);
@@ -207,7 +294,15 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         return match.Success ? WebUtility.HtmlDecode(match.Groups[1].Value).Trim() : null;
     }
 
-    private static bool IsSeriesMatch(string seriesName, string? pageText)
+    private static double ResolveSeriesTokenThreshold(SeriesExtraction extraction)
+    {
+        var isAnime = string.Equals(extraction.MediaType, "anime", StringComparison.OrdinalIgnoreCase);
+        var isMovie = extraction.SeriesName.Contains("Movie", StringComparison.OrdinalIgnoreCase) ||
+                      extraction.SeriesName.Contains("Part", StringComparison.OrdinalIgnoreCase);
+        return isAnime || isMovie ? LooseSeriesTokenMatchThreshold : SeriesTokenMatchThreshold;
+    }
+
+    private static bool IsSeriesMatch(string seriesName, string? pageText, double threshold = SeriesTokenMatchThreshold)
     {
         if (string.IsNullOrWhiteSpace(seriesName) || string.IsNullOrWhiteSpace(pageText))
             return false;
@@ -227,7 +322,7 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
 
         var matched = seriesTokens.Count(token => pageTokens.Contains(token));
         var ratio = (double)matched / seriesTokens.Count;
-        return ratio >= SeriesTokenMatchThreshold;
+        return ratio >= threshold;
     }
 
     private static bool IsChapterMatch(string? chapterNumber, Uri finalUri, string? pageText)
@@ -264,4 +359,7 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
 
     [GeneratedRegex(@"<meta[^>]*content\s*=\s*[""']([^""']*)[""'][^>]*property\s*=\s*[""']og:title[""'][^>]*>", RegexOptions.IgnoreCase)]
     private static partial Regex OgTitleContentFirstRegex();
+
+    [GeneratedRegex(@"<a\b[^>]*\bhref\s*=\s*[""']([^""']+)[""']", RegexOptions.IgnoreCase)]
+    private static partial Regex HrefRegex();
 }

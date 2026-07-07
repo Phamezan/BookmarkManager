@@ -74,10 +74,13 @@ public sealed class UrlMigrationApprovalService
 
                 var bookmark = await _db.BookmarkNodes
                     .FirstOrDefaultAsync(b => b.Id == proposal.BookmarkId, ct).ConfigureAwait(false);
-                if (bookmark == null)
+                if (bookmark == null || bookmark.IsDeleted)
                 {
                     errors.Add($"Proposal {id}'s bookmark no longer exists.");
-                    await transaction.RollbackAsync(ct).ConfigureAwait(false);
+                    proposal.Status = Rejected;
+                    proposal.DecidedAt = DateTime.UtcNow;
+                    await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    await transaction.CommitAsync(ct).ConfigureAwait(false);
                     continue;
                 }
 
@@ -86,6 +89,19 @@ public sealed class UrlMigrationApprovalService
 
                 bookmark.PreviousUrl = bookmark.Url;
                 bookmark.Url = proposal.ProposedUrl;
+
+                // Titles scraped from the dead site are usually boilerplate-laden with the old
+                // site's own name in them ("... on Aniwatch.to", "... - ReaperScans") - keeping
+                // that after migrating to a different site is actively misleading, so replace it
+                // with a clean "Series - Chapter/Episode N" title built from what the migrator
+                // already extracted. Original is kept in PreviousTitle so Revert can restore it.
+                var cleanTitle = BuildCleanTitle(proposal.SeriesName, proposal.ChapterNumber);
+                if (!string.IsNullOrWhiteSpace(cleanTitle) && !string.Equals(cleanTitle, bookmark.Title, StringComparison.Ordinal))
+                {
+                    bookmark.PreviousTitle = bookmark.Title;
+                    bookmark.Title = cleanTitle;
+                }
+
                 bookmark.Version++;
                 bookmark.SyncState = SyncState.Pending;
                 bookmark.UpdatedAt = DateTime.UtcNow;
@@ -179,6 +195,46 @@ public sealed class UrlMigrationApprovalService
         return new DecideProposalsResponse(succeeded, proposalIds.Count - succeeded, errors);
     }
 
+    /// <summary>
+    /// Voids a stale Pending proposal without recording a decision. Unlike Reject (which marks
+    /// the URL as "seen and declined" so future runs won't re-suggest it), Cancel deletes the row
+    /// outright so the bookmark is simply eligible for a completely fresh run.
+    /// </summary>
+    public async Task<DecideProposalsResponse> CancelAsync(IReadOnlyCollection<Guid> proposalIds, CancellationToken ct)
+    {
+        var errors = new List<string>();
+        var succeeded = 0;
+
+        foreach (var id in proposalIds)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var proposal = await _db.UrlMigrationProposals
+                .FirstOrDefaultAsync(p => p.Id == id, ct).ConfigureAwait(false);
+            if (proposal == null)
+            {
+                errors.Add($"Proposal {id} not found.");
+                continue;
+            }
+
+            if (!string.Equals(proposal.Status, Pending, StringComparison.Ordinal))
+            {
+                errors.Add($"Proposal {id} is not Pending (status: {proposal.Status}).");
+                continue;
+            }
+
+            _db.UrlMigrationProposals.Remove(proposal);
+            succeeded++;
+        }
+
+        if (succeeded > 0)
+        {
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+
+        return new DecideProposalsResponse(succeeded, proposalIds.Count - succeeded, errors);
+    }
+
     public async Task<bool> RevertAsync(Guid proposalId, CancellationToken ct)
     {
         await using var transaction = await _db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -194,7 +250,7 @@ public sealed class UrlMigrationApprovalService
 
             var bookmark = await _db.BookmarkNodes
                 .FirstOrDefaultAsync(b => b.Id == proposal.BookmarkId, ct).ConfigureAwait(false);
-            if (bookmark == null || string.IsNullOrWhiteSpace(bookmark.PreviousUrl))
+            if (bookmark == null || bookmark.IsDeleted || string.IsNullOrWhiteSpace(bookmark.PreviousUrl))
             {
                 await transaction.RollbackAsync(ct).ConfigureAwait(false);
                 return false;
@@ -206,6 +262,14 @@ public sealed class UrlMigrationApprovalService
             var restoredUrl = bookmark.PreviousUrl;
             bookmark.PreviousUrl = bookmark.Url;
             bookmark.Url = restoredUrl;
+
+            if (bookmark.PreviousTitle != null)
+            {
+                var currentTitle = bookmark.Title;
+                bookmark.Title = bookmark.PreviousTitle;
+                bookmark.PreviousTitle = currentTitle;
+            }
+
             bookmark.Version++;
             bookmark.SyncState = SyncState.Pending;
             bookmark.UpdatedAt = DateTime.UtcNow;
@@ -230,6 +294,18 @@ public sealed class UrlMigrationApprovalService
             _logger.LogError(ex, "Failed to revert URL migration proposal {ProposalId}", proposalId);
             return false;
         }
+    }
+
+    private static string? BuildCleanTitle(string? seriesName, string? chapterNumber)
+    {
+        if (string.IsNullOrWhiteSpace(seriesName))
+        {
+            return null;
+        }
+
+        return string.IsNullOrWhiteSpace(chapterNumber)
+            ? seriesName.Trim()
+            : $"{seriesName.Trim()} - {chapterNumber.Trim()}";
     }
 
     private void EnqueueUpdateCommand(BookmarkNode bookmark)

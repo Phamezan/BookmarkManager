@@ -231,12 +231,23 @@ public sealed class UrlMigratorPageTests
         public List<UrlMigrationProposalDto> AllProposals { get; set; } = [];
         public List<Guid>? LastApprovedIds { get; private set; }
         public List<Guid> RejectedIds { get; } = [];
+        public List<Guid> CancelledIds { get; } = [];
         public bool UpdateBookmarkCalled { get; private set; }
         public (Guid Id, string Url)? ManualUrlSet { get; private set; }
         public int StatusCallCount { get; private set; }
 
         public Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
-        public Task<bool> StartUrlMigrationAsync(string deadHost, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public string? LastStartedHost { get; private set; }
+        public bool? LastStartedForce { get; private set; }
+        public string? LastSuggestedHost { get; private set; }
+
+        public Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
+        {
+            LastStartedHost = deadHost;
+            LastStartedForce = force;
+            LastSuggestedHost = suggestedHost;
+            return Task.FromResult(true);
+        }
 
         public Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
         {
@@ -273,6 +284,16 @@ public sealed class UrlMigratorPageTests
             {
                 var p = Proposals.FirstOrDefault(x => x.Id == id);
                 if (p != null) p.Status = "Rejected";
+            }
+            return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(ids.Count, 0, []));
+        }
+
+        public Task<DecideProposalsResponse?> CancelProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        {
+            CancelledIds.AddRange(ids);
+            foreach (var id in ids)
+            {
+                Proposals.RemoveAll(x => x.Id == id);
             }
             return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(ids.Count, 0, []));
         }

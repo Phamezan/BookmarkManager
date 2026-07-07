@@ -20,6 +20,7 @@ public partial class UrlMigrator : IDisposable
     private List<DeadDomainCandidateDto> _deadDomains = [];
     private bool _loadingDeadDomains;
     private string _manualHost = string.Empty;
+    private string _suggestedTargetHost = string.Empty;
     private bool _starting;
     private UrlMigrationStatusDto? _status;
     private bool _polling;
@@ -75,11 +76,13 @@ public partial class UrlMigrator : IDisposable
         }
     }
 
-    private Task StartMigrationFromListAsync(string host) => StartMigrationAsync(host);
+    private Task StartMigrationFromListAsync(string host) => StartMigrationAsync(host, force: false, suggestedHost: null);
 
-    private Task StartMigrationFromFieldAsync() => StartMigrationAsync(_manualHost);
+    // Force = true: a manually-typed host is the user asserting the domain is dead, so skip the
+    // "domain still appears alive" liveness guard that protects the auto-detected list.
+    private Task StartMigrationFromFieldAsync() => StartMigrationAsync(_manualHost, force: true, suggestedHost: _suggestedTargetHost);
 
-    private async Task StartMigrationAsync(string? host)
+    private async Task StartMigrationAsync(string? host, bool force, string? suggestedHost)
     {
         host = host?.Trim() ?? string.Empty;
         if (!IsValidHost(host))
@@ -88,10 +91,17 @@ public partial class UrlMigrator : IDisposable
             return;
         }
 
+        suggestedHost = suggestedHost?.Trim();
+        if (!string.IsNullOrEmpty(suggestedHost) && !IsValidHost(suggestedHost))
+        {
+            Snackbar.Add("Suggested target host must be a valid hostname (no scheme, path, or spaces).", Severity.Warning);
+            return;
+        }
+
         _starting = true;
         try
         {
-            var started = await BookmarkService.StartUrlMigrationAsync(host);
+            var started = await BookmarkService.StartUrlMigrationAsync(host, force, string.IsNullOrEmpty(suggestedHost) ? null : suggestedHost);
             if (!started)
             {
                 Snackbar.Add("Could not start migration - a run may already be in progress.", Severity.Error);
@@ -100,6 +110,7 @@ public partial class UrlMigrator : IDisposable
 
             Snackbar.Add($"Migration started for {host}.", Severity.Info);
             _manualHost = string.Empty;
+            _suggestedTargetHost = string.Empty;
             await RefreshStatusAsync();
             StartPolling();
         }
@@ -198,6 +209,18 @@ public partial class UrlMigrator : IDisposable
     private List<UrlMigrationProposalDto> HistoryProposals =>
         _allProposals.Where(p => p.Status != StatusPending).OrderByDescending(p => p.CreatedAt).ToList();
 
+    /// <summary>
+    /// Pending proposals left over from an earlier run (e.g. one that was interrupted, or whose
+    /// tab was closed before review). These bookmarks are excluded from future runs for the same
+    /// host until decided, but RunId isn't exposed on the DTO, so "belongs to an earlier run" is
+    /// inferred as: Pending, but not present in the current run's proposal list.
+    /// </summary>
+    private List<UrlMigrationProposalDto> OrphanedPendingProposals =>
+        _allProposals
+            .Where(p => p.Status == StatusPending && _currentProposals.All(c => c.Id != p.Id))
+            .OrderByDescending(p => p.CreatedAt)
+            .ToList();
+
     private async Task ApproveAsync(IEnumerable<Guid> ids)
     {
         var idList = ids.ToList();
@@ -260,6 +283,28 @@ public partial class UrlMigrator : IDisposable
         StateHasChanged();
     }
 
+    // Cancel differs from Reject: Reject means "I saw this URL and don't want it" and blocks it
+    // from being re-suggested; Cancel just voids a stale proposal so the bookmark is free for a
+    // completely fresh run next time.
+    private async Task CancelAsync(IEnumerable<Guid> ids)
+    {
+        var idList = ids.ToList();
+        if (idList.Count == 0)
+            return;
+
+        try
+        {
+            var result = await BookmarkService.CancelProposalsAsync(idList);
+            await HandleDecisionResultAsync(result, idList, "cancelled");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to cancel proposal(s): {ex.Message}", Severity.Error);
+        }
+    }
+
+    private Task CancelAllOrphanedAsync() => CancelAsync(OrphanedPendingProposals.Select(p => p.Id));
+
     private Task ApproveAllHighAsync() => ApproveAsync(HighConfidencePending.Select(p => p.Id));
 
     private Task RejectRemainingAsync() =>
@@ -303,6 +348,47 @@ public partial class UrlMigrator : IDisposable
         {
             var result = await BookmarkService.SetManualProposalUrlAsync(proposal.Id, url);
             await HandleDecisionResultAsync(result, [proposal.Id], "approved");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update bookmark: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task EditBookmarkAsync(UrlMigrationProposalDto proposal)
+    {
+        BookmarkNodeDto? node;
+        try
+        {
+            node = await BookmarkService.GetBookmarkAsync(proposal.BookmarkId);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load bookmark: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        if (node == null)
+        {
+            Snackbar.Add("Bookmark no longer exists.", Severity.Error);
+            return;
+        }
+
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium };
+        var parameters = new DialogParameters { ["Node"] = node };
+        var dialog = await DialogService.ShowAsync<BookmarkEditDialog>("Edit Bookmark", parameters, options);
+        var dialogResult = await dialog.Result;
+        if (dialogResult is null || dialogResult.Canceled || dialogResult.Data is not BookmarkEditDialog.BookmarkEditResult data)
+            return;
+
+        try
+        {
+            // Title/Url only - tags/metadata aren't surfaced here, so leave them untouched
+            // rather than round-tripping a possibly-stale metadata snapshot.
+            await BookmarkService.UpdateBookmarkAsync(node.Id, data.Title, data.Url);
+            Snackbar.Add("Bookmark updated.", Severity.Success);
+            await LoadHistoryAsync();
+            StateHasChanged();
         }
         catch (Exception ex)
         {

@@ -46,20 +46,11 @@ window.repositionNavIndicator = function() {
         void disc.offsetWidth;
         disc.classList.add('is-spinning');
         spawnNavParticles(indicator, linkRect.width);
-        spawnSlash(indicator, -22, 0);
-        spawnSlash(indicator, 22, 60);
+        if (document.documentElement.getAttribute('data-theme') === 'grand-line') {
+            spawnGearSmoke(indicator, linkRect.width);
+        }
     }
 };
-
-function spawnSlash(indicator, angle, delayMs) {
-    const slash = document.createElement('span');
-    slash.className = 'nav-slash';
-    slash.style.setProperty('--nav-slash-angle', `${angle}deg`);
-    slash.style.animationDelay = `${delayMs}ms`;
-    indicator.appendChild(slash);
-    slash.addEventListener('animationend', () => slash.remove());
-    setTimeout(() => slash.remove(), 700 + delayMs);
-}
 
 function spawnNavParticles(indicator, width) {
     const count = 8;
@@ -76,6 +67,34 @@ function spawnNavParticles(indicator, width) {
         particle.addEventListener('animationend', () => particle.remove());
         // Safety net in case animationend doesn't fire (e.g. tab backgrounded).
         setTimeout(() => particle.remove(), 900);
+    }
+}
+
+function spawnGearSmoke(indicator, width) {
+    const count = 6;
+    const centerX = width / 2;
+    for (let i = 0; i < count; i++) {
+        const puff = document.createElement('span');
+        puff.className = 'nav-smoke-puff';
+        
+        // Random offsets around the indicator pill
+        const offsetX = (Math.random() - 0.5) * width;
+        const offsetY = (Math.random() - 0.5) * 10;
+        
+        puff.style.left = `${centerX + offsetX}px`;
+        puff.style.top = `${20 + offsetY}px`;
+        
+        const floatX = (Math.random() - 0.5) * 40;
+        const floatY = -30 - Math.random() * 30;
+        const scale = 0.5 + Math.random() * 0.9;
+        
+        puff.style.setProperty('--smoke-x', `${floatX}px`);
+        puff.style.setProperty('--smoke-y', `${floatY}px`);
+        puff.style.setProperty('--smoke-scale', scale);
+        
+        indicator.appendChild(puff);
+        puff.addEventListener('animationend', () => puff.remove());
+        setTimeout(() => puff.remove(), 900);
     }
 }
 
