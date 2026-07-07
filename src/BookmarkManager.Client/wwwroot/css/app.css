@@ -953,10 +953,11 @@ body {
     width: 100% !important;
     padding: var(--bm-space-2) var(--bm-space-3) !important;
     background: var(--bm-surface) !important;
-    backdrop-filter: blur(12px) saturate(140%);
-    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    backdrop-filter: blur(16px) saturate(150%);
+    -webkit-backdrop-filter: blur(16px) saturate(150%);
     border: 1px solid var(--bm-border) !important;
     border-radius: var(--bm-radius-lg) !important;
+    box-shadow: var(--bm-shadow-sm), 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 .explorer-toolbar,
@@ -1613,16 +1614,22 @@ a.root-card:hover {
     content: "";
     position: absolute;
     inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--bm-accent), transparent);
+    opacity: 0.35;
+    transition: opacity var(--bm-med) var(--bm-ease-out);
     pointer-events: none;
 }
 
+.bookmark-card:hover::before {
+    opacity: 1;
+}
+
 .bookmark-card:hover {
-    border-color: var(--bm-border-strong);
+    border-color: var(--bm-accent);
     background: var(--bm-surface-raised);
-    transform: translateY(-2px);
-    box-shadow: var(--bm-shadow);
+    transform: translateY(-3px);
+    box-shadow: var(--bm-shadow), 0 0 0 1px var(--bm-border-accent), 0 12px 28px -8px var(--bm-accent-glow);
 }
 
 .bookmark-card.is-selected {
@@ -1669,17 +1676,23 @@ a.root-card:hover {
 }
 
 .bookmark-card-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: var(--bm-radius);
+    width: 30px;
+    height: 30px;
+    border-radius: var(--bm-radius-md);
     object-fit: contain;
     border: 1px solid var(--bm-border);
-    background: rgba(255, 255, 255, 0.03);
+    background: linear-gradient(145deg, rgba(129, 140, 248, 0.14), rgba(255, 255, 255, 0.02));
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
     overflow: hidden;
+    transition: border-color var(--bm-med) var(--bm-ease-out), transform var(--bm-med) var(--bm-ease-out);
+}
+
+.bookmark-card:hover .bookmark-card-icon {
+    border-color: var(--bm-border-accent);
+    transform: scale(1.06);
 }
 
 .bookmark-card-icon img {
@@ -1690,10 +1703,10 @@ a.root-card:hover {
 }
 
 .bookmark-card-title {
-    font-size: 0.88rem;
-    font-weight: 600;
+    font-size: 0.95rem;
+    font-weight: 700;
     color: var(--bm-text);
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -3064,14 +3077,45 @@ code {
     --acal-text-dim: #9490c4;
     --acal-text-mute: #5b5470;
 
-    background: var(--acal-bg);
-    border-radius: 12px;
+    position: relative;
+    background: rgba(14, 12, 24, 0.6);
+    backdrop-filter: blur(28px) saturate(140%);
+    -webkit-backdrop-filter: blur(28px) saturate(140%);
+    border: 1px solid var(--acal-border);
+    border-radius: 16px;
     padding: 28px;
     color: var(--acal-text);
     font-family: system-ui, -apple-system, sans-serif;
     overflow-y: auto;
+    overflow-x: hidden;
     flex: 1;
     min-height: 0;
+    isolation: isolate;
+}
+
+/* Aurora signature — nebula wash bleeding through the glass shell, echoing
+   the WebGL app background so the calendar never reads as a flat opaque box. */
+.anime-cal::before {
+    content: "";
+    position: absolute;
+    inset: -20% -10%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        radial-gradient(38% 30% at 12% 8%, rgba(123, 112, 240, 0.30), transparent 70%),
+        radial-gradient(32% 26% at 88% 18%, rgba(255, 180, 84, 0.14), transparent 70%),
+        radial-gradient(40% 34% at 60% 92%, rgba(91, 82, 201, 0.22), transparent 70%);
+    filter: blur(10px);
+    animation: acalAuroraDrift 22s ease-in-out infinite alternate;
+}
+
+@keyframes acalAuroraDrift {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(2%, -3%) scale(1.06); }
+}
+
+.anime-cal > * {
+    position: relative;
 }
 
 /* Toolbar */
@@ -3086,7 +3130,7 @@ code {
 
 .acal-eyebrow {
     font: 600 10px ui-monospace, monospace;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.16em;
     color: var(--acal-label);
     text-transform: uppercase;
     margin-bottom: 6px;
@@ -3094,8 +3138,12 @@ code {
 
 .acal-title {
     margin: 0;
-    font: 700 26px/1 system-ui, sans-serif;
-    color: var(--acal-text);
+    font: 800 32px/1.1 system-ui, sans-serif;
+    letter-spacing: -0.01em;
+    background: linear-gradient(120deg, var(--acal-text) 30%, var(--acal-accent-bright) 75%, var(--acal-today) 110%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
 }
 
 .acal-toolbar-actions {
@@ -3107,31 +3155,48 @@ code {
 
 .acal-view-btn,
 .acal-nav-btn {
-    background: none;
+    background: rgba(255, 255, 255, 0.02);
     border: 1px solid var(--acal-border);
     color: var(--acal-text-dim);
     font: 600 11px system-ui, sans-serif;
-    padding: 6px 12px;
-    border-radius: 6px;
+    padding: 7px 14px;
+    border-radius: var(--bm-radius-full);
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    transition: background var(--bm-fast) var(--bm-ease-out),
+        color var(--bm-fast) var(--bm-ease-out),
+        border-color var(--bm-fast) var(--bm-ease-out),
+        transform var(--bm-fast) var(--bm-ease-out),
+        box-shadow var(--bm-fast) var(--bm-ease-out);
 }
 
 .acal-view-btn:hover,
 .acal-nav-btn:hover {
     border-color: var(--acal-border-hi);
     color: var(--acal-text);
+    transform: translateY(-1px);
+}
+
+.acal-view-btn:active,
+.acal-nav-btn:active {
+    transform: scale(0.92);
 }
 
 .acal-view-btn.is-active {
-    background: var(--acal-accent);
+    background: linear-gradient(135deg, var(--acal-accent), var(--acal-accent-bright));
     border-color: transparent;
-    color: var(--acal-text);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(123, 112, 240, 0.45);
 }
 
 .acal-nav-btn {
-    padding: 6px 10px;
+    padding: 7px 12px;
     font-size: 14px;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Poster placeholder (shared) */
@@ -3350,17 +3415,17 @@ code {
 }
 
 .acal-month-head {
-    background: var(--acal-card);
+    background: rgba(22, 19, 39, 0.75);
     padding: 8px;
     text-align: center;
-    font: 600 10px system-ui, sans-serif;
+    font: 700 10px system-ui, sans-serif;
     color: var(--acal-label);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.1em;
 }
 
 .acal-month-cell {
-    background: #0c0b15;
+    background: rgba(12, 11, 21, 0.55);
     padding: 12px 8px;
     min-height: 118px;
     display: flex;
@@ -3370,9 +3435,9 @@ code {
 }
 
 .acal-month-cell.is-populated {
-    background: #111019;
+    background: rgba(17, 16, 25, 0.6);
     border: 1px solid #3a3a6a;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     transition: border-color var(--bm-med) var(--bm-ease-out),
         box-shadow var(--bm-med) var(--bm-ease-out),
@@ -3382,13 +3447,26 @@ code {
 
 .acal-month-cell.is-populated:hover {
     border-color: var(--acal-accent-bright);
-    background: #15132a;
+    background: rgba(21, 19, 42, 0.75);
     box-shadow: 0 0 0 1px rgba(91, 82, 201, 0.3), 0 6px 20px rgba(91, 82, 201, 0.2);
     transform: translateY(-1px);
 }
 
+.acal-month-cell.is-today {
+    box-shadow: inset 0 0 0 1px rgba(255, 180, 84, 0.4);
+}
+
 .acal-month-cell.is-today .acal-month-daynum {
-    color: var(--acal-today);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--acal-today), #ff8a3d);
+    color: #1a0f00;
+    box-shadow: 0 0 12px rgba(255, 180, 84, 0.55);
 }
 
 .acal-month-cell.is-outside .acal-month-daynum {
@@ -3396,7 +3474,7 @@ code {
 }
 
 .acal-month-daynum {
-    font: 600 13px system-ui, sans-serif;
+    font: 700 13px system-ui, sans-serif;
     color: var(--acal-text);
 }
 
@@ -3419,20 +3497,32 @@ code {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba(42, 38, 80, 0.25);
-    border-left: 2px solid var(--acal-accent-bright);
-    border-radius: 4px;
-    padding: 3px 6px;
+    background: linear-gradient(90deg, rgba(91, 82, 201, 0.28), rgba(42, 38, 80, 0.2));
+    border: 1px solid rgba(123, 112, 240, 0.25);
+    border-radius: var(--bm-radius-full);
+    padding: 3px 8px 3px 4px;
     cursor: pointer;
     transition: background var(--bm-med) var(--bm-ease-out),
+        border-color var(--bm-med) var(--bm-ease-out),
         transform var(--bm-med) cubic-bezier(0.34, 1.56, 0.64, 1),
         box-shadow var(--bm-med) var(--bm-ease-out);
 }
 
+.acal-month-event::before {
+    content: "";
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--acal-accent-bright);
+    box-shadow: 0 0 6px var(--acal-accent-bright);
+}
+
 .acal-month-event:hover {
-    background: rgba(91, 82, 201, 0.35);
-    transform: translateX(2px) scale(1.015);
-    box-shadow: 0 2px 10px rgba(91, 82, 201, 0.25);
+    background: linear-gradient(90deg, rgba(123, 112, 240, 0.45), rgba(91, 82, 201, 0.3));
+    border-color: var(--acal-accent-bright);
+    transform: translateX(2px) scale(1.03);
+    box-shadow: 0 4px 14px rgba(91, 82, 201, 0.35);
     z-index: 5;
 }
 
@@ -3599,9 +3689,9 @@ code {
 }
 
 .acal-month-cell.is-populated {
-    background: #111019;
+    background: rgba(17, 16, 25, 0.6);
     border: 1px solid #3a3a6a;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     transition: border-color var(--bm-med) var(--bm-ease-out),
         box-shadow var(--bm-med) var(--bm-ease-out),
@@ -3611,13 +3701,26 @@ code {
 
 .acal-month-cell.is-populated:hover {
     border-color: var(--acal-accent-bright);
-    background: #15132a;
+    background: rgba(21, 19, 42, 0.75);
     box-shadow: 0 0 0 1px rgba(91, 82, 201, 0.3), 0 6px 20px rgba(91, 82, 201, 0.2);
     transform: translateY(-1px);
 }
 
+.acal-month-cell.is-today {
+    box-shadow: inset 0 0 0 1px rgba(255, 180, 84, 0.4);
+}
+
 .acal-month-cell.is-today .acal-month-daynum {
-    color: var(--acal-today);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--acal-today), #ff8a3d);
+    color: #1a0f00;
+    box-shadow: 0 0 12px rgba(255, 180, 84, 0.55);
 }
 
 .acal-month-cell.is-outside .acal-month-daynum {
@@ -3625,7 +3728,7 @@ code {
 }
 
 .acal-month-daynum {
-    font: 600 13px system-ui, sans-serif;
+    font: 700 13px system-ui, sans-serif;
     color: var(--acal-text);
 }
 
@@ -3648,20 +3751,32 @@ code {
     display: flex;
     align-items: center;
     gap: 6px;
-    background: rgba(42, 38, 80, 0.25);
-    border-left: 2px solid var(--acal-accent-bright);
-    border-radius: 4px;
-    padding: 3px 6px;
+    background: linear-gradient(90deg, rgba(91, 82, 201, 0.28), rgba(42, 38, 80, 0.2));
+    border: 1px solid rgba(123, 112, 240, 0.25);
+    border-radius: var(--bm-radius-full);
+    padding: 3px 8px 3px 4px;
     cursor: pointer;
     transition: background var(--bm-med) var(--bm-ease-out),
+        border-color var(--bm-med) var(--bm-ease-out),
         transform var(--bm-med) cubic-bezier(0.34, 1.56, 0.64, 1),
         box-shadow var(--bm-med) var(--bm-ease-out);
 }
 
+.acal-month-event::before {
+    content: "";
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--acal-accent-bright);
+    box-shadow: 0 0 6px var(--acal-accent-bright);
+}
+
 .acal-month-event:hover {
-    background: rgba(91, 82, 201, 0.35);
-    transform: translateX(2px) scale(1.015);
-    box-shadow: 0 2px 10px rgba(91, 82, 201, 0.25);
+    background: linear-gradient(90deg, rgba(123, 112, 240, 0.45), rgba(91, 82, 201, 0.3));
+    border-color: var(--acal-accent-bright);
+    transform: translateX(2px) scale(1.03);
+    box-shadow: 0 4px 14px rgba(91, 82, 201, 0.35);
     z-index: 5;
 }
 
