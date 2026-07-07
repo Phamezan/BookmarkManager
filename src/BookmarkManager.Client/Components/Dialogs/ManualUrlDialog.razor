@@ -1,4 +1,6 @@
 @namespace BookmarkManager.Client.Components
+@using BookmarkManager.Contracts
+@inject IBookmarkService BookmarkService
 
 <MudDialog>
     <TitleContent>
@@ -9,12 +11,17 @@
         <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
             @BookmarkTitle
         </MudText>
-        <MudTextField @bind-Value="_url"
-                      Label="New URL"
-                      Placeholder="https://"
-                      Variant="Variant.Outlined"
-                      Immediate="true"
-                      Class="manual-url-field" />
+        <MudAutocomplete T="string"
+                          @bind-Value="_url"
+                          SearchFunc="SearchUrlsAsync"
+                          Label="New URL"
+                          Placeholder="https://"
+                          Variant="Variant.Outlined"
+                          Immediate="true"
+                          MinCharacters="2"
+                          DebounceInterval="250"
+                          ShowProgressIndicator="true"
+                          Class="manual-url-field" />
     </DialogContent>
 
     <DialogActions>
@@ -39,6 +46,21 @@
         => !string.IsNullOrWhiteSpace(url)
            && Uri.TryCreate(url, UriKind.Absolute, out var uri)
            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private async Task<IEnumerable<string>> SearchUrlsAsync(string? value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return [];
+
+        var result = await BookmarkService.SearchBookmarksAsync(
+            new SearchRequest { Query = value, PageSize = 20 },
+            cancellationToken);
+
+        return result.Items
+            .Where(b => !string.IsNullOrWhiteSpace(b.Url))
+            .Select(b => b.Url!)
+            .Distinct()
+            .Take(8);
+    }
 
     private void Submit()
     {

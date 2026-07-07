@@ -82,6 +82,22 @@ public partial class UrlMigrator : IDisposable
     // "domain still appears alive" liveness guard that protects the auto-detected list.
     private Task StartMigrationFromFieldAsync() => StartMigrationAsync(_manualHost, force: true, suggestedHost: _suggestedTargetHost);
 
+    private async Task<IEnumerable<string>> SearchHostsAsync(string? value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return [];
+
+        var result = await BookmarkService.SearchBookmarksAsync(
+            new SearchRequest { Query = value, PageSize = 50 },
+            cancellationToken);
+
+        return result.Items
+            .Where(b => !string.IsNullOrWhiteSpace(b.Url))
+            .Select(b => Uri.TryCreate(b.Url, UriKind.Absolute, out var uri) ? uri.Host : null)
+            .Where(host => host is not null && host.Contains(value, StringComparison.OrdinalIgnoreCase))
+            .Distinct()
+            .Take(8)!;
+    }
+
     private async Task StartMigrationAsync(string? host, bool force, string? suggestedHost)
     {
         host = host?.Trim() ?? string.Empty;

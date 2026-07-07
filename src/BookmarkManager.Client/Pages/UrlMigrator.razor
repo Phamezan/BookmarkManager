@@ -64,13 +64,18 @@
 
             <MudText Typo="Typo.body2">Or enter a domain manually:</MudText>
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                <MudTextField @bind-Value="_manualHost"
-                              Label="Host"
-                              Placeholder="e.g. flamecomics.xyz"
-                              Variant="Variant.Outlined"
-                              Immediate="true"
-                              Disabled="@(IsRunning || _starting)"
-                              Class="migrator-manual-host-field" />
+                <MudAutocomplete T="string"
+                                 @bind-Value="_manualHost"
+                                 SearchFunc="SearchHostsAsync"
+                                 Label="Host"
+                                 Placeholder="e.g. flamecomics.xyz"
+                                 Variant="Variant.Outlined"
+                                 Immediate="true"
+                                 MinCharacters="2"
+                                 DebounceInterval="250"
+                                 ShowProgressIndicator="true"
+                                 Disabled="@(IsRunning || _starting)"
+                                 Class="migrator-manual-host-field" />
                 <MudTextField @bind-Value="_suggestedTargetHost"
                               Label="Migrate to (optional)"
                               Placeholder="e.g. weebcentral.com"
