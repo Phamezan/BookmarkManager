@@ -3093,25 +3093,34 @@ code {
     isolation: isolate;
 }
 
-/* Aurora signature — nebula wash bleeding through the glass shell, echoing
-   the WebGL app background so the calendar never reads as a flat opaque box. */
+/* Signature — a slow single-hue scanline sweeps the glass shell once per
+   cycle, like a radar pass. Reads as instrument/tech rather than a color
+   wash; the WebGL app background still shows through the translucent panel. */
 .anime-cal::before {
     content: "";
     position: absolute;
-    inset: -20% -10%;
+    inset: 0;
     z-index: -1;
     pointer-events: none;
-    background:
-        radial-gradient(38% 30% at 12% 8%, rgba(123, 112, 240, 0.30), transparent 70%),
-        radial-gradient(32% 26% at 88% 18%, rgba(255, 180, 84, 0.14), transparent 70%),
-        radial-gradient(40% 34% at 60% 92%, rgba(91, 82, 201, 0.22), transparent 70%);
-    filter: blur(10px);
-    animation: acalAuroraDrift 22s ease-in-out infinite alternate;
+    background: linear-gradient(180deg, transparent, rgba(123, 112, 240, 0.16), transparent);
+    height: 40%;
+    transform: translateY(-100%);
+    animation: acalScanSweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-@keyframes acalAuroraDrift {
-    0%   { transform: translate(0, 0) scale(1); }
-    100% { transform: translate(2%, -3%) scale(1.06); }
+@keyframes acalScanSweep {
+    0%, 15%  { transform: translateY(-100%); }
+    55%, 100% { transform: translateY(250%); }
+}
+
+.anime-cal::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow: inset 0 0 60px rgba(91, 82, 201, 0.08);
 }
 
 .anime-cal > * {
@@ -3137,13 +3146,24 @@ code {
 }
 
 .acal-title {
+    position: relative;
     margin: 0;
+    padding-left: 14px;
     font: 800 32px/1.1 system-ui, sans-serif;
     letter-spacing: -0.01em;
-    background: linear-gradient(120deg, var(--acal-text) 30%, var(--acal-accent-bright) 75%, var(--acal-today) 110%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: var(--acal-text);
+}
+
+.acal-title::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 4px;
+    border-radius: var(--bm-radius-full);
+    background: var(--acal-accent-bright);
+    box-shadow: 0 0 10px var(--acal-accent-bright);
 }
 
 .acal-toolbar-actions {
