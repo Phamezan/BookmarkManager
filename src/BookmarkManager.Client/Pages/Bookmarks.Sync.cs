@@ -37,6 +37,14 @@ public partial class Bookmarks
                                     _folderTree = await BookmarkService.GetFolderTreeAsync(ct);
                                     await LoadFavoritesAsync();
 
+                                    if (!string.IsNullOrWhiteSpace(_searchQuery))
+                                    {
+                                        _items = (await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = _searchQuery }, ct)).Items;
+                                        await LoadTagsAsync();
+                                        StateHasChanged();
+                                        return;
+                                    }
+
                                     // If the selected folder no longer exists in the new tree (e.g. after a restore),
                                     // fall back to the first available folder to avoid loading stale/empty data.
                                     var allFolderIds = CollectAllFolderIds(_folderTree);

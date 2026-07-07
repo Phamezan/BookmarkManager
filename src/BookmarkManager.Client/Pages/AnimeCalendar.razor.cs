@@ -23,9 +23,11 @@ public partial class AnimeCalendar
     private HashSet<Guid> _selectedFolderIds = [];
     private List<AnimeCalendarItem> _items = [];
     private List<BookmarkNodeDto> _unmatchedBookmarks = [];
+    private HashSet<Guid> _knownUnmatchedIds = [];
     private int _airingCount;
     private int _finishedCount;
-    private AnimeCalendarView _view = AnimeCalendarView.Week;
+    private bool _aniListDegraded;
+    private AnimeCalendarView _view = AnimeCalendarView.Month;
     private DateTime _anchor = DateTime.Today;
     private bool _autoMatching;
 
@@ -38,12 +40,20 @@ public partial class AnimeCalendar
 
         if (_selectedFolderIds.Count > 0)
         {
-            await LoadScheduleAsync();
+            await LoadScheduleAndAutoMatchAsync();
         }
         else
         {
             _loading = false;
         }
+
+        StartWebSocketListener();
+    }
+
+    private void OnMonthDaySelected(DateOnly date)
+    {
+        _anchor = date.ToDateTime(TimeOnly.MinValue);
+        _view = AnimeCalendarView.Day;
     }
 
     private static List<(Guid Id, string Title, int Depth)> FlattenFolders(List<FolderTreeNodeDto> nodes, int depth)
@@ -90,7 +100,7 @@ public partial class AnimeCalendar
         else _selectedFolderIds.Remove(id);
 
         await PersistFolderIdsAsync();
-        await LoadScheduleAsync();
+        await LoadScheduleAndAutoMatchAsync();
     }
 
     private async Task ClearFoldersAsync()
@@ -112,6 +122,7 @@ public partial class AnimeCalendar
             _unmatchedBookmarks = response.UnmatchedBookmarks;
             _airingCount = response.AiringCount;
             _finishedCount = response.FinishedCount;
+            _aniListDegraded = response.AniListDegraded;
         }
         catch (Exception ex)
         {
@@ -120,33 +131,68 @@ public partial class AnimeCalendar
         finally
         {
             _loading = false;
+            StateHasChanged();
         }
     }
 
-    private async Task AutoMatchAllAsync()
+    // Runs after every schedule load so newly-tagged bookmarks get matched without
+    // a manual "Match new" click - the server-side cooldown keeps repeat calls cheap.
+    // A sync-triggered reload (onlyNewSinceLastLoad) only auto-matches bookmarks that became
+    // unmatched since the previous load, instead of re-attempting the whole backlog every time
+    // any unrelated bookmark changes anywhere in the app.
+    private async Task LoadScheduleAndAutoMatchAsync(bool onlyNewSinceLastLoad = false)
+    {
+        var previousIds = _knownUnmatchedIds;
+        await LoadScheduleAsync();
+        _knownUnmatchedIds = _unmatchedBookmarks.Select(b => b.Id).ToHashSet();
+
+        if (_unmatchedBookmarks.Count == 0) return;
+
+        if (onlyNewSinceLastLoad)
+        {
+            var newIds = _knownUnmatchedIds.Except(previousIds).ToList();
+            if (newIds.Count > 0)
+            {
+                await AutoMatchAllAsync(silent: true, bookmarkIds: newIds);
+            }
+        }
+        else
+        {
+            await AutoMatchAllAsync(silent: true);
+        }
+    }
+
+    private async Task AutoMatchAllAsync(bool silent = false, List<Guid>? bookmarkIds = null)
     {
         _autoMatching = true;
+        StateHasChanged();
         try
         {
-            var response = await BookmarkService.AutoMatchAnimeAsync(_selectedFolderIds.ToList());
+            var response = await BookmarkService.AutoMatchAnimeAsync(_selectedFolderIds.ToList(), bookmarkIds);
             await LogAutoMatchResultAsync(response);
-            if (response.AniListUnavailable)
+            if (!silent)
             {
-                Snackbar.Add("AniList's API is currently unavailable - try auto-matching again later.", Severity.Warning);
-            }
-            else
-            {
-                var attempted = response.Matched.Count + response.Skipped.Count;
-                var cooldownNote = response.SkippedCooldownCount > 0
-                    ? $" ({response.SkippedCooldownCount} already checked recently, skipped)"
-                    : "";
-                Snackbar.Add($"Matched {response.Matched.Count} of {attempted} anime checked{cooldownNote}.", Severity.Success);
+                if (response.AniListUnavailable)
+                {
+                    Snackbar.Add("AniList's API is currently unavailable - try auto-matching again later.", Severity.Warning);
+                }
+                else
+                {
+                    var attempted = response.Matched.Count + response.Skipped.Count;
+                    var cooldownNote = response.SkippedCooldownCount > 0
+                        ? $" ({response.SkippedCooldownCount} already checked recently, skipped)"
+                        : "";
+                    Snackbar.Add($"Matched {response.Matched.Count} of {attempted} anime checked{cooldownNote}.", Severity.Success);
+                }
             }
             await LoadScheduleAsync();
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Auto-match failed: {ex.Message}", Severity.Error);
+            if (!silent)
+            {
+                Snackbar.Add($"Auto-match failed: {ex.Message}", Severity.Error);
+            }
         }
         finally
         {
@@ -182,8 +228,6 @@ public partial class AnimeCalendar
     }
 
     private void SetView(AnimeCalendarView view) => _view = view;
-
-    private void GoToday() => _anchor = DateTime.Today;
 
     // Prev/Next shift by a whole month for the Month view, otherwise by a week -
     // Agenda/Week span a week and Day steps a day at a time.

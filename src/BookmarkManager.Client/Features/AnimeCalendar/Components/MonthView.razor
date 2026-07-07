@@ -1,7 +1,9 @@
 @* Design 2a — month grid. Six week-rows for the anchor's month; leading/trailing
    days dimmed. Days with episodes show small cover-image badges (one per series,
-   overflow collapsed to "+N") so the month reads as a visual overview. Clicking a
-   populated day opens its first episode. *@
+   overflow collapsed to "+N") so the month reads as a visual overview. Hovering a
+   badge pops up a bigger cover + title + episode + ticking dd:hh:mm:ss countdown;
+   clicking a populated day opens its full Day view. *@
+@implements IDisposable
 
 <div class="acal-month-grid">
     @foreach (var name in DayHeaders)
@@ -22,14 +24,15 @@
                                          Width="16px" Height="22px" CssClass="acal-month-cover-mini" />
                             <span class="acal-event-title-text">@item.Title</span>
                             <span class="acal-event-ep-text">@item.EpisodeNumber</span>
-                            
+
                             <div class="rich-tip">
                                 <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
-                                             Width="60px" Height="84px" CssClass="acal-tip-cover" />
+                                             Width="160px" Height="224px" CssClass="acal-tip-cover" />
                                 <div class="acal-tip-details">
                                     <div class="acal-tip-title">@item.Title</div>
                                     <div class="acal-tip-ep">Episode @item.EpisodeNumber</div>
                                     <div class="acal-tip-time">Airing @item.AiringAtLocal.ToString("h:mm tt")</div>
+                                    <div class="acal-tip-countdown">@item.CountdownText</div>
                                 </div>
                             </div>
                         </div>
@@ -54,6 +57,7 @@
     [Parameter, EditorRequired] public IReadOnlyList<AnimeCalendarItem> Items { get; set; } = [];
     [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
     [Parameter] public EventCallback<AnimeCalendarItem> OnItemClick { get; set; }
+    [Parameter] public EventCallback<DateOnly> OnDaySelected { get; set; }
 
     private static readonly string[] DayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -62,6 +66,16 @@
 
     private List<Cell> _cells = [];
     private int _totalEpisodes;
+    private Timer? _countdownTicker;
+
+    protected override void OnInitialized()
+    {
+        // Only the hovered popover's countdown is visible at once, but ticking here
+        // (rather than per-item) keeps whichever one is open live to the second.
+        _countdownTicker = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    public void Dispose() => _countdownTicker?.Dispose();
 
     protected override void OnParametersSet()
     {
@@ -79,7 +93,7 @@
                 // One badge per series per day (the user bookmarks per-episode, so the
                 // same show can appear multiple times); keep the earliest airing of each.
                 g => g.OrderBy(i => i.AiringAtLocal)
-                      .GroupBy(SeriesKey)
+                      .GroupBy(i => i.SeriesKey)
                       .Select(s => s.First())
                       .ToList());
 
@@ -95,10 +109,7 @@
     }
 
     private Task OpenDay(Cell cell)
-        => cell.Items.Count > 0 ? OnItemClick.InvokeAsync(cell.Items[0]) : Task.CompletedTask;
-
-    private static string SeriesKey(AnimeCalendarItem item)
-        => item.AniListId?.ToString() ?? item.Title;
+        => cell.Count > 0 ? OnDaySelected.InvokeAsync(cell.Date) : Task.CompletedTask;
 
     private static string CellClass(Cell cell)
     {

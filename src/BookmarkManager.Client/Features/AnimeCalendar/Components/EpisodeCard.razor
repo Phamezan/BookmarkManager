@@ -1,12 +1,16 @@
 @* Shared episode card used by the Agenda, Day and Week timelines. Cover + title
    + episode/time line + optional source links. Clicking raises OnClick. *@
 
-<div class="acal-ep-card@(Emphasized ? " is-emphasized" : "")" @onclick="HandleClick">
+<div class="@CardClass" @onclick="HandleClick">
     <CoverPoster CoverImageUrl="@Item.CoverImageUrl" Title="@Item.Title"
                  Width="@CoverWidth" Height="@CoverHeight" />
     <div class="acal-ep-body">
         <div class="acal-ep-title">@Item.Title</div>
         <div class="acal-ep-meta">@MetaLine</div>
+        @if (ShowCountdown)
+        {
+            <div class="acal-ep-countdown">@Item.CountdownText</div>
+        }
         @if (ShowSourceLinks)
         {
             <div class="acal-ep-source">AniList · MyAnimeList</div>
@@ -24,9 +28,15 @@
     /// <summary>Show the "Episode N of ?" long form + source links (Day view).</summary>
     [Parameter] public bool Detailed { get; set; }
     [Parameter] public bool ShowSourceLinks { get; set; }
+    [Parameter] public bool ShowCountdown { get; set; }
+
+    /// <summary>Hero sizing - bigger cover, bigger type (Day view).</summary>
+    [Parameter] public bool Large { get; set; }
 
     [Parameter] public string CoverWidth { get; set; } = "36px";
     [Parameter] public string CoverHeight { get; set; } = "48px";
+
+    private string CardClass => $"acal-ep-card{(Emphasized ? " is-emphasized" : "")}{(Large ? " is-large" : "")}";
 
     private string MetaLine => Detailed
         ? $"Episode {Item.EpisodeNumber} of ?"

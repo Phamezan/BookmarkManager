@@ -446,11 +446,31 @@ public sealed class AnimeCalendarControllerTests : IntegrationTestBase
             return Task.FromResult(ScheduleByAniListId.TryGetValue(aniListId, out var s) ? s : new AnimeScheduleResult(null, []));
         }
 
-        public Task<AnimeMatchCandidateDto?> FindBestMatchAsync(string title, string? url, CancellationToken cancellationToken)
+        public Task<Dictionary<int, AnimeScheduleResult>> GetAiringSchedulesBatchAsync(IReadOnlyList<int> aniListIds, CancellationToken cancellationToken)
         {
-            if (ThrowUnavailable) throw new AniListUnavailableException("AniList responded with 403 Forbidden.");
-            return Task.FromResult(BestMatchByTitle.TryGetValue(title, out var best) ? best : null);
+            var result = new Dictionary<int, AnimeScheduleResult>();
+            foreach (var id in aniListIds)
+            {
+                GetAiringScheduleCallCount++;
+                result[id] = ScheduleByAniListId.TryGetValue(id, out var s) ? s : new AnimeScheduleResult(null, []);
+            }
+            return Task.FromResult(result);
         }
+
+        public Task<Dictionary<Guid, BestMatchLookupResult>> FindBestMatchesBatchAsync(
+            IReadOnlyList<(Guid Id, string Title, string? Url)> items, CancellationToken cancellationToken)
+        {
+            var results = new Dictionary<Guid, BestMatchLookupResult>();
+            foreach (var item in items)
+            {
+                results[item.Id] = ThrowUnavailable
+                    ? new BestMatchLookupResult(null, Unavailable: true)
+                    : new BestMatchLookupResult(BestMatchByTitle.TryGetValue(item.Title, out var best) ? best : null, Unavailable: false);
+            }
+            return Task.FromResult(results);
+        }
+
+        public bool IsAniListDegraded { get; set; }
     }
 
 }

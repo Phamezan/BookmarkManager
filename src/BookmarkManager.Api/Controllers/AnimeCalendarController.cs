@@ -33,11 +33,6 @@ public class AnimeCalendarController : ControllerBase
     // for a personal calendar, so a full day balances freshness against API pressure.
     private static readonly TimeSpan ScheduleCacheDuration = TimeSpan.FromDays(1);
 
-    // In-flight AniList schedule fetches allowed at once. The provider's own token-bucket
-    // rate limiter still bounds real throughput; this just lets the network round-trips
-    // overlap instead of running strictly one-at-a-time (the old serial foreach).
-    private const int MaxScheduleFetchConcurrency = 6;
-
     private readonly AppDbContext _db;
     private readonly IMapper _mapper;
     private readonly IAnilistScheduleProvider _anilistSchedule;
@@ -77,6 +72,15 @@ public class AnimeCalendarController : ControllerBase
             .Where(b => !b.AniListId.HasValue)
             .ToList();
 
+        // A sync event only auto-matches bookmarks newly unmatched since the client's last load,
+        // instead of re-attempting the whole backlog - keeps a stray unrelated bookmark edit from
+        // triggering a full sequential re-match of every still-unmatched bookmark in scope.
+        if (request.BookmarkIds is { Count: > 0 } restrictedIds)
+        {
+            var idSet = new HashSet<Guid>(restrictedIds);
+            unmatched = unmatched.Where(b => idSet.Contains(b.Id)).ToList();
+        }
+
         var cutoff = DateTime.UtcNow - MatchAttemptCooldown;
         var needingAttempt = unmatched.Where(b => b.LastMatchAttemptAt is null || b.LastMatchAttemptAt < cutoff).ToList();
 
@@ -87,20 +91,28 @@ public class AnimeCalendarController : ControllerBase
 
         var aiTitles = await TryGetAiCanonicalTitlesAsync(needingAttempt, ct);
 
+        // One batched AniList call resolves every bookmark's best match at once (aliased search
+        // queries) instead of one request per bookmark - see FindBestMatchesBatchAsync.
+        var matchItems = needingAttempt
+            .Select(b => (b.Id, Title: aiTitles.GetValueOrDefault(b.Id, b.Title), b.Url))
+            .ToList();
+        var bestMatches = await FindBestMatchesBatchWithFallbackAsync(matchItems, response, ct);
+
         foreach (var bookmark in needingAttempt)
         {
             var searchTitle = aiTitles.GetValueOrDefault(bookmark.Id, bookmark.Title);
-            var best = await FindBestMatchWithFallbackAsync(searchTitle, bookmark.Url, response, ct);
+            var lookup = bestMatches.GetValueOrDefault(bookmark.Id);
 
-            // AniList outage/rate-limit (e.g. a 429 mid-run): stop and leave this bookmark and all
-            // remaining ones untouched - crucially without stamping LastMatchAttemptAt - so they
-            // are retried on the next run instead of being locked out by the 7-day cooldown for a
-            // failure that was never about the title.
-            if (response.AniListUnavailable)
-                break;
+            // AniList outage/rate-limit (e.g. a 429 mid-run): leave this bookmark untouched -
+            // crucially without stamping LastMatchAttemptAt - so it's retried on the next run
+            // instead of being locked out by the 7-day cooldown for a failure that was never
+            // about the title.
+            if (lookup is null || lookup.Unavailable)
+                continue;
 
             bookmark.LastMatchAttemptAt = DateTime.UtcNow;
 
+            var best = lookup.Match;
             if (best is null)
             {
                 response.Skipped.Add(new AutoMatchAnimeEntryDto { BookmarkId = bookmark.Id, Title = bookmark.Title, SearchTitle = searchTitle, SkipReason = "No confident match found" });
@@ -195,20 +207,31 @@ public class AnimeCalendarController : ControllerBase
             .ToDictionaryAsync(c => c.AniListId, ct);
 
         var results = new Dictionary<int, AnimeScheduleResult>();
-        var needFetch = new List<int>();
+        var neverCheckedFetch = new List<int>();
+        var recheckFetch = new List<int>();
         foreach (var group in candidateGroups)
         {
             var id = group.First().AniListId!.Value;
             if (cacheRows.TryGetValue(id, out var row) && row.ExpiresAtUtc > now && !string.IsNullOrEmpty(row.ResolvedTitle))
+            {
                 results[id] = FromCache(row);
+                continue;
+            }
+
+            // Brand-new/never-checked (ScheduleCheckedAt null) always gets fetched this load, however
+            // large the recheck backlog is - a just-matched series must never wait behind stale
+            // "recheck expired" entries. Only the recheck backlog is subject to the per-load cap.
+            if (group.Any(b => b.ScheduleCheckedAt is null))
+                neverCheckedFetch.Add(id);
             else
-                needFetch.Add(id);
+                recheckFetch.Add(id);
         }
 
-        // AniList rate-limits aggressively (429s); cap the network calls per load so a cold library
-        // (100+ unchecked series) converges over a few loads instead of stampeding the API. The
-        // fetches run concurrently (bounded), gated by the provider's own token-bucket limiter.
-        var toFetch = needFetch.Take(MaxScheduleQueriesPerLoad).ToList();
+        // AniList rate-limits aggressively (429s); cap the recheck-backlog network calls per load so a
+        // cold library (100+ stale series) converges over a few loads instead of stampeding the API.
+        // The fetches run concurrently (bounded), gated by the provider's own token-bucket limiter.
+        var remainingBudget = Math.Max(0, MaxScheduleQueriesPerLoad - neverCheckedFetch.Count);
+        var toFetch = neverCheckedFetch.Concat(recheckFetch.Take(remainingBudget)).ToList();
         foreach (var (id, result) in await FetchSchedulesAsync(toFetch, ct))
         {
             results[id] = result;
@@ -303,36 +326,27 @@ public class AnimeCalendarController : ControllerBase
             Entries = entries,
             UnmatchedBookmarks = _mapper.Map<List<BookmarkNodeDto>>(unmatched),
             AiringCount = seriesWithEntries.Count,
-            FinishedCount = totalSeries - seriesWithEntries.Count
+            FinishedCount = totalSeries - seriesWithEntries.Count,
+            AniListDegraded = _anilistSchedule.IsAniListDegraded
         });
     }
 
     private static string GetMediaKey(BookmarkNode bookmark)
         => $"a:{bookmark.AniListId!.Value}";
 
-    // Fetch several series' schedules concurrently (bounded). The provider is a thread-safe
-    // singleton with its own rate limiter, so overlapping calls self-throttle; we only touch
-    // the (non-thread-safe) DbContext back on the single caller thread after this returns.
+    // Resolves every requested series' schedule (including each one's own SEQUEL walk) via
+    // AniList's id_in batch query, so a whole backlog costs a handful of requests instead of
+    // one-per-series - see AnilistTaggingService.GetAiringSchedulesBatchAsync.
     private async Task<IReadOnlyList<(int Id, AnimeScheduleResult Result)>> FetchSchedulesAsync(
         IReadOnlyList<int> aniListIds, CancellationToken ct)
     {
         if (aniListIds.Count == 0) return [];
 
-        using var gate = new SemaphoreSlim(MaxScheduleFetchConcurrency);
-        var tasks = aniListIds.Select(async id =>
-        {
-            await gate.WaitAsync(ct);
-            try
-            {
-                return (id, await _anilistSchedule.GetAiringScheduleAsync(id, ct));
-            }
-            finally
-            {
-                gate.Release();
-            }
-        });
-
-        return await Task.WhenAll(tasks);
+        var results = await _anilistSchedule.GetAiringSchedulesBatchAsync(aniListIds, ct);
+        return aniListIds
+            .Where(results.ContainsKey)
+            .Select(id => (id, results[id]))
+            .ToList();
     }
 
     private static AnimeScheduleResult FromCache(AnimeScheduleCache row)
@@ -402,17 +416,16 @@ public class AnimeCalendarController : ControllerBase
         }
     }
 
-    private async Task<AnimeMatchCandidateDto?> FindBestMatchWithFallbackAsync(string title, string? url, AutoMatchAnimeResponse response, CancellationToken ct)
+    private async Task<Dictionary<Guid, BestMatchLookupResult>> FindBestMatchesBatchWithFallbackAsync(
+        List<(Guid Id, string Title, string? Url)> items, AutoMatchAnimeResponse response, CancellationToken ct)
     {
-        try
-        {
-            return await _anilistSchedule.FindBestMatchAsync(title, url, ct);
-        }
-        catch (AniListUnavailableException)
-        {
+        if (items.Count == 0) return new Dictionary<Guid, BestMatchLookupResult>();
+
+        var results = await _anilistSchedule.FindBestMatchesBatchAsync(items, ct);
+        if (results.Values.Any(r => r.Unavailable))
             response.AniListUnavailable = true;
-            return null;
-        }
+
+        return results;
     }
 
     private static void ApplyMatch(BookmarkNode bookmark, AnimeMatchCandidateDto best)

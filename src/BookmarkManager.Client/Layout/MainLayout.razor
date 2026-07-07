@@ -9,11 +9,6 @@
 
 <MudLayout Class="app-shell">
     <MudAppBar Elevation="0" Class="app-topbar">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu"
-                       Color="Color.Inherit"
-                       Edge="Edge.Start"
-                       aria-label="Toggle navigation"
-                       OnClick="ToggleDrawer" />
         <MudStack Spacing="0" Class="app-title">
             <MudText Typo="Typo.subtitle1">
                 <span class="app-title-mark" aria-hidden="true"></span>
@@ -21,6 +16,7 @@
             </MudText>
             <MudText Typo="Typo.caption">Tracked Brave library operations</MudText>
         </MudStack>
+        <NavMenu />
         <MudSpacer />
         <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="topbar-status">
             <MudTooltip Text="@(_extensionService.IsConnected ? "Extension is connected and responsive." : "Commands are queued until the extension checks in.")">
@@ -33,23 +29,8 @@
                     @(_extensionService.IsConnected ? "Connected" : "Extension offline")
                 </MudChip>
             </MudTooltip>
-            <MudTooltip Text="Open settings">
-                <MudIconButton Href="settings"
-                               Icon="@Icons.Material.Filled.Settings"
-                               Color="Color.Inherit"
-                               Size="Size.Small"
-                               aria-label="Open settings" />
-            </MudTooltip>
         </MudStack>
     </MudAppBar>
-
-    <MudDrawer Open="@_drawerOpen"
-               Variant="@DrawerVariant.Responsive"
-               Elevation="0"
-               ClipMode="DrawerClipMode.Always"
-               Class="app-nav-drawer">
-        <NavMenu />
-    </MudDrawer>
 
     <MudMainContent Class="app-main">
         <div class="app-content">
@@ -88,8 +69,6 @@
 @implements IDisposable
 
 @code {
-    private bool _drawerOpen = true;
-
     [Inject]
     private IExtensionConnectionService _extensionService { get; set; } = null!;
 
@@ -118,8 +97,6 @@
     }
 
     private void OnConnectionStateChanged() => InvokeAsync(StateHasChanged);
-
-    private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 
     public void Dispose()
     {

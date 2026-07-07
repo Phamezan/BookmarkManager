@@ -216,6 +216,10 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<int>("Position")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("PreviousUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime?>("PurgeAfter")
                         .HasColumnType("TEXT");
 
@@ -486,6 +490,75 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("SnapshotNodeMappings");
                 });
 
+            modelBuilder.Entity("BookmarkManager.Api.Data.UrlMigrationProposal", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("BookmarkId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ChapterNumber")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Confidence")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeadHost")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DecidedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OldUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProposedHost")
+                        .HasMaxLength(255)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProposedUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("RunId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SeriesName")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BookmarkId");
+
+                    b.HasIndex("RunId");
+
+                    b.HasIndex("Status");
+
+                    b.ToTable("UrlMigrationProposals");
+                });
+
             modelBuilder.Entity("BookmarkManager.Api.Data.BookmarkNode", b =>
                 {
                     b.HasOne("BookmarkManager.Api.Data.BookmarkNode", "Parent")
@@ -494,6 +567,17 @@ namespace BookmarkManager.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("BookmarkManager.Api.Data.UrlMigrationProposal", b =>
+                {
+                    b.HasOne("BookmarkManager.Api.Data.BookmarkNode", "Bookmark")
+                        .WithMany()
+                        .HasForeignKey("BookmarkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Bookmark");
                 });
 
             modelBuilder.Entity("BookmarkManager.Api.Data.BookmarkNode", b =>

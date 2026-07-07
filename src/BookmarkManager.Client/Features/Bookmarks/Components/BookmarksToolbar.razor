@@ -5,22 +5,26 @@
             <div class="selection-bar">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                     <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
-                        <MudIconButton Icon="@(IsAllSelected ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
-                                       Size="Size.Small" Color="Color.Primary" OnClick="ToggleSelectAll"
-                                       aria-label="Toggle select all" />
-                        <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                       OnClick="ClearSelection" aria-label="Clear selection" />
-                        <MudText Typo="Typo.subtitle2" Class="ml-2">@SelectedCount selected</MudText>
+                        <MudTooltip Text="@(IsAllSelected ? "Deselect all" : "Select all")">
+                            <MudIconButton Icon="@(IsAllSelected ? Icons.Material.Rounded.RemoveDone : Icons.Material.Rounded.DoneAll)"
+                                           Size="Size.Small" Color="Color.Primary" OnClick="ToggleSelectAll"
+                                           aria-label="Toggle select all" />
+                        </MudTooltip>
+                        <MudTooltip Text="Clear selection">
+                            <MudIconButton Icon="@Icons.Material.Rounded.Close" Size="Size.Small"
+                                           OnClick="ClearSelection" aria-label="Clear selection" />
+                        </MudTooltip>
+                        <MudText Typo="Typo.subtitle2" Class="ml-2 selection-count">@SelectedCount selected</MudText>
                     </MudStack>
                     <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small"
-                                   OnClick="MoveSelected">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Rounded.DriveFileMove" Size="Size.Small"
+                                   Class="selection-action-btn" OnClick="MoveSelected">
                             Move
                         </MudButton>
-                        <MudButton Variant="Variant.Filled" Color="Color.Error"
-                                   StartIcon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                   OnClick="DeleteSelected">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error"
+                                   StartIcon="@Icons.Material.Rounded.DeleteOutline" Size="Size.Small"
+                                   Class="selection-action-btn selection-action-danger" OnClick="DeleteSelected">
                             Delete
                         </MudButton>
                     </MudStack>
@@ -30,24 +34,33 @@
         else
         {
             <MudPaper Elevation="0" Class="explorer-toolbar">
-                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                           StartIcon="@(IsAllSelected ? Icons.Material.Filled.CheckBox : Icons.Material.Filled.CheckBoxOutlineBlank)"
-                           OnClick="ToggleSelectAll" Class="mr-2 select-all-btn">
-                    @(IsAllSelected ? "Deselect All" : "Select All")
-                </MudButton>
-                <MudTextField Value="SearchQuery" ValueChanged="SearchChanged"
-                              Placeholder="Search title or URL" Variant="Variant.Outlined" Immediate="true"
-                              DebounceInterval="400" Margin="Margin.Dense" Class="toolbar-search"
-                              Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" />
+                <MudTooltip Text="@(IsAllSelected ? "Deselect all" : "Select all")">
+                    <MudButton Variant="Variant.Text" Size="Size.Small"
+                               StartIcon="@(IsAllSelected ? Icons.Material.Rounded.RemoveDone : Icons.Material.Rounded.DoneAll)"
+                               OnClick="ToggleSelectAll" Class="select-all-btn">
+                        @(IsAllSelected ? "Deselect" : "Select")
+                    </MudButton>
+                </MudTooltip>
 
-                <MudTooltip Text="Create bookmark">
-                    <MudIconButton Icon="@Icons.Material.Filled.AddLink" Color="Color.Primary"
-                                   OnClick="CreateBookmark" aria-label="Create bookmark" />
-                </MudTooltip>
-                <MudTooltip Text="Auto-tag bookmarks">
-                    <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary"
-                                   OnClick="OpenAutoTaggerDialog" aria-label="Auto tag" />
-                </MudTooltip>
+                <MudTextField Value="SearchQuery" ValueChanged="SearchChanged"
+                              Placeholder="Search title or URL…" Variant="Variant.Outlined" Immediate="true"
+                              DebounceInterval="400" Margin="Margin.Dense" Class="toolbar-search"
+                              Clearable="true"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Rounded.Search" />
+
+                <div class="toolbar-action-group" role="group" aria-label="Bookmark actions">
+                    <MudTooltip Text="Add bookmark">
+                        <MudIconButton Icon="@Icons.Material.Rounded.BookmarkAdd" Size="Size.Medium"
+                                       Class="toolbar-action-btn" OnClick="CreateBookmark"
+                                       aria-label="Add bookmark" />
+                    </MudTooltip>
+                    <div class="toolbar-action-divider" aria-hidden="true"></div>
+                    <MudTooltip Text="Auto-tag bookmarks">
+                        <MudIconButton Icon="@Icons.Material.Rounded.AutoFixHigh" Size="Size.Medium"
+                                       Class="toolbar-action-btn" OnClick="OpenAutoTaggerDialog"
+                                       aria-label="Auto-tag bookmarks" />
+                    </MudTooltip>
+                </div>
             </MudPaper>
         }
     </div>

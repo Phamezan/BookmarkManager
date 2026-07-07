@@ -1,0 +1,280 @@
+@page "/url-migrator"
+@using BookmarkManager.Contracts
+
+<PageTitle>URL Migrator</PageTitle>
+
+<MudStack Spacing="4" Class="page-surface url-migrator-page">
+    <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween" Class="page-heading">
+        <div>
+            <MudText Typo="Typo.h4">URL Migrator</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Find working replacement links for bookmarks stuck on dead domains, verify them, then approve or reject.
+            </MudText>
+        </div>
+    </MudStack>
+
+    <!-- Section 1: Start a migration -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Detected dead domains</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Size="Size.Small"
+                               OnClick="LoadDeadDomainsAsync"
+                               Disabled="@_loadingDeadDomains"
+                               Class="migrator-refresh-btn" />
+            </MudStack>
+
+            @if (_loadingDeadDomains)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_deadDomains.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    None detected — run Link Checker, or enter a domain manually below.
+                </MudText>
+            }
+            else
+            {
+                <MudSimpleTable Class="migrator-dead-domains-table" Dense="true" Hover="true">
+                    <tbody>
+                        @foreach (var domain in _deadDomains)
+                        {
+                            <tr class="migrator-dead-domain-row">
+                                <td>@domain.Host</td>
+                                <td>@domain.BookmarkCount bookmarks</td>
+                                <td class="text-right">
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               Disabled="@(IsRunning || _starting)"
+                                               OnClick="@(() => StartMigrationFromListAsync(domain.Host))">
+                                        Migrate →
+                                    </MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+
+            <MudDivider Class="my-2" />
+
+            <MudText Typo="Typo.body2">Or enter a domain manually:</MudText>
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudTextField @bind-Value="_manualHost"
+                              Label="Host"
+                              Placeholder="e.g. flamecomics.xyz"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              Disabled="@(IsRunning || _starting)"
+                              Class="migrator-manual-host-field" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           OnClick="StartMigrationFromFieldAsync"
+                           Disabled="@(IsRunning || _starting || string.IsNullOrWhiteSpace(_manualHost))"
+                           Class="migrator-start-btn">
+                    @(_starting ? "Starting..." : "Start Migration")
+                </MudButton>
+            </MudStack>
+        </MudStack>
+    </MudPaper>
+
+    <!-- Section 2: Run progress -->
+    @if (_status != null && (IsRunning || _status.TotalFound > 0))
+    {
+        <MudPaper Elevation="0" Class="ops-panel migrator-progress-panel">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">
+                    @(IsRunning ? $"Migrating {_status.DeadHost}" : $"Last run: {_status.DeadHost}")
+                </MudText>
+                <MudProgressLinear Value="@(ProgressPercent())" Color="Color.Primary" Class="migrator-progress-bar" />
+                <MudText Typo="Typo.body2">@_status.Processed / @_status.TotalFound processed</MudText>
+                @if (!string.IsNullOrEmpty(_status.CurrentBookmarkTitle))
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Resolving: "@_status.CurrentBookmarkTitle"</MudText>
+                }
+                <MudText Typo="Typo.body2">Resolved: @_status.Resolved &nbsp; Unresolved: @_status.Unresolved</MudText>
+                @if (!string.IsNullOrEmpty(_status.ErrorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">@_status.ErrorMessage</MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+    }
+
+    <!-- Section 3: Review -->
+    <MudPaper Elevation="0" Class="ops-panel migrator-review-panel">
+        <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Class="migrator-tabs">
+            <MudTabPanel Text="Current run">
+                @if (_currentProposals.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary pa-2">
+                        No proposals yet. Start a migration above to see review results here.
+                    </MudText>
+                }
+                else
+                {
+                    <MudExpansionPanels Class="migrator-groups">
+                        @foreach (var group in PendingGroups)
+                        {
+                            var groupList = group.ToList();
+                            <MudExpansionPanel Class="migrator-group">
+                                <TitleContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="migrator-group-header" Style="width:100%;">
+                                        <MudText Typo="Typo.subtitle1">@group.Key — @groupList.Count proposal(s)</MudText>
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="Color.Success"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => ApproveAsync(groupList.Select(p => p.Id)))"
+                                                   Class="migrator-approve-group-btn">
+                                            Approve @groupList.Count
+                                        </MudButton>
+                                    </MudStack>
+                                </TitleContent>
+                                <ChildContent>
+                                    @foreach (var proposal in groupList)
+                                    {
+                                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="migrator-proposal-row pa-2">
+                                            <MudStack Spacing="0">
+                                                <MudText Typo="Typo.body1">@proposal.BookmarkTitle</MudText>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary" title="@proposal.OldUrl">old: @Truncate(proposal.OldUrl)</MudText>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary" title="@proposal.ProposedUrl">new: @Truncate(proposal.ProposedUrl)</MudText>
+                                                @if (proposal.Confidence == "Medium" && !string.IsNullOrEmpty(proposal.Detail))
+                                                {
+                                                    <MudText Typo="Typo.caption" Class="mud-text-secondary migrator-detail">@proposal.Detail</MudText>
+                                                }
+                                            </MudStack>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                <MudChip T="string" Color="@ConfidenceColor(proposal.Confidence)" Size="Size.Small" Class="migrator-confidence-chip">
+                                                    @proposal.Confidence
+                                                </MudChip>
+                                                <MudIconButton Icon="@Icons.Material.Filled.Check"
+                                                               Color="Color.Success"
+                                                               Size="Size.Small"
+                                                               Class="migrator-approve-btn"
+                                                               OnClick="@(() => ApproveAsync([proposal.Id]))" />
+                                                <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                                               Color="Color.Error"
+                                                               Size="Size.Small"
+                                                               Class="migrator-reject-btn"
+                                                               OnClick="@(() => RejectAsync([proposal.Id]))" />
+                                                <MudLink Href="@proposal.ProposedUrl" Target="_blank" rel="noopener" Class="migrator-open-link">
+                                                    <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" />
+                                                </MudLink>
+                                            </MudStack>
+                                        </MudStack>
+                                    }
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+
+                        @if (UnresolvedProposals.Count > 0)
+                        {
+                            <MudExpansionPanel Class="migrator-group migrator-unresolved-group" Text="@($"Unresolved — {UnresolvedProposals.Count} bookmark(s)")">
+                                <ChildContent>
+                                    @foreach (var proposal in UnresolvedProposals)
+                                    {
+                                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="migrator-proposal-row migrator-unresolved-row pa-2">
+                                            <MudStack Spacing="0">
+                                                <MudText Typo="Typo.body1">@proposal.BookmarkTitle</MudText>
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@(proposal.Detail ?? "No reader found.")</MudText>
+                                            </MudStack>
+                                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                                <MudChip T="string" Color="Color.Default" Size="Size.Small" Class="migrator-confidence-chip">Unresolved</MudChip>
+                                                <MudButton Variant="Variant.Text"
+                                                           Size="Size.Small"
+                                                           Class="migrator-manual-url-btn"
+                                                           OnClick="@(() => OpenManualUrlDialogAsync(proposal))">
+                                                    Enter URL manually…
+                                                </MudButton>
+                                            </MudStack>
+                                        </MudStack>
+                                    }
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+                    </MudExpansionPanels>
+
+                    <MudStack Row="true" Spacing="2" Class="mt-3 migrator-review-footer">
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Success"
+                                   Disabled="@(HighConfidencePending.Count == 0)"
+                                   OnClick="ApproveAllHighAsync"
+                                   Class="migrator-approve-all-high-btn">
+                            Approve all High (@HighConfidencePending.Count)
+                        </MudButton>
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Error"
+                                   Disabled="@(!_currentProposals.Any(p => p.Status == "Pending"))"
+                                   OnClick="RejectRemainingAsync"
+                                   Class="migrator-reject-remaining-btn">
+                            Reject remaining
+                        </MudButton>
+                    </MudStack>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="History">
+                @if (HistoryProposals.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary pa-2">No decided proposals yet.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Class="migrator-history-table" Dense="true">
+                        <thead>
+                            <tr>
+                                <th>Bookmark</th>
+                                <th>Host</th>
+                                <th>Status</th>
+                                <th>Decided</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var proposal in HistoryProposals)
+                            {
+                                <tr class="migrator-history-row" data-status="@proposal.Status">
+                                    <td>@proposal.BookmarkTitle</td>
+                                    <td>@proposal.ProposedHost</td>
+                                    <td>@proposal.Status</td>
+                                    <td>@(proposal.CreatedAt.ToLocalTime().ToString("g"))</td>
+                                    <td>
+                                        @if (proposal.Status == "Approved")
+                                        {
+                                            <MudButton Variant="Variant.Text"
+                                                       Size="Size.Small"
+                                                       Class="migrator-revert-btn"
+                                                       OnClick="@(() => RevertAsync(proposal.Id))">
+                                                Revert
+                                            </MudButton>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+</MudStack>
+
+@code {
+    private int _activeTabIndex;
+
+    private double ProgressPercent()
+        => _status == null || _status.TotalFound == 0
+            ? 0
+            : Math.Clamp(_status.Processed * 100.0 / _status.TotalFound, 0, 100);
+
+    private static string Truncate(string? url, int max = 60)
+    {
+        if (string.IsNullOrEmpty(url))
+            return "(none)";
+        return url.Length <= max ? url : url[..max] + "…";
+    }
+}

@@ -211,9 +211,39 @@ public sealed class HttpBookmarkService : IBookmarkService
                ?? new AnimeCalendarScheduleResponse();
     }
 
-    public async Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<AutoMatchAnimeResponse>(HttpMethod.Post, "api/anime-calendar/auto-match", new AutoMatchAnimeRequest { FolderIds = folderIds }, cancellationToken)
+    public async Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<AutoMatchAnimeResponse>(HttpMethod.Post, "api/anime-calendar/auto-match", new AutoMatchAnimeRequest { FolderIds = folderIds, BookmarkIds = bookmarkIds }, cancellationToken)
            ?? new AutoMatchAnimeResponse();
+
+    public async Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<DeadDomainCandidateDto>>("api/bookmarks/url-migration/dead-domains", cancellationToken) ?? [];
+
+    public async Task<bool> StartUrlMigrationAsync(string deadHost, CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost)));
+
+    public async Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<UrlMigrationStatusDto>("api/bookmarks/url-migration/status", cancellationToken);
+
+    public async Task<List<UrlMigrationProposalDto>> GetUrlMigrationProposalsAsync(Guid? runId, string? status, CancellationToken cancellationToken = default)
+    {
+        var query = new List<string>();
+        if (runId.HasValue) query.Add($"runId={runId.Value}");
+        if (!string.IsNullOrWhiteSpace(status)) query.Add($"status={Uri.EscapeDataString(status)}");
+        var uri = "api/bookmarks/url-migration/proposals" + (query.Count > 0 ? $"?{string.Join("&", query)}" : string.Empty);
+        return await _apiClient.GetAsync<List<UrlMigrationProposalDto>>(uri, cancellationToken) ?? [];
+    }
+
+    public async Task<DecideProposalsResponse?> ApproveProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, "api/bookmarks/url-migration/proposals/approve", new DecideProposalsRequest(ids), cancellationToken);
+
+    public async Task<DecideProposalsResponse?> RejectProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, "api/bookmarks/url-migration/proposals/reject", new DecideProposalsRequest(ids), cancellationToken);
+
+    public async Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/revert", cancellationToken));
+
+    public async Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/manual", new SetManualProposalUrlRequest(url), cancellationToken);
 
     private sealed class AiTaggingStatusDto
     {

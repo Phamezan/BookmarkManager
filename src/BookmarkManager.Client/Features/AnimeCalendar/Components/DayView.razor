@@ -14,8 +14,8 @@
             <div class="acal-timeline-slot">
                 <span class="acal-timeline-node is-small"></span>
                 <div class="acal-timeline-time">@item.AiringAtLocal.ToString("h:mm tt")</div>
-                <EpisodeCard Item="item" OnClick="OnItemClick" Detailed="true" ShowSourceLinks="true"
-                             CoverWidth="36px" CoverHeight="48px" />
+                <EpisodeCard Item="item" OnClick="OnItemClick" Detailed="true" ShowSourceLinks="true" Large="true"
+                             CoverWidth="112px" CoverHeight="150px" />
             </div>
         }
     }
@@ -38,9 +38,6 @@
     {
         var day = DateOnly.FromDateTime(Anchor);
         _isToday = day == DateOnly.FromDateTime(DateTime.Today);
-        _items = Items
-            .Where(i => i.AiringDay == day)
-            .OrderBy(i => i.AiringAtLocal)
-            .ToList();
+        _items = AnimeCalendarItem.DeduplicateBookmarks(Items.Where(i => i.AiringDay == day));
     }
 }

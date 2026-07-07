@@ -1,6 +1,7 @@
 @* Designs 1d + 2b merged — violet roadmap: the anchor's week grouped by day as a
    connected vertical timeline. Only days that actually have episodes get a node;
    today's node/label render in amber. *@
+@implements IDisposable
 
 @if (_days.Count == 0)
 {
@@ -21,7 +22,8 @@ else
                 <div class="acal-timeline-cards">
                     @foreach (var item in day.Items)
                     {
-                        <EpisodeCard Item="item" OnClick="OnItemClick" Emphasized="isToday" />
+                        <EpisodeCard Item="item" OnClick="OnItemClick" Emphasized="isToday" Large="true" ShowCountdown="true"
+                                     CoverWidth="64px" CoverHeight="88px" />
                     }
                 </div>
             </div>
@@ -36,6 +38,12 @@ else
 
     private DateOnly _today;
     private List<DayGroup> _days = [];
+    private Timer? _countdownTicker;
+
+    protected override void OnInitialized()
+        => _countdownTicker = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+
+    public void Dispose() => _countdownTicker?.Dispose();
 
     protected override void OnParametersSet()
     {
@@ -47,7 +55,7 @@ else
             .Where(i => i.AiringDay >= weekStart && i.AiringDay <= weekEnd)
             .GroupBy(i => i.AiringDay)
             .OrderBy(g => g.Key)
-            .Select(g => new DayGroup(g.Key, g.OrderBy(i => i.AiringAtLocal).ToList()))
+            .Select(g => new DayGroup(g.Key, AnimeCalendarItem.DeduplicateBookmarks(g)))
             .ToList();
     }
 

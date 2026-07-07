@@ -3,12 +3,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
-using BookmarkManager.Api.Infrastructure;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -131,116 +129,13 @@ public class LinkCheckerService : BackgroundService
 
         if (brokenIds.Count > 0)
         {
-            // Find or create "Broken Links" folder
-            var rootFolder = await db.BookmarkNodes
-                .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.ParentId == null && !n.IsDeleted, ct);
-            if (rootFolder == null)
+            var brokenLinksFolder = await BrokenLinksFolderHelper.GetOrCreateFolderAsync(db, _logger, ct);
+            if (brokenLinksFolder == null)
             {
-                rootFolder = await db.BookmarkNodes
-                    .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && !n.IsDeleted, ct);
-            }
-
-            if (rootFolder == null)
-            {
-                _logger.LogWarning("Could not find any root folder to place Broken Links under.");
                 return;
             }
 
-            var brokenLinksFolder = await db.BookmarkNodes
-                .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.ParentId == rootFolder.Id && n.Title == "Broken Links" && !n.IsDeleted, ct);
-
-            if (brokenLinksFolder == null)
-            {
-                var maxPosRoot = await db.BookmarkNodes
-                    .Where(n => n.ParentId == rootFolder.Id)
-                    .MaxAsync(n => (int?)n.Position, ct) ?? -1;
-
-                brokenLinksFolder = new BookmarkNode
-                {
-                    Id = Guid.NewGuid(),
-                    ParentId = rootFolder.Id,
-                    Type = NodeType.Folder,
-                    Title = "Broken Links",
-                    Position = maxPosRoot + 1,
-                    SyncState = SyncState.Pending,
-                    Version = 1,
-                    UpdatedAt = DateTime.UtcNow
-                };
-                db.BookmarkNodes.Add(brokenLinksFolder);
-
-                var createPayload = new
-                {
-                    parentId = rootFolder.BrowserNodeId ?? "1",
-                    title = "Broken Links"
-                };
-                db.ExtensionCommands.Add(new ExtensionCommandEntry
-                {
-                    Id = Guid.NewGuid(),
-                    OperationId = Guid.NewGuid(),
-                    CommandType = "Create",
-                    BookmarkId = brokenLinksFolder.Id,
-                    BrowserNodeId = null,
-                    ExpectedVersion = 0,
-                    PayloadJson = JsonSerializer.Serialize(createPayload),
-                    CreatedAt = DateTime.UtcNow,
-                    Status = "Pending"
-                });
-
-                await db.SaveChangesAsync(ct);
-                _logger.LogInformation("Created new Broken Links folder in database, waiting for extension sync.");
-            }
-
-            // If Broken Links folder doesn't have a BrowserNodeId yet, we must wait for Brave to create it and report back.
-            // Only move bookmarks if the BrowserNodeId exists!
-            if (!string.IsNullOrEmpty(brokenLinksFolder.BrowserNodeId))
-            {
-                var brokenBookmarks = await db.BookmarkNodes
-                    .Where(n => brokenIds.Contains(n.Id) && n.ParentId != brokenLinksFolder.Id)
-                    .ToListAsync(ct);
-
-                if (brokenBookmarks.Count > 0)
-                {
-                    var maxPosBroken = await db.BookmarkNodes
-                        .Where(n => n.ParentId == brokenLinksFolder.Id)
-                        .MaxAsync(n => (int?)n.Position, ct) ?? -1;
-
-                    int nextPos = maxPosBroken + 1;
-                    foreach (var bm in brokenBookmarks)
-                    {
-                        bm.ParentId = brokenLinksFolder.Id;
-                        bm.Position = nextPos++;
-                        bm.SyncState = SyncState.Pending;
-                        bm.UpdatedAt = DateTime.UtcNow;
-
-                        var movePayload = new
-                        {
-                            parentBrowserNodeId = brokenLinksFolder.BrowserNodeId,
-                            position = bm.Position
-                        };
-
-                        db.ExtensionCommands.Add(new ExtensionCommandEntry
-                        {
-                            Id = Guid.NewGuid(),
-                            OperationId = Guid.NewGuid(),
-                            CommandType = "Move",
-                            BookmarkId = bm.Id,
-                            BrowserNodeId = bm.BrowserNodeId,
-                            ExpectedVersion = bm.Version,
-                            PayloadJson = JsonSerializer.Serialize(movePayload),
-                            CreatedAt = DateTime.UtcNow,
-                            Status = "Pending"
-                        });
-                    }
-
-                    await db.SaveChangesAsync(ct);
-                    await SyncWebSocketManager.BroadcastSyncAsync();
-                    _logger.LogInformation("Moved {Count} broken bookmarks to Broken Links folder.", brokenBookmarks.Count);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("Broken Links folder has no BrowserNodeId yet. Deferring bookmark movements until next scan/sync.");
-            }
+            await BrokenLinksFolderHelper.MoveBookmarksIntoFolderAsync(db, brokenLinksFolder, brokenIds, _logger, ct);
         }
     }
 

@@ -64,3 +64,14 @@ Toolbar (shared by 2a/2b/2c): eyebrow label + title + `‹ Month Week Day ›` b
    - Toggle Month/Week/Day; verify month badges, week day-tabs switch the timeline, day view lists today's episodes.
    - Click an episode → opens its `Url` in a new tab.
    - Confirm the dark panel renders correctly in both app light and dark themes (scoped, no leakage).
+
+## Backlog — visual density (2026-07-06)
+
+Follow-up from user feedback on the Month grid.
+
+**Tried and reverted (2026-07-06):** a landscape-banner event chip (cover art stretched to fill the row as a background band) and a toolbar-level "Next up" ticking countdown. User rejected both — banner read as a smeared/stretched image, and the countdown was unwanted clutter. Reverted to the original 16x22 mini-cover + side-text row and dropped the toolbar countdown entirely.
+
+**Implemented instead:**
+- **Day-cell click-through**: clicking a populated Month cell (anywhere, including the "+N more" row) opens `DayView` for that date instead of just the first item's `Url` — Month stays a compact index, Day is where the full list lives.
+- **Day view hero sizing**: `DayView`/`EpisodeCard` covers bumped from 36x48 to 112x150 (`EpisodeCard.Large`) since Day has a full page of room and no competing items.
+- **Hover popup countdown**: the existing Month per-event hover popover (`.rich-tip`) now shows a live "Airs in Xd Yh" countdown line alongside title/episode/airing-time, and its cover bumped 60x84 → 72x100. This is where the "bigger image + countdown" ask actually lives — on hover, not baked into the row or the toolbar.

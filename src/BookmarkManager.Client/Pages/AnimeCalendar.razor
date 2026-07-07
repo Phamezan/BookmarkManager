@@ -1,5 +1,6 @@
 @page "/anime-calendar"
 @using BookmarkManager.Client.Features.AnimeCalendar
+@implements IDisposable
 
 <PageTitle>Anime Calendar</PageTitle>
 
@@ -26,7 +27,7 @@
                 <div class="rec-chip-actions">
                     @if (_unmatchedBookmarks.Count > 0)
                     {
-                        <button type="button" class="rec-clear-btn" disabled="@_autoMatching" @onclick="AutoMatchAllAsync">
+                        <button type="button" class="rec-clear-btn" disabled="@_autoMatching" @onclick="() => AutoMatchAllAsync(false)">
                             @if (_autoMatching)
                             {
                                 <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
@@ -40,6 +41,13 @@
                 </div>
             }
         </div>
+
+        @if (_aniListDegraded)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">
+                AniList's API is running in a degraded, rate-limited mode right now - new matches and schedule updates may take longer to appear.
+            </MudAlert>
+        }
 
         @if (_selectedFolderIds.Count > 0 && !_loading)
         {
@@ -67,7 +75,7 @@
             <div class="anime-cal">
                 <CalendarToolbar Current="_view" CurrentChanged="SetView"
                                  Eyebrow="@ToolbarEyebrow" Title="@ToolbarTitle"
-                                 OnPrev="GoPrev" OnNext="GoNext" OnToday="GoToday" />
+                                 OnPrev="GoPrev" OnNext="GoNext" />
 
                 @if (_loading)
                 {
@@ -77,7 +85,7 @@
                 @switch (_view)
                 {
                     case AnimeCalendarView.Month:
-                        <MonthView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />
+                        <MonthView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" OnDaySelected="OnMonthDaySelected" />
                         break;
                     case AnimeCalendarView.Day:
                         <DayView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />

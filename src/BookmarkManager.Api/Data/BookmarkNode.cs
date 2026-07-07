@@ -22,6 +22,9 @@ public class BookmarkNode
     public int? Rating { get; set; }
     public string? Notes { get; set; }
     public bool IsFavorite { get; set; }
+    // Manager-only metadata set on URL migration approval; enables one-click revert.
+    // Never pushed to Brave — only Url changes flow to the extension as an Update command.
+    public string? PreviousUrl { get; set; }
     public string? CoverImageUrl { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }

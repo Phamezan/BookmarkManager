@@ -14,6 +14,7 @@ public partial class Settings
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private IBookmarkManagerApiClient ApiClient { get; set; } = default!;
     [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
 
     private ExtensionStatusDto? _extensionStatus;
     private bool _statusLoading = true;
@@ -23,6 +24,8 @@ public partial class Settings
     private bool _aiSettingsSaving;
     private bool _aiKeyTesting;
     private TestAiKeyResponse? _aiKeyTestResult;
+    private bool _groqKeyTesting;
+    private TestAiKeyResponse? _groqKeyTestResult;
 
     private class ThemeOption
     {
@@ -47,7 +50,6 @@ public partial class Settings
     private string _selectedThemeId = "default";
 
     private string _triageMatchBaseUrl = string.Empty;
-    private string _triageActionType = "ManualFolder";
     private bool _triageRunning;
     private TriageJobStatusDto? _triageResult;
 
@@ -56,17 +58,6 @@ public partial class Settings
         try
         {
             _linkCheckerRunning = await BookmarkService.IsLinkCheckRunningAsync();
-
-            var triageStatus = await BookmarkService.GetTriageStatusAsync();
-            if (triageStatus.IsRunning || triageStatus.TotalFound > 0)
-            {
-                _triageResult = triageStatus;
-                _triageRunning = triageStatus.IsRunning;
-                if (_triageRunning)
-                {
-                    _ = PollTriageStatusAsync();
-                }
-            }
         }
         catch
         {
@@ -75,6 +66,8 @@ public partial class Settings
 
         await Task.WhenAll(LoadExtensionStatusAsync(), LoadAiTaggingSettingsAsync());
     }
+
+    private void OpenUrlMigrator() => Navigation.NavigateTo("/url-migrator");
 
     private async Task RunLinkCheckerAsync()
     {
@@ -106,48 +99,27 @@ public partial class Settings
 
         try
         {
-            var request = new TriageDomainRequest(_triageMatchBaseUrl, _triageActionType, "Broken Links");
+            var request = new TriageDomainRequest(_triageMatchBaseUrl, "ManualFolder", "Broken Links");
             _triageResult = await BookmarkService.TriageDomainAsync(request);
-            
-            _ = PollTriageStatusAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to start domain triage: {ex.Message}", Severity.Error);
-            _triageRunning = false;
-            StateHasChanged();
-        }
-    }
 
-    private async Task PollTriageStatusAsync()
-    {
-        try
-        {
-            while (_triageRunning)
-            {
-                await Task.Delay(1000);
-                var status = await BookmarkService.GetTriageStatusAsync();
-                
-                _triageResult = status;
-                _triageRunning = status.IsRunning;
-                
-                StateHasChanged();
-            }
-
-            if (_triageResult != null && !string.IsNullOrEmpty(_triageResult.ErrorMessage))
+            if (!string.IsNullOrEmpty(_triageResult.ErrorMessage))
             {
                 Snackbar.Add($"Domain triage failed: {_triageResult.ErrorMessage}", Severity.Error);
             }
-            else if (_triageResult != null && _triageResult.TotalFound > 0)
+            else if (_triageResult.TotalFound > 0)
             {
-                Snackbar.Add($"Triage complete! Processed {_triageResult.SuccessfullyProcessed} of {_triageResult.TotalFound} bookmarks.", Severity.Success);
+                Snackbar.Add($"Triage complete! Moved {_triageResult.SuccessfullyProcessed} of {_triageResult.TotalFound} bookmarks.", Severity.Success);
             }
-            else if (_triageResult != null)
+            else
             {
                 Snackbar.Add("Triage complete! No matching bookmarks found.", Severity.Info);
             }
         }
-        catch
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to run domain triage: {ex.Message}", Severity.Error);
+        }
+        finally
         {
             _triageRunning = false;
             StateHasChanged();
@@ -215,6 +187,35 @@ public partial class Settings
         finally
         {
             _aiKeyTesting = false;
+        }
+    }
+
+    private async Task TestGroqKeyAsync()
+    {
+        _groqKeyTesting = true;
+        _groqKeyTestResult = null;
+        try
+        {
+            var request = new TestAiKeyRequest
+            {
+                Provider = "Groq",
+                BaseUrl = _aiSettings.GroqBaseUrl,
+                Model = _aiSettings.GroqModel,
+                ApiKey = _aiSettings.GroqApiKey
+            };
+            _groqKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
+            Snackbar.Add(
+                _groqKeyTestResult.Success ? "Groq key test passed." : "Groq key test failed.",
+                _groqKeyTestResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _groqKeyTestResult = new TestAiKeyResponse { Success = false, Message = ex.Message };
+            Snackbar.Add($"Failed to run Groq key test: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _groqKeyTesting = false;
         }
     }
 

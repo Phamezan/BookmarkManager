@@ -1,31 +1,85 @@
+@implements IDisposable
+@inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="nav-3d-stage">
 <MudNavMenu Class="primary-nav" Dense="true">
-    <div class="nav-brand">
-        <MudIcon Icon="@Icons.Material.Filled.Bookmarks" Size="Size.Medium" />
-        <div class="nav-brand-text">
-            <span class="nav-brand-name">Bookmark Manager</span>
-            <span class="nav-brand-sub">Brave Sync · v1</span>
-        </div>
-    </div>
-
-    <div class="nav-section-label">Library</div>
-    <MudNavLink Href="bookmarks" Icon="@Icons.Material.Filled.Bookmarks">
-        Bookmarks
+    <div class="nav-active-indicator" aria-hidden="true"><div class="nav-active-indicator-disc"></div></div>
+    <MudNavLink Href="bookmarks" Ripple="false">
+        <span class="nav-link-inner"><img src="@IconUrl("bookmark", "star")" alt="" class="nav-icon-img" />Bookmarks</span>
     </MudNavLink>
-    <MudNavLink Href="recommendations" Icon="@Icons.Material.Filled.AutoAwesome">
-        Recommendations
+    <MudNavLink Href="recommendations" Ripple="false">
+        <span class="nav-link-inner"><img src="@IconUrl("idea", "confetti")" alt="" class="nav-icon-img" />Recommendations</span>
     </MudNavLink>
-    <MudNavLink Href="anime-calendar" Icon="@Icons.Material.Filled.CalendarMonth">
-        Anime Calendar
+    <MudNavLink Href="anime-calendar" Ripple="false">
+        <span class="nav-link-inner"><img src="@IconUrl("calendar")" alt="" class="nav-icon-img" />Anime Calendar</span>
     </MudNavLink>
-    <MudNavLink Href="recycle-bin" Icon="@Icons.Material.Filled.RestoreFromTrash">
-        Recycle Bin
+    <MudNavLink Href="recycle-bin" Ripple="false">
+        <span class="nav-link-inner"><img src="@IconUrl("trash")" alt="" class="nav-icon-img" />Recycle Bin</span>
     </MudNavLink>
-
-
-    <div class="nav-spacer" style="flex-grow: 1;"></div>
-
-    <div class="nav-section-label">Configure</div>
-    <MudNavLink Href="settings" Icon="@Icons.Material.Filled.Settings">
-        Settings
+    <MudNavLink Href="url-migrator" Ripple="false">
+        <span class="nav-link-inner"><img src="@IconUrl("link")" alt="" class="nav-icon-img" />URL Migrator</span>
+    </MudNavLink>
+    <MudNavLink Href="settings" Ripple="false">
+        <span class="nav-link-inner">
+            <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" stroke="currentColor" stroke-width="1.6" />
+                <path d="M19.4 13.5a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V19.4a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H4.6a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 6.2 8.6a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H10.6A1.65 1.65 0 0 0 11.6 2.77V2.7a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V8.7a1.65 1.65 0 0 0 1.51 1h.09a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+            </svg>
+            Settings
+        </span>
     </MudNavLink>
 </MudNavMenu>
+</div>
+
+@code {
+    // Icons8 CDN trial. Change to try other looks: doodle, clouds, stickers, plasticine, bubbles, cute-clipart.
+    // Not every icon name exists in every style; second argument is the fallback name.
+    private const string IconStyle = "doodle";
+
+    private static readonly HashSet<string> MissingInDoodle = new() { "bookmark" };
+
+    private static string IconUrl(string name, string? fallback = null)
+    {
+        if (fallback is not null && IconStyle == "doodle" && MissingInDoodle.Contains(name))
+            name = fallback;
+        return $"https://img.icons8.com/{IconStyle}/96/{name}.png";
+    }
+
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("initNavIndicator");
+            }
+            catch
+            {
+                // Fallback
+            }
+        }
+    }
+
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("repositionNavIndicator");
+        }
+        catch
+        {
+            // Fallback
+        }
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

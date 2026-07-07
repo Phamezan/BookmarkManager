@@ -13,6 +13,14 @@ public interface IDuckDuckGoSearchService
 {
     Task<string?> FindAlternativeUrlAsync(string bookmarkTitle, string? category, string deadDomain, CancellationToken ct);
     string CleanBookmarkTitle(string title);
+
+    /// <summary>
+    /// Raw candidate URLs for a query (DuckDuckGo HTML, falling back to Yahoo), with the dead
+    /// domain filtered out. Unlike <see cref="FindAlternativeUrlAsync"/>, this does not score or
+    /// select a single "best" result - callers (e.g. URL Migrator v2's search stage) do their
+    /// own reranking/filtering. Used purely as a candidate source.
+    /// </summary>
+    Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct);
 }
 
 public class DuckDuckGoSearchService : IDuckDuckGoSearchService
@@ -168,6 +176,36 @@ public class DuckDuckGoSearchService : IDuckDuckGoSearchService
         }
 
         return bestMatch;
+    }
+
+    public async Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        var searchHtml = await FetchSearchHtmlWithPacingAsync(query, ct);
+        bool isBlocked = !string.IsNullOrEmpty(searchHtml) &&
+                         (searchHtml.Contains("bots use DuckDuckGo too") || searchHtml.Contains("anomaly-modal"));
+
+        List<string> candidates = [];
+        if (!string.IsNullOrWhiteSpace(searchHtml) && !isBlocked)
+        {
+            candidates = ExtractAndCleanUrls(searchHtml, deadDomain);
+        }
+
+        if (isBlocked || candidates.Count == 0)
+        {
+            _logger.LogInformation("DuckDuckGo blocked/empty, falling back to Yahoo Search for query '{Query}'", query);
+            var yahooHtml = await FetchYahooSearchHtmlAsync(query, ct);
+            if (!string.IsNullOrWhiteSpace(yahooHtml))
+            {
+                candidates = ExtractAndCleanYahooUrls(yahooHtml, deadDomain);
+            }
+        }
+
+        return candidates;
     }
 
     private async Task<string?> FetchSearchHtmlWithPacingAsync(string query, CancellationToken ct)

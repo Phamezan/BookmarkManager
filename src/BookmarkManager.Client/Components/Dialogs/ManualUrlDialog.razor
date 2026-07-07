@@ -1,0 +1,50 @@
+@namespace BookmarkManager.Client.Components
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Enter URL manually</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
+            @BookmarkTitle
+        </MudText>
+        <MudTextField @bind-Value="_url"
+                      Label="New URL"
+                      Placeholder="https://"
+                      Variant="Variant.Outlined"
+                      Immediate="true"
+                      Class="manual-url-field" />
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   OnClick="Submit"
+                   Disabled="@(!IsValidUrl(_url))"
+                   Class="manual-url-submit">
+            Use this URL
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public string BookmarkTitle { get; set; } = string.Empty;
+
+    private string _url = string.Empty;
+
+    private static bool IsValidUrl(string? url)
+        => !string.IsNullOrWhiteSpace(url)
+           && Uri.TryCreate(url, UriKind.Absolute, out var uri)
+           && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+
+    private void Submit()
+    {
+        if (!IsValidUrl(_url)) return;
+        MudDialog.Close(DialogResult.Ok(_url));
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -34,7 +34,11 @@ builder.Services.AddSingleton<AiRequestThrottle>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient(nameof(OpenRouterSeriesIdentificationClient))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddSingleton<IAiSeriesIdentificationClient, OpenRouterSeriesIdentificationClient>();
+builder.Services.AddHttpClient(nameof(GroqSeriesIdentificationClient))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddSingleton<OpenRouterSeriesIdentificationClient>();
+builder.Services.AddSingleton<GroqSeriesIdentificationClient>();
+builder.Services.AddSingleton<IAiSeriesIdentificationClient, CompositeSeriesIdentificationClient>();
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.AnilistTaggingService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.MangaUpdatesTaggingService))
@@ -65,8 +69,20 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.AutoTaggerBackgroundJ
 builder.Services.AddHostedService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
-builder.Services.AddSingleton<BookmarkManager.Api.Services.DomainTriageBackgroundJob>();
-builder.Services.AddHostedService<BookmarkManager.Api.Services.DomainTriageBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.DomainTriageBackgroundJob>());
+builder.Services.AddSingleton<BookmarkManager.Api.Services.UrlMigration.UrlMigrationBackgroundJob>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.UrlMigration.UrlMigrationBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.UrlMigrationBackgroundJob>());
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.UrlMigration.GroqSeriesExtractionService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.UrlMigration.GroqCompoundSearchService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ISeriesExtractionService, BookmarkManager.Api.Services.UrlMigration.GroqSeriesExtractionService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IAlternativeUrlSearchService, BookmarkManager.Api.Services.UrlMigration.GroqCompoundSearchService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ICandidateVerificationService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>());
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IDomainLivenessGuard>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>());
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.UrlMigrationApprovalService>();
+builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService.HttpClientName)
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.AddAutoMapper(typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>

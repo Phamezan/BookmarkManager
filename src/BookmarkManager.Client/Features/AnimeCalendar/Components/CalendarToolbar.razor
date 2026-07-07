@@ -17,7 +17,6 @@
             </button>
         }
         <button type="button" class="acal-nav-btn" title="Next" @onclick="OnNext">&rsaquo;</button>
-        <button type="button" class="acal-today-btn" @onclick="OnToday">Today</button>
     </div>
 </div>
 
@@ -28,7 +27,6 @@
     [Parameter] public string Title { get; set; } = string.Empty;
     [Parameter] public EventCallback OnPrev { get; set; }
     [Parameter] public EventCallback OnNext { get; set; }
-    [Parameter] public EventCallback OnToday { get; set; }
 
     private static readonly AnimeCalendarView[] Views =
     [

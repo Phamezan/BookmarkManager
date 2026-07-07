@@ -40,6 +40,97 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
     public Task<List<AnimeMatchCandidateDto>> SearchCandidatesAsync(string title, string? url, CancellationToken cancellationToken)
         => SearchByQueryAsync(ResolveSearchQuery(title, url).Query, cancellationToken);
 
+    // AniList's query-complexity budget is 500; each aliased search sub-query with this field
+    // set costs 9 (empirically confirmed: 55 aliases = 495 succeeds, 56 = 504 fails). Chunking at
+    // 40 leaves margin instead of riding the exact edge.
+    private const int CandidateBatchChunkSize = 40;
+
+    // Batches many distinct title searches into a handful of requests instead of one per bookmark -
+    // each bookmark has its own search string so id_in doesn't apply here, GraphQL aliasing does
+    // instead (t0/t1/... each running its own Page(media(search:...))).
+    public async Task<Dictionary<string, List<AnimeMatchCandidateDto>>> SearchCandidatesBatchAsync(
+        IReadOnlyList<string> queries, CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<string, List<AnimeMatchCandidateDto>>(StringComparer.OrdinalIgnoreCase);
+        var distinct = queries
+            .Where(q => !string.IsNullOrWhiteSpace(q) && q.Length >= 2)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (distinct.Count == 0) return results;
+
+        var now = DateTimeOffset.UtcNow;
+        var pending = new List<string>();
+        foreach (var query in distinct)
+        {
+            if (_candidateCache.TryGetValue(query, out var cached) && cached.ExpiresAt > now)
+                results[query] = cached.Candidates;
+            else
+                pending.Add(query);
+        }
+
+        foreach (var chunk in pending.Chunk(CandidateBatchChunkSize))
+        {
+            await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            var body = new
+            {
+                query = BuildCandidateBatchQuery(chunk.Length),
+                variables = BuildCandidateBatchVariables(chunk)
+            };
+
+            using var resp = await PostAniListAsync(body, cancellationToken).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var errorBody = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                _logger.LogWarning("AniList batch candidate search returned non-success code: {Status}. Body: {Body}", resp.StatusCode, errorBody);
+                throw new AniListUnavailableException($"AniList responded with {(int)resp.StatusCode} {resp.StatusCode}.");
+            }
+
+            using var doc = await resp.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (doc is null) continue;
+
+            var parsed = ParseCandidateBatch(doc.RootElement, chunk);
+            foreach (var (query, candidates) in parsed)
+            {
+                results[query] = candidates;
+                _candidateCache[query] = new CandidateCacheEntry(candidates, now.Add(CandidateCacheDuration));
+            }
+        }
+
+        return results;
+    }
+
+    private static string BuildCandidateBatchQuery(int count)
+    {
+        var varDecls = string.Join(", ", Enumerable.Range(0, count).Select(i => $"$s{i}: String"));
+        var aliases = string.Join(" ", Enumerable.Range(0, count).Select(i =>
+            $"t{i}: Page(page: 1, perPage: 5) {{ media(search: $s{i}, type: ANIME) {{ id title {{ romaji english }} coverImage {{ large }} status }} }}"));
+        return $"query({varDecls}) {{ {aliases} }}";
+    }
+
+    private static Dictionary<string, object> BuildCandidateBatchVariables(IReadOnlyList<string> chunk)
+    {
+        var variables = new Dictionary<string, object>();
+        for (var i = 0; i < chunk.Count; i++)
+            variables[$"s{i}"] = chunk[i];
+        return variables;
+    }
+
+    private static Dictionary<string, List<AnimeMatchCandidateDto>> ParseCandidateBatch(JsonElement root, IReadOnlyList<string> chunk)
+    {
+        var results = new Dictionary<string, List<AnimeMatchCandidateDto>>(StringComparer.OrdinalIgnoreCase);
+        if (!root.TryGetProperty("data", out var dataEl) || dataEl.ValueKind != JsonValueKind.Object)
+            return results;
+
+        for (var i = 0; i < chunk.Count; i++)
+        {
+            if (dataEl.TryGetProperty($"t{i}", out var pageEl))
+                results[chunk[i]] = ParseCandidatesFromPage(pageEl);
+        }
+
+        return results;
+    }
+
     private async Task<List<AnimeMatchCandidateDto>> SearchByQueryAsync(string cleanQuery, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(cleanQuery) || cleanQuery.Length < 2)
@@ -90,11 +181,8 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
     // by numeral/word differences - trust them with a looser bar than free-text page titles.
     private const double SlugSimilarityThreshold = 0.34;
 
-    public async Task<AnimeMatchCandidateDto?> FindBestMatchAsync(string title, string? url, CancellationToken cancellationToken)
+    private static AnimeMatchCandidateDto? ScoreBestCandidate(string query, bool fromSlug, List<AnimeMatchCandidateDto> candidates)
     {
-        var (query, fromSlug) = ResolveSearchQuery(title, url);
-
-        var candidates = await SearchByQueryAsync(query, cancellationToken).ConfigureAwait(false);
         if (candidates.Count == 0) return null;
 
         AnimeMatchCandidateDto? best = null;
@@ -117,6 +205,40 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
         return bestScore >= threshold ? best : null;
     }
 
+    // Resolves every item's search query up front, then runs ONE batched candidate search across
+    // all of them (SearchCandidatesBatchAsync dedupes+chunks internally) instead of one AniList
+    // request per bookmark. If the batch call fails outright (outage/rate-limit), every item comes
+    // back Unavailable=true so the caller retries them all next run instead of burning cooldowns.
+    public async Task<Dictionary<Guid, BestMatchLookupResult>> FindBestMatchesBatchAsync(
+        IReadOnlyList<(Guid Id, string Title, string? Url)> items, CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<Guid, BestMatchLookupResult>();
+        if (items.Count == 0) return results;
+
+        var resolved = items.ToDictionary(i => i.Id, i => ResolveSearchQuery(i.Title, i.Url));
+
+        Dictionary<string, List<AnimeMatchCandidateDto>> candidatesByQuery;
+        try
+        {
+            candidatesByQuery = await SearchCandidatesBatchAsync(
+                resolved.Values.Select(r => r.Query).ToList(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (AniListUnavailableException)
+        {
+            foreach (var id in resolved.Keys)
+                results[id] = new BestMatchLookupResult(null, Unavailable: true);
+            return results;
+        }
+
+        foreach (var (id, (query, fromSlug)) in resolved)
+        {
+            var candidates = candidatesByQuery.GetValueOrDefault(query, []);
+            results[id] = new BestMatchLookupResult(ScoreBestCandidate(query, fromSlug, candidates), Unavailable: false);
+        }
+
+        return results;
+    }
+
     // How many SEQUEL hops to follow before giving up. A bookmarked finished season can sit
     // several seasons behind the currently-airing one (e.g. a franchise on its 4th cour); a small
     // cap keeps the walk bounded while still reaching any realistic "next season" target.
@@ -124,97 +246,138 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
 
     public async Task<AnimeScheduleResult> GetAiringScheduleAsync(int aniListId, CancellationToken cancellationToken)
     {
+        var batch = await GetAiringSchedulesBatchAsync([aniListId], cancellationToken).ConfigureAwait(false);
+        return batch.TryGetValue(aniListId, out var result) ? result : new AnimeScheduleResult(null, []);
+    }
+
+    // Resolves many series' schedules (including each one's own SEQUEL walk) in a handful of
+    // requests total instead of one-per-series-per-hop. AniList's Page(media(id_in:...)) query
+    // answers up to 50 ids per call, so every hop level batches all still-unresolved series
+    // together: hop 0 fetches every requested id in ~1 call, hop 1 fetches only the ids that came
+    // back with zero upcoming episodes and a SEQUEL to follow, and so on. This is the difference
+    // between ~90 requests for a 90-bookmark backlog and ~5.
+    public async Task<Dictionary<int, AnimeScheduleResult>> GetAiringSchedulesBatchAsync(
+        IReadOnlyList<int> aniListIds, CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<int, AnimeScheduleResult>();
+        if (aniListIds.Count == 0) return results;
+
         var now = DateTimeOffset.UtcNow;
-        if (_scheduleCache.TryGetValue(aniListId, out var cached) && cached.ExpiresAt > now)
-            return cached.Result;
+        var pending = new List<int>();
+        foreach (var id in aniListIds.Distinct())
+        {
+            if (_scheduleCache.TryGetValue(id, out var cached) && cached.ExpiresAt > now)
+                results[id] = cached.Result;
+            else
+                pending.Add(id);
+        }
 
-        var (result, succeeded) = await ResolveScheduleFollowingSequelsAsync(aniListId, cancellationToken).ConfigureAwait(false);
+        if (pending.Count == 0) return results;
 
-        // Only cache a resolution we actually completed. A failed or cancelled fetch (rate-limit
-        // timeout, transient network error, request abort) yields an empty list that is NOT a real
-        // "nothing airing" answer - caching it would wrongly hide the series until the cache expires.
-        if (succeeded)
-            _scheduleCache[aniListId] = new ScheduleCacheEntry(result, now.Add(ScheduleCacheDuration));
+        // originalId -> id currently being looked up for it (advances along the SEQUEL chain).
+        var current = pending.ToDictionary(id => id, id => id);
+        var visited = pending.ToDictionary(id => id, id => new HashSet<int> { id });
+        var resolved = new Dictionary<int, (AnimeScheduleResult Result, bool Succeeded)>();
 
-        return result;
+        for (var hop = 0; hop <= MaxSequelHops && current.Count > 0; hop++)
+        {
+            var fetched = await FetchMediaBatchAsync(current.Values.Distinct().ToList(), cancellationToken).ConfigureAwait(false);
+
+            var next = new Dictionary<int, int>();
+            foreach (var (originalId, currentId) in current)
+            {
+                if (!fetched.TryGetValue(currentId, out var media))
+                {
+                    // Fetch failed or media no longer exists - not a real "nothing airing" answer,
+                    // don't cache it, so the next load retries.
+                    resolved[originalId] = (new AnimeScheduleResult(null, []), false);
+                    continue;
+                }
+
+                if (media.Episodes.Count > 0)
+                {
+                    resolved[originalId] = (new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl), true);
+                    continue;
+                }
+
+                if (media.SequelId is int nextId && visited[originalId].Add(nextId))
+                {
+                    next[originalId] = nextId;
+                    continue;
+                }
+
+                // End of the chain (or a cycle guard tripped) with nothing upcoming - a real,
+                // cacheable "nothing airing" answer.
+                resolved[originalId] = (new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl), true);
+            }
+
+            current = next;
+        }
+
+        // Ran out of hop budget while still walking - a real, cacheable "nothing found" answer,
+        // same as the single-series path hitting MaxSequelHops.
+        foreach (var originalId in current.Keys)
+            resolved[originalId] = (new AnimeScheduleResult(null, []), true);
+
+        foreach (var (originalId, (result, succeeded)) in resolved)
+        {
+            if (succeeded)
+                _scheduleCache[originalId] = new ScheduleCacheEntry(result, now.Add(ScheduleCacheDuration));
+            results[originalId] = result;
+        }
+
+        return results;
     }
 
-    // A bookmark matched to a finished season should still surface its franchise's next season.
-    // AniList models each season as a separate media linked by a SEQUEL relation, so when the
-    // matched media has no upcoming episodes we walk the sequel chain to the newest season and
-    // return that season's schedule instead - relabeled via the Resolved* fields so the calendar
-    // shows the new season, not the old bookmark title. The matched media is looked up under its
-    // own id (the walk only advances while the current season has nothing left to air), so a
-    // still-airing series like One Piece returns immediately without ever touching relations.
-    // Returns the resolved schedule plus whether resolution actually completed. Success is false
-    // when any fetch in the walk failed/was cancelled, so the caller can avoid caching a bogus
-    // empty result.
-    private async Task<(AnimeScheduleResult Result, bool Succeeded)> ResolveScheduleFollowingSequelsAsync(int aniListId, CancellationToken cancellationToken)
+    // Fetches many media by id in one request (AniList's Page(media(id_in:...)) answers up to 50
+    // ids per call), chunking only if the caller passes more than that. This is what lets
+    // GetAiringSchedulesBatchAsync resolve an entire hop level for every still-pending series
+    // with a single round trip instead of one request per id.
+    private async Task<Dictionary<int, MediaScheduleNode>> FetchMediaBatchAsync(IReadOnlyList<int> aniListIds, CancellationToken cancellationToken)
     {
-        var visited = new HashSet<int>();
-        var currentId = aniListId;
+        var results = new Dictionary<int, MediaScheduleNode>();
+        if (aniListIds.Count == 0) return results;
 
-        for (var hop = 0; hop <= MaxSequelHops; hop++)
+        foreach (var chunk in aniListIds.Chunk(50))
         {
-            if (!visited.Add(currentId))
-                break; // Defensive: AniList relation cycles are not expected, but guard anyway.
-
-            var media = await FetchMediaScheduleAsync(currentId, cancellationToken).ConfigureAwait(false);
-            if (media is null)
-                return (new AnimeScheduleResult(null, []), false);
-
-            var followed = currentId != aniListId;
-
-            // Found the season that has episodes still to air - this is the one to display.
-            if (media.Episodes.Count > 0)
+            try
             {
-                var result = new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl);
-                return (result, true);
-            }
+                await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-            // No upcoming episodes here; if a later season exists, continue walking toward it.
-            if (media.SequelId is int nextId)
+                var body = new
+                {
+                    query = AiringScheduleBatchQuery,
+                    variables = new { ids = chunk }
+                };
+
+                using var resp = await PostAniListAsync(body, cancellationToken).ConfigureAwait(false);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("AniList batch schedule lookup returned non-success code: {Status}", resp.StatusCode);
+                    continue;
+                }
+
+                using var doc = await resp.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (doc is null) continue;
+
+                foreach (var (id, node) in ParseMediaScheduleBatch(doc.RootElement))
+                    results[id] = node;
+            }
+            catch (Exception ex)
             {
-                currentId = nextId;
-                continue;
+                _logger.LogWarning(ex, "Failed to query AniList batch airing schedule for {Count} ids", chunk.Length);
             }
-
-            // End of the chain with nothing upcoming - a real, cacheable "nothing airing" answer.
-            var empty = new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl);
-            return (empty, true);
         }
 
-        return (new AnimeScheduleResult(null, []), true);
+        return results;
     }
 
-    private async Task<MediaScheduleNode?> FetchMediaScheduleAsync(int aniListId, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-            var body = new
-            {
-                query = AiringScheduleQuery,
-                variables = new { id = aniListId }
-            };
-
-            using var resp = await PostAniListAsync(body, cancellationToken).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("AniList schedule lookup returned non-success code: {Status}", resp.StatusCode);
-                return null;
-            }
-
-            using var doc = await resp.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
-            return doc is null ? null : ParseMediaScheduleNode(doc.RootElement);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to query AniList airing schedule for media {AniListId}", aniListId);
-            return null;
-        }
-    }
+    // AniList's own docs note a "degraded" mode capped at 30 req/min (vs the normal 90), with no
+    // separate status endpoint to query - the X-RateLimit-Limit response header on every call is
+    // the only live signal, so capture it here and surface it to callers instead of hardcoding
+    // which mode is currently in effect.
+    private static volatile bool _isDegraded;
+    public bool IsAniListDegraded => _isDegraded;
 
     private async Task<HttpResponseMessage> PostAniListAsync(object body, CancellationToken cancellationToken)
     {
@@ -222,7 +385,15 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
         http.DefaultRequestHeaders.Accept.Clear();
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         http.DefaultRequestHeaders.UserAgent.ParseAdd("BookmarkManager/2.0");
-        return await http.PostAsJsonAsync("https://graphql.anilist.co", body, cancellationToken).ConfigureAwait(false);
+        var resp = await http.PostAsJsonAsync("https://graphql.anilist.co", body, cancellationToken).ConfigureAwait(false);
+
+        if (resp.Headers.TryGetValues("X-RateLimit-Limit", out var limitValues) &&
+            int.TryParse(limitValues.FirstOrDefault(), out var limit))
+        {
+            _isDegraded = limit < 90;
+        }
+
+        return resp;
     }
 
     private const string CandidateSearchQuery = @"
@@ -237,20 +408,25 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
           }
         }";
 
-    private const string AiringScheduleQuery = @"
-        query ($id: Int) {
-          Media(id: $id, type: ANIME) {
-            id
-            status
-            title { romaji english }
-            coverImage { large }
-            airingSchedule(notYetAired: true, perPage: 50) {
-              nodes { episode airingAt }
-            }
-            relations {
-              edges {
-                relationType
-                node { id type status }
+    // Batched form of the single-media schedule query: id_in answers up to 50 ids in one call,
+    // which is what lets GetAiringSchedulesBatchAsync resolve an entire hop level for every
+    // pending series with a single request instead of one request per id.
+    private const string AiringScheduleBatchQuery = @"
+        query ($ids: [Int]) {
+          Page(page: 1, perPage: 50) {
+            media(id_in: $ids, type: ANIME) {
+              id
+              status
+              title { romaji english }
+              coverImage { large }
+              airingSchedule(notYetAired: true, perPage: 50) {
+                nodes { episode airingAt }
+              }
+              relations {
+                edges {
+                  relationType
+                  node { id type status }
+                }
               }
             }
           }
@@ -258,16 +434,22 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
 
     public static List<AnimeMatchCandidateDto> ParseCandidates(JsonElement root)
     {
-        var results = new List<AnimeMatchCandidateDto>();
         if (!root.TryGetProperty("data", out var dataEl) ||
             dataEl.ValueKind != JsonValueKind.Object ||
             !dataEl.TryGetProperty("Page", out var pageEl) ||
-            pageEl.ValueKind != JsonValueKind.Object ||
-            !pageEl.TryGetProperty("media", out var mediaEl) ||
-            mediaEl.ValueKind != JsonValueKind.Array)
+            pageEl.ValueKind != JsonValueKind.Object)
         {
-            return results;
+            return [];
         }
+
+        return ParseCandidatesFromPage(pageEl);
+    }
+
+    private static List<AnimeMatchCandidateDto> ParseCandidatesFromPage(JsonElement pageEl)
+    {
+        var results = new List<AnimeMatchCandidateDto>();
+        if (!pageEl.TryGetProperty("media", out var mediaEl) || mediaEl.ValueKind != JsonValueKind.Array)
+            return results;
 
         foreach (var item in mediaEl.EnumerateArray())
         {
@@ -310,6 +492,8 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
         "RELEASING", "NOT_YET_RELEASED"
     };
 
+    // Single-media shape (data.Media), kept for the rare direct-lookup case and covered by
+    // existing parsing unit tests; the batch path (data.Page.media[]) is what production code uses.
     public static MediaScheduleNode? ParseMediaScheduleNode(JsonElement root)
     {
         if (!root.TryGetProperty("data", out var dataEl) ||
@@ -320,6 +504,36 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
             return null;
         }
 
+        return ParseMediaScheduleFields(mediaEl);
+    }
+
+    // Parses the Page(media(id_in:...)) batch response into a per-id lookup.
+    public static Dictionary<int, MediaScheduleNode> ParseMediaScheduleBatch(JsonElement root)
+    {
+        var results = new Dictionary<int, MediaScheduleNode>();
+        if (!root.TryGetProperty("data", out var dataEl) ||
+            dataEl.ValueKind != JsonValueKind.Object ||
+            !dataEl.TryGetProperty("Page", out var pageEl) ||
+            pageEl.ValueKind != JsonValueKind.Object ||
+            !pageEl.TryGetProperty("media", out var mediaArrayEl) ||
+            mediaArrayEl.ValueKind != JsonValueKind.Array)
+        {
+            return results;
+        }
+
+        foreach (var mediaEl in mediaArrayEl.EnumerateArray())
+        {
+            if (!mediaEl.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.Number)
+                continue;
+
+            results[idEl.GetInt32()] = ParseMediaScheduleFields(mediaEl);
+        }
+
+        return results;
+    }
+
+    private static MediaScheduleNode ParseMediaScheduleFields(JsonElement mediaEl)
+    {
         var status = mediaEl.TryGetProperty("status", out var statusEl) && statusEl.ValueKind == JsonValueKind.String
             ? statusEl.GetString()
             : null;

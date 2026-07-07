@@ -19,6 +19,7 @@ public class AppDbContext : DbContext
     public DbSet<SnapshotNodeMapping> SnapshotNodeMappings => Set<SnapshotNodeMapping>();
     public DbSet<ExtensionCommandEntry> ExtensionCommands => Set<ExtensionCommandEntry>();
     public DbSet<AnimeScheduleCache> AnimeScheduleCaches => Set<AnimeScheduleCache>();
+    public DbSet<UrlMigrationProposal> UrlMigrationProposals => Set<UrlMigrationProposal>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -32,6 +33,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Status).HasMaxLength(100);
             entity.Property(e => e.Notes).HasMaxLength(4000);
             entity.Property(e => e.CoverImageUrl).HasMaxLength(2048);
+            entity.Property(e => e.PreviousUrl).HasMaxLength(2048);
 
             entity.HasOne(e => e.Parent)
                   .WithMany(e => e.Children)
@@ -127,6 +129,29 @@ public class AppDbContext : DbContext
             entity.Property(e => e.ResolvedTitle).HasMaxLength(500);
             entity.Property(e => e.ResolvedCoverImageUrl).HasMaxLength(2048);
             entity.HasIndex(e => e.ExpiresAtUtc);
+        });
+
+        modelBuilder.Entity<UrlMigrationProposal>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.DeadHost).HasMaxLength(255).IsRequired();
+            entity.Property(e => e.OldUrl).HasMaxLength(2048).IsRequired();
+            entity.Property(e => e.ProposedUrl).HasMaxLength(2048);
+            entity.Property(e => e.ProposedHost).HasMaxLength(255);
+            entity.Property(e => e.SeriesName).HasMaxLength(500);
+            entity.Property(e => e.ChapterNumber).HasMaxLength(64);
+            entity.Property(e => e.Confidence).HasMaxLength(32).IsRequired();
+            entity.Property(e => e.Detail).HasMaxLength(2000);
+            entity.Property(e => e.Status).HasMaxLength(32).IsRequired();
+
+            entity.HasOne(e => e.Bookmark)
+                  .WithMany()
+                  .HasForeignKey(e => e.BookmarkId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.RunId);
+            entity.HasIndex(e => e.Status);
+            entity.HasIndex(e => e.BookmarkId);
         });
     }
 }

@@ -62,7 +62,11 @@ public class AiTaggingSettingsService
             Model = "google/gemini-2.5-flash:free",
             ApiKey = string.Empty,
             RequestsPerMinute = 15,
-            PreferredBatchSize = 25
+            PreferredBatchSize = 25,
+            GroqApiKey = string.Empty,
+            GroqModel = "llama-3.3-70b-versatile",
+            GroqBaseUrl = "https://api.groq.com/openai/v1",
+            GroqRequestsPerMinute = 25
         };
 
     private static AiTaggingSettingsDto Normalize(AiTaggingSettingsDto settings)
@@ -78,6 +82,12 @@ public class AiTaggingSettingsService
             Model = string.IsNullOrWhiteSpace(settings.Model) ? "google/gemini-2.5-flash:free" : settings.Model.Trim(),
             ApiKey = settings.ApiKey?.Trim() ?? string.Empty,
             RequestsPerMinute = settings.RequestsPerMinute <= 0 ? 15 : settings.RequestsPerMinute,
-            PreferredBatchSize = settings.PreferredBatchSize <= 0 ? 25 : settings.PreferredBatchSize
+            PreferredBatchSize = settings.PreferredBatchSize <= 0 ? 25 : settings.PreferredBatchSize,
+            GroqApiKey = settings.GroqApiKey?.Trim() ?? string.Empty,
+            GroqModel = string.IsNullOrWhiteSpace(settings.GroqModel) ? "llama-3.3-70b-versatile" : settings.GroqModel.Trim(),
+            GroqBaseUrl = string.IsNullOrWhiteSpace(settings.GroqBaseUrl)
+                ? "https://api.groq.com/openai/v1"
+                : settings.GroqBaseUrl.Trim().TrimEnd('/'),
+            GroqRequestsPerMinute = settings.GroqRequestsPerMinute <= 0 ? 25 : settings.GroqRequestsPerMinute
         };
 }

@@ -23,6 +23,21 @@ public sealed class AnimeCalendarItem
     /// <summary>Calendar day the episode airs on (local).</summary>
     public DateOnly AiringDay => DateOnly.FromDateTime(AiringAtLocal);
 
+    /// <summary>Identifies one series regardless of which bookmark matched it - used to
+    /// collapse duplicate bookmarks of the same anime into a single calendar entry.</summary>
+    public string SeriesKey => AniListId?.ToString() ?? Title;
+
+    /// <summary>Live "dd:hh:mm:ss" until airing, or "Already aired" once past.</summary>
+    public string CountdownText
+    {
+        get
+        {
+            var delta = AiringAtLocal - DateTime.Now;
+            if (delta <= TimeSpan.Zero) return "Already aired";
+            return $"{(int)delta.TotalDays:00}:{delta.Hours:00}:{delta.Minutes:00}:{delta.Seconds:00}";
+        }
+    }
+
     public static AnimeCalendarItem FromEntry(AnimeCalendarEntryDto entry) => new()
     {
         BookmarkId = entry.BookmarkId,
@@ -34,4 +49,13 @@ public sealed class AnimeCalendarItem
         EpisodeNumber = entry.EpisodeNumber,
         AiringAtLocal = entry.AiringAtUtc.ToLocalTime().DateTime
     };
+
+    /// <summary>Collapses duplicate bookmarks of the same series+episode (e.g. the same
+    /// anime bookmarked twice) down to one entry, keeping the earliest airing time.</summary>
+    public static List<AnimeCalendarItem> DeduplicateBookmarks(IEnumerable<AnimeCalendarItem> items) =>
+        items.OrderBy(i => i.AiringAtLocal)
+             .GroupBy(i => (i.SeriesKey, i.EpisodeNumber))
+             .Select(g => g.First())
+             .OrderBy(i => i.AiringAtLocal)
+             .ToList();
 }

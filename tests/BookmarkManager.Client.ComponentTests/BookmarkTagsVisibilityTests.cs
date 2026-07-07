@@ -117,6 +117,15 @@ public sealed class BookmarkTagsVisibilityTests
         public Task<BookmarkNodeDto?> ConfirmAnimeMatchAsync(Guid bookmarkId, AnimeMatchCandidateDto candidate, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
         public Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
         public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default) => Task.FromResult(new AnimeCalendarScheduleResponse());
-        public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, CancellationToken cancellationToken = default) => Task.FromResult(new AutoMatchAnimeResponse());
+        public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default) => Task.FromResult(new AutoMatchAnimeResponse());
+
+        public Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
+        public Task<bool> StartUrlMigrationAsync(string deadHost, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult<UrlMigrationStatusDto?>(null);
+        public Task<List<UrlMigrationProposalDto>> GetUrlMigrationProposalsAsync(Guid? runId, string? status, CancellationToken cancellationToken = default) => Task.FromResult(new List<UrlMigrationProposalDto>());
+        public Task<DecideProposalsResponse?> ApproveProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
+        public Task<DecideProposalsResponse?> RejectProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
+        public Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
+        public Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
     }
 }

@@ -7,6 +7,9 @@ public class TestAiKeyRequest
     public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
     public string Model { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
+
+    // "OpenRouter" (default) or "Groq" - selects which provider's test logic runs the request.
+    public string Provider { get; set; } = "OpenRouter";
 }
 
 public class TestAiKeyResponse

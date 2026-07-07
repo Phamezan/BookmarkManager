@@ -100,12 +100,16 @@ public static partial class MediaTitleNormalizer
 
         var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         // The slug is the segment right after the "watch"/"anime" marker; fall back to the
-        // longest hyphenated segment when the marker layout differs between sites.
+        // longest hyphenated segment when the marker layout differs between sites. Some sites
+        // (e.g. Miruro: "/watch/{numericId}/{slug}") insert a purely-numeric id segment before
+        // the slug - skip it rather than treating the id itself as the title.
         var markerIndex = Array.FindIndex(segments, s =>
             s.Equals("watch", StringComparison.OrdinalIgnoreCase) || s.Equals("anime", StringComparison.OrdinalIgnoreCase));
-        var slug = markerIndex >= 0 && markerIndex + 1 < segments.Length
-            ? segments[markerIndex + 1]
-            : segments.Where(s => s.Contains('-')).OrderByDescending(s => s.Length).FirstOrDefault();
+        var afterMarker = markerIndex >= 0
+            ? segments.Skip(markerIndex + 1).SkipWhile(s => s.Length > 0 && s.All(char.IsDigit)).FirstOrDefault()
+            : null;
+        var slug = afterMarker
+            ?? segments.Where(s => s.Contains('-')).OrderByDescending(s => s.Length).FirstOrDefault();
         if (string.IsNullOrWhiteSpace(slug))
             return null;
 

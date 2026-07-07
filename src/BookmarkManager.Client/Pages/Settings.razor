@@ -199,6 +199,89 @@
                         @(_aiKeyTestResult.StatusCode > 0 ? $"[{_aiKeyTestResult.StatusCode}] " : "")@_aiKeyTestResult.Message
                     </MudAlert>
                 }
+
+                <MudDivider Class="my-2" />
+
+                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                    <MudText Typo="Typo.subtitle2" Class="flex-grow-1">Groq fallback (optional)</MudText>
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Secondary"
+                               Size="Size.Small"
+                               StartIcon="@Icons.Material.Filled.Bolt"
+                               OnClick="TestGroqKeyAsync"
+                               Disabled="@(_groqKeyTesting || _aiSettingsLoading)">
+                        @(_groqKeyTesting ? "Testing..." : "Test key")
+                    </MudButton>
+                </MudStack>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Used automatically for a chunk only when OpenRouter's free-tier quota is exhausted for the day. Leave the key blank to disable the fallback.
+                </MudText>
+
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.GroqBaseUrl"
+                                      Label="Groq Base URL"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      HelperText="e.g. https://api.groq.com/openai/v1" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.GroqModel"
+                                      Label="Groq Model"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      HelperText="e.g. llama-3.3-70b-versatile" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_aiSettings.GroqApiKey"
+                                      Label="Groq API Key"
+                                      Variant="Variant.Outlined"
+                                      InputType="InputType.Password"
+                                      Immediate="true"
+                                      HelperText="Stored locally on this API server. Get one at console.groq.com/keys." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_aiSettings.GroqRequestsPerMinute"
+                                         Label="Groq Requests Per Minute (RPM)"
+                                         Variant="Variant.Outlined"
+                                         Min="1"
+                                         HelperText="Pacing limit for Groq fallback calls." />
+                    </MudItem>
+                </MudGrid>
+
+                @if (_groqKeyTestResult is not null)
+                {
+                    <MudAlert Severity="@(_groqKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                              Variant="Variant.Outlined"
+                              Dense="true"
+                              ShowCloseIcon="true"
+                              CloseIconClicked="@(() => _groqKeyTestResult = null)">
+                        @(_groqKeyTestResult.StatusCode > 0 ? $"[{_groqKeyTestResult.StatusCode}] " : "")@_groqKeyTestResult.Message
+                    </MudAlert>
+                }
+
+                <MudDivider Class="my-2" />
+
+                <MudText Typo="Typo.subtitle2">URL Migrator search</MudText>
+                <MudGrid>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.MigrationSearchModel"
+                                      Label="Migration Search Model"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      Class="migration-search-model-field"
+                                      HelperText="Groq model used for the URL Migrator search/rerank stage, e.g. groq/compound-mini." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6" Class="d-flex flex-column justify-center">
+                        <MudSwitch T="bool" @bind-Value="_aiSettings.MigrationAutoApproveHigh"
+                                   Color="Color.Warning"
+                                   Class="migration-auto-approve-switch"
+                                   Label="Auto-approve verified (High) proposals" />
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            When enabled, High-confidence URL Migrator matches are approved automatically as soon as they're found. Wrong-series matches are still possible — review results periodically.
+                        </MudText>
+                    </MudItem>
+                </MudGrid>
             }
         </MudStack>
     </MudPaper>
@@ -229,40 +312,44 @@
         </MudStack>
     </MudPaper>
 
-    <!-- Domain Triage & URL Migrator Section -->
+    <!-- Domain Triage (manual folder move) & URL Migrator Section -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudIcon Icon="@Icons.Material.Filled.SwapHoriz" Color="Color.Primary" />
                 <MudText Typo="Typo.h6" Class="flex-grow-1">Domain Triage & URL Migrator</MudText>
-                <MudButton Variant="Variant.Filled"
+                <MudButton Variant="Variant.Outlined"
                            Color="Color.Primary"
                            Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.PlayArrow"
-                           OnClick="RunDomainTriageAsync"
-                           Disabled="@_triageRunning">
-                    @(_triageRunning ? "Running..." : "Run Triage")
+                           StartIcon="@Icons.Material.Filled.SwapHoriz"
+                           OnClick="OpenUrlMigrator"
+                           Class="open-url-migrator-btn">
+                    Open URL Migrator
                 </MudButton>
             </MudStack>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Find all bookmarks matching a specific base URL and move them to a target folder. You can choose to manually fix them, or automatically find alternative reading sources via DuckDuckGo.
+                Find all bookmarks matching a specific base URL and move them to a target folder for manual fixing.
+                To automatically find and verify replacement links (AI-assisted), use the URL Migrator page instead.
             </MudText>
 
             <MudGrid>
-                <MudItem xs="12" sm="6">
+                <MudItem xs="12" sm="8">
                     <MudTextField @bind-Value="_triageMatchBaseUrl"
                                   Label="Base URL to Match"
                                   Placeholder="e.g., https://reaperscans.com"
                                   Variant="Variant.Outlined"
                                   Immediate="true" />
                 </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudSelect T="string" @bind-Value="_triageActionType" Label="Triage Action" Variant="Variant.Outlined">
-                        <MudSelectItem Value="@("ManualFolder")">Move to Folder (Manual Fix)</MudSelectItem>
-                        <MudSelectItem Value="@("AutoSearch")">Auto-Search Alternatives (DuckDuckGo)</MudSelectItem>
-                    </MudSelect>
+                <MudItem xs="12" sm="4" Class="d-flex align-center">
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.PlayArrow"
+                               OnClick="RunDomainTriageAsync"
+                               Disabled="@_triageRunning"
+                               FullWidth="true">
+                        @(_triageRunning ? "Running..." : "Move to Folder")
+                    </MudButton>
                 </MudItem>
-
             </MudGrid>
 
             @if (_triageRunning)
@@ -270,13 +357,7 @@
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
             }
 
-            @if (_triageRunning && _triageResult != null)
-            {
-                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="mt-2">
-                    Triaging bookmarks matching "@_triageResult.CurrentDomain"... Found @_triageResult.TotalFound bookmarks. Processed @_triageResult.SuccessfullyProcessed / @_triageResult.TotalFound.
-                </MudAlert>
-            }
-            else if (!_triageRunning && _triageResult != null)
+            @if (!_triageRunning && _triageResult != null)
             {
                 @if (!string.IsNullOrEmpty(_triageResult.ErrorMessage))
                 {

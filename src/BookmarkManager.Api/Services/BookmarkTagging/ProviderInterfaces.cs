@@ -24,11 +24,27 @@ public interface IAnilistTagProvider
     Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
 }
 
+// Match.Unavailable=true means the underlying lookup failed (outage/rate-limit) - the caller
+// should leave the bookmark untouched (not stamp LastMatchAttemptAt, not count as "skipped") so
+// it retries next run. Unavailable=false with Match=null means AniList was reachable and simply
+// had no confident candidate.
+public sealed record BestMatchLookupResult(AnimeMatchCandidateDto? Match, bool Unavailable);
+
 public interface IAnilistScheduleProvider
 {
     Task<List<AnimeMatchCandidateDto>> SearchCandidatesAsync(string title, string? url, CancellationToken cancellationToken);
     Task<AnimeScheduleResult> GetAiringScheduleAsync(int aniListId, CancellationToken cancellationToken);
-    Task<AnimeMatchCandidateDto?> FindBestMatchAsync(string title, string? url, CancellationToken cancellationToken);
+    Task<Dictionary<int, AnimeScheduleResult>> GetAiringSchedulesBatchAsync(IReadOnlyList<int> aniListIds, CancellationToken cancellationToken);
+
+    // Resolves many bookmarks' best AniList match in a handful of requests instead of one search
+    // per bookmark - each bookmark has its own title so id_in doesn't apply, GraphQL aliasing does.
+    Task<Dictionary<Guid, BestMatchLookupResult>> FindBestMatchesBatchAsync(
+        IReadOnlyList<(Guid Id, string Title, string? Url)> items, CancellationToken cancellationToken);
+
+    // True when AniList's own X-RateLimit-Limit response header last reported below its normal 90
+    // req/min ceiling (AniList runs a documented "degraded" mode at 30 req/min with no separate
+    // status endpoint - this header is the only live signal), so callers can surface it to the user.
+    bool IsAniListDegraded { get; }
 }
 
 /// <summary>Thrown when AniList's API itself is unreachable or refusing requests (e.g. a global outage), as opposed to a query simply returning zero results.</summary>

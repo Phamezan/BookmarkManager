@@ -9,4 +9,15 @@ public class AiTaggingSettingsDto
     public string ApiKey { get; set; } = string.Empty;
     public int RequestsPerMinute { get; set; } = 15;
     public int PreferredBatchSize { get; set; } = 25;
+
+    // Fallback provider used when OpenRouter's daily free-tier quota is exhausted (not just RPM throttled).
+    public string GroqApiKey { get; set; } = string.Empty;
+    public string GroqModel { get; set; } = "llama-3.3-70b-versatile";
+    public string GroqBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
+    public int GroqRequestsPerMinute { get; set; } = 25;
+
+    // URL Migrator v2: model used for the search/rerank stage (Groq compound performs live web search).
+    public string MigrationSearchModel { get; set; } = "groq/compound-mini";
+    // When enabled, High-confidence migration proposals are auto-approved right after creation.
+    public bool MigrationAutoApproveHigh { get; set; } = false;
 }
