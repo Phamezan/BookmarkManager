@@ -68,6 +68,13 @@ public sealed partial class ExtensionService
                         node.BrowserNodeId = request.BrowserNodeId;
                     }
 
+                    if (node.Type == NodeType.Folder && (cmd.CommandType == "Create" || cmd.CommandType == "Restore"))
+                    {
+                        // Commands that were waiting on this folder's browser id
+                        // can now be released to the extension.
+                        await DeferredCommandHelper.PromoteDeferredCommandsAsync(db, node, ct);
+                    }
+
                     if (node.Type == NodeType.Folder && cmd.CommandType == "Create")
                     {
                         var pendingChildren = await db.BookmarkNodes
@@ -129,6 +136,11 @@ public sealed partial class ExtensionService
                     {
                         mNode.BrowserNodeId = mapping.BrowserNodeId;
                         mNode.SyncState = SyncState.Synced;
+
+                        if (mNode.Type == NodeType.Folder)
+                        {
+                            await DeferredCommandHelper.PromoteDeferredCommandsAsync(db, mNode, ct);
+                        }
                     }
 
                     if (batch is not null)
@@ -138,10 +150,22 @@ public sealed partial class ExtensionService
                             Id = Guid.NewGuid(),
                             SnapshotBatchId = batch.Id,
                             BookmarkId = mapping.BookmarkId,
-                            BrowserNodeId = mapping.BrowserNodeId
+                            BrowserNodeId = mapping.BrowserNodeId,
+                            SourceCommandId = cmd.Id
                         });
                     }
                 }
+            }
+
+            // Recursive restore creates every descendant in one adapter call and
+            // reports them all via CompletedNodeMappings above, so any descendant
+            // still Pending at this point (not just the folder's own status) was
+            // genuinely missed by the extension — check after mappings are applied,
+            // never before, or already-mapped children would be re-created.
+            if (request.Status == "Succeeded" && node is not null
+                && node.Type == NodeType.Folder && cmd.CommandType == "Restore")
+            {
+                await EnqueueCreateForUnmappedDescendantsAsync(db, node.Id, ct);
             }
 
             await db.SaveChangesAsync(ct);
@@ -149,4 +173,42 @@ public sealed partial class ExtensionService
         }
     }
 
+    private async Task EnqueueCreateForUnmappedDescendantsAsync(AppDbContext db, Guid folderId, CancellationToken ct)
+    {
+        var pendingChildren = await db.BookmarkNodes
+            .Where(n => n.ParentId == folderId && !n.IsDeleted && n.SyncState == SyncState.Pending)
+            .ToListAsync(ct);
+
+        foreach (var child in pendingChildren)
+        {
+            var parentNode = await db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == child.ParentId, ct);
+            var parentBrowserId = parentNode?.BrowserNodeId;
+
+            var payload = new
+            {
+                parentBrowserNodeId = parentBrowserId ?? "0",
+                title = child.Title,
+                url = child.Url,
+                position = child.Position
+            };
+
+            db.ExtensionCommands.Add(new ExtensionCommandEntry
+            {
+                Id = Guid.NewGuid(),
+                OperationId = Guid.NewGuid(),
+                CommandType = "Create",
+                BookmarkId = child.Id,
+                BrowserNodeId = null,
+                ExpectedVersion = child.Version,
+                PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
+                CreatedAt = DateTime.UtcNow,
+                Status = DeferredCommandHelper.InitialStatus(parentNode)
+            });
+
+            if (child.Type == NodeType.Folder)
+            {
+                await EnqueueCreateForUnmappedDescendantsAsync(db, child.Id, ct);
+            }
+        }
+    }
 }

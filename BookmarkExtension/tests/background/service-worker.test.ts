@@ -58,10 +58,44 @@ function makeChromeStub(bookmarks: FakeBookmarks, storage: FakeStorage) {
   };
 }
 
+class FakeWebSocket {
+  static instances: FakeWebSocket[] = [];
+  static CONNECTING = 0;
+  static OPEN = 1;
+  static CLOSING = 2;
+  static CLOSED = 3;
+
+  readyState = FakeWebSocket.CONNECTING;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: ((err: unknown) => void) | null = null;
+
+  constructor(public url: string) {
+    FakeWebSocket.instances.push(this);
+  }
+
+  close(): void {
+    this.readyState = FakeWebSocket.CLOSED;
+  }
+
+  simulateOpen(): void {
+    this.readyState = FakeWebSocket.OPEN;
+    this.onopen?.();
+  }
+
+  simulateClose(): void {
+    const handler = this.onclose;
+    this.readyState = FakeWebSocket.CLOSED;
+    handler?.();
+  }
+}
+
 describe("ServiceWorker", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllGlobals();
+    FakeWebSocket.instances = [];
   });
 
   it("registers bookmark listeners at module load so MV3 wakeups capture Created events", async () => {
@@ -85,5 +119,172 @@ describe("ServiceWorker", () => {
     expect(events).toHaveLength(1);
     expect(events[0]?.eventType).toBe("Created");
     expect(events[0]?.browserNodeId).toBe("1000");
+  });
+
+  it("stamps causedByOperationId on events matching a live command correlation", async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const storage = new FakeStorage();
+    await storage.set({
+      "bm.correlations": {
+        "op-echo": {
+          operationId: "op-echo",
+          commandType: "Create",
+          browserNodeId: null,
+          expectedParentBrowserNodeId: "1",
+          expectedTitle: "Example",
+          expectedUrl: "https://example.com/new",
+          startedAt: new Date().toISOString(),
+          expiresAt: "2099-01-01T00:00:00Z",
+        },
+      },
+    });
+    vi.stubGlobal("chrome", makeChromeStub(bookmarks, storage));
+
+    await import("../../src/background/service-worker");
+
+    await bookmarks.create({
+      parentId: "1",
+      title: "Example",
+      url: "https://example.com/new",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const outbox = (await storage.get("bm.outbox"))["bm.outbox"] as Record<
+      string,
+      { event: { causedByOperationId: string | null; browserNodeId: string } }
+    >;
+    const events = Object.values(outbox ?? {}).map((entry) => entry.event);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.causedByOperationId).toBe("op-echo");
+
+    // The matched pending-Create correlation records the browser id so it
+    // cannot absorb a later unrelated creation.
+    const correlations = (await storage.get("bm.correlations"))["bm.correlations"] as Record<
+      string,
+      { browserNodeId: string | null }
+    >;
+    expect(correlations["op-echo"]?.browserNodeId).toBe(events[0]?.browserNodeId);
+  });
+
+  it("leaves causedByOperationId null for genuine user edits", async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const storage = new FakeStorage();
+    await storage.set({
+      "bm.correlations": {
+        "op-other": {
+          operationId: "op-other",
+          commandType: "Create",
+          browserNodeId: null,
+          expectedParentBrowserNodeId: "1",
+          expectedTitle: "Something Else",
+          expectedUrl: "https://other.example.com/",
+          startedAt: new Date().toISOString(),
+          expiresAt: "2099-01-01T00:00:00Z",
+        },
+      },
+    });
+    vi.stubGlobal("chrome", makeChromeStub(bookmarks, storage));
+
+    await import("../../src/background/service-worker");
+
+    await bookmarks.create({
+      parentId: "1",
+      title: "Example",
+      url: "https://example.com/new",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const outbox = (await storage.get("bm.outbox"))["bm.outbox"] as Record<
+      string,
+      { event: { causedByOperationId: string | null } }
+    >;
+    const events = Object.values(outbox ?? {}).map((entry) => entry.event);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.causedByOperationId).toBeNull();
+  });
+});
+
+describe("ServiceWorker WebSocket", () => {
+  async function makeWorker() {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const fakeStorage = new FakeStorage();
+    vi.stubGlobal("chrome", makeChromeStub(bookmarks, fakeStorage));
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+
+    const { ChromeStorageRepository } = await import("../../src/storage/storage-repository");
+    const { ServiceWorker } = await import("../../src/background/service-worker");
+
+    const storage = new ChromeStorageRepository(fakeStorage);
+    await storage.saveSettings({ apiBaseUrl: "http://localhost:5080", setupComplete: true });
+
+    const failingApi = {
+      heartbeat: vi.fn().mockRejectedValue(new Error("offline")),
+      getConfig: vi.fn().mockRejectedValue(new Error("offline")),
+      uploadSnapshot: vi.fn().mockRejectedValue(new Error("offline")),
+      sendEvents: vi.fn().mockRejectedValue(new Error("offline")),
+      claimCommands: vi.fn().mockRejectedValue(new Error("offline")),
+      completeCommand: vi.fn().mockRejectedValue(new Error("offline")),
+    };
+
+    return new ServiceWorker({
+      api: failingApi as never,
+      adapter: { getSubtree: vi.fn(), apply: vi.fn() } as never,
+      storage,
+      getExtensionVersion: () => "0.1.0",
+      getBraveVersion: () => "1.0",
+      now: () => new Date(),
+    });
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+    FakeWebSocket.instances = [];
+  });
+
+  it("does not open a second socket while one is open or connecting", async () => {
+    const worker = await makeWorker();
+
+    await worker.handleMessage({ type: "manualSync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    FakeWebSocket.instances[0]!.simulateOpen();
+    await worker.handleMessage({ type: "manualSync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  it("backs off exponentially on close and resets after a successful open", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const worker = await makeWorker();
+
+    await worker.handleMessage({ type: "manualSync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(FakeWebSocket.instances).toHaveLength(1);
+
+    vi.useFakeTimers();
+
+    // First close: reconnect after base delay (3000 ms).
+    FakeWebSocket.instances[0]!.simulateClose();
+    await vi.advanceTimersByTimeAsync(2999);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+
+    // Second close without a successful open: delay doubles (6000 ms).
+    FakeWebSocket.instances[1]!.simulateClose();
+    await vi.advanceTimersByTimeAsync(5999);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeWebSocket.instances).toHaveLength(3);
+
+    // Successful open resets the backoff to the base delay.
+    FakeWebSocket.instances[2]!.simulateOpen();
+    FakeWebSocket.instances[2]!.simulateClose();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(FakeWebSocket.instances).toHaveLength(4);
   });
 });

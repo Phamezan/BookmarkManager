@@ -10,7 +10,7 @@ public interface IBookmarkService
     Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto> CreateFolderAsync(Guid parentId, string title, CancellationToken cancellationToken = default);
-    Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, int? version = null, CancellationToken cancellationToken = default);
+    Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> UpdateMetadataAsync(Guid id, BookmarkMetadataDto metadata, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> MoveBookmarkAsync(Guid id, Guid newParentId, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> MoveFolderAsync(Guid id, Guid newParentId, CancellationToken cancellationToken = default);
@@ -27,7 +27,7 @@ public interface IBookmarkService
     Task<bool> TriggerLinkCheckAsync(CancellationToken cancellationToken = default);
     Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default);
     Task<TriageJobStatusDto> TriageDomainAsync(TriageDomainRequest request, CancellationToken cancellationToken = default);
-    Task<TriageJobStatusDto> GetTriageStatusAsync(CancellationToken cancellationToken = default);
+
     Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default);
     Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default);
 

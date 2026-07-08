@@ -19,19 +19,43 @@ public class LinkCheckerService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<LinkCheckerService> _logger;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly Channel<bool> _triggerChannel = Channel.CreateUnbounded<bool>();
+    private readonly object _statusLock = new();
     private bool _isRunning;
+    private bool _rerunRequested;
 
-    public bool IsRunning => _isRunning;
+    public bool IsRunning
+    {
+        get
+        {
+            lock (_statusLock)
+            {
+                return _isRunning;
+            }
+        }
+    }
 
-    public LinkCheckerService(IServiceScopeFactory scopeFactory, ILogger<LinkCheckerService> logger)
+    public LinkCheckerService(
+        IServiceScopeFactory scopeFactory,
+        ILogger<LinkCheckerService> logger,
+        IHttpClientFactory httpClientFactory)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _httpClientFactory = httpClientFactory;
     }
 
     public void TriggerCheck()
     {
+        lock (_statusLock)
+        {
+            if (_isRunning)
+            {
+                _rerunRequested = true;
+                return;
+            }
+        }
         _triggerChannel.Writer.TryWrite(true);
     }
 
@@ -47,9 +71,12 @@ public class LinkCheckerService : BackgroundService
             await _triggerChannel.Reader.WaitToReadAsync(stoppingToken);
             while (_triggerChannel.Reader.TryRead(out _)) { }
 
-            if (_isRunning) continue;
+            lock (_statusLock)
+            {
+                _isRunning = true;
+                _rerunRequested = false;
+            }
 
-            _isRunning = true;
             try
             {
                 await CheckLinksAsync(stoppingToken);
@@ -60,7 +87,17 @@ public class LinkCheckerService : BackgroundService
             }
             finally
             {
-                _isRunning = false;
+                bool shouldRerun;
+                lock (_statusLock)
+                {
+                    _isRunning = false;
+                    shouldRerun = _rerunRequested;
+                    _rerunRequested = false;
+                }
+                if (shouldRerun)
+                {
+                    TriggerCheck();
+                }
             }
         }
     }
@@ -93,9 +130,7 @@ public class LinkCheckerService : BackgroundService
 
         _logger.LogInformation("Checking {Count} bookmarks with concurrency limit 5...", bookmarks.Count);
 
-        using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
+        var httpClient = _httpClientFactory.CreateClient("LinkChecker");
         var semaphore = new SemaphoreSlim(5);
         var brokenIds = new List<Guid>();
 
@@ -193,13 +228,18 @@ public class LinkCheckerService : BackgroundService
         {
             return true;
         }
+        catch (TaskCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // Shutdown request, propagate.
+        }
         catch (TaskCanceledException)
         {
-            return true;
+            return true; // Timeout: treat as broken.
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            return true;
+            _logger.LogWarning(ex, "Unknown exception checking link {Url}", url);
+            return false; // Unknown is NOT broken.
         }
     }
 }

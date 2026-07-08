@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.UrlMigration;
+using BookmarkManager.UnitTests.UrlMigration.TestDoubles;
 using BookmarkManager.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -82,7 +83,14 @@ public sealed class PipelineIntegrationTests
                 : new HttpResponseMessage(HttpStatusCode.NotFound),
         });
 
-        var settingsService = new StubAiTaggingSettingsService();
+        var settingsService = new InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto
+        {
+            GroqApiKey = "test-key",
+            GroqModel = "llama-3.3-70b-versatile",
+            GroqBaseUrl = "https://api.groq.com/openai/v1",
+            GroqRequestsPerMinute = 6000,
+            MigrationSearchModel = "groq/compound-mini",
+        });
         var duckDuckGo = new NotCalledDuckDuckGoSearchService();
 
         ISeriesExtractionService extractionService =
@@ -118,7 +126,14 @@ public sealed class PipelineIntegrationTests
     public async Task FullPipeline_GroqUnavailable_FallsBackToHeuristicExtractionAndStillVerifies()
     {
         // Extraction: no API key -> SeriesExtractionFallback path (pure regex/normalizer, no HTTP).
-        var settingsService = new StubAiTaggingSettingsService(apiKey: "");
+        var settingsService = new InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto
+        {
+            GroqApiKey = "",
+            GroqModel = "llama-3.3-70b-versatile",
+            GroqBaseUrl = "https://api.groq.com/openai/v1",
+            GroqRequestsPerMinute = 6000,
+            MigrationSearchModel = "groq/compound-mini",
+        });
         var factory = new RoutingHttpClientFactory(new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
         {
             [HttpCandidateVerificationService.HttpClientName] = req => req.RequestUri!.ToString() == NewCandidateUrl
@@ -166,49 +181,7 @@ public sealed class PipelineIntegrationTests
         Assert.True(verification.ChapterMatched);
     }
 
-    private sealed class RoutingHttpClientFactory : IHttpClientFactory
-    {
-        private readonly IReadOnlyDictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> _routes;
 
-        public RoutingHttpClientFactory(IReadOnlyDictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> routes)
-            => _routes = routes;
-
-        public HttpClient CreateClient(string name)
-        {
-            if (!_routes.TryGetValue(name, out var responder))
-                throw new InvalidOperationException($"No stub route registered for HttpClient '{name}'.");
-
-            return new HttpClient(new StubHandler(responder));
-        }
-
-        private sealed class StubHandler : HttpMessageHandler
-        {
-            private readonly Func<HttpRequestMessage, HttpResponseMessage> _responder;
-            public StubHandler(Func<HttpRequestMessage, HttpResponseMessage> responder) => _responder = responder;
-
-            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-                => Task.FromResult(_responder(request));
-        }
-    }
-
-    private sealed class StubAiTaggingSettingsService : AiTaggingSettingsService
-    {
-        private readonly string _apiKey;
-
-        public StubAiTaggingSettingsService(string apiKey = "test-key")
-            : base(NullLogger<AiTaggingSettingsService>.Instance, "unused-path.json")
-            => _apiKey = apiKey;
-
-        public override Task<AiTaggingSettingsDto> GetAsync(CancellationToken cancellationToken)
-            => Task.FromResult(new AiTaggingSettingsDto
-            {
-                GroqApiKey = _apiKey,
-                GroqModel = "llama-3.3-70b-versatile",
-                GroqBaseUrl = "https://api.groq.com/openai/v1",
-                GroqRequestsPerMinute = 6000,
-                MigrationSearchModel = "groq/compound-mini",
-            });
-    }
 
     private sealed class StubDuckDuckGoSearchService : IDuckDuckGoSearchService
     {

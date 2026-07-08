@@ -6,6 +6,7 @@ import type {
   CommandExecutionResult,
   CompletionRequest,
   ExtensionCommand,
+  ExtensionEvent,
   StorageRepository,
 } from "../../src/api/contracts";
 
@@ -164,49 +165,217 @@ describe("CommandExecutor", () => {
     // Should not throw — completion failure is caught
     expect(adapter.apply).toHaveBeenCalledOnce();
   });
+
+  it("does not re-apply a re-delivered command whose correlation was applied", async () => {
+    vi.mocked(storage.getCorrelation).mockResolvedValue({
+      operationId: "op-1",
+      commandType: "Create",
+      browserNodeId: "100",
+      expectedParentBrowserNodeId: "42",
+      expectedTitle: "Test",
+      expectedUrl: "https://example.com",
+      startedAt: "2026-06-22T09:59:00Z",
+      expiresAt: "2026-06-22T10:09:00Z",
+      applied: true,
+      completedNodeMappings: [{ bookmarkId: "b-1", browserNodeId: "100" }],
+    });
+
+    await executor.executeCommands([makeCommand()], async (op, input) => {
+      completions.push({ operationId: op, input });
+    });
+
+    expect(adapter.apply).not.toHaveBeenCalled();
+    expect(completions).toHaveLength(1);
+    expect(completions[0]!.input.status).toBe("Succeeded");
+    expect(completions[0]!.input.browserNodeId).toBe("100");
+    expect(completions[0]!.input.completedNodeMappings).toEqual([
+      { bookmarkId: "b-1", browserNodeId: "100" },
+    ]);
+  });
+
+  it("executes normally when the stored correlation has not been applied yet", async () => {
+    vi.mocked(storage.getCorrelation).mockResolvedValue({
+      operationId: "op-1",
+      commandType: "Create",
+      browserNodeId: null,
+      expectedParentBrowserNodeId: "42",
+      expectedTitle: "Test",
+      expectedUrl: "https://example.com",
+      startedAt: "2026-06-22T09:59:00Z",
+      expiresAt: "2026-06-22T10:09:00Z",
+      applied: false,
+      completedNodeMappings: [],
+    });
+
+    await executor.executeCommands([makeCommand()], async (op, input) => {
+      completions.push({ operationId: op, input });
+    });
+
+    expect(adapter.apply).toHaveBeenCalledOnce();
+    expect(completions[0]!.input.status).toBe("Succeeded");
+  });
+
+  it("re-applies a re-delivered command whose prior apply failed (not marked applied)", async () => {
+    vi.mocked(storage.getCorrelation).mockResolvedValue({
+      operationId: "op-1",
+      commandType: "Create",
+      browserNodeId: "42",
+      expectedParentBrowserNodeId: "42",
+      expectedTitle: "Test",
+      expectedUrl: "https://example.com",
+      startedAt: "2026-06-22T09:59:00Z",
+      expiresAt: "2026-06-22T10:09:00Z",
+      applied: false,
+      completedNodeMappings: [],
+    });
+
+    await executor.executeCommands([makeCommand()], async (op, input) => {
+      completions.push({ operationId: op, input });
+    });
+
+    expect(adapter.apply).toHaveBeenCalledOnce();
+  });
 });
 
 describe("matchEventToCorrelation", () => {
   const now = new Date("2026-06-22T10:00:00Z");
 
-  it("matches by browserNodeId", () => {
-    const correlations: CommandCorrelation[] = [
-      {
-        operationId: "op-1",
-        commandType: "Update",
-        browserNodeId: "84",
-        expectedParentBrowserNodeId: null,
-        expectedTitle: "Test",
-        expectedUrl: null,
-        startedAt: "2026-06-22T09:55:00Z",
-        expiresAt: "2026-06-22T10:05:00Z",
-      },
-    ];
-    const match = matchEventToCorrelation("Changed", "84", correlations, now);
+  function makeCorrelation(overrides: Partial<CommandCorrelation> = {}): CommandCorrelation {
+    return {
+      operationId: "op-1",
+      commandType: "Update",
+      browserNodeId: "84",
+      expectedParentBrowserNodeId: null,
+      expectedTitle: "Test",
+      expectedUrl: null,
+      startedAt: "2026-06-22T09:59:50Z",
+      expiresAt: "2026-06-22T10:05:00Z",
+      applied: true,
+      completedNodeMappings: [],
+      ...overrides,
+    };
+  }
+
+  function makeEvent(overrides: Partial<ExtensionEvent> = {}): ExtensionEvent {
+    return {
+      eventId: "evt-1",
+      eventType: "Changed",
+      browserNodeId: "84",
+      occurredAt: "2026-06-22T10:00:00Z",
+      causedByOperationId: null,
+      payload: { title: "Test", url: null },
+      ...overrides,
+    };
+  }
+
+  it("matches by browserNodeId when the command type can cause the event", () => {
+    const match = matchEventToCorrelation(makeEvent(), [makeCorrelation()], now);
     expect(match).not.toBeNull();
     expect(match!.operationId).toBe("op-1");
   });
 
   it("returns null for no match", () => {
-    const correlations: CommandCorrelation[] = [];
-    const match = matchEventToCorrelation("Changed", "84", correlations, now);
+    const match = matchEventToCorrelation(makeEvent(), [], now);
     expect(match).toBeNull();
   });
 
   it("skips expired correlations", () => {
-    const correlations: CommandCorrelation[] = [
-      {
-        operationId: "op-old",
-        commandType: "Update",
-        browserNodeId: "84",
-        expectedParentBrowserNodeId: null,
-        expectedTitle: null,
-        expectedUrl: null,
-        startedAt: "2026-06-22T09:00:00Z",
-        expiresAt: "2026-06-22T09:10:00Z",
-      },
-    ];
-    const match = matchEventToCorrelation("Changed", "84", correlations, now);
+    const correlations = [makeCorrelation({ expiresAt: "2026-06-22T09:10:00Z" })];
+    const match = matchEventToCorrelation(makeEvent(), correlations, now);
     expect(match).toBeNull();
+  });
+
+  it("skips correlations outside the echo-match window, even if not yet expired", () => {
+    // startedAt five minutes before `now`: well within the 10-minute
+    // idempotency TTL, but a genuine user edit that far after the command
+    // was applied must not be mistaken for the command's own echo.
+    const correlations = [
+      makeCorrelation({ startedAt: "2026-06-22T09:55:00Z", expiresAt: "2026-06-22T10:05:00Z" }),
+    ];
+    const match = matchEventToCorrelation(makeEvent(), correlations, now);
+    expect(match).toBeNull();
+  });
+
+  it("does not match a Removed event to a Create correlation", () => {
+    const correlations = [makeCorrelation({ commandType: "Create", browserNodeId: null })];
+    const event = makeEvent({
+      eventType: "Removed",
+      payload: { removedNode: { browserNodeId: "84" } },
+    });
+    expect(matchEventToCorrelation(event, correlations, now)).toBeNull();
+  });
+
+  it("matches a pending Create correlation only when title, url, and parent match", () => {
+    const correlations = [
+      makeCorrelation({
+        commandType: "Create",
+        browserNodeId: null,
+        expectedTitle: "New Bookmark",
+        expectedUrl: "https://example.com/a",
+        expectedParentBrowserNodeId: "42",
+      }),
+    ];
+    const event = makeEvent({
+      eventType: "Created",
+      browserNodeId: "900",
+      payload: {
+        node: {
+          browserNodeId: "900",
+          parentBrowserNodeId: "42",
+          title: "New Bookmark",
+          url: "https://example.com/a",
+        },
+      },
+    });
+    expect(matchEventToCorrelation(event, correlations, now)?.operationId).toBe("op-1");
+  });
+
+  it("does not match a pending Create correlation with a different title", () => {
+    const correlations = [
+      makeCorrelation({
+        commandType: "Create",
+        browserNodeId: null,
+        expectedTitle: "New Bookmark",
+        expectedUrl: "https://example.com/a",
+        expectedParentBrowserNodeId: "42",
+      }),
+    ];
+    const event = makeEvent({
+      eventType: "Created",
+      browserNodeId: "900",
+      payload: {
+        node: {
+          browserNodeId: "900",
+          parentBrowserNodeId: "42",
+          title: "User Made This",
+          url: "https://example.com/a",
+        },
+      },
+    });
+    expect(matchEventToCorrelation(event, correlations, now)).toBeNull();
+  });
+
+  it("matches a Moved event to a Reorder correlation via the parent id", () => {
+    const correlations = [makeCorrelation({ commandType: "Reorder", browserNodeId: "7" })];
+    const event = makeEvent({
+      eventType: "Moved",
+      browserNodeId: "301",
+      payload: {
+        oldParentBrowserNodeId: "7",
+        oldPosition: 2,
+        parentBrowserNodeId: "7",
+        position: 0,
+      },
+    });
+    expect(matchEventToCorrelation(event, correlations, now)?.operationId).toBe("op-1");
+  });
+
+  it("matches a Removed event to a Delete correlation by node id", () => {
+    const correlations = [makeCorrelation({ commandType: "Delete", browserNodeId: "84" })];
+    const event = makeEvent({
+      eventType: "Removed",
+      payload: { removedNode: { browserNodeId: "84" } },
+    });
+    expect(matchEventToCorrelation(event, correlations, now)?.operationId).toBe("op-1");
   });
 });

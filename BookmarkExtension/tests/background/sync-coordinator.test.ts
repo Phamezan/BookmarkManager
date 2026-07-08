@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { SyncCoordinator } from "../../src/background/sync-coordinator";
-import { MockApiServer } from "../../src/api/mock-api";
+import { MockApiServer } from "../helpers/mock-api";
 import { FakeBookmarks, type FakeBookmarkNode } from "../helpers/fake-chrome-bookmarks";
 import { ChromeBookmarkAdapter } from "../../src/bookmarks/bookmark-adapter";
 import { ChromeStorageRepository } from "../../src/storage/storage-repository";

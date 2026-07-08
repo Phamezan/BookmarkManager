@@ -3,6 +3,7 @@ using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
 using MudBlazor;
+using BookmarkManager.Client.Extensions;
 
 namespace BookmarkManager.Client.Pages;
 
@@ -17,12 +18,18 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not string folderName) return;
 
-        await BookmarkService.CreateFolderAsync(parentId, folderName);
-
-        _expandedFolderIds.Add(parentId);
-        await RefreshFolderTreeAsync();
-        StateHasChanged();
-        Snackbar.Add("Folder created", Severity.Success);
+        try
+        {
+            await BookmarkService.CreateFolderAsync(parentId, folderName);
+            _expandedFolderIds.Add(parentId);
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            Snackbar.Add("Folder created", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("create folder", ex);
+        }
     }
 
     private async Task CreateBookmark()
@@ -38,18 +45,25 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
 
-        var created = await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url);
-        if (data.Tags != null && data.Tags.Count > 0)
+        try
         {
-            var metadata = new BookmarkMetadataDto { Tags = data.Tags };
-            await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
-        }
+            var created = await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url);
+            if (data.Tags != null && data.Tags.Count > 0)
+            {
+                var metadata = new BookmarkMetadataDto { Tags = data.Tags };
+                await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
+            }
 
-        _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
-        await LoadTagsAsync();
-        await RefreshFolderTreeAsync();
-        StateHasChanged();
-        Snackbar.Add("Bookmark created", Severity.Success);
+            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+            await LoadTagsAsync();
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            Snackbar.Add("Bookmark created", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("create bookmark", ex);
+        }
     }
 
     private async Task EditBookmark(BookmarkNodeDto item)
@@ -59,20 +73,27 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
 
-        await BookmarkService.UpdateBookmarkAsync(item.Id, data.Title, data.Url);
-        var metadata = item.Metadata ?? new BookmarkMetadataDto();
-        metadata.Tags = data.Tags;
-        await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
-
-        if (_selectedFolderId.HasValue)
+        try
         {
-            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
-            await LoadTagsAsync();
-        }
+            await BookmarkService.UpdateBookmarkAsync(item.Id, data.Title, data.Url);
+            var metadata = item.Metadata ?? new BookmarkMetadataDto();
+            metadata.Tags = data.Tags;
+            await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
 
-        await RefreshFolderTreeAsync();
-        StateHasChanged();
-        Snackbar.Add("Bookmark updated", Severity.Success);
+            if (_selectedFolderId.HasValue)
+            {
+                _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+                await LoadTagsAsync();
+            }
+
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            Snackbar.Add("Bookmark updated", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("update bookmark", ex);
+        }
     }
 
     private async Task DeleteBookmark(BookmarkNodeDto item)
@@ -86,12 +107,19 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false) return;
 
-        await BookmarkService.DeleteBookmarkAsync(item.Id);
-        _items.Remove(item);
-        await LoadTagsAsync();
-        await RefreshFolderTreeAsync();
-        StateHasChanged();
-        ShowUndoSnackbar($"Bookmark \"{item.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(item.Id));
+        try
+        {
+            await BookmarkService.DeleteBookmarkAsync(item.Id);
+            _items.Remove(item);
+            await LoadTagsAsync();
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            ShowUndoSnackbar($"Bookmark \"{item.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(item.Id));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("delete bookmark", ex);
+        }
     }
 
     private async Task DeleteFolder(Guid folderId)
@@ -108,17 +136,24 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false) return;
 
-        await BookmarkService.DeleteBookmarkAsync(folderId);
-    
-        if (_selectedFolderId == folderId)
+        try
         {
-            _selectedFolderId = null;
-            _items = [];
-        }
+            await BookmarkService.DeleteBookmarkAsync(folderId);
 
-        await RefreshFolderTreeAsync();
-        StateHasChanged();
-        ShowUndoSnackbar($"Folder \"{folder.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(folderId));
+            if (_selectedFolderId == folderId)
+            {
+                _selectedFolderId = null;
+                _items = [];
+            }
+
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            ShowUndoSnackbar($"Folder \"{folder.Title}\" deleted", () => BookmarkService.RestoreBookmarkAsync(folderId));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("delete folder", ex);
+        }
     }
 
     private async Task MoveBookmark(BookmarkNodeDto item)
@@ -135,33 +170,37 @@ public partial class Bookmarks
 
         var originalParentId = item.ParentId;
 
-        await BookmarkService.MoveBookmarkAsync(item.Id, targetFolderId);
-    
-        if (_selectedFolderId.HasValue)
+        try
         {
-            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
-            await LoadTagsAsync();
-        }
+            await BookmarkService.MoveBookmarkAsync(item.Id, targetFolderId);
 
-        await RefreshFolderTreeAsync();
-    
-        if (originalParentId.HasValue)
-        {
-            StateHasChanged();
-            ShowUndoSnackbar($"Bookmark \"{item.Title}\" moved", () => BookmarkService.MoveBookmarkAsync(item.Id, originalParentId.Value));
+            if (_selectedFolderId.HasValue)
+            {
+                _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+                await LoadTagsAsync();
+            }
+
+            await RefreshFolderTreeAsync();
+
+            if (originalParentId.HasValue)
+            {
+                StateHasChanged();
+                ShowUndoSnackbar($"Bookmark \"{item.Title}\" moved", () => BookmarkService.MoveBookmarkAsync(item.Id, originalParentId.Value));
+            }
+            else
+            {
+                StateHasChanged();
+                Snackbar.Add("Bookmark moved", Severity.Success);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            StateHasChanged();
-            Snackbar.Add("Bookmark moved", Severity.Success);
+            Snackbar.AddApiError("move bookmark", ex);
         }
     }
 
     private async Task MoveFolder(Guid folderId)
     {
-        var folder = FindFolderById(_folderTree, folderId);
-        if (folder is null) return;
-
         var originalParentId = FindParentFolderId(_folderTree, folderId);
 
         var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small };
@@ -175,19 +214,37 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not Guid targetFolderId) return;
 
-        await BookmarkService.MoveFolderAsync(folderId, targetFolderId);
+        await MoveFolderWithUndoAsync(folderId, targetFolderId);
+    }
 
-        await RefreshFolderTreeAsync();
-    
-        if (originalParentId.HasValue)
+    private async Task MoveFolderWithUndoAsync(Guid folderId, Guid targetFolderId)
+    {
+        if (folderId == targetFolderId) return;
+
+        var folder = FindFolderById(_folderTree, folderId);
+        if (folder is null) return;
+
+        var originalParentId = FindParentFolderId(_folderTree, folderId);
+
+        try
         {
-            StateHasChanged();
-            ShowUndoSnackbar($"Folder \"{folder.Title}\" moved", () => BookmarkService.MoveFolderAsync(folderId, originalParentId.Value));
+            await BookmarkService.MoveFolderAsync(folderId, targetFolderId);
+            await RefreshFolderTreeAsync();
+
+            if (originalParentId.HasValue)
+            {
+                StateHasChanged();
+                ShowUndoSnackbar($"Folder \"{folder.Title}\" moved", () => BookmarkService.MoveFolderAsync(folderId, originalParentId.Value));
+            }
+            else
+            {
+                StateHasChanged();
+                Snackbar.Add("Folder moved", Severity.Success);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            StateHasChanged();
-            Snackbar.Add("Folder moved", Severity.Success);
+            Snackbar.AddApiError("move folder", ex);
         }
     }
 
@@ -198,24 +255,30 @@ public partial class Bookmarks
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
 
-        var created = await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url);
-        if (data.Tags != null && data.Tags.Count > 0)
+        try
         {
-            var metadata = new BookmarkMetadataDto { Tags = data.Tags };
-            await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
-        }
+            var created = await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url);
+            if (data.Tags != null && data.Tags.Count > 0)
+            {
+                var metadata = new BookmarkMetadataDto { Tags = data.Tags };
+                await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
+            }
 
-        if (_selectedFolderId == folderId)
-        {
-            _items = await BookmarkService.GetBookmarksAsync(folderId);
-            await LoadTagsAsync();
+            if (_selectedFolderId == folderId)
+            {
+                _items = await BookmarkService.GetBookmarksAsync(folderId);
+                await LoadTagsAsync();
+            }
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            Snackbar.Add("Bookmark created", Severity.Success);
         }
-        await RefreshFolderTreeAsync();
-        StateHasChanged();
-        Snackbar.Add("Bookmark created", Severity.Success);
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("create bookmark", ex);
+        }
     }
 
-    private void ShowMoveUnavailable(BookmarkNodeDto item)
-        => Snackbar.Add($"Move picker for \"{item.Title}\" will use tracked folders only once the user bookmark API is available.", Severity.Info);
 
 }
+

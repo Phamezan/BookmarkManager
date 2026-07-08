@@ -56,7 +56,7 @@ public sealed class AutoTaggerService
         foreach (var group in candidates.GroupBy(c => c.ParentId))
         {
             ct.ThrowIfCancellationRequested();
-            var folderPath = await BuildFolderPathAsync(group.Key, ct).ConfigureAwait(false);
+            var folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, group.Key, ct).ConfigureAwait(false);
             var requestedDomain = BookmarkTagClassifier.GuessDefaultDomainFromFolderTitle(folderPath ?? string.Empty);
             var folderCandidates = group.ToList();
 
@@ -124,31 +124,7 @@ public sealed class AutoTaggerService
         return result;
     }
 
-    private async Task<string?> BuildFolderPathAsync(Guid? folderId, CancellationToken ct)
-    {
-        if (!folderId.HasValue)
-            return null;
 
-        var titles = new Stack<string>();
-        var currentId = folderId;
-        for (var depth = 0; currentId.HasValue && depth < 32; depth++)
-        {
-            var folder = await _db.BookmarkNodes
-                .AsNoTracking()
-                .Where(n => n.Id == currentId.Value && n.Type == NodeType.Folder && !n.IsDeleted)
-                .Select(n => new { n.Title, n.ParentId })
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
-
-            if (folder is null)
-                break;
-
-            titles.Push(folder.Title);
-            currentId = folder.ParentId;
-        }
-
-        return titles.Count == 0 ? null : string.Join(" / ", titles);
-    }
 
     private sealed record AutoTagCandidate(Guid Id, Guid? ParentId, string Title, string? Url, string? Tags);
 }

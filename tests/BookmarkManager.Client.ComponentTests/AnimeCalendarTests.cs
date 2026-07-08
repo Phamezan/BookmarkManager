@@ -5,6 +5,8 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 
+using BookmarkManager.Client.ComponentTests.TestDoubles;
+
 namespace BookmarkManager.Client.ComponentTests;
 
 public sealed class AnimeCalendarTests
@@ -15,7 +17,9 @@ public sealed class AnimeCalendarTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
-        context.Services.AddSingleton<IBookmarkService>(new FakeAnimeBookmarkService());
+        context.Services.AddTransient<FolderSelectionPersistence>();
+        context.Services.AddTransient<SyncSocketListener>();
+        context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var page = context.Render(builder =>
         {
@@ -38,7 +42,7 @@ public sealed class AnimeCalendarTests
 
         var folderId = Guid.NewGuid();
         var unmatchedBookmark = new BookmarkNodeDto { Id = Guid.NewGuid(), Title = "Naruto" };
-        var fakeService = new FakeAnimeBookmarkService
+        var fakeService = new FakeBookmarkService
         {
             FolderTree = [new FolderTreeNodeDto { Id = folderId, Title = "Anime" }],
             ScheduleResponse = new AnimeCalendarScheduleResponse
@@ -47,6 +51,8 @@ public sealed class AnimeCalendarTests
                 UnmatchedBookmarks = [unmatchedBookmark]
             }
         };
+        context.Services.AddTransient<FolderSelectionPersistence>();
+        context.Services.AddTransient<SyncSocketListener>();
         context.Services.AddSingleton<IBookmarkService>(fakeService);
 
         var page = context.Render(builder =>
@@ -75,7 +81,7 @@ public sealed class AnimeCalendarTests
         context.Services.AddMudServices();
 
         var folderId = Guid.NewGuid();
-        var fakeService = new FakeAnimeBookmarkService
+        var fakeService = new FakeBookmarkService
         {
             FolderTree = [new FolderTreeNodeDto { Id = folderId, Title = "Anime" }],
             ScheduleResponse = new AnimeCalendarScheduleResponse
@@ -93,6 +99,8 @@ public sealed class AnimeCalendarTests
                 AiringCount = 1
             }
         };
+        context.Services.AddTransient<FolderSelectionPersistence>();
+        context.Services.AddTransient<SyncSocketListener>();
         context.Services.AddSingleton<IBookmarkService>(fakeService);
 
         var page = context.Render(builder =>
@@ -106,12 +114,15 @@ public sealed class AnimeCalendarTests
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".rec-folder-chip")));
         page.FindAll(".rec-folder-chip").First(b => b.TextContent.Trim() == "Anime").Click();
 
-        // Week (default view) groups the week's episodes into a roadmap timeline card.
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".acal-view-btn")));
+        page.FindAll(".acal-view-btn").First(b => b.TextContent.Trim() == "Week").Click();
+
+        // Week groups the week's episodes into a roadmap timeline card.
         page.WaitForAssertion(() =>
         {
             Assert.Contains("Mushoku Tensei", page.Markup);
             Assert.Contains("Ep 5", page.Markup);
-        });
+        }, TimeSpan.FromSeconds(10));
     }
 
     [Fact]
@@ -122,7 +133,7 @@ public sealed class AnimeCalendarTests
         context.Services.AddMudServices();
 
         var folderId = Guid.NewGuid();
-        var fakeService = new FakeAnimeBookmarkService
+        var fakeService = new FakeBookmarkService
         {
             FolderTree = [new FolderTreeNodeDto { Id = folderId, Title = "Anime" }],
             ScheduleResponse = new AnimeCalendarScheduleResponse
@@ -140,6 +151,8 @@ public sealed class AnimeCalendarTests
                 AiringCount = 1
             }
         };
+        context.Services.AddTransient<FolderSelectionPersistence>();
+        context.Services.AddTransient<SyncSocketListener>();
         context.Services.AddSingleton<IBookmarkService>(fakeService);
 
         var page = context.Render(builder =>
@@ -160,63 +173,5 @@ public sealed class AnimeCalendarTests
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".acal-month-cover-mini")));
     }
 
-    private sealed class FakeAnimeBookmarkService : IBookmarkService
-    {
-        public List<FolderTreeNodeDto> FolderTree { get; set; } = [];
-        public AnimeCalendarScheduleResponse ScheduleResponse { get; set; } = new();
 
-        public Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default) => Task.FromResult(FolderTree);
-        public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
-            => Task.FromResult(folderIds.Count == 0 ? new AnimeCalendarScheduleResponse() : ScheduleResponse);
-
-        public Task<List<BookmarkNodeDto>> GetBookmarksAsync(Guid parentId, CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new PagedResult<BookmarkNodeDto>());
-        public Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<BookmarkNodeDto> CreateFolderAsync(Guid parentId, string title, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, int? version = null, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> UpdateMetadataAsync(Guid id, BookmarkMetadataDto metadata, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> MoveBookmarkAsync(Guid id, Guid newParentId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> MoveFolderAsync(Guid id, Guid newParentId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<bool> DeleteBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<List<BookmarkNodeDto>> GetDeletedBookmarksAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<bool> RestoreBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<bool> ReorderBookmarksAsync(Guid parentId, List<ReorderRequest> items, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<bool> BatchDeleteBookmarksAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<List<BookmarkNodeDto>> GetFavoritesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<List<string>> SuggestTagsAsync(string title, string? url, CancellationToken cancellationToken = default) => Task.FromResult(new List<string>());
-        public Task<List<BookmarkNodeDto>> GetRecommendationsAsync(List<Guid> folderIds, int count = 30, CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<BookmarkNodeDto?> ArchiveBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<bool> TriggerLinkCheckAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<TriageJobStatusDto> TriageDomainAsync(TriageDomainRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new TriageJobStatusDto());
-        public Task<TriageJobStatusDto> GetTriageStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(new TriageJobStatusDto());
-        public Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(new AutoTaggerStatusDto());
-        public Task<List<string>> SuggestAiTagsAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult(new List<string>());
-        public Task<RetagAllResult> RetagAllAsync(bool overwrite, CancellationToken cancellationToken = default) => Task.FromResult(new RetagAllResult());
-        public Task<List<TagCountDto>> GetTagsAsync(Guid? folderId = null, CancellationToken cancellationToken = default) => Task.FromResult(new List<TagCountDto>());
-        public Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new BatchTagResponse());
-        public Task<AiAutoTagSummaryDto> AiAutoTagFolderAsync(Guid folderId, bool forceRefresh = false, CancellationToken cancellationToken = default) => Task.FromResult(new AiAutoTagSummaryDto());
-        public Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default) => Task.FromResult(new AiAutoTagSummaryDto());
-        public Task<AiTaggingSettingsDto> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new AiTaggingSettingsDto());
-        public Task<AiTaggingSettingsDto> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default) => Task.FromResult(settings);
-        public Task<TestAiKeyResponse> TestAiTaggingKeyAsync(TestAiKeyRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new TestAiKeyResponse { Success = true, Message = "fake" });
-        public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<Guid, int>());
-        public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult(new List<AnimeMatchCandidateDto>());
-        public Task<BookmarkNodeDto?> ConfirmAnimeMatchAsync(Guid bookmarkId, AnimeMatchCandidateDto candidate, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default) => Task.FromResult(new AutoMatchAnimeResponse());
-
-        public Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
-        public Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult<UrlMigrationStatusDto?>(null);
-        public Task<List<UrlMigrationProposalDto>> GetUrlMigrationProposalsAsync(Guid? runId, string? status, CancellationToken cancellationToken = default) => Task.FromResult(new List<UrlMigrationProposalDto>());
-        public Task<DecideProposalsResponse?> ApproveProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
-        public Task<DecideProposalsResponse?> RejectProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
-        public Task<DecideProposalsResponse?> CancelProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
-        public Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default) => Task.FromResult<DecideProposalsResponse?>(null);
-    }
 }

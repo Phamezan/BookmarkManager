@@ -118,6 +118,8 @@ describe("ChromeStorageRepository", () => {
         expectedUrl: null,
         startedAt: "2026-01-01T00:00:00Z",
         expiresAt: "2026-01-01T00:10:00Z",
+        applied: false,
+        completedNodeMappings: [],
       };
       await repo.saveCorrelation(corr);
       expect(await repo.getCorrelation("op-1")).toEqual(corr);
@@ -137,6 +139,8 @@ describe("ChromeStorageRepository", () => {
         expectedUrl: null,
         startedAt: "2026-01-01T00:00:00Z",
         expiresAt: "2026-01-01T00:10:00Z",
+        applied: false,
+        completedNodeMappings: [],
       };
       const active = {
         operationId: "op-new",
@@ -147,6 +151,8 @@ describe("ChromeStorageRepository", () => {
         expectedUrl: null,
         startedAt: "2026-06-22T00:00:00Z",
         expiresAt: "2026-06-22T00:10:00Z",
+        applied: false,
+        completedNodeMappings: [],
       };
       await repo.saveCorrelation(expired);
       await repo.saveCorrelation(active);

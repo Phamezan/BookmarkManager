@@ -2,13 +2,19 @@ import type {
   BookmarkAdapter,
   CommandCorrelation,
   CommandExecutionResult,
+  CommandType,
   CompletionRequest,
   ExtensionCommand,
+  ExtensionEvent,
   NodeMapping,
   StorageRepository,
 } from "../api/contracts";
 
 const CORRELATION_TTL_MS = 10 * 60 * 1000;
+/** Only a browser event arriving shortly after a command was applied can be
+ * that command's echo — a real user edit made minutes later on the same
+ * node must not be mistaken for one and dropped. */
+const ECHO_MATCH_WINDOW_MS = 20 * 1000;
 
 export interface CommandExecutorDeps {
   adapter: BookmarkAdapter;
@@ -37,6 +43,29 @@ export class CommandExecutor {
   ): Promise<void> {
     const now = this.deps.now();
 
+    // Idempotency: a re-delivered command (lost completion ack, lease
+    // re-claim) must not run against the browser again — a repeated Create
+    // would duplicate the bookmark. Re-report completion instead. Guarded by
+    // `applied`, not by browserNodeId presence — for Move/Update/Delete the
+    // correlation is saved with a non-null browserNodeId *before* apply runs,
+    // so browserNodeId alone can't tell a completed apply from a pending one.
+    const existing = await this.deps.storage.getCorrelation(command.operationId);
+    if (existing && existing.applied) {
+      await this.complete(
+        command,
+        {
+          succeeded: true,
+          browserNodeId: existing.browserNodeId,
+          completedNodeMappings: existing.completedNodeMappings,
+          retryable: false,
+          errorCode: null,
+          errorMessage: null,
+        },
+        completeFn,
+      );
+      return;
+    }
+
     if (new Date(command.leaseExpiresAt) <= now) {
       await this.complete(
         command,
@@ -62,15 +91,19 @@ export class CommandExecutor {
       expectedUrl: this.extractUrl(command),
       startedAt: now.toISOString(),
       expiresAt: new Date(now.getTime() + CORRELATION_TTL_MS).toISOString(),
+      applied: false,
+      completedNodeMappings: [],
     };
     await this.deps.storage.saveCorrelation(correlation);
 
     const result = await this.deps.adapter.apply(command);
 
-    if (result.succeeded && result.browserNodeId !== null) {
+    if (result.succeeded) {
       const updatedCorrelation: CommandCorrelation = {
         ...correlation,
-        browserNodeId: result.browserNodeId,
+        browserNodeId: result.browserNodeId ?? correlation.browserNodeId,
+        applied: true,
+        completedNodeMappings: result.completedNodeMappings,
       };
       await this.deps.storage.saveCorrelation(updatedCorrelation);
     }
@@ -132,21 +165,75 @@ export class CommandExecutor {
   }
 }
 
+/** Command types that can legitimately cause each browser event type. */
+const EVENT_TO_COMMAND_TYPES: Record<string, CommandType[]> = {
+  Created: ["Create", "Restore"],
+  Changed: ["Update"],
+  Moved: ["Move", "Reorder"],
+  Reordered: ["Reorder"],
+  Removed: ["Delete"],
+};
+
+function extractCreatedNode(
+  payload: unknown,
+): { title?: string; url?: string | null; parentBrowserNodeId?: string | null } | null {
+  const node = (payload as { node?: unknown } | null)?.node;
+  if (node === null || typeof node !== "object") return null;
+  return node as { title?: string; url?: string | null; parentBrowserNodeId?: string | null };
+}
+
+function extractMovedParentId(payload: unknown): string | null {
+  const parentId = (payload as { parentBrowserNodeId?: unknown } | null)?.parentBrowserNodeId;
+  return typeof parentId === "string" ? parentId : null;
+}
+
+/**
+ * Finds the live correlation for a command the executor recently applied, so
+ * the resulting browser event can be stamped with `causedByOperationId`
+ * instead of echoing back to the server as a fresh user edit.
+ */
 export function matchEventToCorrelation(
-  eventType: string,
-  browserNodeId: string,
+  event: ExtensionEvent,
   correlations: CommandCorrelation[],
   now: Date,
 ): CommandCorrelation | null {
   const nowMs = now.getTime();
   for (const corr of correlations) {
     if (new Date(corr.expiresAt).getTime() < nowMs) continue;
+    if (!EVENT_TO_COMMAND_TYPES[event.eventType]?.includes(corr.commandType)) continue;
+    // Echo suppression only applies right after the command was applied —
+    // a match against a stale correlation would wrongly drop a genuine user
+    // edit made minutes later on the same node.
+    if (nowMs - new Date(corr.startedAt).getTime() > ECHO_MATCH_WINDOW_MS) continue;
 
-    if (corr.browserNodeId === browserNodeId) {
-      return corr;
+    if (corr.browserNodeId !== null) {
+      if (corr.browserNodeId === event.browserNodeId) return corr;
+      // A Reorder is applied as per-child moves; those Moved events carry the
+      // reordered parent (the correlation's node) as the new parent.
+      if (
+        corr.commandType === "Reorder" &&
+        event.eventType === "Moved" &&
+        extractMovedParentId(event.payload) === corr.browserNodeId
+      ) {
+        return corr;
+      }
+      continue;
     }
 
-    if (corr.commandType === "Create" && corr.browserNodeId === null) {
+    // Pending Create/Restore correlation: the browser id is not known yet, so
+    // require the created node's title, url, and parent to match what the
+    // command asked for — never blindly absorb an unrelated creation.
+    if (event.eventType === "Created") {
+      const node = extractCreatedNode(event.payload);
+      if (!node) continue;
+      if (corr.expectedTitle !== null && corr.expectedTitle !== node.title) continue;
+      if (corr.expectedUrl !== (node.url ?? null)) continue;
+      if (
+        corr.expectedParentBrowserNodeId !== null &&
+        corr.expectedParentBrowserNodeId !== (node.parentBrowserNodeId ?? null)
+      ) {
+        continue;
+      }
       return corr;
     }
   }

@@ -1,33 +1,35 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace BookmarkManager.Client.Services;
 
-public record UndoAction(string Description, Func<Task> RevertAction);
+public sealed record UndoAction(Guid Id, string Description, Func<Task> RevertAction);
 
 public class UndoService
 {
-    private readonly Stack<UndoAction> _undoStack = new();
+    private readonly List<UndoAction> _actions = new();
+    private const int MaxActions = 20;
 
-    public void Push(string description, Func<Task> revertAction)
+    public UndoAction Push(string description, Func<Task> revert)
     {
-        _undoStack.Push(new UndoAction(description, revertAction));
+        var action = new UndoAction(Guid.NewGuid(), description, revert);
+        _actions.Add(action);
+        if (_actions.Count > MaxActions)
+        {
+            _actions.RemoveAt(0);
+        }
+        return action;
     }
 
-    public bool CanUndo => _undoStack.Count > 0;
-
-    public string? GetNextActionDescription() => _undoStack.Count > 0 ? _undoStack.Peek().Description : null;
-
-    public async Task UndoAsync()
+    public async Task<bool> UndoAsync(Guid id)
     {
-        if (_undoStack.Count == 0) return;
-        var action = _undoStack.Pop();
+        var action = _actions.FirstOrDefault(a => a.Id == id);
+        if (action == null) return false;
+
+        _actions.Remove(action);
         await action.RevertAction();
-    }
-
-    public void Clear()
-    {
-        _undoStack.Clear();
+        return true;
     }
 }

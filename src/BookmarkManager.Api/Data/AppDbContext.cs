@@ -107,6 +107,7 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.SnapshotBatchId);
+            entity.HasIndex(e => e.SourceCommandId);
             entity.Property(e => e.BrowserNodeId).HasMaxLength(128).IsRequired();
         });
 

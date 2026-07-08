@@ -259,13 +259,5 @@ public partial class BookmarksController
         return Uri.CheckHostName(host) != UriHostNameType.Unknown;
     }
 
-    private static string? TryGetHost(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return null;
-        }
-
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : null;
-    }
+    private static string? TryGetHost(string? url) => Infrastructure.UrlHelpers.TryGetHost(url);
 }

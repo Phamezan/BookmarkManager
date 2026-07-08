@@ -19,14 +19,7 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
 
     private record KitsuCacheEntry(ProviderTagResult Result, DateTimeOffset ExpiresAt);
 
-    [GeneratedRegex(@"(?i)\b(?:chapter|ch|episode|ep|volume|vol)\.?\s*\d+(?:\.\d+)?\b")]
-    private static partial Regex SearchNoiseRegex();
 
-    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
-    private static partial Regex SearchPunctuationRegex();
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex SearchWhitespaceRegex();
 
     public KitsuTaggingService(IHttpClientFactory httpFactory, ILogger<KitsuTaggingService> logger)
     {
@@ -175,20 +168,16 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
 
     private double ScoreKitsuCandidate(JsonElement item, string cleanQuery)
     {
-        var query = NormalizeTitleForSearch(cleanQuery);
-        if (query.Length == 0)
-            return 0;
-
         var candidates = new List<string>();
         if (item.TryGetProperty("attributes", out var attrs) && attrs.ValueKind == JsonValueKind.Object)
         {
-            AddStringProperty(attrs, "canonicalTitle", candidates);
+            TitleMatching.AddStringProperty(attrs, "canonicalTitle", candidates);
             if (attrs.TryGetProperty("titles", out var titlesProp) && titlesProp.ValueKind == JsonValueKind.Object)
             {
-                AddStringProperty(titlesProp, "en", candidates);
-                AddStringProperty(titlesProp, "en_jp", candidates);
-                AddStringProperty(titlesProp, "en_us", candidates);
-                AddStringProperty(titlesProp, "ja_jp", candidates);
+                TitleMatching.AddStringProperty(titlesProp, "en", candidates);
+                TitleMatching.AddStringProperty(titlesProp, "en_jp", candidates);
+                TitleMatching.AddStringProperty(titlesProp, "en_us", candidates);
+                TitleMatching.AddStringProperty(titlesProp, "ja_jp", candidates);
             }
             if (attrs.TryGetProperty("abbreviatedTitles", out var abbrProp) && abbrProp.ValueKind == JsonValueKind.Array)
             {
@@ -204,49 +193,6 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
             }
         }
 
-        var best = 0.0;
-        foreach (var candidate in candidates)
-        {
-            var normalized = NormalizeTitleForSearch(candidate);
-            if (normalized.Length == 0)
-                continue;
-            if (string.Equals(normalized, query, StringComparison.Ordinal))
-                return 1.0;
-
-            var queryTokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-            var candidateTokens = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-            var intersection = queryTokens.Intersect(candidateTokens).Count();
-            var union = queryTokens.Union(candidateTokens).Count();
-            if (union == 0)
-                continue;
-
-            var jaccard = (double)intersection / union;
-            var queryCoverage = (double)intersection / queryTokens.Count;
-            var score = (jaccard + queryCoverage) / 2;
-            if (candidateTokens.Count > queryTokens.Count)
-                score -= Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04);
-
-            best = Math.Max(best, score);
-        }
-
-        return best;
-    }
-
-    private string NormalizeTitleForSearch(string value)
-    {
-        var cleaned = MediaTitleNormalizer.NormalizeForSearch(value);
-        cleaned = SearchNoiseRegex().Replace(cleaned, " ");
-        cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
-        return SearchWhitespaceRegex().Replace(cleaned, " ").Trim();
-    }
-
-    private static void AddStringProperty(JsonElement element, string propertyName, List<string> values)
-    {
-        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
-        {
-            var value = property.GetString();
-            if (!string.IsNullOrWhiteSpace(value))
-                values.Add(value);
-        }
+        return TitleMatching.ScoreCandidates(cleanQuery, candidates);
     }
 }

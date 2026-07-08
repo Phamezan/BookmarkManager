@@ -163,7 +163,7 @@ export class SyncCoordinator {
       root: subtree,
     });
 
-    if (roots.length === 0) return;
+
 
     const response = await this.deps.api.uploadSnapshot({
       requestId: config.snapshotRequest.requestId,

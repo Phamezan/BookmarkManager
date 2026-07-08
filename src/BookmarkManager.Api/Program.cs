@@ -24,7 +24,7 @@ builder.Services.AddDataProtection().PersistKeysToFileSystem(dataProtectionKeys)
 
 builder.Services.Configure<HostOptions>(options =>
 {
-    options.ShutdownTimeout = TimeSpan.FromSeconds(1.5);
+    options.ShutdownTimeout = TimeSpan.FromSeconds(10);
 });
 
 builder.Services.AddScoped<IExtensionService, ExtensionService>();
@@ -69,6 +69,12 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.AutoTaggerBackgroundJ
 builder.Services.AddHostedService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
+builder.Services.AddHttpClient("LinkChecker")
+    .ConfigureHttpClient(c =>
+    {
+        c.Timeout = TimeSpan.FromSeconds(10);
+        c.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+    });
 builder.Services.AddSingleton<BookmarkManager.Api.Services.UrlMigration.UrlMigrationBackgroundJob>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.UrlMigration.UrlMigrationBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.UrlMigrationBackgroundJob>());
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.UrlMigration.GroqSeriesExtractionService))

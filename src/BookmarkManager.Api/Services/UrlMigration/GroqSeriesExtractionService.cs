@@ -40,17 +40,19 @@ public sealed class GroqSeriesExtractionService : ISeriesExtractionService
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AiTaggingSettingsService _settings;
-    private readonly AiRequestThrottle _throttle = new();
+    private readonly AiRequestThrottle _throttle;
     private readonly ILogger<GroqSeriesExtractionService> _logger;
 
     public GroqSeriesExtractionService(
         IHttpClientFactory httpClientFactory,
         AiTaggingSettingsService settings,
-        ILogger<GroqSeriesExtractionService> logger)
+        ILogger<GroqSeriesExtractionService> logger,
+        AiRequestThrottle? throttle = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _throttle = throttle ?? new AiRequestThrottle();
     }
 
     public async Task<SeriesExtraction> ExtractAsync(string title, string url, string? category, CancellationToken cancellationToken)

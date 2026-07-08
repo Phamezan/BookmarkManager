@@ -24,10 +24,10 @@ public static class BrokenLinksFolderHelper
 
     /// <summary>
     /// Finds the existing "Broken Links" folder or creates it (under the tracked root folder)
-    /// if missing. When newly created, saves and returns immediately with a null
-    /// <see cref="BookmarkNode.BrowserNodeId"/> — callers must not move bookmarks into it until
-    /// the extension reports the real id back (see <see cref="MoveBookmarksIntoFolderAsync"/>).
-    /// Returns null when no root folder exists at all.
+    /// if missing. When newly created, its <see cref="BookmarkNode.BrowserNodeId"/> is null until
+    /// the extension confirms it — moves into it are enqueued Deferred and promoted on
+    /// confirmation (see <see cref="MoveBookmarksIntoFolderAsync"/> and
+    /// <see cref="DeferredCommandHelper"/>). Returns null when no root folder exists at all.
     /// </summary>
     public static async Task<BookmarkNode?> GetOrCreateFolderAsync(AppDbContext db, ILogger logger, CancellationToken ct)
     {
@@ -67,10 +67,15 @@ public static class BrokenLinksFolderHelper
             };
             db.BookmarkNodes.Add(brokenLinksFolder);
 
+            // Shape must match the extension adapter's CreatePayload
+            // (parentBrowserNodeId, not parentId).
             var createPayload = new
             {
-                parentId = rootFolder.BrowserNodeId ?? "1",
-                title = FolderName
+                type = "Folder",
+                parentBrowserNodeId = rootFolder.BrowserNodeId ?? "1",
+                title = FolderName,
+                url = (string?)null,
+                position = brokenLinksFolder.Position
             };
             db.ExtensionCommands.Add(new ExtensionCommandEntry
             {
@@ -82,7 +87,7 @@ public static class BrokenLinksFolderHelper
                 ExpectedVersion = 0,
                 PayloadJson = JsonSerializer.Serialize(createPayload),
                 CreatedAt = DateTime.UtcNow,
-                Status = "Pending"
+                Status = DeferredCommandHelper.InitialStatus(rootFolder)
             });
 
             await db.SaveChangesAsync(ct);
@@ -93,10 +98,12 @@ public static class BrokenLinksFolderHelper
     }
 
     /// <summary>
-    /// Moves the given bookmarks into <paramref name="folder"/>, deferring entirely (no-op,
-    /// returns 0) when the folder's <see cref="BookmarkNode.BrowserNodeId"/> is not yet known —
-    /// moving bookmarks before Brave confirms the folder exists would race the extension command
-    /// loop. Saves and broadcasts once when any bookmarks were actually moved.
+    /// Moves the given bookmarks into <paramref name="folder"/>. When the folder's
+    /// <see cref="BookmarkNode.BrowserNodeId"/> is not yet known, the projection is still
+    /// updated but the move commands are enqueued Deferred — they are promoted to Pending
+    /// when the extension confirms the folder (see <see cref="DeferredCommandHelper"/>),
+    /// so they never race the folder-create in the extension command loop.
+    /// Saves and broadcasts once when any bookmarks were actually moved.
     /// </summary>
     public static async Task<int> MoveBookmarksIntoFolderAsync(
         AppDbContext db,
@@ -105,12 +112,6 @@ public static class BrokenLinksFolderHelper
         ILogger logger,
         CancellationToken ct)
     {
-        if (string.IsNullOrEmpty(folder.BrowserNodeId))
-        {
-            logger.LogWarning("Broken Links folder has no BrowserNodeId yet. Deferring bookmark movements until next scan/sync.");
-            return 0;
-        }
-
         if (bookmarkIds.Count == 0)
         {
             return 0;
@@ -128,6 +129,14 @@ public static class BrokenLinksFolderHelper
         var maxPosBroken = await db.BookmarkNodes
             .Where(n => n.ParentId == folder.Id)
             .MaxAsync(n => (int?)n.Position, ct) ?? -1;
+
+        var commandStatus = DeferredCommandHelper.InitialStatus(folder);
+        if (commandStatus == DeferredCommandHelper.DeferredStatus)
+        {
+            logger.LogInformation(
+                "Broken Links folder has no BrowserNodeId yet; enqueuing {Count} moves as Deferred.",
+                bookmarksToMove.Count);
+        }
 
         int nextPos = maxPosBroken + 1;
         foreach (var bm in bookmarksToMove)
@@ -153,7 +162,7 @@ public static class BrokenLinksFolderHelper
                 ExpectedVersion = bm.Version,
                 PayloadJson = JsonSerializer.Serialize(movePayload),
                 CreatedAt = DateTime.UtcNow,
-                Status = "Pending"
+                Status = commandStatus
             });
         }
 

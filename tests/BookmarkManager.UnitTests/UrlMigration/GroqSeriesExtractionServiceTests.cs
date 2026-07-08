@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.UrlMigration;
+using BookmarkManager.UnitTests.UrlMigration.TestDoubles;
 using BookmarkManager.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -264,21 +265,5 @@ public sealed class GroqSeriesExtractionServiceTests
         return new GroqSeriesExtractionService(factory, settingsService, NullLogger<GroqSeriesExtractionService>.Instance);
     }
 
-    private sealed class MockHttpMessageHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> responseFactory) : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => responseFactory(request);
-    }
 
-    private sealed class SingleClientFactory(HttpClient client) : IHttpClientFactory
-    {
-        public HttpClient CreateClient(string name) => client;
-    }
-
-    private sealed class InMemoryAiTaggingSettingsService(AiTaggingSettingsDto settings)
-        : AiTaggingSettingsService(NullLogger<AiTaggingSettingsService>.Instance)
-    {
-        public override Task<AiTaggingSettingsDto> GetAsync(CancellationToken cancellationToken)
-            => Task.FromResult(settings);
-    }
 }

@@ -27,11 +27,11 @@ public static class SyncWebSocketManager
         }
         catch (OperationCanceledException)
         {
-            // Expected during shutdown or client disconnect.
+            throw;
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore socket errors (disconnections)
+            Console.Error.WriteLine($"WebSocket connection exception: {ex}");
         }
         finally
         {
@@ -48,9 +48,13 @@ public static class SyncWebSocketManager
                         "Server shutting down",
                         CancellationToken.None);
                 }
-                catch
+                catch (OperationCanceledException)
                 {
-                    // Best effort; the socket may already be gone.
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"WebSocket close exception: {ex}");
                 }
             }
         }

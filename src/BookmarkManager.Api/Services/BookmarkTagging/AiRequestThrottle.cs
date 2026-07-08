@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
-internal sealed class AiRequestThrottle
+public sealed class AiRequestThrottle
 {
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private DateTime _nextAllowedRequestTimeUtc = DateTime.MinValue;

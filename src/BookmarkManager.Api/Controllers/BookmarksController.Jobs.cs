@@ -97,14 +97,6 @@ public partial class BookmarksController
     });
     }
 
-    // Kept only so the (client-owned) Settings page polling call doesn't 404 now that domain
-    // triage runs synchronously within the POST above; there is no longer a background job to
-    // report progress for. See note to the UI agent about removing this polling call.
-    [HttpGet("triage-domain/status")]
-    public ActionResult<TriageJobStatusDto> GetTriageStatus()
-    {
-    return Ok(new TriageJobStatusDto { IsRunning = false });
-    }
 
     private static string ExtractDomain(string url)
     {

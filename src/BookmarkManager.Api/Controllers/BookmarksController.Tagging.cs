@@ -20,7 +20,7 @@ public partial class BookmarksController
     {
         var folderPath = request.FolderPath;
         if (string.IsNullOrWhiteSpace(folderPath) && request.FolderId.HasValue)
-            folderPath = await BuildFolderPathAsync(request.FolderId.Value, ct);
+            folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, request.FolderId.Value, ct);
 
         var resultMapping = await _bookmarkTagging.GetTagsForBatchAsync(request.Items, folderPath, request.Domain, ct);
 
@@ -81,7 +81,7 @@ public partial class BookmarksController
     var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
     if (node is null) return NotFound();
 
-    var folderPath = await BuildFolderPathAsync(node.ParentId, ct);
+    var folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, node.ParentId, ct);
     var tags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
     return Ok(tags);
     }
@@ -181,7 +181,7 @@ public partial class BookmarksController
 
     if (folderId.HasValue)
     {
-        var descendantIds = await GetDescendantFolderIdsAsync(folderId.Value, ct);
+        var descendantIds = await FolderHierarchy.GetDescendantFolderIdsAsync(_db, folderId.Value, ct);
         descendantIds.Add(folderId.Value);
 
         query = query.Where(n => n.ParentId != null && descendantIds.Contains(n.ParentId.Value));

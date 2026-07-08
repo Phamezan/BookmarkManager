@@ -24,30 +24,7 @@ public sealed partial class ExtensionService
         return new Guid(hash);
     }
 
-    private async Task<string?> BuildFolderPathAsync(Guid? folderId, CancellationToken ct)
-    {
-        if (!folderId.HasValue)
-            return null;
 
-        var titles = new Stack<string>();
-        var currentId = folderId;
-        for (var depth = 0; currentId.HasValue && depth < 32; depth++)
-        {
-            var folder = await db.BookmarkNodes
-                .AsNoTracking()
-                .Where(n => n.Id == currentId.Value && n.Type == NodeType.Folder && !n.IsDeleted)
-                .Select(n => new { n.Title, n.ParentId })
-                .FirstOrDefaultAsync(ct);
-
-            if (folder is null)
-                break;
-
-            titles.Push(folder.Title);
-            currentId = folder.ParentId;
-        }
-
-        return titles.Count == 0 ? null : string.Join(" / ", titles);
-    }
 
     private async Task<AppConfig> GetOrCreateAppConfigAsync(CancellationToken ct)
     {

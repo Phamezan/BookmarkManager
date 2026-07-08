@@ -25,11 +25,8 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AiTaggingSettingsService _settings;
     private readonly IDuckDuckGoSearchService _duckDuckGo;
+    private readonly AiRequestThrottle _throttle;
     private readonly ILogger<GroqCompoundSearchService> _logger;
-
-    // Static: pace every Groq call (compound or plain chat) from this service against the same
-    // account-wide rate limit, regardless of how many scoped instances are created per run.
-    private static readonly AiRequestThrottle Throttle = new();
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -40,12 +37,14 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         IHttpClientFactory httpClientFactory,
         AiTaggingSettingsService settings,
         IDuckDuckGoSearchService duckDuckGo,
-        ILogger<GroqCompoundSearchService> logger)
+        ILogger<GroqCompoundSearchService> logger,
+        AiRequestThrottle? throttle = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _duckDuckGo = duckDuckGo ?? throw new ArgumentNullException(nameof(duckDuckGo));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _throttle = throttle ?? new AiRequestThrottle();
     }
 
     public async Task<IReadOnlyList<SearchCandidate>> SearchAsync(
@@ -211,7 +210,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         BookmarkManager.Contracts.AiTaggingSettingsDto settings,
         CancellationToken ct)
     {
-        await Throttle.AwaitThrottleAsync(settings.GroqRequestsPerMinute, ct).ConfigureAwait(false);
+        await _throttle.AwaitThrottleAsync(settings.GroqRequestsPerMinute, ct).ConfigureAwait(false);
 
         var request = new GroqChatRequest(
             Model: model,
@@ -245,7 +244,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
                 retryAfter = date - DateTimeOffset.UtcNow;
             }
 
-            await Throttle.RecordRateLimitAsync(retryAfter, ct).ConfigureAwait(false);
+            await _throttle.RecordRateLimitAsync(retryAfter, ct).ConfigureAwait(false);
             throw new HttpRequestException("Groq rate limit reached.", null, System.Net.HttpStatusCode.TooManyRequests);
         }
 

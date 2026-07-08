@@ -280,79 +280,20 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 
     private static double ScoreSearchRecord(JsonElement record, string cleanQuery)
     {
-        var query = NormalizeTitleForSearch(cleanQuery);
-        if (query.Length == 0)
-            return 0;
-
         var candidates = new List<string>();
-        AddStringProperty(record, "title", candidates);
-        AddStringProperty(record, "series_name", candidates);
-        AddStringProperty(record, "name", candidates);
+        TitleMatching.AddStringProperty(record, "title", candidates);
+        TitleMatching.AddStringProperty(record, "series_name", candidates);
+        TitleMatching.AddStringProperty(record, "name", candidates);
         if (record.TryGetProperty("associated", out var associated) && associated.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in associated.EnumerateArray())
-                AddStringProperty(item, "title", candidates);
+                TitleMatching.AddStringProperty(item, "title", candidates);
         }
 
-        var best = 0.0;
-        foreach (var candidate in candidates)
-        {
-            var normalized = NormalizeTitleForSearch(candidate);
-            if (normalized.Length == 0)
-                continue;
-            if (string.Equals(normalized, query, StringComparison.Ordinal))
-                return 1.0;
-
-            var queryTokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-            var candidateTokens = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-            var intersection = queryTokens.Intersect(candidateTokens).Count();
-            var union = queryTokens.Union(candidateTokens).Count();
-            if (union == 0)
-                continue;
-
-            var jaccard = (double)intersection / union;
-            var queryCoverage = (double)intersection / queryTokens.Count;
-            var score = (jaccard + queryCoverage) / 2;
-            if (candidateTokens.Count > queryTokens.Count)
-                score -= Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04);
-
-            best = Math.Max(best, score);
-        }
-
-        return best;
+        return TitleMatching.ScoreCandidates(cleanQuery, candidates);
     }
 
-    private static void AddStringProperty(JsonElement element, string propertyName, List<string> values)
-    {
-        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
-        {
-            var value = property.GetString();
-            if (!string.IsNullOrWhiteSpace(value))
-                values.Add(value);
-        }
-    }
 
-    private static string NormalizeTitleForSearch(string value)
-    {
-        var cleaned = MediaTitleNormalizer.NormalizeForSearch(value);
-        cleaned = SearchNoiseRegex().Replace(cleaned, " ");
-        cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
-        return SearchWhitespaceRegex().Replace(cleaned, " ").Trim();
-    }
-
-    public static long? TryExtractFirstSeriesId(JsonElement root)
-    {
-        if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array || results.GetArrayLength() == 0)
-            return null;
-
-        var first = results[0];
-        if (!first.TryGetProperty("record", out var record) || record.ValueKind != JsonValueKind.Object)
-            return null;
-
-        return record.TryGetProperty("series_id", out var id) && id.TryGetInt64(out var value)
-            ? value
-            : null;
-    }
 
     public static List<string> ExtractTags(JsonElement root)
     {
@@ -536,14 +477,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             _ => false
         };
 
-    [GeneratedRegex(@"(?i)\b(?:chapter|ch|episode|ep|volume|vol)\.?\s*\d+(?:\.\d+)?\b")]
-    private static partial Regex SearchNoiseRegex();
 
-    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
-    private static partial Regex SearchPunctuationRegex();
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex SearchWhitespaceRegex();
 
     private sealed record MangaUpdatesTagResult(List<string> Tags, string? Medium, bool MatchesRequestedDomain, string Reason);
 

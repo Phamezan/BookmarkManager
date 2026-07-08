@@ -140,6 +140,13 @@ export class ChromeStorageRepository implements StorageRepository {
     return correlations[operationId] ?? null;
   }
 
+  async getAllCorrelations(): Promise<CommandCorrelation[]> {
+    const result = await this.storage.get("bm.correlations");
+    const correlations =
+      (result["bm.correlations"] as Record<string, CommandCorrelation>) ?? {};
+    return Object.values(correlations);
+  }
+
   async pruneExpiredCorrelations(now: Date): Promise<void> {
     const result = await this.storage.get("bm.correlations");
     const correlations =

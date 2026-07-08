@@ -7,7 +7,10 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BookmarkManager.Api.Services;
 
-public sealed partial class ExtensionService(AppDbContext db, BookmarkTaggingService bookmarkTagging) : IExtensionService
+public sealed partial class ExtensionService(
+    AppDbContext db,
+    BookmarkTaggingService bookmarkTagging,
+    ILogger<ExtensionService> logger) : IExtensionService
 {
     public async Task<HeartbeatResponse> HandleHeartbeatAsync(HeartbeatRequest request, CancellationToken ct)
     {

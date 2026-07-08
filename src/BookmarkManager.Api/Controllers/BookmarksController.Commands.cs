@@ -23,6 +23,9 @@ public partial class BookmarksController
         if (!parentExists) return NotFound("Parent folder not found");
 
         parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == parentId, ct);
+        // "0" is a placeholder only; when the parent's BrowserNodeId is not yet
+        // confirmed the command is enqueued Deferred and the payload rewritten
+        // on promotion (see DeferredCommandHelper).
         parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
     }
 
@@ -47,7 +50,7 @@ public partial class BookmarksController
     // Auto-tag new bookmarks created through the web UI/API.
     if (node.Type == NodeType.Bookmark)
     {
-        var folderPath = await BuildFolderPathAsync(parentNode?.Id, ct);
+        var folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, parentNode?.Id, ct);
         var autoTags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
         if (autoTags.Count > 0)
             node.Tags = string.Join(",", autoTags);
@@ -74,7 +77,7 @@ public partial class BookmarksController
         ExpectedVersion = node.Version,
         PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
         CreatedAt = DateTime.UtcNow,
-        Status = "Pending"
+        Status = Services.DeferredCommandHelper.InitialStatus(parentNode)
     });
 
     await _db.SaveChangesAsync(ct);
@@ -152,6 +155,8 @@ public partial class BookmarksController
     if (node is null) return NotFound();
 
     var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == newParentId, ct);
+    // "0" only when no parent node exists (true root); an unconfirmed parent
+    // defers the command instead (see DeferredCommandHelper).
     var parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
 
     var maxPos = await _db.BookmarkNodes.Where(n => n.ParentId == newParentId).MaxAsync(n => (int?)n.Position, ct) ?? -1;
@@ -178,7 +183,7 @@ public partial class BookmarksController
         ExpectedVersion = node.Version,
         PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
         CreatedAt = DateTime.UtcNow,
-        Status = "Pending"
+        Status = Services.DeferredCommandHelper.InitialStatus(parentNode)
     });
 
     await _db.SaveChangesAsync(ct);
@@ -199,7 +204,7 @@ public partial class BookmarksController
 
     if (node.Type == NodeType.Folder)
     {
-        await MarkDeletedRecursiveAsync(node.Id, node.DeletedAt.Value, node.PurgeAfter.Value, ct);
+        await FolderHierarchy.MarkDeletedRecursiveAsync(_db, node.Id, node.DeletedAt.Value, node.PurgeAfter.Value, ct);
     }
 
     var payload = new
@@ -241,7 +246,7 @@ public partial class BookmarksController
 
         if (node.Type == NodeType.Folder)
         {
-            await MarkDeletedRecursiveAsync(node.Id, node.DeletedAt.Value, node.PurgeAfter.Value, ct);
+            await FolderHierarchy.MarkDeletedRecursiveAsync(_db, node.Id, node.DeletedAt.Value, node.PurgeAfter.Value, ct);
         }
 
         var payload = new
@@ -277,19 +282,29 @@ public partial class BookmarksController
         .ToListAsync(ct);
 
     var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == parentId, ct);
+    // "0" only when no parent node exists (true root); an unconfirmed parent
+    // defers the command instead (see DeferredCommandHelper).
     var parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
 
-    foreach (var item in items)
+    var sortedItems = items.OrderBy(i => i.NewPosition).ToList();
+    for (int i = 0; i < sortedItems.Count; i++)
     {
+        var item = sortedItems[i];
         var node = nodes.FirstOrDefault(n => n.Id == item.Id);
         if (node is not null)
         {
-            node.Position = item.NewPosition;
+            node.Position = i;
             node.SyncState = SyncState.Pending;
+            node.Version++;
         }
     }
 
-    var orderedIds = items.OrderBy(i => i.NewPosition).Select(i => i.Id).ToList();
+    if (parentNode is not null)
+    {
+        parentNode.Version++;
+    }
+
+    var orderedIds = sortedItems.Select(i => i.Id).ToList();
     var orderedChildBrowserNodeIds = orderedIds
         .Select(id => nodes.FirstOrDefault(n => n.Id == id)?.BrowserNodeId)
         .Where(id => !string.IsNullOrEmpty(id))
@@ -308,15 +323,14 @@ public partial class BookmarksController
         CommandType = "Reorder",
         BookmarkId = parentId,
         BrowserNodeId = parentBrowserNodeId,
-        ExpectedVersion = 1,
+        ExpectedVersion = parentNode?.Version ?? 1,
         PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
         CreatedAt = DateTime.UtcNow,
-        Status = "Pending"
+        Status = Services.DeferredCommandHelper.InitialStatus(parentNode),
     });
 
     await _db.SaveChangesAsync(ct);
     await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
     return NoContent();
     }
-
 }

@@ -20,7 +20,7 @@ internal sealed class GroqSeriesIdentificationClient : IAiSeriesIdentificationCl
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AiTaggingSettingsService _settings;
-    private readonly AiRequestThrottle _throttle = new();
+    private readonly AiRequestThrottle _throttle;
     private readonly ILogger<GroqSeriesIdentificationClient> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -31,11 +31,13 @@ internal sealed class GroqSeriesIdentificationClient : IAiSeriesIdentificationCl
     public GroqSeriesIdentificationClient(
         IHttpClientFactory httpClientFactory,
         AiTaggingSettingsService settings,
-        ILogger<GroqSeriesIdentificationClient> logger)
+        ILogger<GroqSeriesIdentificationClient> logger,
+        AiRequestThrottle? throttle = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _throttle = throttle ?? new AiRequestThrottle();
     }
 
     public async Task<AiProviderResponse> IdentifyAsync(

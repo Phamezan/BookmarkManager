@@ -11,9 +11,12 @@ public partial class AnimeCalendar
     private static readonly TimeSpan SyncQuietPeriod = TimeSpan.FromSeconds(1);
 
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
+    [Inject] private SyncSocketListener SyncSocketListener { get; set; } = default!;
 
     private CancellationTokenSource? _wsCts;
     private SyncReloadCoalescer? _syncCoalescer;
+
+    [Inject] private ILogger<AnimeCalendar> Logger { get; set; } = default!;
 
     private void StartWebSocketListener()
     {
@@ -30,56 +33,22 @@ public partial class AnimeCalendar
         {
             await LoadScheduleAndAutoMatchAsync(onlyNewSinceLastLoad: true);
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore transient reload failures - the next sync event will retry.
+            Logger.LogError(ex, "Error during sync-triggered schedule reload");
         }
     }
 
     private async Task ListenForSyncEventsAsync(CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        await SyncSocketListener.ListenAsync(async () =>
         {
-            using var webSocket = new System.Net.WebSockets.ClientWebSocket();
-            var uri = new Uri(NavigationManager.ToAbsoluteUri("api/sync/ws").ToString()
-                .Replace("http://", "ws://").Replace("https://", "wss://"));
-            try
+            if (_selectedFolderIds.Count > 0 && _syncCoalescer is not null)
             {
-                await webSocket.ConnectAsync(uri, ct);
-                var buffer = new byte[1024 * 4];
-                while (webSocket.State == System.Net.WebSockets.WebSocketState.Open && !ct.IsCancellationRequested)
-                {
-                    var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), ct);
-                    if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Close)
-                    {
-                        break;
-                    }
-                    if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Text)
-                    {
-                        var msg = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
-                        if (msg == "sync" && _selectedFolderIds.Count > 0 && _syncCoalescer is not null)
-                        {
-                            // Fire-and-forget: SignalAsync returns immediately when a cycle is
-                            // already running, and the receive loop must not block behind the
-                            // quiet period + reload of the first signal in a burst.
-                            var coalescer = _syncCoalescer;
-                            await InvokeAsync(() => _ = coalescer.SignalAsync(ct));
-                        }
-                    }
-                }
+                var coalescer = _syncCoalescer;
+                await InvokeAsync(() => _ = coalescer.SignalAsync(ct));
             }
-            catch
-            {
-                try
-                {
-                    await Task.Delay(2000, ct);
-                }
-                catch
-                {
-                    break;
-                }
-            }
-        }
+        }, ct);
     }
 
     public void Dispose()

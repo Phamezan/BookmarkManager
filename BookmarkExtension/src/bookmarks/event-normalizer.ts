@@ -1,13 +1,8 @@
-import type { BrowserNode, ExtensionEvent, ExtensionEventType } from "../api/contracts";
-
-interface BraveBookmarkTreeNode {
-  id: string;
-  parentId?: string;
-  title: string;
-  url?: string;
-  index?: number;
-  children?: BraveBookmarkTreeNode[];
-}
+import type { ExtensionEvent, ExtensionEventType } from "../api/contracts";
+import {
+  type BraveBookmarkTreeNode,
+  toBrowserNode,
+} from "./browser-node-mapper";
 
 interface BraveBookmarkRemoveInfo {
   parentId: string;
@@ -21,20 +16,6 @@ function generateEventId(): string {
 
 function nowIso(): string {
   return new Date().toISOString();
-}
-
-function toBrowserNode(node: BraveBookmarkTreeNode): BrowserNode {
-  const isFolder = node.url === undefined;
-  return {
-    browserNodeId: node.id,
-    parentBrowserNodeId: node.parentId ?? null,
-    type: isFolder ? "Folder" : "Bookmark",
-    title: node.title,
-    url: node.url ?? null,
-    position: node.index ?? 0,
-    isProtected: false,
-    ...(isFolder ? { children: (node.children ?? []).map(toBrowserNode) } : {}),
-  };
 }
 
 export function normalizeCreate(

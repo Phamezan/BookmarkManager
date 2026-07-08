@@ -57,7 +57,7 @@ public partial class BookmarksController
     var allFolderIds = new HashSet<Guid>(folderIds);
     foreach (var folderId in folderIds)
     {
-        var descendants = await GetDescendantFolderIdsAsync(folderId, ct);
+        var descendants = await FolderHierarchy.GetDescendantFolderIdsAsync(_db, folderId, ct);
         allFolderIds.UnionWith(descendants);
     }
 

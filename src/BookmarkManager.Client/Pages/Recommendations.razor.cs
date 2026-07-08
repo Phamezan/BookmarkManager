@@ -17,6 +17,8 @@ public partial class Recommendations : IDisposable
     private bool _spinning;
     private bool _spotlightPaused;
     private Guid? _spotlightId;
+
+    [Inject] private FolderSelectionPersistence FolderSelectionPersistence { get; set; } = default!;
     private CancellationTokenSource? _spotlightCts;
     private List<BookmarkNodeDto> _recommendations = [];
     private List<(Guid Id, string Title, int Depth)> _flatFolders = [];
@@ -35,9 +37,9 @@ public partial class Recommendations : IDisposable
     protected override async Task OnInitializedAsync()
     {
         var tree = await BookmarkService.GetFolderTreeAsync();
-        _flatFolders = FlattenFolders(tree, 0);
+        _flatFolders = FolderSelectionPersistence.FlattenFolders(tree);
 
-        _selectedFolderIds = await LoadPersistedFolderIdsAsync();
+        _selectedFolderIds = await FolderSelectionPersistence.LoadFolderIdsAsync(StorageKey);
 
         if (_selectedFolderIds.Count > 0)
         {
@@ -49,50 +51,14 @@ public partial class Recommendations : IDisposable
         }
     }
 
-    private static List<(Guid Id, string Title, int Depth)> FlattenFolders(List<FolderTreeNodeDto> nodes, int depth)
-    {
-        var result = new List<(Guid, string, int)>();
-        foreach (var node in nodes)
-        {
-            result.Add((node.Id, node.Title, depth));
-            result.AddRange(FlattenFolders(node.Children, depth + 1));
-        }
-        return result;
-    }
 
-    private async Task<HashSet<Guid>> LoadPersistedFolderIdsAsync()
-    {
-        try
-        {
-            var json = await JSRuntime.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-            if (string.IsNullOrEmpty(json)) return [];
-            return new HashSet<Guid>(JsonSerializer.Deserialize<List<Guid>>(json) ?? []);
-        }
-        catch
-        {
-            return [];
-        }
-    }
-
-    private async Task PersistFolderIdsAsync()
-    {
-        try
-        {
-            var json = JsonSerializer.Serialize(_selectedFolderIds);
-            await JSRuntime.InvokeVoidAsync("localStorage.setItem", StorageKey, json);
-        }
-        catch
-        {
-            // best-effort persistence only
-        }
-    }
 
     private async Task ToggleFolderAsync(Guid id, bool isSelected)
     {
         if (isSelected) _selectedFolderIds.Add(id);
         else _selectedFolderIds.Remove(id);
 
-        await PersistFolderIdsAsync();
+        await FolderSelectionPersistence.PersistFolderIdsAsync(StorageKey, _selectedFolderIds);
         await LoadRecommendationsAsync();
     }
 
@@ -100,7 +66,7 @@ public partial class Recommendations : IDisposable
     {
         if (_selectedFolderIds.Count == 0) return;
         _selectedFolderIds.Clear();
-        await PersistFolderIdsAsync();
+        await FolderSelectionPersistence.PersistFolderIdsAsync(StorageKey, _selectedFolderIds);
         await LoadRecommendationsAsync();
     }
 

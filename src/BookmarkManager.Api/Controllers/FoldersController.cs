@@ -44,6 +44,8 @@ public class FoldersController : ControllerBase
         if (folder is null) return NotFound();
 
         var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == newParentId, ct);
+        // "0" only when no parent node exists (true root); an unconfirmed parent
+        // defers the command instead (see DeferredCommandHelper).
         var parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
 
         var maxPos = await _db.BookmarkNodes.Where(n => n.ParentId == newParentId).MaxAsync(n => (int?)n.Position, ct) ?? -1;
@@ -69,7 +71,7 @@ public class FoldersController : ControllerBase
             ExpectedVersion = folder.Version,
             PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
             CreatedAt = DateTime.UtcNow,
-            Status = "Pending"
+            Status = Services.DeferredCommandHelper.InitialStatus(parentNode)
         });
 
         await _db.SaveChangesAsync(ct);

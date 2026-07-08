@@ -5,23 +5,7 @@ namespace BookmarkManager.UnitTests;
 
 public sealed class MangaUpdatesTaggingTests
 {
-    [Fact]
-    public void TryExtractFirstSeriesId_ReturnsFirstResultRecordSeriesId()
-    {
-        const string json = """
-        {
-          "results": [
-            { "record": { "series_id": 33408692186, "title": "The Lone Necromancer" } }
-          ]
-        }
-        """;
 
-        using var doc = JsonDocument.Parse(json);
-
-        var seriesId = MangaUpdatesTaggingService.TryExtractFirstSeriesId(doc.RootElement);
-
-        Assert.Equal(33408692186L, seriesId);
-    }
 
     [Fact]
     public void TryExtractBestSeriesId_SkipsConflictingPreviewMediumAndSelectsMatchingResult()

@@ -1,5 +1,6 @@
 import type { BookmarkAdapter, StorageRepository } from "../api/contracts";
 import { SyncCoordinator } from "./sync-coordinator";
+import { matchEventToCorrelation } from "../commands/command-executor";
 import { migrate } from "../storage/migrations";
 import {
   normalizeChange,
@@ -14,7 +15,11 @@ import { SettingsAwareApiClient } from "../api/settings-aware-client";
 import type { ExtensionEvent } from "../api/contracts";
 
 const ALARM_NAME = "bookmark-sync";
-const POLL_INTERVAL_MINUTES = 0.5;
+const POLL_INTERVAL_MINUTES = 1.0;
+
+const WS_RECONNECT_BASE_MS = 3000;
+const WS_RECONNECT_MAX_MS = 60000;
+const WS_RECONNECT_JITTER_MS = 500;
 
 /** Bookmarks Bar id, used as the fallback quick-bookmark destination. */
 const BOOKMARKS_BAR_ID = "1";
@@ -124,9 +129,41 @@ export class ServiceWorker {
 
   private async handleBookmarkEvent(event: ExtensionEvent): Promise<void> {
     console.log("[bookmark] Enqueuing event:", event.eventType, event.browserNodeId);
-    await this.deps.storage.enqueueEvent(event);
+    const stamped = await this.stampCommandEcho(event);
+    await this.deps.storage.enqueueEvent(stamped);
     console.log("[bookmark] Event enqueued, triggering sync");
     this.coordinator.runSyncCycle();
+  }
+
+  /**
+   * When a browser event was caused by a server command the executor just
+   * applied, stamp `causedByOperationId` so the server does not apply the
+   * echo as a fresh user edit. Correlation failures never block the event.
+   */
+  private async stampCommandEcho(event: ExtensionEvent): Promise<ExtensionEvent> {
+    try {
+      const correlations = await this.deps.storage.getAllCorrelations();
+      if (correlations.length === 0) return event;
+
+      const match = matchEventToCorrelation(event, correlations, this.deps.now());
+      if (!match) return event;
+
+      if (match.browserNodeId === null) {
+        // Pending Create matched by expected fields — record the browser id
+        // so this correlation cannot absorb a later unrelated creation, and
+        // so a re-delivered command short-circuits instead of re-creating.
+        await this.deps.storage.saveCorrelation({
+          ...match,
+          browserNodeId: event.browserNodeId,
+        });
+      }
+
+      console.log("[bookmark] Event caused by command:", match.operationId);
+      return { ...event, causedByOperationId: match.operationId };
+    } catch (e) {
+      console.warn("[bookmark] Echo correlation check failed:", e);
+      return event;
+    }
   }
 
   // ── Quick Bookmark ──────────────────────────────────────────────────────────
@@ -380,16 +417,27 @@ export class ServiceWorker {
 
   private ws: WebSocket | null = null;
   private wsReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private wsReconnectAttempt = 0;
 
   private async connectWebSocket(): Promise<void> {
+    // A live or in-progress socket already serves sync pushes; opening
+    // another would stack sockets, each firing its own sync cycles.
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
     if (this.wsReconnectTimeout) {
       clearTimeout(this.wsReconnectTimeout);
       this.wsReconnectTimeout = null;
     }
+    this.cleanupWebSocket();
 
     const settings = await this.deps.storage.getSettings();
     if (!settings || !settings.setupComplete || !settings.apiBaseUrl) {
-      this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 5000);
+      this.scheduleWebSocketReconnect();
       return;
     }
 
@@ -403,6 +451,10 @@ export class ServiceWorker {
       const ws = new WebSocket(wsUrl);
       this.ws = ws;
 
+      ws.onopen = () => {
+        this.wsReconnectAttempt = 0;
+      };
+
       ws.onmessage = (event) => {
         if (event.data === "sync") {
           console.log("[worker] WebSocket sync event received");
@@ -413,7 +465,7 @@ export class ServiceWorker {
       ws.onclose = () => {
         console.log("[worker] WebSocket closed, reconnecting...");
         this.cleanupWebSocket();
-        this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 3000);
+        this.scheduleWebSocketReconnect();
       };
 
       ws.onerror = (err) => {
@@ -421,18 +473,34 @@ export class ServiceWorker {
       };
     } catch (e) {
       console.error("[worker] WebSocket connection failed:", e);
-      this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), 5000);
+      this.scheduleWebSocketReconnect();
     }
+  }
+
+  private scheduleWebSocketReconnect(): void {
+    if (this.wsReconnectTimeout) {
+      clearTimeout(this.wsReconnectTimeout);
+    }
+    const delay =
+      Math.min(WS_RECONNECT_BASE_MS * 2 ** this.wsReconnectAttempt, WS_RECONNECT_MAX_MS) +
+      Math.random() * WS_RECONNECT_JITTER_MS;
+    this.wsReconnectAttempt++;
+    this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), delay);
   }
 
   private cleanupWebSocket(): void {
     if (this.ws) {
+      const ws = this.ws;
+      this.ws = null;
+      ws.onopen = null;
+      ws.onmessage = null;
+      ws.onclose = null;
+      ws.onerror = null;
       try {
-        this.ws.close();
+        ws.close();
       } catch {
         // Ignored
       }
-      this.ws = null;
     }
   }
 }
@@ -470,9 +538,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   console.log("[worker] message received:", (message as { type: string })?.type);
-  worker.handleMessage(message as { type: string }).then((result) => {
-    sendResponse(result);
-  });
+  worker.handleMessage(message as { type: string })
+    .then((result) => {
+      sendResponse(result);
+    })
+    .catch((err) => {
+      console.error("[worker] handleMessage error:", err);
+      sendResponse({ ok: false, error: String(err) });
+    });
   return true;
 });
 

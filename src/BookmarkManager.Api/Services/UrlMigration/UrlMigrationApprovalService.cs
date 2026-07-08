@@ -337,10 +337,5 @@ public sealed class UrlMigrationApprovalService
         return $"{prefix}{oldHost} → {newHost} on {DateTime.UtcNow:yyyy-MM-dd}. Progress: chapter {chapter}.";
     }
 
-    private static string? TryGetHost(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-            return null;
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : null;
-    }
+    private static string? TryGetHost(string? url) => Infrastructure.UrlHelpers.TryGetHost(url);
 }

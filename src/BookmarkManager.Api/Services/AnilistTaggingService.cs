@@ -204,73 +204,17 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
             .ToList();
     }
 
-    [GeneratedRegex(@"(?i)\b(?:chapter|ch|episode|ep|volume|vol)\.?\s*\d+(?:\.\d+)?\b")]
-    private static partial Regex SearchNoiseRegex();
-
-    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
-    private static partial Regex SearchPunctuationRegex();
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex SearchWhitespaceRegex();
-
-    private static string NormalizeTitleForSearch(string value)
-    {
-        var cleaned = MediaTitleNormalizer.NormalizeForSearch(value);
-        cleaned = SearchNoiseRegex().Replace(cleaned, " ");
-        cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
-        return SearchWhitespaceRegex().Replace(cleaned, " ").Trim();
-    }
-
     public static double ScoreCandidate(JsonElement mediaElement, string cleanQuery)
     {
-        var query = NormalizeTitleForSearch(cleanQuery);
-        if (query.Length == 0)
-            return 0;
-
         var candidates = new List<string>();
         if (mediaElement.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.Object)
         {
-            AddStringProperty(titleProp, "romaji", candidates);
-            AddStringProperty(titleProp, "english", candidates);
-            AddStringProperty(titleProp, "native", candidates);
+            TitleMatching.AddStringProperty(titleProp, "romaji", candidates);
+            TitleMatching.AddStringProperty(titleProp, "english", candidates);
+            TitleMatching.AddStringProperty(titleProp, "native", candidates);
         }
 
-        var best = 0.0;
-        foreach (var candidate in candidates)
-        {
-            var normalized = NormalizeTitleForSearch(candidate);
-            if (normalized.Length == 0)
-                continue;
-            if (string.Equals(normalized, query, StringComparison.Ordinal))
-                return 1.0;
-
-            var queryTokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-            var candidateTokens = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-            var intersection = queryTokens.Intersect(candidateTokens).Count();
-            var union = queryTokens.Union(candidateTokens).Count();
-            if (union == 0)
-                continue;
-
-            var jaccard = (double)intersection / union;
-            var queryCoverage = (double)intersection / queryTokens.Count;
-            var score = (jaccard + queryCoverage) / 2;
-            if (candidateTokens.Count > queryTokens.Count)
-                score -= Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04);
-
-            best = Math.Max(best, score);
-        }
-
-        return best;
-    }
-
-    private static void AddStringProperty(JsonElement element, string propertyName, List<string> values)
-    {
-        if (element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String)
-        {
-            var value = property.GetString();
-            if (!string.IsNullOrWhiteSpace(value))
-                values.Add(value);
-        }
+        return TitleMatching.ScoreCandidates(cleanQuery, candidates);
     }
 
     private sealed record CacheEntry(List<string> Tags, bool WasRejected, string? RejectionReason, DateTimeOffset ExpiresAt);

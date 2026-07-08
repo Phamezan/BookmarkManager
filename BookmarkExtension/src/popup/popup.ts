@@ -11,7 +11,7 @@ const API_BASE_URL_OPTIONS: ApiBaseUrlOption[] = [
   { label: "192.168.1.100", value: "http://192.168.1.100:8080" },
 ];
 
-export const DEFAULT_API_BASE_URL = API_BASE_URL_OPTIONS[0].value;
+export const DEFAULT_API_BASE_URL = API_BASE_URL_OPTIONS[0]!.value;
 
 /** Subset of chrome.bookmarks used by the editor. Injectable for testability. */
 export interface PopupBookmarkApi {

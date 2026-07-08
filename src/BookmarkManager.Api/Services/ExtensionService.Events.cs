@@ -49,9 +49,19 @@ public sealed partial class ExtensionService
             accepted.Add(evt.EventId);
         }
 
-        await db.SaveChangesAsync(ct);
+        // Event-row persistence and projection apply must be atomic: the rows
+        // make the batch "accepted" for the dedup check above, so a partial
+        // failure would permanently ack a batch that never touched the
+        // projection. The extension retries the whole batch on rollback.
+        List<Guid> createdBookmarkIds;
+        await using (var tx = await db.Database.BeginTransactionAsync(ct))
+        {
+            await db.SaveChangesAsync(ct);
+            createdBookmarkIds = await ApplyEventChangesAsync(request.Events, ct);
+            await tx.CommitAsync(ct);
+        }
 
-        await ApplyEventChangesAsync(request.Events, ct);
+        await AutoTagCreatedBookmarksAsync(createdBookmarkIds, ct);
 
         await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
 
@@ -64,13 +74,39 @@ public sealed partial class ExtensionService
         };
     }
 
-    private async Task ApplyEventChangesAsync(List<ExtensionEventDto> events, CancellationToken ct)
+    /// <summary>
+    /// Applies event changes to the projection. Returns ids of bookmarks
+    /// created by this batch so auto-tagging (an external HTTP call) can run
+    /// after the surrounding transaction commits.
+    /// </summary>
+    private async Task<List<Guid>> ApplyEventChangesAsync(List<ExtensionEventDto> events, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
+        var createdBookmarkIds = new List<Guid>();
+
+        // Events caused by commands this server issued must not be re-applied:
+        // the projection was already updated when the command was enqueued.
+        // The event rows are still persisted above for audit/dedup.
+        var causedByIds = events
+            .Where(e => e.CausedByOperationId is not null)
+            .Select(e => e.CausedByOperationId!.Value)
+            .Distinct()
+            .ToList();
+        var echoOperationIds = causedByIds.Count == 0
+            ? new HashSet<Guid>()
+            : (await db.ExtensionCommands
+                .Where(c => causedByIds.Contains(c.OperationId)
+                    && (c.Status == "Succeeded" || c.Status == "Leased"))
+                .Select(c => c.OperationId)
+                .ToListAsync(ct)).ToHashSet();
+
+        var applicableEvents = events
+            .Where(e => e.CausedByOperationId is null || !echoOperationIds.Contains(e.CausedByOperationId.Value))
+            .ToList();
 
         var allIds = new HashSet<Guid>();
         var browserNodeIds = new HashSet<string>();
-        foreach (var evt in events)
+        foreach (var evt in applicableEvents)
         {
             if (!string.IsNullOrEmpty(evt.BrowserNodeId))
             {
@@ -124,7 +160,7 @@ public sealed partial class ExtensionService
             .Where(n => n.BrowserNodeId != null && browserNodeIds.Contains(n.BrowserNodeId))
             .ToDictionaryAsync(n => n.BrowserNodeId!, ct);
 
-        foreach (var evt in events)
+        foreach (var evt in applicableEvents)
         {
             var nodeId = CreateNodeId(evt.BrowserNodeId);
 
@@ -183,10 +219,9 @@ public sealed partial class ExtensionService
 
                 if (newNode.Type == NodeType.Bookmark && string.IsNullOrEmpty(newNode.Tags))
                 {
-                    var folderPath = await BuildFolderPathAsync(parentId, ct);
-                    var autoTags = await bookmarkTagging.GetTagsAsync(title ?? string.Empty, url, folderPath, BookmarkTagDomainDto.Auto, ct);
-                    if (autoTags.Count > 0)
-                        newNode.Tags = string.Join(",", autoTags);
+                    // Auto-tagging is an external HTTP call — deferred until
+                    // after the transaction commits (see AutoTagCreatedBookmarksAsync).
+                    createdBookmarkIds.Add(newNode.Id);
                 }
 
                 db.BookmarkNodes.Add(newNode);
@@ -292,6 +327,48 @@ public sealed partial class ExtensionService
         }
 
         await db.SaveChangesAsync(ct);
+        return createdBookmarkIds;
+    }
+
+    /// <summary>
+    /// Runs auto-tagging for bookmarks created by an event batch. Called after
+    /// the batch transaction commits so external HTTP calls never hold the
+    /// write transaction open. Failures are logged per node and never fail the
+    /// already-committed batch.
+    /// </summary>
+    private async Task AutoTagCreatedBookmarksAsync(List<Guid> createdBookmarkIds, CancellationToken ct)
+    {
+        if (createdBookmarkIds.Count == 0) return;
+
+        var changed = false;
+        foreach (var nodeId in createdBookmarkIds)
+        {
+            var node = await db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == nodeId, ct);
+            if (node is null || node.Type != NodeType.Bookmark || !string.IsNullOrEmpty(node.Tags))
+                continue;
+
+            try
+            {
+                var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
+                var autoTags = await bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
+                if (autoTags.Count > 0)
+                {
+                    node.Tags = string.Join(",", autoTags);
+                    changed = true;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Auto-tagging failed for created bookmark {NodeId}", nodeId);
+            }
+        }
+
+        if (changed)
+            await db.SaveChangesAsync(ct);
     }
 
 }

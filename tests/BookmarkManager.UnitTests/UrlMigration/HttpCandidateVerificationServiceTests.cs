@@ -51,7 +51,7 @@ public class HttpCandidateVerificationServiceTests
             Content = new StringContent(html, Encoding.UTF8, "text/html")
         });
 
-        var result = await service.VerifyAsync(Candidate(), Extraction(), CancellationToken.None);
+        var result = await service.VerifyAsync(Candidate("https://asuracomic.net/series/unrelated-manhwa/chapter-1"), Extraction(), CancellationToken.None);
 
         Assert.True(result.Reachable);
         Assert.False(result.SeriesMatched);

@@ -12,8 +12,8 @@ import type {
   SnapshotRequestPayload,
   SnapshotResponse,
   SnapshotRequest,
-} from "./contracts";
-import { ApiError } from "./errors";
+} from "../../src/api/contracts";
+import { ApiError } from "../../src/api/errors";
 
 export interface MockCall {
   method: string;

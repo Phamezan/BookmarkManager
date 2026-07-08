@@ -801,15 +801,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                uri.Host.EndsWith("." + deadHost, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? TryGetHost(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            return null;
-        }
-
-        return Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : null;
-    }
+    private static string? TryGetHost(string? url) => Infrastructure.UrlHelpers.TryGetHost(url);
 
     private sealed record UrlMigrationRunRequest(Guid RunId, string DeadHost, bool Force = false, string? SuggestedHost = null);
 }

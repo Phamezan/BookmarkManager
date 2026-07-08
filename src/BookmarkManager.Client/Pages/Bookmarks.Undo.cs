@@ -10,7 +10,7 @@ public partial class Bookmarks
 {
     private void ShowUndoSnackbar(string message, Func<Task> revertAction)
     {
-        UndoService.Push(message, revertAction);
+        var action = UndoService.Push(message, revertAction);
         Snackbar.Add(message, Severity.Success, config =>
         {
             config.Action = "UNDO";
@@ -19,11 +19,18 @@ public partial class Bookmarks
             {
                 try
                 {
-                    await UndoService.UndoAsync();
-                    if (_selectedFolderId.HasValue)
-                        _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
-                    await RefreshFolderTreeAsync();
-                    Snackbar.Add("Action reverted", Severity.Success);
+                    var undone = await UndoService.UndoAsync(action.Id);
+                    if (undone)
+                    {
+                        if (_selectedFolderId.HasValue)
+                            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+                        await RefreshFolderTreeAsync();
+                        Snackbar.Add("Action reverted", Severity.Success);
+                    }
+                    else
+                    {
+                        Snackbar.Add("Nothing to undo", Severity.Info);
+                    }
                 }
                 catch (Exception ex)
                 {

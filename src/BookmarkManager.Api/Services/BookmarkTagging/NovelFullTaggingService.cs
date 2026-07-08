@@ -16,14 +16,7 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
 
     private record NovelFullCacheEntry(ProviderTagResult Result, DateTimeOffset ExpiresAt);
 
-    [GeneratedRegex(@"(?i)\b(?:chapter|ch|episode|ep|volume|vol)\.?\s*\d+(?:\.\d+)?\b")]
-    private static partial Regex SearchNoiseRegex();
 
-    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
-    private static partial Regex SearchPunctuationRegex();
-
-    [GeneratedRegex(@"\s+")]
-    private static partial Regex SearchWhitespaceRegex();
 
     [GeneratedRegex(@"class=""truyen-title""><a href=""(?<href>[^""]+)"" title=""(?<title>[^""\r\n]+)""")]
     private static partial Regex SearchResultRegex();
@@ -152,38 +145,6 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
 
     private double ScoreNovelFullCandidate(string candidateTitle, string cleanQuery)
     {
-        var query = NormalizeTitleForSearch(cleanQuery);
-        if (query.Length == 0)
-            return 0;
-
-        var normalized = NormalizeTitleForSearch(candidateTitle);
-        if (normalized.Length == 0)
-            return 0;
-
-        if (string.Equals(normalized, query, StringComparison.Ordinal))
-            return 1.0;
-
-        var queryTokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-        var candidateTokens = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
-        var intersection = queryTokens.Intersect(candidateTokens).Count();
-        var union = queryTokens.Union(candidateTokens).Count();
-        if (union == 0)
-            return 0;
-
-        var jaccard = (double)intersection / union;
-        var queryCoverage = (double)intersection / queryTokens.Count;
-        var score = (jaccard + queryCoverage) / 2;
-        if (candidateTokens.Count > queryTokens.Count)
-            score -= Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04);
-
-        return score;
-    }
-
-    private string NormalizeTitleForSearch(string value)
-    {
-        var cleaned = MediaTitleNormalizer.NormalizeForSearch(value);
-        cleaned = SearchNoiseRegex().Replace(cleaned, " ");
-        cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
-        return SearchWhitespaceRegex().Replace(cleaned, " ").Trim();
+        return TitleMatching.ScoreCandidates(cleanQuery, [candidateTitle]);
     }
 }

@@ -30,11 +30,11 @@ public class SearchController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(request.Query))
         {
-            var q = request.Query;
+            var q = EscapeLike(request.Query.Trim());
             query = query.Where(n =>
-                EF.Functions.Like(n.Title, $"%{q}%") ||
-                (n.Url != null && EF.Functions.Like(n.Url, $"%{q}%")) ||
-                (n.Tags != null && EF.Functions.Like(n.Tags, $"%{q}%")));
+                EF.Functions.Like(n.Title, $"%{q}%", "\\") ||
+                (n.Url != null && EF.Functions.Like(n.Url, $"%{q}%", "\\")) ||
+                (n.Tags != null && EF.Functions.Like(n.Tags, $"%{q}%", "\\")));
         }
 
         if (!string.IsNullOrWhiteSpace(request.Category))
@@ -53,28 +53,41 @@ public class SearchController : ControllerBase
             {
                 var t = tag.Trim();
                 if (t.Length == 0) continue;
-                var needle = $"%,{t},%";
+                var escapedTag = EscapeLike(t);
+                var needle = $"%,{escapedTag},%";
                 query = query.Where(n =>
                     n.Tags != null
-                    && EF.Functions.Like("," + n.Tags + ",", needle));
+                    && EF.Functions.Like("," + n.Tags + ",", needle, "\\"));
             }
         }
 
         var total = await query.CountAsync(ct);
 
+        var pageSize = Math.Max(1, Math.Min(request.PageSize, 100));
+        var page = Math.Max(1, request.Page);
+
         query = query.OrderByDescending(n => n.UpdatedAt);
 
         var items = await query
-            .Skip((request.Page - 1) * request.PageSize)
-            .Take(request.PageSize)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
 
         return new PagedResult<BookmarkNodeDto>
         {
             Items = _mapper.Map<List<BookmarkNodeDto>>(items),
             TotalCount = total,
-            Page = request.Page,
-            PageSize = request.PageSize
+            Page = page,
+            PageSize = pageSize
         };
+    }
+
+    private static string EscapeLike(string input)
+    {
+        if (string.IsNullOrEmpty(input)) return input;
+        return input
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
     }
 }

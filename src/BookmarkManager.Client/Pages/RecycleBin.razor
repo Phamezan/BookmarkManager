@@ -218,21 +218,26 @@
         }
     }
 
+    private void SelectRange(Guid fromId, Guid toId)
+    {
+        var idx1 = _deleted.FindIndex(i => i.Id == fromId);
+        var idx2 = _deleted.FindIndex(i => i.Id == toId);
+        if (idx1 != -1 && idx2 != -1)
+        {
+            var start = Math.Min(idx1, idx2);
+            var end = Math.Max(idx1, idx2);
+            for (int i = start; i <= end; i++)
+            {
+                _selectedIds.Add(_deleted[i].Id);
+            }
+        }
+    }
+
     private void OnCheckboxClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, Guid id)
     {
         if (e.ShiftKey && _lastSelectedId.HasValue)
         {
-            var idx1 = _deleted.FindIndex(i => i.Id == _lastSelectedId.Value);
-            var idx2 = _deleted.FindIndex(i => i.Id == id);
-            if (idx1 != -1 && idx2 != -1)
-            {
-                var start = Math.Min(idx1, idx2);
-                var end = Math.Max(idx1, idx2);
-                for (int i = start; i <= end; i++)
-                {
-                    _selectedIds.Add(_deleted[i].Id);
-                }
-            }
+            SelectRange(_lastSelectedId.Value, id);
         }
         else
         {
@@ -250,17 +255,7 @@
         }
         else if (e.ShiftKey && _lastSelectedId.HasValue)
         {
-            var idx1 = _deleted.FindIndex(i => i.Id == _lastSelectedId.Value);
-            var idx2 = _deleted.FindIndex(i => i.Id == item.Id);
-            if (idx1 != -1 && idx2 != -1)
-            {
-                var start = Math.Min(idx1, idx2);
-                var end = Math.Max(idx1, idx2);
-                for (int i = start; i <= end; i++)
-                {
-                    _selectedIds.Add(_deleted[i].Id);
-                }
-            }
+            SelectRange(_lastSelectedId.Value, item.Id);
             _lastSelectedId = item.Id;
         }
     }
@@ -346,16 +341,5 @@
         }
     }
 
-    private static string RowClass(BookmarkNodeDto item)
-    {
-        var typeClass = item.Type == NodeType.Folder ? "is-folder" : "is-bookmark";
-        var state = item.SyncState switch
-        {
-            SyncState.Pending => "is-pending",
-            SyncState.Failed => "is-failed",
-            _ => "is-synced"
-        };
 
-        return $"bookmark-row {typeClass} {state}";
-    }
 }

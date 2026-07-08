@@ -175,6 +175,13 @@ export interface CommandCorrelation {
   expectedUrl: string | null;
   startedAt: string;
   expiresAt: string;
+  /** True once adapter.apply succeeded — distinguishes a genuinely applied
+   *  command from one whose apply is still pending or failed, for idempotent
+   *  redelivery. */
+  applied: boolean;
+  /** Node mappings produced by the apply, replayed on idempotent redelivery
+   *  so a lost completion ack does not lose Restore's child mappings. */
+  completedNodeMappings: NodeMapping[];
 }
 
 export type SyncStatusState =
@@ -235,6 +242,7 @@ export interface StorageRepository {
   acknowledgeEvents(eventIds: string[]): Promise<void>;
   saveCorrelation(value: CommandCorrelation): Promise<void>;
   getCorrelation(operationId: string): Promise<CommandCorrelation | null>;
+  getAllCorrelations(): Promise<CommandCorrelation[]>;
   pruneExpiredCorrelations(now: Date): Promise<void>;
   updateSyncStatus(value: SyncStatus): Promise<void>;
   getSyncStatus(): Promise<SyncStatus | null>;

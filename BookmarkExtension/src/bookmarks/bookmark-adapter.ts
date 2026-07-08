@@ -5,16 +5,11 @@ import type {
   ExtensionCommand,
   NodeMapping,
 } from "../api/contracts";
-
-interface BraveBookmarkTreeNode {
-  id: string;
-  parentId?: string;
-  title: string;
-  url?: string;
-  dateAdded?: number;
-  index?: number;
-  children?: BraveBookmarkTreeNode[];
-}
+import {
+  type BraveBookmarkTreeNode,
+  toBrowserNode,
+  isProtectedNode,
+} from "./browser-node-mapper";
 
 interface BraveBookmarksApi {
   getTree(): Promise<BraveBookmarkTreeNode[]>;
@@ -36,34 +31,6 @@ interface BraveBookmarksApi {
   ): Promise<BraveBookmarkTreeNode>;
   remove(id: string): Promise<void>;
   removeTree(id: string): Promise<void>;
-}
-
-const PROTECTED_ROOT_IDS = new Set(["0", "1", "2", "3"]);
-
-function isProtectedNode(id: string): boolean {
-  return PROTECTED_ROOT_IDS.has(id);
-}
-
-function toBrowserNode(
-  node: BraveBookmarkTreeNode,
-  parentProtected: boolean,
-): BrowserNode {
-  const isFolder = node.url === undefined;
-  const protectedNode = parentProtected || isProtectedNode(node.id);
-  const children = isFolder
-    ? (node.children ?? []).map((c) => toBrowserNode(c, protectedNode))
-    : undefined;
-
-  return {
-    browserNodeId: node.id,
-    parentBrowserNodeId: node.parentId ?? null,
-    type: isFolder ? "Folder" : "Bookmark",
-    title: node.title,
-    url: node.url ?? null,
-    position: node.index ?? 0,
-    isProtected: protectedNode,
-    ...(children !== undefined ? { children } : {}),
-  };
 }
 
 
@@ -181,7 +148,7 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
         "Cannot create under system root node",
       );
     }
-    const clampedPosition = await this.clampIndex(payload.parentBrowserNodeId, payload.position);
+    const clampedPosition = await this.clampIndex(payload.parentBrowserNodeId, payload.position, null);
     const created = await this.bookmarks.create({
       parentId: payload.parentBrowserNodeId,
       title: payload.title,
@@ -243,7 +210,7 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
         "Cannot move to system root node",
       );
     }
-    const clampedPosition = await this.clampIndex(payload.parentBrowserNodeId, payload.position);
+    const clampedPosition = await this.clampIndex(payload.parentBrowserNodeId, payload.position, command.browserNodeId);
     await this.bookmarks.move(nodeId, {
       parentId: payload.parentBrowserNodeId,
       index: clampedPosition,
@@ -262,11 +229,29 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
     command: ExtensionCommand,
   ): Promise<CommandExecutionResult> {
     const payload = command.payload as ReorderPayload;
+    const parentId = payload.parentBrowserNodeId;
+
     for (let i = 0; i < payload.orderedChildBrowserNodeIds.length; i++) {
       const childId = payload.orderedChildBrowserNodeIds[i]!;
+      let currentIndex = -1;
+      try {
+        const subtrees = await this.bookmarks.getSubTree(parentId);
+        if (subtrees.length > 0) {
+          const children = subtrees[0]!.children ?? [];
+          currentIndex = children.findIndex(c => c.id === childId);
+        }
+      } catch {
+        // Ignore and fallback to i
+      }
+
+      let targetIndex = i;
+      if (currentIndex !== -1 && currentIndex < targetIndex) {
+        targetIndex--;
+      }
+
       await this.bookmarks.move(childId, {
-        parentId: payload.parentBrowserNodeId,
-        index: i,
+        parentId: parentId,
+        index: targetIndex,
       });
     }
     return {
@@ -322,7 +307,7 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
     const mappings: NodeMapping[] = [];
 
     const restoreNodeRecursive = async (node: RestorePayload, parentBrowserId: string, commandBookmarkId?: string): Promise<string> => {
-      const clampedPosition = await this.clampIndex(parentBrowserId, node.position);
+      const clampedPosition = await this.clampIndex(parentBrowserId, node.position, null);
       const created = await this.bookmarks.create({
         parentId: parentBrowserId,
         title: node.title,
@@ -371,12 +356,18 @@ export class ChromeBookmarkAdapter implements BookmarkAdapter {
     }
   }
 
-  private async clampIndex(parentId: string, position: number): Promise<number> {
+  private async clampIndex(
+    parentId: string,
+    position: number,
+    movingNodeId?: string | null,
+  ): Promise<number> {
     try {
       const subtrees = await this.bookmarks.getSubTree(parentId);
       if (subtrees.length > 0) {
         const children = subtrees[0]!.children ?? [];
-        return Math.max(0, Math.min(position, children.length));
+        const isSameParent = movingNodeId && children.some(c => c.id === movingNodeId);
+        const maxLen = isSameParent ? children.length - 1 : children.length;
+        return Math.max(0, Math.min(position, maxLen));
       }
     } catch {
       // Ignore and fallback if getSubTree fails

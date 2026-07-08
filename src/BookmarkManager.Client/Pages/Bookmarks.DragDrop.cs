@@ -29,25 +29,9 @@ public partial class Bookmarks
 
     private async Task MoveDraggedFolder(Guid targetFolderId)
     {
-        if (_draggedFolderId == targetFolderId) return;
-
-        var originalParentId = FindParentFolderId(_folderTree, _draggedFolderId);
-        var folder = FindFolderById(_folderTree, _draggedFolderId);
-
-        await BookmarkService.MoveFolderAsync(_draggedFolderId, targetFolderId);
-
         var draggedId = _draggedFolderId;
         _draggedFolderId = Guid.Empty;
-        await RefreshFolderTreeAsync();
-
-        if (originalParentId.HasValue && folder != null)
-        {
-            ShowUndoSnackbar($"Folder \"{folder.Title}\" moved", () => BookmarkService.MoveFolderAsync(draggedId, originalParentId.Value));
-        }
-        else
-        {
-            Snackbar.Add("Folder moved", Severity.Success);
-        }
+        await MoveFolderWithUndoAsync(draggedId, targetFolderId);
     }
 
     private async Task MoveSelected()

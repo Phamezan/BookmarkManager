@@ -486,9 +486,14 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<Guid>("SnapshotBatchId")
                         .HasColumnType("TEXT");
 
+                    b.Property<Guid?>("SourceCommandId")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("SnapshotBatchId");
+
+                    b.HasIndex("SourceCommandId");
 
                     b.ToTable("SnapshotNodeMappings");
                 });

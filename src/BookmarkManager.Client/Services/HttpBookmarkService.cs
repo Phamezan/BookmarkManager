@@ -40,7 +40,7 @@ public sealed class HttpBookmarkService : IBookmarkService
                ?? throw new ApiException(HttpStatusCode.OK, "Folder response was empty.");
     }
 
-    public async Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, int? version = null, CancellationToken cancellationToken = default)
+    public async Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, CancellationToken cancellationToken = default)
     {
         var request = new UpdateBookmarkRequest { Title = title, Url = url };
         return await InvokeOrNullAsync<BookmarkNodeDto>(
@@ -119,9 +119,7 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<TriageJobStatusDto>(HttpMethod.Post, "api/bookmarks/triage-domain", request, cancellationToken)
            ?? new TriageJobStatusDto();
 
-    public async Task<TriageJobStatusDto> GetTriageStatusAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<TriageJobStatusDto>("api/bookmarks/triage-domain/status", cancellationToken)
-           ?? new TriageJobStatusDto();
+
 
     public async Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/auto-tagger/run", cancellationToken));
@@ -248,10 +246,7 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/manual", new SetManualProposalUrlRequest(url), cancellationToken);
 
-    private sealed class AiTaggingStatusDto
-    {
-        public bool Enabled { get; set; }
-    }
+
 
     private static async Task<T?> InvokeOrNullAsync<T>(Func<Task<T?>> action) where T : class
     {
@@ -272,9 +267,8 @@ public sealed class HttpBookmarkService : IBookmarkService
             await action();
             return true;
         }
-        catch (ApiException)
+        catch (ApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
         {
-            // Covers 404, 400, 409, 500, network errors, timeouts, etc.
             return false;
         }
     }

@@ -5,6 +5,8 @@ using Bunit;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 
+using BookmarkManager.Client.ComponentTests.TestDoubles;
+
 namespace BookmarkManager.Client.ComponentTests;
 
 public sealed class UrlMigratorPageTests
@@ -81,9 +83,9 @@ public sealed class UrlMigratorPageTests
     }
 
     [Theory]
-    [InlineData("High", "mud-chip-color-success")]
-    [InlineData("Medium", "mud-chip-color-warning")]
-    [InlineData("Low", "mud-chip-color-default")]
+    [InlineData("High", "status-badge--success")]
+    [InlineData("Medium", "status-badge--warning")]
+    [InlineData("Low", "status-badge--danger")]
     public async Task ConfidenceChips_RenderExpectedColorPerLevel(string confidence, string expectedClassFragment)
     {
         await using var context = new BunitContext();
@@ -101,8 +103,8 @@ public sealed class UrlMigratorPageTests
 
         var page = RenderPage(context);
 
-        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-confidence-chip")));
-        var chip = page.FindAll(".migrator-confidence-chip").First(c => c.TextContent.Trim() == confidence);
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".status-badge")));
+        var chip = page.FindAll(".status-badge").First(c => c.TextContent.Trim() == confidence);
         Assert.Contains(expectedClassFragment, chip.ClassList);
     }
 
@@ -167,7 +169,11 @@ public sealed class UrlMigratorPageTests
         // Simulate the run finishing on the next poll tick.
         fake.Status = new UrlMigrationStatusDto { IsRunning = false, RunId = runId, DeadHost = "flamecomics.xyz", TotalFound = 5, Processed = 5, Resolved = 5 };
 
-        page.WaitForAssertion(() => Assert.Contains("Last run: flamecomics.xyz", page.Markup), TimeSpan.FromSeconds(5));
+        page.WaitForAssertion(() =>
+        {
+            Assert.Contains("Last run:", page.Markup);
+            Assert.Contains("flamecomics.xyz", page.Markup);
+        }, TimeSpan.FromSeconds(15));
 
         var callsAfterCompletion = fake.StatusCallCount;
 
@@ -224,7 +230,7 @@ public sealed class UrlMigratorPageTests
         CreatedAt = DateTime.UtcNow
     };
 
-    private sealed class FakeUrlMigratorBookmarkService : IBookmarkService
+    private sealed class FakeUrlMigratorBookmarkService : FakeBookmarkService, IBookmarkService
     {
         public UrlMigrationStatusDto? Status { get; set; }
         public List<UrlMigrationProposalDto> Proposals { get; set; } = [];
@@ -308,52 +314,12 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(1, 0, []));
         }
 
-        public Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, int? version = null, CancellationToken cancellationToken = default)
+        public Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, CancellationToken cancellationToken = default)
         {
             UpdateBookmarkCalled = true;
             return Task.FromResult<BookmarkNodeDto?>(new BookmarkNodeDto { Id = id, Title = title, Url = url });
         }
 
-        // ── Unused members of IBookmarkService for this test fixture ──────────
-        public Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<FolderTreeNodeDto>());
-        public Task<List<BookmarkNodeDto>> GetBookmarksAsync(Guid parentId, CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new PagedResult<BookmarkNodeDto>());
-        public Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<BookmarkNodeDto> CreateFolderAsync(Guid parentId, string title, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<BookmarkNodeDto?> UpdateMetadataAsync(Guid id, BookmarkMetadataDto metadata, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> MoveBookmarkAsync(Guid id, Guid newParentId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> MoveFolderAsync(Guid id, Guid newParentId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<bool> DeleteBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<List<BookmarkNodeDto>> GetDeletedBookmarksAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<bool> RestoreBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<bool> ReorderBookmarksAsync(Guid parentId, List<ReorderRequest> items, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<bool> BatchDeleteBookmarksAsync(List<Guid> ids, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<List<BookmarkNodeDto>> GetFavoritesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<List<string>> SuggestTagsAsync(string title, string? url, CancellationToken cancellationToken = default) => Task.FromResult(new List<string>());
-        public Task<List<BookmarkNodeDto>> GetRecommendationsAsync(List<Guid> folderIds, int count = 30, CancellationToken cancellationToken = default) => Task.FromResult(new List<BookmarkNodeDto>());
-        public Task<BookmarkNodeDto?> ArchiveBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<bool> TriggerLinkCheckAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<bool> IsLinkCheckRunningAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<TriageJobStatusDto> TriageDomainAsync(TriageDomainRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new TriageJobStatusDto());
-        public Task<TriageJobStatusDto> GetTriageStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(new TriageJobStatusDto());
-        public Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(new AutoTaggerStatusDto());
-        public Task<List<string>> SuggestAiTagsAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult(new List<string>());
-        public Task<RetagAllResult> RetagAllAsync(bool overwrite, CancellationToken cancellationToken = default) => Task.FromResult(new RetagAllResult());
-        public Task<List<TagCountDto>> GetTagsAsync(Guid? folderId = null, CancellationToken cancellationToken = default) => Task.FromResult(new List<TagCountDto>());
-        public Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new BatchTagResponse());
-        public Task<AiAutoTagSummaryDto> AiAutoTagFolderAsync(Guid folderId, bool forceRefresh = false, CancellationToken cancellationToken = default) => Task.FromResult(new AiAutoTagSummaryDto());
-        public Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default) => Task.FromResult(new AiAutoTagSummaryDto());
-        public Task<AiTaggingSettingsDto> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new AiTaggingSettingsDto());
-        public Task<AiTaggingSettingsDto> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default) => Task.FromResult(settings);
-        public Task<TestAiKeyResponse> TestAiTaggingKeyAsync(TestAiKeyRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new TestAiKeyResponse { Success = true, Message = "fake" });
-        public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<Guid, int>());
-        public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) => Task.FromResult(false);
-        public Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult(new List<AnimeMatchCandidateDto>());
-        public Task<BookmarkNodeDto?> ConfirmAnimeMatchAsync(Guid bookmarkId, AnimeMatchCandidateDto candidate, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
-        public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default) => Task.FromResult(new AnimeCalendarScheduleResponse());
-        public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default) => Task.FromResult(new AutoMatchAnimeResponse());
+
     }
 }

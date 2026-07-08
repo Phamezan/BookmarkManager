@@ -49,8 +49,10 @@ public class RecycleBinController : ControllerBase
         node.DeletedAt = null;
         node.PurgeAfter = null;
         node.SyncState = SyncState.Pending;
+        node.Version++;
 
-        var payload = await BuildRestorePayloadAsync(node, ct);
+        var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == node.ParentId, ct);
+        var payload = await BuildRestorePayloadAsync(node, parentNode, ct);
 
         _db.ExtensionCommands.Add(new ExtensionCommandEntry
         {
@@ -62,7 +64,7 @@ public class RecycleBinController : ControllerBase
             ExpectedVersion = node.Version,
             PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
             CreatedAt = DateTime.UtcNow,
-            Status = "Pending"
+            Status = Services.DeferredCommandHelper.InitialStatus(parentNode)
         });
 
         await _db.SaveChangesAsync(ct);
@@ -70,9 +72,10 @@ public class RecycleBinController : ControllerBase
         return NoContent();
     }
 
-    private async Task<object> BuildRestorePayloadAsync(BookmarkNode node, CancellationToken ct)
+    private async Task<object> BuildRestorePayloadAsync(BookmarkNode node, BookmarkNode? parentNode, CancellationToken ct)
     {
-        var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == node.ParentId, ct);
+        // "0" only when no parent node exists (true root); an unconfirmed
+        // parent defers the command instead (see DeferredCommandHelper).
         var parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
 
         var payload = new
@@ -104,7 +107,11 @@ public class RecycleBinController : ControllerBase
             child.DeletedAt = null;
             child.PurgeAfter = null;
             child.SyncState = SyncState.Pending;
+            child.Version++;
 
+            // Nested parentBrowserNodeId is informational only: the extension's
+            // recursive restore creates each child under the browser id it just
+            // created for the parent, ignoring this value.
             var parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == child.ParentId, ct);
             var parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
 
