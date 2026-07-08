@@ -13,6 +13,9 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# ASP.NET Data Protection key ring (secret material, never commit)
+.dataprotection-keys/
+
 # Local runtime data, backups, and secrets
 # Anchored to repo root so it does not also match src/BookmarkManager.Api/Data/
 # (case-insensitive on Windows), which is real source code.
