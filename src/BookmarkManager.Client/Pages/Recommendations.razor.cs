@@ -21,6 +21,8 @@ public partial class Recommendations : IDisposable
     private List<BookmarkNodeDto> _recommendations = [];
     private List<(Guid Id, string Title, int Depth)> _flatFolders = [];
     private HashSet<Guid> _selectedFolderIds = [];
+    private DotNetObjectReference<Recommendations>? _dotNetRef;
+    private bool _swipeInitialized;
 
     private BookmarkNodeDto? SpotlightItem =>
         _spotlightId is { } id ? _recommendations.FirstOrDefault(r => r.Id == id) : null;
@@ -142,6 +144,52 @@ public partial class Recommendations : IDisposable
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _dotNetRef = DotNetObjectReference.Create(this);
+        }
+
+        // .rec-more-list only exists once folders are selected and results load,
+        // so keep retrying (cheaply — the JS side no-ops once bound) until it does.
+        if (!_swipeInitialized)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("initRecommendationSwipe", ".rec-more-list", _dotNetRef);
+                _swipeInitialized = true;
+            }
+            catch
+            {
+                // Safe fallback during unmounting or before the list exists yet
+            }
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnRowSwipeDismissed(string idString)
+    {
+        if (!Guid.TryParse(idString, out var id)) return;
+        var item = _recommendations.FirstOrDefault(r => r.Id == id);
+        if (item is null) return;
+        await ArchiveAsync(item);
+        StateHasChanged();
+    }
+
+    private async Task FeatureWithAbsorbAsync(Guid id)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("absorbRecommendationRow", id, ".rec-featured");
+        }
+        catch
+        {
+            // Safe fallback — proceed with the state change even if the animation couldn't run
+        }
+        GoToSpotlight(id);
+    }
+
     private async Task ArchiveAsync(BookmarkNodeDto item)
     {
         try
@@ -251,5 +299,9 @@ public partial class Recommendations : IDisposable
         }
     }
 
-    public void Dispose() => StopSpotlightRotation();
+    public void Dispose()
+    {
+        StopSpotlightRotation();
+        _dotNetRef?.Dispose();
+    }
 }

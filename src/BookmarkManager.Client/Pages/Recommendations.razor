@@ -9,13 +9,6 @@
 
 <div class="bookmarks-workspace">
     <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
-        <div class="rec-eyebrow">
-            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Class="rec-eyebrow-icon" Size="Size.Small" />
-            Rediscover
-        </div>
-        <h1 class="rec-headline">Recommendations</h1>
-        <p class="rec-subtitle">Through folders you choose &mdash; forgotten bookmarks worth another look.</p>
-
         <div class="rec-controls-row">
             @if (_flatFolders.Count == 0)
             {
@@ -109,7 +102,7 @@
                                 }
                                 @if (!string.IsNullOrEmpty(meta.Category))
                                 {
-                                    <span class="rec-featured-tag">@meta.Category</span>
+                                    <span class="rec-featured-tag rec-featured-category">@meta.Category</span>
                                 }
                                 @foreach (var tag in meta.Tags.Take(10))
                                 {
@@ -150,7 +143,7 @@
                         @for (int i = 0; i < GridItems.Count; i++)
                         {
                             var item = GridItems[i];
-                            <div class="rec-more-row" style="@($"--rec-index: {i};")" role="listitem" @key="item.Id">
+                            <div class="rec-more-row" style="@($"--rec-index: {i};")" role="listitem" @key="item.Id" data-dismiss-id="@item.Id">
                                 <div class="rec-more-index">@((i + 1).ToString("00"))</div>
                                 <div class="rec-more-body">
                                     <div class="rec-more-title" title="@item.Title">
@@ -180,16 +173,16 @@
                                 </div>
                                 <div class="rec-more-actions">
                                     <MudTooltip Text="Visit URL">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="Color.Info" Size="Size.Small" Href="@item.Url" Target="_blank" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Launch" Color="Color.Info" Size="Size.Medium" Href="@item.Url" Target="_blank" />
                                     </MudTooltip>
                                     <MudTooltip Text="Feature this pick">
-                                        <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Small" OnClick="@(() => GoToSpotlight(item.Id))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Medium" OnClick="@(() => FeatureWithAbsorbAsync(item.Id))" />
                                     </MudTooltip>
                                     <MudTooltip Text="Archive bookmark">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Warning" Size="Size.Small" OnClick="@(() => ArchiveAsync(item))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Archive" Color="Color.Warning" Size="Size.Medium" OnClick="@(() => ArchiveAsync(item))" />
                                     </MudTooltip>
                                     <MudTooltip Text="Delete bookmark">
-                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteAsync(item))" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Medium" OnClick="@(() => DeleteAsync(item))" />
                                     </MudTooltip>
                                 </div>
                             </div>

@@ -412,12 +412,21 @@ public partial class UrlMigrator : IDisposable
         }
     }
 
-    private static Color ConfidenceColor(string confidence) => confidence switch
+    private static string ConfidenceBadgeClass(string confidence) => confidence switch
     {
-        "High" => Color.Success,
-        "Medium" => Color.Warning,
-        "Low" => Color.Default,
-        _ => Color.Default,
+        "High" => "status-badge--success",
+        "Medium" => "status-badge--warning",
+        "Low" => "status-badge--danger",
+        _ => "status-badge--watching",
+    };
+
+    private static string HistoryStatusBadgeClass(string status) => status switch
+    {
+        StatusApproved => "status-badge--success",
+        "Rejected" => "status-badge--danger",
+        "Cancelled" => "status-badge--warning",
+        "Reverted" => "status-badge--watching",
+        _ => "status-badge--active",
     };
 
     private static bool IsValidHost(string host)
