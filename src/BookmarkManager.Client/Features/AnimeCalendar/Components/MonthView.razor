@@ -4,6 +4,7 @@
    badge pops up a bigger cover + title + episode + ticking dd:hh:mm:ss countdown;
    clicking a populated day opens its full Day view. *@
 @implements IDisposable
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 <div class="acal-month-grid">
     @foreach (var name in DayHeaders)
@@ -76,6 +77,22 @@
     }
 
     public void Dispose() => _countdownTicker?.Dispose();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try { await JSRuntime.InvokeVoidAsync("initCalendarTilt", ".acal-month-grid", ".acal-month-cell.is-populated"); }
+            catch { /* Safe fallback during unmounting */ }
+        }
+
+        try
+        {
+            var signature = $"{Anchor:yyyy-MM}|{_totalEpisodes}";
+            await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-month-grid", ".acal-month-cell", signature);
+        }
+        catch { /* Safe fallback during unmounting */ }
+    }
 
     protected override void OnParametersSet()
     {

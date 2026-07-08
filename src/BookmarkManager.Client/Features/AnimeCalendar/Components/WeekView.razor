@@ -2,6 +2,7 @@
    connected vertical timeline. Only days that actually have episodes get a node;
    today's node/label render in amber. *@
 @implements IDisposable
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 @if (_days.Count == 0)
 {
@@ -44,6 +45,16 @@ else
         => _countdownTicker = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
     public void Dispose() => _countdownTicker?.Dispose();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            var signature = $"{Anchor:yyyy-MM-dd}|{_days.Sum(d => d.Items.Count)}";
+            await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-timeline", ".acal-timeline-group", signature);
+        }
+        catch { /* Safe fallback during unmounting */ }
+    }
 
     protected override void OnParametersSet()
     {

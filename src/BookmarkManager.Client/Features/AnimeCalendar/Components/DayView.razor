@@ -1,5 +1,6 @@
 @* Design 2c — the anchor day's episodes as a rich vertical timeline with a time
    label per slot and source links. Footer counts the day's episodes. *@
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 <div class="acal-timeline acal-timeline--day">
     <div class="acal-timeline-rail"></div>
@@ -39,5 +40,15 @@
         var day = DateOnly.FromDateTime(Anchor);
         _isToday = day == DateOnly.FromDateTime(DateTime.Today);
         _items = AnimeCalendarItem.DeduplicateBookmarks(Items.Where(i => i.AiringDay == day));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            var signature = $"{Anchor:yyyy-MM-dd}|{_items.Count}";
+            await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-timeline--day", ".acal-timeline-slot", signature);
+        }
+        catch { /* Safe fallback during unmounting */ }
     }
 }

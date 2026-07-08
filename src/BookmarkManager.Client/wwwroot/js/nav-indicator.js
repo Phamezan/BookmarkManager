@@ -35,8 +35,22 @@ window.repositionNavIndicator = function() {
     const left = linkRect.left - navRect.left - nav.clientLeft + nav.scrollLeft;
     const wasReady = indicator.classList.contains('is-ready');
 
-    indicator.style.transform = `translateX(${left}px)`;
-    indicator.style.width = `${linkRect.width}px`;
+    // GSAP owns the slide/width-morph tween (app.css no longer transitions
+    // transform/width on .nav-active-indicator — only opacity is CSS-driven).
+    // First paint snaps into place instantly; every route change after that
+    // gets the bouncy tween.
+    if (window.gsap) {
+        gsap.to(indicator, {
+            x: left,
+            width: linkRect.width,
+            duration: wasReady ? 0.48 : 0,
+            ease: 'back.out(1.7)',
+            overwrite: 'auto'
+        });
+    } else {
+        indicator.style.transform = `translateX(${left}px)`;
+        indicator.style.width = `${linkRect.width}px`;
+    }
     indicator.classList.add('is-ready');
 
     // Only spin + spark on an actual route change, not first paint.

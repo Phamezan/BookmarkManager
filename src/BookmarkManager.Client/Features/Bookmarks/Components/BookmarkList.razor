@@ -119,16 +119,29 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (firstRender)
+        {
+            try
+            {
+                _dotNetRef = Microsoft.JSInterop.DotNetObjectReference.Create(this);
+                _columns = await JSRuntime.InvokeAsync<int>("BookmarkGridInterop.getColumnCount", _gridContainerRef, MinCardWidthPx, GapPx);
+                _resizeObserver = await JSRuntime.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                    "BookmarkGridInterop.observeResize", _gridContainerRef, _dotNetRef, MinCardWidthPx, GapPx);
+                UpdateRows();
+                StateHasChanged();
+                await JSRuntime.InvokeVoidAsync("initBookmarkGridBloom", ".bookmark-grid");
+            }
+            catch
+            {
+                // Safe fallback during unmounting
+            }
+        }
 
+        // Re-run on every render — animateBookmarkGrid keys off the visible
+        // card ids and no-ops when the grid content hasn't actually changed.
         try
         {
-            _dotNetRef = Microsoft.JSInterop.DotNetObjectReference.Create(this);
-            _columns = await JSRuntime.InvokeAsync<int>("BookmarkGridInterop.getColumnCount", _gridContainerRef, MinCardWidthPx, GapPx);
-            _resizeObserver = await JSRuntime.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
-                "BookmarkGridInterop.observeResize", _gridContainerRef, _dotNetRef, MinCardWidthPx, GapPx);
-            UpdateRows();
-            StateHasChanged();
+            await JSRuntime.InvokeVoidAsync("animateBookmarkGrid", ".bookmark-grid");
         }
         catch
         {
