@@ -389,3 +389,14 @@
 .selection-bar .selection-action-danger:hover {
     background: rgba(248, 113, 113, 0.24) !important;
 }
+
+/* Revamped icons to match navbar style (Feather style) */
+.explorer-toolbar .mud-icon-root,
+.selection-bar .mud-icon-root,
+.toolbar-search .mud-icon-root {
+    fill: none !important;
+    stroke: currentColor !important;
+    stroke-width: 1.8 !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+}

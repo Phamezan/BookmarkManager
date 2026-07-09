@@ -32,6 +32,24 @@ public partial class Bookmarks
         }
     }
 
+    private async Task OnFolderCreated((Guid ParentId, string Name) args)
+    {
+        var (parentId, name) = args;
+        try
+        {
+            await BookmarkService.CreateFolderAsync(parentId, name);
+            _expandedFolderIds.Add(parentId);
+            await RefreshFolderTreeAsync();
+            StateHasChanged();
+            Snackbar.Add("Folder created", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.AddApiError("create folder", ex);
+            await RefreshFolderTreeAsync();
+        }
+    }
+
     private async Task CreateBookmark()
     {
         if (_selectedFolderId is null)

@@ -52,7 +52,7 @@
 
         @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
         {
-            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" @onclick:stopPropagation>@Item.Url</a>
+            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" @onclick:stopPropagation>@GetDisplayUrl(Item.Url)</a>
         }
 
         <div class="bookmark-card-footer">
@@ -136,4 +136,23 @@
     [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
+
+    private static string GetDisplayUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return string.Empty;
+        try
+        {
+            var uri = new Uri(url);
+            var host = uri.Host;
+            if (host.StartsWith("www."))
+            {
+                host = host.Substring(4);
+            }
+            return host;
+        }
+        catch
+        {
+            return url;
+        }
+    }
 }

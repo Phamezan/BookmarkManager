@@ -309,21 +309,21 @@
    light app shell. Palette kept literal to match the handoff mockups.
    =========================================================================== */
 .anime-cal {
-    --acal-bg: #0b0a14;
-    --acal-card: #161327;
-    --acal-card-hi: #1c1730;
-    --acal-border: #2a2650;
-    --acal-border-hi: #423a7a;
-    --acal-accent: #5b52c9;
-    --acal-accent-bright: #7b70f0;
-    --acal-label: #8b7ff0;
-    --acal-today: #ffb454;
-    --acal-text: #eeedf7;
-    --acal-text-dim: #9490c4;
-    --acal-text-mute: #5b5470;
+    --acal-bg: var(--bm-bg-elevated);
+    --acal-card: var(--bm-surface);
+    --acal-card-hi: var(--bm-surface-raised);
+    --acal-border: var(--bm-border);
+    --acal-border-hi: var(--bm-border-strong);
+    --acal-accent: var(--bm-accent);
+    --acal-accent-bright: var(--bm-accent);
+    --acal-label: var(--bm-accent);
+    --acal-today: var(--bm-warning);
+    --acal-text: var(--bm-text);
+    --acal-text-dim: var(--bm-text-secondary);
+    --acal-text-mute: var(--bm-text-muted);
 
     position: relative;
-    background: rgba(14, 12, 24, 0.6);
+    background: var(--bm-surface);
     backdrop-filter: blur(28px) saturate(140%);
     -webkit-backdrop-filter: blur(28px) saturate(140%);
     border: 1px solid var(--acal-border);
@@ -347,7 +347,7 @@
     inset: 0;
     z-index: -1;
     pointer-events: none;
-    background: linear-gradient(180deg, transparent, rgba(123, 112, 240, 0.16), transparent);
+    background: linear-gradient(180deg, transparent, var(--bm-accent-soft), transparent);
     height: 40%;
     transform: translateY(-100%);
     animation: acalScanSweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -373,7 +373,7 @@
     z-index: -1;
     pointer-events: none;
     border-radius: inherit;
-    box-shadow: inset 0 0 60px rgba(91, 82, 201, 0.08);
+    box-shadow: inset 0 0 60px var(--bm-accent-soft);
 }
 
 .anime-cal>* {
@@ -458,7 +458,7 @@
     background: linear-gradient(135deg, var(--acal-accent), var(--acal-accent-bright));
     border-color: transparent;
     color: #fff;
-    box-shadow: 0 4px 16px rgba(123, 112, 240, 0.45);
+    box-shadow: 0 4px 16px var(--bm-accent-glow);
 }
 
 .acal-nav-btn {
@@ -621,7 +621,7 @@
     height: 11px;
     border-radius: 50%;
     background: var(--acal-accent-bright);
-    box-shadow: 0 0 0 4px #171335;
+    box-shadow: 0 0 0 4px var(--acal-bg);
 }
 
 .acal-timeline-node.is-today {
@@ -691,7 +691,7 @@
 }
 
 .acal-month-head {
-    background: rgba(22, 19, 39, 0.75);
+    background: var(--bm-surface-raised);
     padding: 8px;
     text-align: center;
     font: 700 10px system-ui, sans-serif;
@@ -701,7 +701,7 @@
 }
 
 .acal-month-cell {
-    background: rgba(12, 11, 21, 0.55);
+    background: var(--bm-surface-muted);
     padding: 12px 8px;
     min-height: 118px;
     display: flex;
@@ -713,8 +713,8 @@
 }
 
 .acal-month-cell.is-populated {
-    background: rgba(17, 16, 25, 0.6);
-    border: 1px solid #3a3a6a;
+    background: var(--bm-surface);
+    border: 1px solid var(--bm-border-strong);
     border-radius: 6px;
     cursor: pointer;
     transition: border-color var(--bm-med) var(--bm-ease-out),
@@ -725,8 +725,8 @@
 
 .acal-month-cell.is-populated:hover {
     border-color: var(--bm-accent-hover);
-    background: rgba(21, 19, 42, 0.75);
-    box-shadow: 0 0 0 1px rgba(91, 82, 201, 0.3), 0 6px 20px rgba(91, 82, 201, 0.2);
+    background: var(--bm-surface-raised);
+    box-shadow: 0 0 0 1px var(--bm-border-accent), var(--bm-shadow-glow);
     transform: translateY(-1px);
 }
 
@@ -776,8 +776,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: linear-gradient(90deg, rgba(91, 82, 201, 0.28), rgba(42, 38, 80, 0.2));
-    border: 1px solid rgba(123, 112, 240, 0.25);
+    background: linear-gradient(90deg, var(--bm-accent-soft), var(--bm-surface-muted));
+    border: 1px solid var(--bm-border-accent);
     border-radius: var(--bm-radius-full);
     padding: 3px 8px 3px 4px;
     cursor: pointer;
@@ -798,10 +798,10 @@
 }
 
 .acal-month-event:hover {
-    background: linear-gradient(90deg, rgba(123, 112, 240, 0.45), rgba(91, 82, 201, 0.3));
+    background: linear-gradient(90deg, var(--bm-accent-glow), var(--bm-accent-soft));
     border-color: var(--acal-accent-bright);
     transform: translateX(2px) scale(1.03);
-    box-shadow: 0 4px 14px rgba(91, 82, 201, 0.35);
+    box-shadow: var(--bm-shadow-glow);
     z-index: 5;
 }
 

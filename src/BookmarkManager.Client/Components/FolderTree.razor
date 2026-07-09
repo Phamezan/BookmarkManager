@@ -8,12 +8,15 @@
              @bind-ExpandedItems="@_expandedFolderIds"
              SelectedValue="@_selectedFolderId"
              SelectedValueChanged="@OnSelectedChanged">
-    <ItemTemplate Context="item">
+     <ItemTemplate Context="item">
         <MudTreeViewItem T="Guid?"
                          Value="@item.Value"
                          Items="@item.Children"
                          CanExpand="@(item.Children?.Count > 0)">
             <BodyContent>
+                @{
+                    var fi = item as FolderTreeItemData;
+                }
                 <div class="d-flex align-center folder-drop-target"
                      style="@(item.Value.HasValue && DisabledFolderIds.Contains(item.Value.Value) ? "width: 100%; opacity: 0.45; cursor: not-allowed; pointer-events: none;" : "width: 100%;")"
                      data-drop-target="true"
@@ -28,13 +31,35 @@
                      @oncontextmenu:preventDefault="true"
                      @oncontextmenu:stopPropagation="true">
                     <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="mr-2" Style="@($"color: {FolderColorHelper.GetFolderColor(item.Text)};")" />
-                    <MudText Typo="Typo.body2" Class="flex-grow-1">@item.Text</MudText>
-                    @{
-                        var fi = item as FolderTreeItemData;
-                    }
-                    @if (fi?.BookmarkCount > 0)
+                    @if (item.Value == _editingItemId)
                     {
-                        <span class="folder-count-badge">@fi.BookmarkCount</span>
+                        <input @ref="_editInputRef"
+                               type="text"
+                               class="folder-inline-input"
+                               @bind="_editingItemText"
+                               @bind:event="oninput"
+                               @onblur="() => CommitCreate(fi)"
+                               @onkeyup="(e) => OnEditKeyUp(e, fi)"
+                               @onclick:stopPropagation
+                               @ondragstart:preventDefault
+                               @ondragstart:stopPropagation />
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="flex-grow-1">@item.Text</MudText>
+                        @if (fi?.BookmarkCount > 0)
+                        {
+                            <span class="folder-count-badge">@fi.BookmarkCount</span>
+                        }
+                        @if (item.Value.HasValue && item.Value.Value != Guid.Empty)
+                        {
+                            <button class="folder-action-btn add-btn"
+                                    @onclick:stopPropagation
+                                    @onclick="@(() => StartNewSubfolder(item.Value.Value))"
+                                    title="New Subfolder">
+                                <MudIcon Icon="@Icons.Material.Filled.Add" Size="Size.Small" />
+                            </button>
+                        }
                     }
                 </div>
             </BodyContent>
@@ -52,11 +77,143 @@
     [Parameter] public EventCallback<(MouseEventArgs MouseEvent, Guid FolderId)> FolderContextMenu { get; set; }
     [Parameter] public HashSet<Guid> ExpandedItems { get; set; } = [];
     [Parameter] public EventCallback<HashSet<Guid>> ExpandedItemsChanged { get; set; }
+    [Parameter] public EventCallback<(Guid ParentId, string Name)> FolderCreated { get; set; }
 
     private HashSet<Guid> _expandedFolderIds = [];
     private List<TreeItemData<Guid?>> _treeItems = [];
     private Guid? _selectedFolderId;
     private List<FolderTreeNodeDto>? _lastFolders;
+
+    private Guid? _editingItemId;
+    private Guid? _editingItemParentId;
+    private string _editingItemText = "";
+    private bool _focusEditInput;
+    private bool _isCommitInProgress;
+    private ElementReference _editInputRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focusEditInput)
+        {
+            _focusEditInput = false;
+            try
+            {
+                await _editInputRef.FocusAsync();
+            }
+            catch
+            {
+                // Ignored
+            }
+        }
+    }
+
+    private async Task StartNewSubfolder(Guid parentId)
+    {
+        _expandedFolderIds.Add(parentId);
+        await ExpandedItemsChanged.InvokeAsync(_expandedFolderIds);
+
+        var parentItem = FindTreeItemById(_treeItems, parentId);
+        if (parentItem != null)
+        {
+            var tempId = Guid.NewGuid();
+            var tempNode = new FolderTreeItemData
+            {
+                Value = tempId,
+                Text = "",
+                BookmarkCount = 0,
+                Children = []
+            };
+
+            var childrenList = parentItem.Children?.ToList() ?? new List<ITreeItemData<Guid?>>();
+            childrenList.Add(tempNode);
+            parentItem.Children = childrenList;
+
+            _editingItemId = tempId;
+            _editingItemParentId = parentId;
+            _editingItemText = "";
+            _focusEditInput = true;
+            StateHasChanged();
+        }
+    }
+
+    private FolderTreeItemData? FindTreeItemById(IEnumerable<ITreeItemData<Guid?>> items, Guid id)
+    {
+        foreach (var item in items)
+        {
+            if (item is FolderTreeItemData fi && fi.Value == id)
+                return fi;
+            if (item.Children?.Count > 0)
+            {
+                var found = FindTreeItemById(item.Children, id);
+                if (found != null)
+                    return found;
+            }
+        }
+        return null;
+    }
+
+    private async Task OnEditKeyUp(KeyboardEventArgs e, FolderTreeItemData? item)
+    {
+        if (e.Key == "Enter")
+        {
+            await CommitCreate(item);
+        }
+        else if (e.Key == "Escape")
+        {
+            CancelCreate(item);
+        }
+    }
+
+    private async Task CommitCreate(FolderTreeItemData? item)
+    {
+        if (_isCommitInProgress) return;
+        _isCommitInProgress = true;
+
+        try
+        {
+            if (item == null || string.IsNullOrWhiteSpace(_editingItemText))
+            {
+                CancelCreate(item);
+                return;
+            }
+
+            var parentId = _editingItemParentId;
+            var name = _editingItemText;
+
+            _editingItemId = null;
+            _editingItemParentId = null;
+            _editingItemText = "";
+
+            if (parentId.HasValue)
+            {
+                await FolderCreated.InvokeAsync((parentId.Value, name));
+            }
+        }
+        finally
+        {
+            _isCommitInProgress = false;
+        }
+    }
+
+    private void CancelCreate(FolderTreeItemData? item)
+    {
+        if (item != null && _editingItemParentId.HasValue)
+        {
+            var parentItem = FindTreeItemById(_treeItems, _editingItemParentId.Value);
+            if (parentItem?.Children != null)
+            {
+                var childrenList = parentItem.Children.ToList();
+                childrenList.Remove(item);
+                parentItem.Children = childrenList;
+            }
+        }
+
+        _editingItemId = null;
+        _editingItemParentId = null;
+        _editingItemText = "";
+        StateHasChanged();
+    }
+
 
     protected override void OnParametersSet()
     {

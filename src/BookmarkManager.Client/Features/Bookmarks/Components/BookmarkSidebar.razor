@@ -4,8 +4,7 @@
 <MudPaper Elevation="0" Class="folder-zone">
     <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="zone-heading">
         <div>
-            <MudText Typo="Typo.subtitle1">Tracked Roots</MudText>
-            <MudText Typo="Typo.caption" Class="mud-text-secondary">Protected Brave folders stay scoped.</MudText>
+            <MudText Typo="Typo.subtitle1">Folder Tree</MudText>
         </div>
         <MudTooltip Text="Create folder">
             <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Size="Size.Small" OnClick="CreateFolder"
@@ -31,7 +30,8 @@
         {
             <FolderTree Folders="@FolderTree" SelectedFolderId="@SelectedFolderId" FolderSelected="@FolderSelected"
                         FolderDrop="@FolderDrop" FolderDragStart="@FolderDragStart" FolderContextMenu="@FolderContextMenu"
-                        ExpandedItems="@ExpandedItems" ExpandedItemsChanged="@ExpandedItemsChanged" />
+                        ExpandedItems="@ExpandedItems" ExpandedItemsChanged="@ExpandedItemsChanged"
+                        FolderCreated="@FolderCreated" />
         }
     </div>
 </MudPaper>
@@ -47,4 +47,5 @@
     [Parameter] public EventCallback<Guid> FolderDrop { get; set; }
     [Parameter] public EventCallback<Guid> FolderDragStart { get; set; }
     [Parameter] public EventCallback<(MouseEventArgs MouseEvent, Guid FolderId)> FolderContextMenu { get; set; }
+    [Parameter] public EventCallback<(Guid ParentId, string Name)> FolderCreated { get; set; }
 }
