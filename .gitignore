@@ -6,6 +6,8 @@ TestResults/
 *.user
 *.suo
 *.nupkg
+.clinerules
+.hermes
 
 # Browser extension output
 node_modules/
@@ -59,3 +61,4 @@ implementation.md
 .playwright-mcp/
 
 calendar.md
+skills-lock.json
