@@ -308,6 +308,21 @@
    Every rule scoped under .anime-cal so the dark surface never leaks into the
    light app shell. Palette kept literal to match the handoff mockups.
    =========================================================================== */
+/* This page only: let the workspace/zone grow past viewport height instead of
+   clipping the month grid into a fixed inner scroll box. Shorter monitors
+   (1920x1080) get a normal page scrollbar and see every row; the shared
+   .bookmarks-workspace/.bookmark-zone classes on the main Bookmarks page keep
+   their fixed-height internal scrolling untouched. */
+.bookmarks-workspace.anime-cal-workspace {
+    height: auto;
+    min-height: calc(100vh - 56px - 40px);
+}
+
+.bookmark-zone.anime-cal-zone {
+    height: auto;
+    overflow: visible;
+}
+
 .anime-cal {
     --acal-bg: var(--bm-bg-elevated);
     --acal-card: var(--bm-surface);
@@ -323,61 +338,24 @@
     --acal-text-mute: var(--bm-text-muted);
 
     position: relative;
-    background: var(--bm-surface);
-    backdrop-filter: blur(28px) saturate(140%);
-    -webkit-backdrop-filter: blur(28px) saturate(140%);
-    border: 1px solid var(--acal-border);
-    border-radius: 16px;
-    padding: 28px;
+    background: transparent;
+    padding: 4px 0 0;
     color: var(--acal-text);
     font-family: system-ui, -apple-system, sans-serif;
-    overflow-y: auto;
-    overflow-x: hidden;
-    flex: 1;
     min-height: 0;
-    isolation: isolate;
 }
 
-/* Signature — a slow single-hue scanline sweeps the glass shell once per
-   cycle, like a radar pass. Reads as instrument/tech rather than a color
-   wash; the WebGL app background still shows through the translucent panel. */
-.anime-cal::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background: linear-gradient(180deg, transparent, var(--bm-accent-soft), transparent);
-    height: 40%;
-    transform: translateY(-100%);
-    animation: acalScanSweep 9s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-@keyframes acalScanSweep {
-
-    0%,
-    15% {
-        transform: translateY(-100%);
+@media (max-width: 1920px), (max-height: 1080px) {
+    .bookmarks-workspace.anime-cal-workspace {
+        height: auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
     }
-
-    55%,
-    100% {
-        transform: translateY(250%);
+    .bookmark-zone.anime-cal-zone {
+        height: auto;
+        overflow: visible;
     }
-}
-
-.anime-cal::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    border-radius: inherit;
-    box-shadow: inset 0 0 60px var(--bm-accent-soft);
-}
-
-.anime-cal>* {
-    position: relative;
 }
 
 /* Toolbar */
@@ -680,19 +658,19 @@
 .acal-month-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 1px;
-    background: var(--acal-border);
-    padding: 1px;
-    border-radius: 8px;
-    border: 1px solid var(--acal-border);
+    /* Fixed size, not vh-scaled: the page/workspace scrolls past viewport
+       height now (see .anime-cal-workspace/.anime-cal-zone), so cells don't
+       need to shrink to fit a short viewport - full size on every monitor. */
+    gap: 6px;
+    background: transparent;
     /* Lets populated cells (see gsap-calendar.js initCalendarTilt) tilt in 3D
        on hover instead of just skewing flat. */
     perspective: 800px;
 }
 
 .acal-month-head {
-    background: var(--bm-surface-raised);
-    padding: 8px;
+    background: transparent;
+    padding: 8px 8px 12px;
     text-align: center;
     font: 700 10px system-ui, sans-serif;
     color: var(--acal-label);
@@ -702,25 +680,43 @@
 
 .acal-month-cell {
     background: var(--bm-surface-muted);
-    padding: 12px 8px;
+    border: 1px solid var(--acal-border);
+    border-radius: 10px;
+    padding: 10px 8px;
+    /* Fixed - page scrolls past viewport height now, so cells stay full
+       size instead of shrinking on shorter monitors. */
     min-height: 118px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
+    /* flex-start, not space-between: with only 2 children (daynum, events)
+       space-between shoved the whole events block toward the cell's bottom
+       edge, leaving a big gap that made the scroll arrow read as a separate
+       floating widget instead of sitting right under the daynum. */
+    justify-content: flex-start;
     gap: 8px;
     transform-style: preserve-3d;
     will-change: transform;
-}
-
-.acal-month-cell.is-populated {
-    background: var(--bm-surface);
-    border: 1px solid var(--bm-border-strong);
-    border-radius: 6px;
-    cursor: pointer;
     transition: border-color var(--bm-med) var(--bm-ease-out),
         box-shadow var(--bm-med) var(--bm-ease-out),
         background var(--bm-med) var(--bm-ease-out),
         transform var(--bm-med) var(--bm-ease-out);
+}
+
+@media (max-width: 1920px), (max-height: 1080px) {
+    .acal-month-grid {
+        gap: 4px;
+    }
+    .acal-month-cell {
+        min-height: 95px;
+        padding: 6px 6px;
+        gap: 4px;
+    }
+}
+
+.acal-month-cell.is-populated {
+    background: var(--bm-surface);
+    border-color: var(--bm-border-strong);
+    cursor: pointer;
 }
 
 .acal-month-cell.is-populated:hover {
@@ -751,6 +747,23 @@
     color: var(--acal-text-mute);
 }
 
+.acal-month-headrow {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.acal-month-headrow.is-scrollable {
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background var(--bm-fast) var(--bm-ease);
+}
+
+.acal-month-headrow.is-scrollable:hover {
+    background: var(--bm-accent-soft);
+}
+
 .acal-month-daynum {
     font: 700 13px system-ui, sans-serif;
     color: var(--acal-text);
@@ -774,12 +787,12 @@
 .acal-month-event {
     position: relative;
     display: flex;
-    align-items: center;
-    gap: 6px;
+    flex-direction: column;
+    gap: 4px;
     background: linear-gradient(90deg, var(--bm-accent-soft), var(--bm-surface-muted));
     border: 1px solid var(--bm-border-accent);
-    border-radius: var(--bm-radius-full);
-    padding: 3px 8px 3px 4px;
+    border-radius: 8px;
+    padding: 4px 8px 6px;
     cursor: pointer;
     transition: background var(--bm-med) var(--bm-ease-out),
         border-color var(--bm-med) var(--bm-ease-out),
@@ -787,7 +800,13 @@
         box-shadow var(--bm-med) var(--bm-ease-out);
 }
 
-.acal-month-event::before {
+.acal-month-event-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.acal-month-event-row::before {
     content: "";
     flex-shrink: 0;
     width: 6px;
@@ -835,11 +854,82 @@
     flex-shrink: 0;
 }
 
-.acal-event-more {
-    font: 600 9.5px system-ui, sans-serif;
+/* In-cell paging when a day has more items than fit in MaxCovers slots. The
+   up strip lives inside .acal-month-headrow, right next to the daynum (same
+   container - not a separate block below it), and pages up; the down strip
+   sits in the footer of .acal-month-events and pages down. Both always
+   render whenever the cell has any items (never toggled by CanScrollUp/Down
+   directly) so their space is always reserved in the cell's layout - only
+   visibility/hit-testing flips via .is-hidden, so scrolling never shifts the
+   cell's height. Each strip eats its own click so it never falls through to
+   the day-nav click on the cell behind it. */
+.acal-scroll-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 15px;
+    font-size: 11px;
+    line-height: 1;
     color: var(--acal-label);
-    padding-left: 6px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background var(--bm-fast) var(--bm-ease), color var(--bm-fast) var(--bm-ease);
+}
+
+.acal-scroll-zone-up {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 20px;
+    pointer-events: none;
+}
+
+.acal-scroll-zone-down {
+    width: 100%;
     margin-top: 2px;
+}
+
+.acal-scroll-zone.is-hidden {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.acal-scroll-zone:hover {
+    background: var(--bm-accent-soft);
+    color: var(--acal-text);
+}
+
+/* Countdown progress — fills as the wait for this episode elapses. */
+.acal-event-progress {
+    width: 100%;
+    height: 3px;
+    border-radius: var(--bm-radius-full);
+    background: var(--bm-surface-muted);
+    overflow: hidden;
+}
+
+.acal-event-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--acal-accent-bright);
+}
+
+.acal-month-airing-tag {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    font: 700 8.5px system-ui, sans-serif;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bm-bg);
+    background: var(--bm-success);
+    padding: 2px 6px;
+    border-radius: var(--bm-radius-full);
+    box-shadow: 0 0 8px var(--bm-success-soft);
 }
 
 /* Rich hover popover card */

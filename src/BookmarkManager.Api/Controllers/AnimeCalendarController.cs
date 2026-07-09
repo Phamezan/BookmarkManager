@@ -306,7 +306,8 @@ public class AnimeCalendarController : ControllerBase
                     AniListId = displayAniListId,
                     CoverImageUrl = displayCover,
                     EpisodeNumber = episode.EpisodeNumber,
-                    AiringAtUtc = episode.AiringAtUtc
+                    AiringAtUtc = episode.AiringAtUtc,
+                    TotalEpisodes = result.TotalEpisodes
                 });
             }
         }
@@ -352,7 +353,7 @@ public class AnimeCalendarController : ControllerBase
     private static AnimeScheduleResult FromCache(AnimeScheduleCache row)
     {
         var episodes = JsonSerializer.Deserialize<List<AnimeScheduleEpisode>>(row.EpisodesJson) ?? [];
-        return new AnimeScheduleResult(row.Status, episodes, row.ResolvedAniListId, row.ResolvedTitle, row.ResolvedCoverImageUrl);
+        return new AnimeScheduleResult(row.Status, episodes, row.ResolvedAniListId, row.ResolvedTitle, row.ResolvedCoverImageUrl, row.TotalEpisodes);
     }
 
     private void UpsertScheduleCache(
@@ -370,6 +371,7 @@ public class AnimeCalendarController : ControllerBase
         row.ResolvedTitle = result.ResolvedTitle;
         row.ResolvedCoverImageUrl = result.ResolvedCoverImageUrl;
         row.EpisodesJson = JsonSerializer.Serialize(result.Episodes);
+        row.TotalEpisodes = result.TotalEpisodes;
         row.ExpiresAtUtc = now.Add(ScheduleCacheDuration);
         row.UpdatedAtUtc = now;
     }

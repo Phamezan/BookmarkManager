@@ -296,7 +296,7 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
 
                 if (media.Episodes.Count > 0)
                 {
-                    resolved[originalId] = (new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl), true);
+                    resolved[originalId] = (new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl, media.TotalEpisodes), true);
                     continue;
                 }
 
@@ -308,7 +308,7 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
 
                 // End of the chain (or a cycle guard tripped) with nothing upcoming - a real,
                 // cacheable "nothing airing" answer.
-                resolved[originalId] = (new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl), true);
+                resolved[originalId] = (new AnimeScheduleResult(media.Status, media.Episodes, currentId, media.Title, media.CoverImageUrl, media.TotalEpisodes), true);
             }
 
             current = next;
@@ -417,6 +417,7 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
             media(id_in: $ids, type: ANIME) {
               id
               status
+              episodes
               title { romaji english }
               coverImage { large }
               airingSchedule(notYetAired: true, perPage: 50) {
@@ -571,8 +572,12 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
             }
         }
 
+        var totalEpisodes = mediaEl.TryGetProperty("episodes", out var episodesCountEl) && episodesCountEl.ValueKind == JsonValueKind.Number
+            ? episodesCountEl.GetInt32()
+            : (int?)null;
+
         var sequelId = ParseSequelId(mediaEl);
-        return new MediaScheduleNode(status, title, cover, episodes, sequelId);
+        return new MediaScheduleNode(status, title, cover, episodes, sequelId, totalEpisodes);
     }
 
     // Pick the SEQUEL edge to follow. Prefer one that is releasing/not-yet-released (the season the
@@ -622,7 +627,8 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
         string? Title,
         string? CoverImageUrl,
         List<AnimeScheduleEpisode> Episodes,
-        int? SequelId);
+        int? SequelId,
+        int? TotalEpisodes);
 
     public static string StripStreamingSiteJunk(string title, string? url)
     {

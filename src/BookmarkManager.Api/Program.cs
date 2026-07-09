@@ -156,7 +156,21 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // _framework/* is content-hashed by the Blazor publish output, so it's safe to
+    // cache forever - only override hand-authored css/js, which aren't hashed and
+    // otherwise rely on browser heuristic caching (the source of the stale-CSS bug
+    // where edits didn't show up despite hard refreshes).
+    OnPrepareResponse = context =>
+    {
+        var path = context.File.Name;
+        if (path.EndsWith(".css", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Context.Response.Headers.CacheControl = "no-cache";
+        }
+    }
+});
 
 app.UseWebSockets();
 

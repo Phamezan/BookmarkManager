@@ -17,7 +17,8 @@ public record AnimeScheduleResult(
     List<AnimeScheduleEpisode> Episodes,
     int? ResolvedAniListId = null,
     string? ResolvedTitle = null,
-    string? ResolvedCoverImageUrl = null);
+    string? ResolvedCoverImageUrl = null,
+    int? TotalEpisodes = null);
 
 public interface IAnilistTagProvider
 {

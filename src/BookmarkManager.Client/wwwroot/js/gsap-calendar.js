@@ -74,6 +74,29 @@ window.initCalendarTilt = function (containerSelector, itemSelector) {
     }, true);
 };
 
+// Smooth in-cell overflow scroll: fires after each render, diffs each cell's
+// data-scroll-offset against the value seen last render, and slides/fades the
+// visible-item list in the direction the up/down arrows moved.
+window.animateCalendarScroll = function (containerSelector) {
+    const container = document.querySelector(containerSelector);
+    if (!container) return;
+
+    container.querySelectorAll('.acal-month-events[data-scroll-offset]').forEach(el => {
+        const offset = el.dataset.scrollOffset;
+        const prev = el.dataset.lastScrollOffset;
+        el.dataset.lastScrollOffset = offset;
+
+        if (prev === undefined || prev === offset) return;
+        if (!window.gsap) return;
+
+        const dir = Number(offset) > Number(prev) ? 1 : -1;
+        gsap.fromTo(el,
+            { opacity: 0, y: dir * 22, scale: 0.94 },
+            { opacity: 1, y: 0, scale: 1, duration: 0.38, ease: 'back.out(1.6)', overwrite: 'auto' }
+        );
+    });
+};
+
 // Hoist popover to body on hover to bypass transform boundary containing blocks
 window.initCalendarPopups = function (containerSelector) {
     const container = document.querySelector(containerSelector);
@@ -161,5 +184,4 @@ window.initCalendarPopups = function (containerSelector) {
         originalParent = null;
     }, true);
 };
-
 

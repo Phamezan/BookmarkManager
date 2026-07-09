@@ -8,6 +8,11 @@
     height: calc(100vh - 56px - 40px);
 }
 
+.bookmarks-workspace.anime-cal-workspace {
+    height: auto;
+    min-height: calc(100vh - 56px - 40px);
+}
+
 /* Folder sidebar */
 .folder-zone {
     display: flex;
@@ -178,6 +183,11 @@
     min-height: 0;
     height: 100%;
     overflow: hidden;
+}
+
+.bookmark-zone.anime-cal-zone {
+    height: auto;
+    overflow: visible;
 }
 
 .bookmark-header {
