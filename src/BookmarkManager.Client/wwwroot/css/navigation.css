@@ -1,3 +1,136 @@
+
+/* ----------------------------------------------------------------------------
+   3. App Shell
+---------------------------------------------------------------------------- */
+.app-shell {
+    min-height: 100%;
+    background: transparent;
+    color: var(--bm-text);
+}
+
+/* Top bar — slim, glassy, hairline bottom */
+.app-topbar {
+    height: 56px;
+    min-height: 56px;
+    border-bottom: 1px solid var(--bm-border);
+    background: rgba(8, 9, 13, 0.7) !important;
+    color: var(--bm-text);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    position: relative;
+}
+
+.app-title {
+    gap: 0 !important;
+    line-height: 1.2;
+}
+
+.app-title .mud-typography {
+    font-family: "Inter", sans-serif;
+}
+
+.app-title>.mud-typography:first-child {
+    font-size: 0.95rem !important;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--bm-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.app-title-mark {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    background: linear-gradient(135deg, var(--bm-accent) 0%, #C4B5FD 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        0 0 14px var(--bm-accent-glow);
+    position: relative;
+    flex-shrink: 0;
+}
+
+.app-title-mark::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border: 1.5px solid rgba(8, 9, 13, 0.85);
+    border-bottom-width: 0;
+    border-right-width: 0;
+    border-radius: 2px 0 0 0;
+}
+
+.app-title .mud-typography-caption {
+    color: var(--bm-text-muted);
+    font-size: 0.7rem !important;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
+
+/* Status cluster */
+.topbar-status {
+    min-width: 0;
+    gap: var(--bm-space-2) !important;
+}
+
+/* Connection status chip — refined */
+.topbar-status .mud-chip {
+    height: 28px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    border-radius: var(--bm-radius-full) !important;
+    backdrop-filter: blur(8px);
+    transition: all var(--bm-med) var(--bm-ease);
+}
+
+.topbar-status .mud-chip.mud-chip-size-small {
+    height: 26px;
+}
+
+/* Live status dot inside chip */
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--bm-radius-full);
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.status-dot.is-online {
+    background: var(--bm-success);
+    box-shadow: 0 0 0 2px var(--bm-success-soft), 0 0 8px var(--bm-success);
+    animation: pulseDot 2.4s var(--bm-ease) infinite;
+}
+
+.status-dot.is-offline {
+    background: var(--bm-warning);
+    box-shadow: 0 0 0 2px var(--bm-warning-soft);
+}
+
+@keyframes pulseDot {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Primary nav — centered on the top app bar, floating glass capsule with a horizontal active aura ribbon. */
+.nav-3d-stage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    perspective: 1000px;
+    z-index: 2;
+}
+
 .primary-nav {
     display: flex;
     flex-direction: row;
@@ -252,4 +385,49 @@
        don't produce a second scrollbar. Horizontal stays clipped. */
     overflow-y: auto;
     overflow-x: hidden;
+}
+
+/* Subtle steam puff for Grand Line theme link switching (Gear Shift effect) */
+.nav-smoke-puff {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.75) 0%, rgba(217, 56, 58, 0.4) 70%, transparent 100%);
+    box-shadow: 0 0 8px rgba(217, 56, 58, 0.45);
+    border-radius: 50%;
+    filter: blur(3px);
+    pointer-events: none;
+    z-index: 4;
+    transform: translate(-50%, -50%) scale(0.3);
+    animation: navSmokeRise 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes navSmokeRise {
+    0% {
+        transform: translate(-50%, -50%) scale(0.3);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: translate(calc(-50% + var(--smoke-x)), calc(-50% + var(--smoke-y))) scale(var(--smoke-scale));
+        opacity: 0;
+    }
+}
+
+
+
+/* Custom styling for the tiny Wanted Poster image icon to make it pop */
+.nav-wanted-poster {
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 2px;
+    border: 1px solid rgba(244, 208, 104, 0.45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    object-fit: cover !important;
+    transition: transform 250ms cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 250ms var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-wanted-poster {
+    transform: scale(1.35) rotate(-6deg) !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), 0 0 8px var(--bm-accent-glow);
 }

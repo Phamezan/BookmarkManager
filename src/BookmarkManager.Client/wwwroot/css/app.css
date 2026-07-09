@@ -1,8 +1,9 @@
-@import "themes.css";
-@import "layout.css";
-@import "navigation.css";
-@import "toolbar.css";
-@import "bookmarks.css";
-@import "recommendations.css";
-@import "calendar.css";
-@import "settings.css";
+@import url("themes.css?v=3");
+@import url("layout.css?v=3");
+@import url("navigation.css?v=3");
+@import url("toolbar.css?v=3");
+@import url("bookmarks.css?v=3");
+@import url("recommendations.css?v=3");
+@import url("calendar.css?v=3");
+@import url("settings.css?v=3");
+@import url("overrides.css?v=3");

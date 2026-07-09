@@ -1,3 +1,4 @@
+
 /* ----------------------------------------------------------------------------
    6. Bookmarks Workspace
 ---------------------------------------------------------------------------- */
@@ -1053,4 +1054,28 @@ a.root-card:hover {
 
 .bookmark-card-icon svg {
     vertical-align: middle;
+}
+
+/* Grand Line theme custom elements */
+[data-theme="grand-line"] .empty-state {
+    border: 1px dashed var(--bm-accent);
+    background: linear-gradient(135deg, rgba(26, 30, 43, 0.5) 0%, rgba(20, 22, 30, 0.5) 100%);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Subtle Jolly Roger watermark inside empty state for Grand Line theme */
+[data-theme="grand-line"] .empty-state::after {
+    content: "";
+    position: absolute;
+    bottom: -20px;
+    right: -20px;
+    width: 120px;
+    height: 120px;
+    opacity: 0.04;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23F4D068' stroke-width='1.5'%3E%3Ccircle cx='12' cy='10' r='3'/%3E%3Cpath d='M12 13v4m-3-4v2m6-2v2M8 7l2 2m6-2l-2 2M4 20l3-3m13 3l-3-3M4 4l3 3m13-3l-3 3'/%3E%3C/svg%3E");
+    background-size: contain;
+    background-repeat: no-repeat;
+    pointer-events: none;
 }

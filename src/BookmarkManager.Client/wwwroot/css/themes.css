@@ -47,18 +47,53 @@
     --bm-favorite: #FF4DE0;
     --bm-favorite-soft: rgba(255, 77, 224, 0.12);
 
-    /* Timing / Easings */
-    --bm-fast: 160ms;
-    --bm-med: 320ms;
-    --bm-slow: 640ms;
-    --bm-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    --bm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-
-    /* Radius & Spacing */
+    /* Radii */
+    --bm-radius-sm: 6px;
     --bm-radius: 8px;
-    --bm-radius-lg: 12px;
-    --bm-radius-xl: 16px;
-    --bm-radius-full: 9999px;
+    --bm-radius-md: 10px;
+    --bm-radius-lg: 16px;
+    --bm-radius-xl: 20px;
+    --bm-radius-full: 999px;
+
+    /* Shadows */
+    --bm-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --bm-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    --bm-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.5);
+    --bm-shadow-glow: 0 0 24px var(--bm-accent-glow);
+
+    /* Spacing scale (4pt grid) */
+    --bm-space-1: 4px;
+    --bm-space-2: 8px;
+    --bm-space-3: 12px;
+    --bm-space-4: 16px;
+    --bm-space-5: 20px;
+    --bm-space-6: 24px;
+    --bm-space-8: 32px;
+    --bm-space-10: 40px;
+
+    /* Motion */
+    --bm-ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --bm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --bm-fast: 120ms;
+    --bm-med: 200ms;
+    --bm-slow: 320ms;
+
+    --bm-gap: var(--bm-space-3);
+    --bm-radius: var(--bm-radius-md);
+
+    /* MudBlazor theme overrides */
+    --mud-palette-background: var(--bm-bg) !important;
+    --mud-palette-surface: var(--bm-surface) !important;
+    --mud-palette-drawer-background: var(--bm-surface) !important;
+    --mud-palette-appbar-background: var(--bm-appbar-bg) !important;
+    --mud-palette-text-primary: var(--bm-text) !important;
+    --mud-palette-text-secondary: var(--bm-text-secondary) !important;
+    --mud-palette-primary: var(--bm-accent) !important;
+    /* MudBlazor uses primary-hover as a BACKGROUND fill for selected/hover
+       states (treeview rows, chips, etc.). It must be a faint overlay, NOT
+       a solid bright color, or every selected item glows neon. */
+    --mud-palette-primary-hover: var(--bm-accent-soft) !important;
+    --mud-palette-primary-soft: var(--bm-accent-soft) !important;
 }
 
 /* 2. Catppuccin Mocha Theme */
