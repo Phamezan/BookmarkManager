@@ -11,8 +11,10 @@
     {
         <div class="acal-month-head">@name</div>
     }
-    @foreach (var cell in _cells)
+    @for (int i = 0; i < _cells.Count; i++)
     {
+        var cell = _cells[i];
+        var cellIndex = i;
         <div class="@CellClass(cell)" @onclick="() => OpenDay(cell)">
             <div class="acal-month-daynum">@cell.Date.Day.ToString("00")</div>
             @if (cell.Count > 0)
@@ -20,15 +22,15 @@
                 <div class="acal-month-events">
                     @foreach (var item in cell.Visible)
                     {
-                        <div class="acal-month-event" @onclick:stopPropagation="true" @onclick="() => OnItemClick.InvokeAsync(item)">
-                            <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
-                                         Width="16px" Height="22px" CssClass="acal-month-cover-mini" />
+                        <div class="acal-month-event" @onclick:stopPropagation="true"
+                             @onclick="() => OnItemClick.InvokeAsync(item)">
+                            <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="40px" Height="44px"
+                                         CssClass="acal-month-cover-mini" />
                             <span class="acal-event-title-text">@item.Title</span>
                             <span class="acal-event-ep-text">@item.EpisodeNumber</span>
-
                             <div class="rich-tip">
-                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
-                                             Width="160px" Height="224px" CssClass="acal-tip-cover" />
+                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="170px" Height="250px"
+                                             CssClass="acal-tip-cover" />
                                 <div class="acal-tip-details">
                                     <div class="acal-tip-title">@item.Title</div>
                                     <div class="acal-tip-ep">Episode @item.EpisodeNumber</div>
@@ -80,16 +82,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            try { await JSRuntime.InvokeVoidAsync("initCalendarTilt", ".acal-month-grid", ".acal-month-cell.is-populated"); }
-            catch { /* Safe fallback during unmounting */ }
-        }
-
         try
         {
             var signature = $"{Anchor:yyyy-MM}|{_totalEpisodes}";
             await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-month-grid", ".acal-month-cell", signature);
+            await JSRuntime.InvokeVoidAsync("initCalendarPopups", ".acal-month-grid");
         }
         catch { /* Safe fallback during unmounting */ }
     }
@@ -128,12 +125,18 @@
     private Task OpenDay(Cell cell)
         => cell.Count > 0 ? OnDaySelected.InvokeAsync(cell.Date) : Task.CompletedTask;
 
+
+
     private static string CellClass(Cell cell)
     {
         var cls = "acal-month-cell";
         if (!cell.InMonth) cls += " is-outside";
         if (cell.Count > 0) cls += " is-populated";
         if (cell.IsToday) cls += " is-today";
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (cell.Date < today && cell.Count == 0) cls += " is-past-empty";
+
         return cls;
     }
 
