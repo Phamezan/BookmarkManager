@@ -1,0 +1,152 @@
+/* ============================================================================
+   Bookmark Manager — CSS Themes
+   Defines variable tokens for each active theme.
+   ============================================================================ */
+
+/* 1. Default Premium Dark Theme */
+:root {
+    /* Surface stack — deep, layered, never flat black */
+    --bm-bg: #08090D;
+    --bm-bg-elevated: #0F1015;
+    --bm-surface: rgba(22, 24, 32, 0.55);
+    --bm-surface-raised: rgba(30, 33, 44, 0.7);
+    --bm-surface-muted: rgba(22, 24, 32, 0.3);
+    --bm-panel: var(--bm-surface);
+    --bm-panel-raised: var(--bm-surface-raised);
+    --bm-panel-muted: var(--bm-surface-muted);
+    --bm-popover-bg: #14161E;
+
+    /* Hairline borders */
+    --bm-border: rgba(255, 255, 255, 0.06);
+    --bm-border-strong: rgba(255, 255, 255, 0.11);
+    --bm-border-accent: rgba(77, 238, 255, 0.35);
+
+    /* Typography */
+    --bm-text: #F4F4F6;
+    --bm-text-secondary: #A8AEC0;
+    --bm-text-muted: #6B6E7C;
+
+    /* Accent — cyan (was indigo #818CF8) */
+    --bm-accent: #818CF8;
+    --bm-accent-hover: #818CF8;
+    --bm-accent-soft: rgba(77, 238, 255, 0.12);
+    --bm-accent-glow: rgba(77, 238, 255, 0.25);
+    --bm-appbar-bg: rgba(8, 9, 13, 0.6);
+
+    /* Semantic — one hue per bookmark status/affordance. Each theme below
+       redefines these to fit its own identity; meaning (success/watching/
+       warning/danger/favorite) stays constant, hue does not. */
+    --bm-warning: #FBBF24;
+    --bm-warning-soft: rgba(251, 191, 36, 0.12);
+    --bm-danger: #F87171;
+    --bm-danger-soft: rgba(248, 113, 113, 0.12);
+    --bm-success: #34D399;
+    --bm-success-soft: rgba(52, 211, 153, 0.12);
+    --bm-watching: #B084FF;
+    --bm-watching-soft: rgba(176, 132, 255, 0.12);
+    --bm-favorite: #FF4DE0;
+    --bm-favorite-soft: rgba(255, 77, 224, 0.12);
+
+    /* Timing / Easings */
+    --bm-fast: 160ms;
+    --bm-med: 320ms;
+    --bm-slow: 640ms;
+    --bm-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    --bm-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* Radius & Spacing */
+    --bm-radius: 8px;
+    --bm-radius-lg: 12px;
+    --bm-radius-xl: 16px;
+    --bm-radius-full: 9999px;
+}
+
+/* 2. Catppuccin Mocha Theme */
+[data-theme="catppuccin-mocha"] {
+    --bm-bg: #1e1e2e;
+    --bm-bg-elevated: #181825;
+    --bm-surface: rgba(49, 50, 68, 0.55);
+    --bm-surface-raised: rgba(69, 71, 90, 0.7);
+    --bm-surface-muted: rgba(49, 50, 68, 0.3);
+    --bm-border: rgba(255, 255, 255, 0.06);
+    --bm-border-strong: rgba(255, 255, 255, 0.12);
+    --bm-border-accent: rgba(203, 166, 247, 0.35);
+    --bm-text: #cdd6f4;
+    --bm-text-secondary: #bac2de;
+    --bm-text-muted: #6c7086;
+    --bm-accent: #cba6f7;
+    --bm-accent-hover: #f5c2e7;
+    --bm-accent-soft: rgba(203, 166, 247, 0.12);
+    --bm-accent-glow: rgba(203, 166, 247, 0.25);
+    --bm-appbar-bg: rgba(30, 30, 46, 0.6);
+    --bm-warning: #f9e2af;
+    --bm-warning-soft: rgba(249, 226, 175, 0.12);
+    --bm-danger: #f38ba8;
+    --bm-danger-soft: rgba(243, 139, 168, 0.12);
+    --bm-success: #a6e3a1;
+    --bm-success-soft: rgba(166, 227, 161, 0.12);
+    --bm-watching: #89b4fa;
+    --bm-watching-soft: rgba(137, 180, 250, 0.12);
+    --bm-favorite: #f5c2e7;
+    --bm-favorite-soft: rgba(245, 194, 231, 0.12);
+}
+
+/* 3. Sakura Sunset Theme */
+[data-theme="sakura"] {
+    --bm-bg: #1a1016;
+    --bm-bg-elevated: #241520;
+    --bm-surface: rgba(58, 28, 48, 0.55);
+    --bm-surface-raised: rgba(88, 38, 70, 0.7);
+    --bm-surface-muted: rgba(58, 28, 48, 0.3);
+    --bm-border: rgba(255, 255, 255, 0.06);
+    --bm-border-strong: rgba(255, 255, 255, 0.12);
+    --bm-border-accent: rgba(255, 121, 198, 0.35);
+    --bm-text: #fff3f8;
+    --bm-text-secondary: #f5b8d1;
+    --bm-text-muted: #9e6b82;
+    --bm-accent: #ff79c6;
+    --bm-accent-hover: #ff92df;
+    --bm-accent-soft: rgba(255, 121, 198, 0.12);
+    --bm-accent-glow: rgba(255, 121, 198, 0.25);
+    --bm-appbar-bg: rgba(26, 16, 22, 0.6);
+    --bm-warning: #f1fa8c;
+    --bm-warning-soft: rgba(241, 250, 140, 0.12);
+    --bm-danger: #ff5555;
+    --bm-danger-soft: rgba(255, 85, 85, 0.12);
+    --bm-success: #50fa7b;
+    --bm-success-soft: rgba(80, 250, 123, 0.12);
+    --bm-watching: #bd93f9;
+    --bm-watching-soft: rgba(189, 147, 249, 0.12);
+    --bm-favorite: #ff5ec8;
+    --bm-favorite-soft: rgba(255, 94, 200, 0.12);
+}
+
+/* 4. Grand Line Gold Theme */
+[data-theme="grand-line"] {
+    --bm-bg: #0D0E12;
+    --bm-bg-elevated: #15171F;
+    --bm-surface: rgba(26, 30, 43, 0.65);
+    --bm-surface-raised: rgba(38, 44, 62, 0.8);
+    --bm-surface-muted: rgba(26, 30, 43, 0.45);
+    --bm-border: rgba(244, 208, 104, 0.12);
+    --bm-border-strong: rgba(244, 208, 104, 0.22);
+    --bm-border-accent: rgba(217, 56, 58, 0.35);
+    --bm-text: #F4ECD8;
+    --bm-text-secondary: #CBB998;
+    --bm-text-muted: #7E725C;
+    --bm-accent: #F4D068;
+    --bm-accent-hover: #FFDF85;
+    --bm-accent-soft: rgba(244, 208, 104, 0.12);
+    --bm-accent-glow: rgba(244, 208, 104, 0.25);
+    --bm-appbar-bg: rgba(13, 14, 18, 0.7);
+    --bm-warning: #F59E0B;
+    --bm-warning-soft: rgba(245, 158, 11, 0.12);
+    --bm-danger: #D9383A;
+    --bm-danger-soft: rgba(217, 56, 58, 0.12);
+    --bm-success: #10B981;
+    --bm-success-soft: rgba(16, 185, 129, 0.12);
+    --bm-watching: #4A90D9;
+    --bm-watching-soft: rgba(74, 144, 217, 0.12);
+    --bm-favorite: #FF8C69;
+    --bm-favorite-soft: rgba(255, 140, 105, 0.12);
+}

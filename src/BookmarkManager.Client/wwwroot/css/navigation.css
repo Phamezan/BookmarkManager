@@ -1,0 +1,255 @@
+.primary-nav {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+    height: 44px;
+    padding: 0 6px;
+    gap: 2px;
+    position: relative;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.primary-nav .mud-nav-link {
+    border-radius: 12px;
+    margin: 0;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    color: var(--bm-text-secondary);
+    min-height: 32px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color var(--bm-fast) var(--bm-ease), background var(--bm-fast) var(--bm-ease), transform 260ms cubic-bezier(0.68, -0.6, 0.32, 1.6);
+    position: relative;
+    z-index: 1;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    animation: navItemIn var(--bm-med) var(--bm-ease-out) both;
+}
+
+.primary-nav .mud-nav-link-text {
+    width: 100%;
+}
+
+.primary-nav .nav-link-inner {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.primary-nav .mud-nav-link:nth-child(2) {
+    animation-delay: 0ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(3) {
+    animation-delay: 40ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(4) {
+    animation-delay: 80ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(5) {
+    animation-delay: 120ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(6) {
+    animation-delay: 160ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(7) {
+    animation-delay: 200ms;
+}
+
+/* Nav Link Text */
+.primary-nav .nav-link-text {
+    opacity: 1;
+    font-weight: 500;
+    margin-left: 8px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+@keyframes navItemIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.primary-nav .mud-nav-link,
+.primary-nav .mud-nav-link:hover,
+.primary-nav .mud-nav-link:focus,
+.primary-nav .mud-nav-link:focus-visible,
+.primary-nav .mud-nav-link:active,
+.primary-nav .mud-nav-link.mud-nav-link-active {
+    background-color: transparent !important;
+}
+
+.primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover {
+    color: var(--bm-text);
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.primary-nav .mud-nav-link.active:not(.mud-nav-link-disabled),
+.primary-nav .mud-nav-link.nav-link-root-active:not(.mud-nav-link-disabled) {
+    color: #818cf8 !important;
+    font-weight: 700;
+    background-color: transparent !important;
+    text-shadow: 0 0 10px rgba(99, 102, 241, 0.45);
+}
+
+.primary-nav .mud-nav-link.active .nav-icon-svg,
+.primary-nav .mud-nav-link.nav-link-root-active .nav-icon-svg {
+    color: #818cf8 !important;
+    filter: drop-shadow(0 0 5px rgba(99, 102, 241, 0.45));
+}
+
+/* Active indicator container (repositioned by JS) */
+.nav-active-indicator {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    height: auto !important;
+    /* let JS set width, height spans height with padding */
+    width: 0;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity var(--bm-fast) var(--bm-ease);
+}
+
+.nav-active-indicator.is-ready {
+    opacity: 1;
+}
+
+/* Active Aura backplate styling */
+.nav-active-indicator-disc {
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: radial-gradient(circle at center, rgba(99, 102, 241, 0.18) 0%, rgba(99, 102, 241, 0.02) 60%, transparent 85%);
+    border: none;
+    box-shadow: none;
+    transform-style: preserve-3d;
+    animation: discIdlePulse 3s var(--bm-ease) infinite;
+}
+
+.nav-active-indicator-disc.is-spinning {
+    animation: discAuraPulseSpin 480ms cubic-bezier(0.68, -0.6, 0.32, 1.6);
+}
+
+@keyframes discIdlePulse {
+
+    0%,
+    100% {
+        filter: brightness(1);
+    }
+
+    50% {
+        filter: brightness(1.2);
+    }
+}
+
+@keyframes discAuraPulseSpin {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.08);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Transient neon particles spawned on route change (see nav-indicator.js) */
+.nav-particle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: #818cf8;
+    box-shadow: 0 0 6px rgba(99, 102, 241, 0.6);
+    pointer-events: none;
+    z-index: 3;
+    animation: navParticleBurst 560ms var(--bm-ease-out) forwards;
+}
+
+@keyframes navParticleBurst {
+    0% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translate(var(--nav-particle-x, 0), var(--nav-particle-y, -18px)) scale(0);
+        opacity: 0;
+    }
+}
+
+.nav-link-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nav-icon-img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    flex-shrink: 0;
+    transition: transform var(--bm-fast) var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-icon-img {
+    transform: scale(1.15) rotate(-4deg);
+}
+
+.nav-icon-svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: currentColor;
+    opacity: 0.85;
+    transition: transform var(--bm-fast) var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-icon-svg {
+    transform: rotate(35deg);
+}
+
+/* Main content area */
+.app-main {
+    background: transparent;
+    min-width: 0;
+    width: auto;
+}
+
+.app-content {
+    height: calc(100vh - 56px);
+    padding: var(--bm-space-5);
+    box-sizing: border-box;
+    max-width: 100%;
+    /* Scroll vertically when a page is taller than the viewport (e.g. Settings). Pages that
+       fill the height and manage their own inner scroll (Bookmarks) fit exactly, so they
+       don't produce a second scrollbar. Horizontal stays clipped. */
+    overflow-y: auto;
+    overflow-x: hidden;
+}

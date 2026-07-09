@@ -1,0 +1,1056 @@
+/* ----------------------------------------------------------------------------
+   6. Bookmarks Workspace
+---------------------------------------------------------------------------- */
+.bookmarks-workspace {
+    display: grid;
+    grid-template-columns: minmax(280px, 18vw) minmax(0, 1fr);
+    gap: var(--bm-gap);
+    height: calc(100vh - 56px - 40px);
+}
+
+/* Folder sidebar */
+.folder-zone {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bm-surface) !important;
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+}
+
+.folder-zone,
+.folder-zone.mud-paper {
+    background-color: var(--bm-surface) !important;
+    border: 1px solid var(--bm-border) !important;
+    border-radius: var(--bm-radius-lg) !important;
+}
+
+.zone-heading {
+    padding: var(--bm-space-4) var(--bm-space-4) var(--bm-space-3);
+    border-bottom: 1px solid var(--bm-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.zone-heading .mud-typography {
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: var(--bm-text);
+    font-size: 0.9rem;
+}
+
+.zone-heading .mud-typography-caption {
+    font-weight: 500;
+}
+
+/* Folder tree items */
+.folder-drop-target {
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: grab;
+    padding: 6px 8px;
+    border-radius: var(--bm-radius);
+    border: 1px solid transparent;
+    transition: all var(--bm-fast) var(--bm-ease);
+}
+
+.folder-drop-target:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.folder-drop-target:active {
+    cursor: grabbing;
+}
+
+.folder-drop-target.drag-over {
+    background: var(--bm-accent-soft);
+    border-color: var(--bm-border-accent);
+    box-shadow: var(--bm-shadow-glow);
+}
+
+/* MudTreeView refinements */
+.mud-treeview {
+    background: transparent !important;
+    --mud-treeview-item-padding-left: 4px;
+    --mud-treeview-item-padding-right: 4px;
+}
+
+.mud-treeview .mud-treeview-item-content {
+    border-radius: var(--bm-radius);
+    transition: background var(--bm-fast) var(--bm-ease);
+}
+
+.mud-treeview .mud-treeview-item-content:hover {
+    background: rgba(255, 255, 255, 0.04) !important;
+}
+
+/* Selected folder — restrained: subtle elevation + accent text, no blue wash.
+   IMPORTANT: MudBlazor puts `mud-treeview-item-selected` on the SAME element
+   as `mud-treeview-item-content` (compound selector), not on an ancestor.
+   The leading accent rail is the only color cue. */
+.mud-treeview.mud-treeview-selected-primary .mud-treeview-item-content.mud-treeview-item-selected {
+    background-color: var(--bm-surface-raised) !important;
+    color: var(--bm-text) !important;
+    box-shadow: inset 2px 0 0 var(--bm-accent);
+}
+
+/* Disabled folder — must be visibly distinct or the Move dialog feels broken
+   (clicks are silently rejected by MudBlazor on disabled items). */
+.mud-treeview-item.mud-disabled,
+.mud-treeview-item[aria-disabled="true"] {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.mud-treeview-item.mud-disabled .mud-treeview-item-content:hover {
+    background: transparent !important;
+}
+
+.mud-treeview-item.mud-disabled .folder-drop-target {
+    cursor: not-allowed;
+}
+
+.folder-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--bm-radius-full);
+    font-size: 0.65rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--bm-text-secondary);
+    border: 1px solid var(--bm-border);
+    letter-spacing: 0;
+    line-height: 1;
+    flex-shrink: 0;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Bookmark zone (right column) */
+.bookmark-zone {
+    display: flex;
+    flex-direction: column;
+    gap: var(--bm-space-3);
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+.bookmark-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--bm-space-3);
+    flex-shrink: 0;
+}
+
+.header-select-row,
+.header-content-container {
+    min-width: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   8. Custom Checkbox
+---------------------------------------------------------------------------- */
+.bm-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid rgba(255, 255, 255, 0.18);
+    border-radius: var(--bm-radius-sm);
+    background-color: rgba(0, 0, 0, 0.25);
+    outline: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: all var(--bm-fast) var(--bm-ease);
+}
+
+.bm-checkbox:hover {
+    border-color: var(--bm-accent);
+    background-color: var(--bm-accent-soft);
+}
+
+.bm-checkbox:checked {
+    background: var(--bm-accent);
+    border-color: var(--bm-accent);
+    box-shadow: 0 0 0 3px var(--bm-accent-soft);
+}
+
+.bm-checkbox:checked::after {
+    content: "";
+    position: absolute;
+    width: 5px;
+    height: 9px;
+    border: solid #ffffff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+    top: 2px;
+    left: 5px;
+}
+
+.bm-checkbox:focus-visible {
+    border-color: var(--bm-accent);
+    box-shadow: 0 0 0 3px var(--bm-accent-soft);
+}
+
+/* ----------------------------------------------------------------------------
+   9. Tracked Roots / Favorites Strip
+---------------------------------------------------------------------------- */
+.tracked-roots-section {
+    margin-bottom: var(--bm-space-2);
+}
+
+.tracked-roots-list {
+    display: flex;
+    gap: var(--bm-space-3);
+    overflow-x: auto;
+    padding: 2px 2px var(--bm-space-2);
+}
+
+.root-card {
+    background: var(--bm-surface);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-lg);
+    padding: var(--bm-space-3) var(--bm-space-4);
+    /* Content-driven sizing: each card sizes to its title length,
+       with a sensible floor and cap so the strip stays scannable. */
+    flex: 0 0 auto;
+    width: auto;
+    min-width: 190px;
+    max-width: 280px;
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-3);
+    cursor: pointer;
+    transition: all var(--bm-med) var(--bm-ease);
+    position: relative;
+    user-select: none;
+    text-decoration: none;
+    color: var(--bm-text) !important;
+}
+
+.root-card:hover {
+    border-color: var(--bm-border-strong);
+    background: var(--bm-surface-raised);
+    transform: translateY(-1px);
+    box-shadow: var(--bm-shadow);
+}
+
+/* Active state — restrained, premium-dark: subtle elevation only.
+   No bright blue wash or glow halo. The single accent moment is the icon. */
+.root-card.active {
+    background: var(--bm-surface-raised);
+    border-color: var(--bm-border-strong);
+    box-shadow: var(--bm-shadow-sm);
+}
+
+/* Thin accent rail on the leading edge — quiet indicator, not a glow */
+.root-card.active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 14px;
+    bottom: 14px;
+    width: 2px;
+    border-radius: var(--bm-radius-full);
+    background: var(--bm-accent);
+    pointer-events: none;
+}
+
+a.root-card,
+a.root-card:hover {
+    text-decoration: none !important;
+    color: var(--bm-text) !important;
+}
+
+.root-card-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--bm-radius);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--bm-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bm-text-secondary);
+    flex-shrink: 0;
+}
+
+.root-card-icon img {
+    width: 20px;
+    height: 20px;
+    border-radius: 3px;
+    object-fit: contain;
+    opacity: 0.9;
+}
+
+.root-card.active .root-card-icon {
+    color: var(--bm-accent);
+    background: var(--bm-accent-soft);
+    border-color: var(--bm-border-accent);
+}
+
+.root-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.root-card-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--bm-text);
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.root-card-path {
+    font-size: 0.68rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: var(--bm-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.root-card-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: var(--bm-radius-full);
+    color: var(--bm-text-muted);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--bm-border);
+    transition: all var(--bm-fast) var(--bm-ease);
+    flex-shrink: 0;
+}
+
+.root-card:hover .root-card-remove {
+    color: var(--bm-text-secondary);
+}
+
+.root-card-remove:hover {
+    background: var(--bm-danger-soft) !important;
+    color: var(--bm-danger) !important;
+    border-color: rgba(248, 113, 113, 0.2) !important;
+    transform: scale(1.05);
+}
+
+/* Empty favorites placeholder */
+.favorites-empty-placeholder {
+    color: var(--bm-text-muted) !important;
+    font-size: 0.82rem !important;
+    padding: var(--bm-space-4) !important;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: var(--bm-space-2);
+    width: 100%;
+    border: 1.5px dashed rgba(255, 255, 255, 0.08) !important;
+    border-radius: var(--bm-radius-lg) !important;
+    min-height: 60px;
+    background: rgba(0, 0, 0, 0.15) !important;
+    transition: all var(--bm-med) var(--bm-ease);
+}
+
+/* ----------------------------------------------------------------------------
+   10. Bookmark List & Grid
+---------------------------------------------------------------------------- */
+.bookmark-list {
+    overflow: auto;
+    min-height: 0;
+    padding-top: 16px;
+    padding-bottom: 16px;
+    padding-right: 2px;
+    flex: 1 1 0%;
+}
+
+/* Dynamic grid: cards reflow to fill available container width.
+   minmax floor keeps cards readable; auto-fill prevents small counts from stretching. */
+.bookmark-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--bm-space-3);
+    margin-bottom: 16px;
+}
+
+/* Bookmark card — glassy, refined */
+.bookmark-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--bm-space-2);
+    padding: var(--bm-space-4);
+    background: var(--bm-surface);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-lg);
+    color: var(--bm-text);
+    transition: border-color var(--bm-med) var(--bm-ease),
+        background var(--bm-med) var(--bm-ease),
+        transform var(--bm-med) var(--bm-ease),
+        box-shadow var(--bm-med) var(--bm-ease);
+    user-select: none;
+    -webkit-user-select: none;
+    overflow: hidden;
+    height: 138px;
+    /* Visible by default — the GSAP entrance stagger (wwwroot/js/gsap-cards.js)
+       sets its own "from" state via gsap.fromTo() the instant it runs, so the
+       card never needs to be hidden by CSS ahead of time. Do not pre-hide
+       with opacity:0 here: if the JS interop call is ever late, blocked, or
+       throws (e.g. gsap.fromTo racing the element's first paint), cards
+       hidden this way stay invisible forever with no fallback to reveal them. */
+}
+
+@keyframes cardIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.98);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* Subtle top-edge sheen */
+.bookmark-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--bm-accent), transparent);
+    opacity: 0.35;
+    transition: opacity var(--bm-med) var(--bm-ease-out);
+    pointer-events: none;
+}
+
+.bookmark-card:hover::before {
+    opacity: 1;
+}
+
+/* Cursor-tracked light bloom — --mx/--my set by gsap-cards.js on a
+   rAF-throttled mousemove, read here as plain CSS custom properties so no
+   per-frame JS style writes are needed beyond the two variables. */
+.bookmark-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.06), transparent 70%);
+    opacity: 0;
+    transition: opacity var(--bm-med) var(--bm-ease);
+    pointer-events: none;
+}
+
+.bookmark-card:hover::after {
+    opacity: 1;
+}
+
+.bookmark-card:hover {
+    border-color: var(--bm-accent);
+    background: var(--bm-surface-raised);
+    transform: translateY(-3px);
+    box-shadow: var(--bm-shadow), 0 0 0 1px var(--bm-border-accent), 0 12px 28px -8px var(--bm-accent-glow);
+}
+
+.bookmark-card.is-selected {
+    border-color: var(--bm-accent);
+    background: var(--bm-accent-soft);
+    box-shadow: var(--bm-shadow-glow), inset 0 0 0 1px var(--bm-border-accent);
+}
+
+/* Select checkbox — appears on hover/select */
+.bookmark-card .bookmark-select {
+    position: absolute;
+    top: var(--bm-space-2);
+    right: var(--bm-space-2);
+    z-index: 5;
+    opacity: 0;
+    transition: opacity var(--bm-fast) var(--bm-ease);
+}
+
+.bookmark-card:hover .bookmark-select,
+.bookmark-card.is-selected .bookmark-select {
+    opacity: 1;
+}
+
+.bookmark-select {
+    display: flex;
+    align-items: center;
+}
+
+/* Card header */
+.bookmark-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: var(--bm-space-2);
+    min-width: 0;
+}
+
+.bookmark-card-title-group {
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-2);
+    min-width: 0;
+    flex: 1;
+}
+
+.bookmark-card-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--bm-radius-md);
+    object-fit: contain;
+    border: 1px solid var(--bm-border);
+    background: linear-gradient(145deg, var(--bm-accent-soft), rgba(255, 255, 255, 0.02));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    transition: border-color var(--bm-med) var(--bm-ease-out), transform var(--bm-med) var(--bm-ease-out);
+}
+
+.bookmark-card:hover .bookmark-card-icon {
+    border-color: var(--bm-border-accent);
+    transform: scale(1.06);
+}
+
+.bookmark-card-icon img {
+    width: 16px;
+    height: 16px;
+    border-radius: 2px;
+    object-fit: contain;
+}
+
+.bookmark-card-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--bm-text);
+    letter-spacing: -0.015em;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    white-space: normal;
+    text-decoration: none;
+    margin: 0;
+    min-width: 0;
+    flex: 1;
+}
+
+.bookmark-card-title a {
+    color: inherit;
+    text-decoration: none;
+}
+
+.bookmark-card-title a:hover {
+    color: var(--bm-accent);
+    text-decoration: none;
+}
+
+.bookmark-card-url {
+    font-size: 0.74rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: var(--bm-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: color var(--bm-med) var(--bm-ease);
+    text-decoration: none;
+    display: block;
+}
+
+.bookmark-card:hover .bookmark-card-url {
+    color: var(--bm-accent);
+}
+
+/* Card footer */
+.bookmark-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-top: auto;
+    padding-top: var(--bm-space-1);
+    gap: var(--bm-space-2);
+}
+
+.bookmark-card-footer-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.bookmark-card-tags {
+    display: flex;
+    gap: var(--bm-space-1);
+    flex-wrap: wrap;
+}
+
+.tag-badge {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-sm);
+    padding: 2px 7px;
+    font-size: 0.66rem;
+    font-weight: 500;
+    color: var(--bm-text-secondary);
+    letter-spacing: 0.01em;
+    line-height: 1.4;
+}
+
+/* Status pill — flat pastel tint + hairline border, no glow/clip-path.
+   One class per bookmark status/affordance; hue comes from the semantic
+   tokens above so it re-tints per theme automatically. */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: var(--bm-radius-sm);
+    padding: 3px 9px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+}
+
+.status-badge--active {
+    color: var(--bm-accent);
+    background: var(--bm-accent-soft);
+    border: 1px solid var(--bm-border-accent);
+}
+
+.status-badge--success {
+    color: var(--bm-success);
+    background: var(--bm-success-soft);
+    border: 1px solid color-mix(in srgb, var(--bm-success) 35%, transparent);
+}
+
+.status-badge--watching {
+    color: var(--bm-watching);
+    background: var(--bm-watching-soft);
+    border: 1px solid color-mix(in srgb, var(--bm-watching) 35%, transparent);
+}
+
+.status-badge--warning {
+    color: var(--bm-warning);
+    background: var(--bm-warning-soft);
+    border: 1px solid color-mix(in srgb, var(--bm-warning) 35%, transparent);
+}
+
+.status-badge--danger {
+    color: var(--bm-danger);
+    background: var(--bm-danger-soft);
+    border: 1px solid color-mix(in srgb, var(--bm-danger) 35%, transparent);
+}
+
+.status-badge--favorite {
+    color: var(--bm-favorite);
+    background: var(--bm-favorite-soft);
+    border: 1px solid color-mix(in srgb, var(--bm-favorite) 35%, transparent);
+}
+
+/* Subtle ambient grid — texture, not pattern. Opacity intentionally near-
+   invisible; do not raise it or pair it with an extra glow overlay (the
+   WebGL #bg-canvas shader already provides ambient movement). */
+.subtle-grid-bg {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    mask-image: radial-gradient(ellipse 75% 55% at 50% 0%, black 25%, transparent 100%);
+    -webkit-mask-image: radial-gradient(ellipse 75% 55% at 50% 0%, black 25%, transparent 100%);
+}
+
+.bookmark-card-folder-path {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.68rem;
+    font-weight: 500;
+    color: var(--mud-palette-primary-text, #ffffff);
+    background-color: rgba(var(--mud-palette-primary-rgb, 89, 74, 226), 0.15);
+    border: 1px solid rgba(var(--mud-palette-primary-rgb, 89, 74, 226), 0.3);
+    padding: 2px 7px;
+    border-radius: var(--bm-radius-sm, 4px);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.3;
+    max-width: 140px;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.bookmark-card-folder-path::before {
+    content: "\1F4C1";
+    font-size: 0.75rem;
+    line-height: 1;
+}
+
+.bookmark-card-time {
+    font-size: 0.68rem;
+    color: var(--bm-text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Card actions — floating overlay on hover */
+.bookmark-card-actions {
+    display: flex;
+    gap: 1px;
+    position: absolute;
+    bottom: var(--bm-space-2);
+    right: var(--bm-space-2);
+    background: rgba(8, 9, 13, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius);
+    padding: 2px;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: all var(--bm-fast) var(--bm-ease);
+    z-index: 6;
+}
+
+.bookmark-card:hover .bookmark-card-actions,
+.bookmark-card:focus-within .bookmark-card-actions {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Protected badge */
+.prot-badge {
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--bm-text-muted);
+    padding: 2px 7px;
+    border-radius: var(--bm-radius-sm);
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    border: 1px solid var(--bm-border);
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------------------------
+   11. Empty State (signature)
+---------------------------------------------------------------------------- */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--bm-space-4);
+    padding: 64px var(--bm-space-5);
+    text-align: center;
+    color: var(--bm-text-secondary);
+    background: var(--bm-surface-muted);
+    border-radius: var(--bm-radius-xl);
+    border: 1px dashed var(--bm-border-strong);
+}
+
+.empty-state.empty-state-compact {
+    padding: 32px var(--bm-space-4);
+    gap: var(--bm-space-3);
+}
+
+.empty-state-icon-wrap {
+    width: 64px;
+    height: 64px;
+    border-radius: var(--bm-radius-xl);
+    background: var(--bm-accent-soft);
+    border: 1px solid var(--bm-border-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--bm-accent);
+    box-shadow: var(--bm-shadow-glow);
+}
+
+.empty-state-icon-wrap-sm {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--bm-radius-lg);
+}
+
+.empty-state-icon-wrap .mud-icon-root {
+    color: var(--bm-accent) !important;
+    font-size: 1.8rem !important;
+}
+
+.empty-state-icon-wrap-sm .mud-icon-root {
+    font-size: 1.3rem !important;
+}
+
+.empty-state-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: center;
+}
+
+.empty-state-title {
+    color: var(--bm-text) !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em;
+    font-size: 1.05rem !important;
+}
+
+.empty-state-sub {
+    color: var(--bm-text-muted) !important;
+    font-size: 0.85rem !important;
+    max-width: 380px;
+    line-height: 1.5;
+}
+
+.empty-state-cta {
+    margin-top: var(--bm-space-2);
+    text-transform: none !important;
+}
+
+.empty-state .mud-icon-root {
+    color: var(--bm-text-muted);
+}
+
+.empty-state .mud-text-secondary,
+.empty-state>.mud-typography {
+    color: var(--bm-text-secondary) !important;
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+
+/* ----------------------------------------------------------------------------
+   13. Context Menu
+---------------------------------------------------------------------------- */
+.custom-context-menu {
+    position: fixed;
+    z-index: 10000;
+    min-width: 220px;
+    background: var(--bm-popover-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--bm-border-strong);
+    box-shadow: var(--bm-shadow-lg);
+    border-radius: var(--bm-radius-md);
+    padding: var(--bm-space-1);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    animation: menuPop 0.14s var(--bm-ease-out) forwards;
+    transform-origin: top left;
+}
+
+@keyframes menuPop {
+    from {
+        opacity: 0;
+        transform: scale(0.96) translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.custom-context-menu-item {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
+    gap: var(--bm-space-3) !important;
+    width: 100% !important;
+    padding: 8px 12px !important;
+    border-radius: var(--bm-radius);
+    background: transparent !important;
+    border: none !important;
+    cursor: pointer;
+    font-size: 0.82rem !important;
+    font-weight: 500;
+    color: var(--bm-text) !important;
+    text-align: left !important;
+    transition: all var(--bm-fast) var(--bm-ease);
+}
+
+.custom-context-menu-item:hover {
+    background: var(--bm-accent-soft) !important;
+    color: var(--bm-accent) !important;
+}
+
+.custom-context-menu-item.danger:hover {
+    background: var(--bm-danger-soft) !important;
+    color: var(--bm-danger) !important;
+}
+
+.custom-context-menu-item .mud-icon-root {
+    color: currentColor !important;
+    font-size: 1.05rem !important;
+    transition: transform var(--bm-fast) var(--bm-ease);
+}
+
+.custom-context-menu-item:hover .mud-icon-root {
+    transform: scale(1.08);
+}
+
+.custom-context-menu-divider {
+    height: 1px;
+    background: var(--bm-border);
+    margin: var(--bm-space-1) var(--bm-space-2);
+}
+
+.custom-context-menu-header {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--bm-text-muted);
+    padding: var(--bm-space-2) var(--bm-space-3) var(--bm-space-1);
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left !important;
+    max-width: 240px;
+}
+
+/* ----------------------------------------------------------------------------
+   14. Breadcrumbs
+---------------------------------------------------------------------------- */
+.bookmark-breadcrumbs {
+    margin-bottom: var(--bm-space-1);
+}
+
+.breadcrumbs-container {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--bm-space-2);
+    padding: var(--bm-space-2) var(--bm-space-4);
+    background: var(--bm-surface);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-lg);
+    font-size: 0.82rem;
+    color: var(--bm-text-secondary);
+}
+
+.bookmark-breadcrumbs,
+.breadcrumbs-container {
+    background: transparent !important;
+}
+
+.breadcrumb-item {
+    display: inline-flex;
+    align-items: center;
+    font-weight: 500;
+    transition: color var(--bm-fast) var(--bm-ease);
+}
+
+.breadcrumb-item.link {
+    cursor: pointer;
+    color: var(--bm-text-secondary);
+}
+
+.breadcrumb-item.link:hover {
+    color: var(--bm-accent);
+}
+
+.breadcrumb-item.active {
+    font-weight: 600;
+    color: var(--bm-text);
+}
+
+.breadcrumb-separator {
+    color: var(--bm-text-muted);
+    user-select: none;
+    opacity: 0.6;
+}
+
+/* Custom Native Icon Buttons inside BookmarkCard */
+.bm-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: var(--bm-text-secondary);
+    cursor: pointer;
+    transition: background var(--bm-fast) var(--bm-ease-out),
+        color var(--bm-fast) var(--bm-ease-out),
+        transform var(--bm-fast) var(--bm-ease-out);
+    padding: 0;
+}
+
+.bm-icon-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--bm-text);
+    transform: translateY(-1px);
+}
+
+.bm-icon-btn:active {
+    transform: scale(0.88);
+    transition-duration: 60ms;
+}
+
+.bm-icon-btn.btn-error {
+    color: var(--bm-error, #f44336);
+}
+
+.bm-icon-btn.btn-error:hover {
+    background: rgba(244, 67, 54, 0.15);
+    color: var(--bm-error, #f44336);
+}
+
+.bm-icon-btn.btn-active {
+    color: #fbbf24;
+    animation: favPop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes favPop {
+    0% {
+        transform: scale(1);
+    }
+
+    40% {
+        transform: scale(1.35) rotate(-8deg);
+    }
+
+    70% {
+        transform: scale(0.92) rotate(4deg);
+    }
+
+    100% {
+        transform: scale(1) rotate(0);
+    }
+}
+
+.bookmark-card-icon svg {
+    vertical-align: middle;
+}
