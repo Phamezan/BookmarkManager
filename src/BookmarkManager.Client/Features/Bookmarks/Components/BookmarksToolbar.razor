@@ -69,12 +69,6 @@
                                     @if (TypeFilter == "All" || string.IsNullOrEmpty(TypeFilter)) { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
                                 </div>
                             </MudMenuItem>
-                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Behind"))">
-                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
-                                    <span>Chapters Behind</span>
-                                    @if (TypeFilter == "Behind") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
-                                </div>
-                            </MudMenuItem>
                             <MudMenuItem OnClick="@(() => ChangeTypeFilter("Favorites"))">
                                 <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
                                     <span>Favorites</span>
@@ -114,12 +108,6 @@
                                 <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
                                     <span>Publishing Status</span>
                                     @if (SortMode == "Status") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
-                                </div>
-                            </MudMenuItem>
-                            <MudMenuItem OnClick="@(() => ChangeSortMode("Behind"))">
-                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
-                                    <span>Chapters Behind</span>
-                                    @if (SortMode == "Behind") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
                                 </div>
                             </MudMenuItem>
                         </MudMenu>

@@ -32,53 +32,10 @@ public sealed class HttpLibraryService(IBookmarkManagerApiClient apiClient) : IL
         await apiClient.SendAsync(HttpMethod.Post, "api/library/catalog/sync", null, cancellationToken);
     }
 
-    public async Task<List<TrackedSeriesDto>> GetTrackedSeriesAsync(CancellationToken cancellationToken = default)
+    public async Task<LibraryEntryDto?> EnrichCatalogEntryAsync(string provider, string providerId, CancellationToken cancellationToken = default)
     {
-        return await apiClient.GetAsync<List<TrackedSeriesDto>>("api/library/tracked", cancellationToken) ?? [];
-    }
-
-    public async Task<BookmarkNodeDto> TrackSeriesAsync(TrackLibraryEntryRequest request, CancellationToken cancellationToken = default)
-    {
-        return await apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Post, "api/library/track", request, cancellationToken) ?? throw new InvalidOperationException("Failed to track series");
-    }
-
-    public async Task<ReleaseWatcherStatusDto> GetWatcherStatusAsync(CancellationToken cancellationToken = default)
-    {
-        return await apiClient.GetAsync<ReleaseWatcherStatusDto>("api/library/watcher/status", cancellationToken) ?? new ReleaseWatcherStatusDto();
-    }
-
-    public async Task<ReleaseWatcherSettingsDto> GetWatcherSettingsAsync(CancellationToken cancellationToken = default)
-    {
-        return await apiClient.GetAsync<ReleaseWatcherSettingsDto>("api/library/watcher/settings", cancellationToken)
-            ?? new ReleaseWatcherSettingsDto();
-    }
-
-    public async Task<ReleaseWatcherSettingsDto> UpdateWatcherSettingsAsync(
-        ReleaseWatcherSettingsDto settings,
-        CancellationToken cancellationToken = default)
-    {
-        return await apiClient.SendAsync<ReleaseWatcherSettingsDto>(
-                HttpMethod.Put,
-                "api/library/watcher/settings",
-                settings,
-                cancellationToken)
-            ?? throw new InvalidOperationException("Failed to update release watcher settings");
-    }
-
-    public async Task TriggerWatcherAsync(CancellationToken cancellationToken = default)
-    {
-        await apiClient.SendAsync(HttpMethod.Post, "api/library/watcher/trigger", null, cancellationToken);
-    }
-
-    public async Task<TrackedSeriesDto> CheckSeriesReleaseAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
-    {
-        return await apiClient.SendAsync<TrackedSeriesDto>(HttpMethod.Post, $"api/library/track/{bookmarkId}/check", null, cancellationToken) ?? throw new InvalidOperationException("Failed to check release status");
-    }
-
-    public async Task<TrackedSeriesDto> UpdateProgressAsync(Guid bookmarkId, double chaptersRead, CancellationToken cancellationToken = default)
-    {
-        var request = new UpdateProgressRequest { ChaptersRead = chaptersRead };
-        return await apiClient.SendAsync<TrackedSeriesDto>(HttpMethod.Put, $"api/library/track/{bookmarkId}/progress", request, cancellationToken) ?? throw new InvalidOperationException("Failed to update progress");
+        var uri = $"api/library/catalog/enrich?provider={Uri.EscapeDataString(provider)}&providerId={Uri.EscapeDataString(providerId)}";
+        return await apiClient.GetAsync<LibraryEntryDto>(uri, cancellationToken);
     }
 
     public async Task<List<ProviderHealthDto>> GetProvidersHealthAsync(CancellationToken cancellationToken = default)
@@ -89,6 +46,16 @@ public sealed class HttpLibraryService(IBookmarkManagerApiClient apiClient) : IL
     public async Task ToggleProviderAsync(string providerName, bool enabled, CancellationToken cancellationToken = default)
     {
         await apiClient.SendAsync(HttpMethod.Post, $"api/library/providers/{Uri.EscapeDataString(providerName)}/toggle?enabled={enabled}", null, cancellationToken);
+    }
+
+    public async Task<List<LibraryReadingProgressDto>> GetReadingProgressAsync(CancellationToken cancellationToken = default)
+    {
+        return await apiClient.GetAsync<List<LibraryReadingProgressDto>>("api/library/reading-progress", cancellationToken) ?? [];
+    }
+
+    public async Task<List<LibraryEntryDto>> GetMyBookmarkedSeriesAsync(CancellationToken cancellationToken = default)
+    {
+        return await apiClient.GetAsync<List<LibraryEntryDto>>("api/library/my-bookmarks", cancellationToken) ?? [];
     }
 
     private static string TypeQuery(LibraryMediaType? mediaType) =>

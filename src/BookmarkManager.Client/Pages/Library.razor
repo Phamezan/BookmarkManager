@@ -5,9 +5,9 @@
 @using BookmarkManager.Contracts
 @inject ISnackbar Snackbar
 @inject ILibraryService LibraryService
-@inject IDialogService DialogService
 @inject IBookmarkService BookmarkService
-@inject UndoService UndoService
+@inject IDialogService DialogService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Library</PageTitle>
 
@@ -16,26 +16,29 @@
         <div class="lib-heading">
             <h1 class="lib-title">Library</h1>
             <span class="lib-subtitle">
-                @(IsSearchActive || _updatesBehindOnly ? ActiveItems.Count : _trendingTotalCount) titles · @TrackedCount tracked
+                @(IsSearchActive ? ActiveItems.Count : _trendingTotalCount) titles
             </span>
         </div>
     </header>
 
     <div class="lib-controls">
         <div class="lib-tabs" role="tablist" aria-label="Media type">
-            <button type="button" role="tab" aria-selected="@(!_updatesBehindOnly && _selectedType is null)"
+            <button type="button" role="tab" aria-selected="@(_selectedType is null)"
                     class="@TabClass(null)" @onclick="@(() => SelectType(null))">All</button>
             @foreach (var type in MediaTypes)
             {
                 var current = type;
-                <button type="button" role="tab" aria-selected="@(!_updatesBehindOnly && _selectedType == current)"
+                <button type="button" role="tab" aria-selected="@(_selectedType == current)"
                         class="@TabClass(current)" @onclick="@(() => SelectType(current))">
                     @TypeLabel(current)
                 </button>
             }
-            <button type="button" role="tab" aria-selected="@(_updatesBehindOnly)"
-                    class="@UpdatesBehindClass()" @onclick="ToggleUpdatesBehind">Updates Behind</button>
         </div>
+        <button type="button" role="tab" aria-selected="@_myBookmarksOnly"
+                aria-pressed="@_myBookmarksOnly" class="@($"lib-tab lib-bookmarks-tab{(_myBookmarksOnly ? " is-active" : "")}")"
+                @onclick="ToggleMyBookmarksOnly">
+            My bookmarks
+        </button>
         <div class="lib-search">
             <svg class="lib-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -53,7 +56,7 @@
         <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
                  ListClass="lib-sort-list" Class="lib-sort-menu">
             <ActivatorContent>
-                <button type="button" class="lib-sort-btn" aria-label="Sort order">
+                <button type="button" class="lib-sort-btn" aria-label="Sort order" @onclick="context.ToggleAsync">
                     <svg class="lib-sort-btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <line x1="4" y1="6" x2="15" y2="6"/>
@@ -86,86 +89,206 @@
         </MudMenu>
     </div>
 
-    <div class="lib-genres" aria-label="Genre filters">
-        @foreach (var genre in AllGenres)
+    <div class="lib-genre-panel" aria-label="Genre filters">
+        @if (_selectedGenres.Count > 0)
         {
-            var current = genre;
-            var isChecked = _selectedGenres.Contains(current);
-            <button type="button" class="@($"lib-genre-chip{(isChecked ? " is-checked" : "")}")"
-                    aria-pressed="@isChecked" @onclick="@(() => ToggleGenre(current))">
-                @current
-            </button>
-        }
-        @if (HasActiveFilters)
-        {
-            <button type="button" class="lib-clear-btn" @onclick="ClearFilters">Clear all</button>
-        }
-    </div>
-
-    @if (!HasActiveFilters && Featured is { } featured)
-    {
-        <section class="lib-hero" style="@LibraryCoverArt.StyleFor(featured)" aria-label="Trending this week">
-            <div class="lib-hero-backdrop" aria-hidden="true"></div>
-            <div class="lib-hero-content" @key="featured.Title">
-                <div class="lib-hero-info">
-                    <span class="lib-hero-eyebrow">
-                        <span class="lib-hero-pulse" aria-hidden="true"></span>
-                        Trending this week · #@(_featuredIndex + 1) of @TrendingItems.Count
-                    </span>
-                    <h2 class="lib-hero-title">@featured.Title</h2>
-                    <div class="lib-hero-stats">
-                        @if (featured.Rating is { } featuredRating)
-                        {
-                            <span class="lib-hero-stat lib-hero-rating">★ @featuredRating.ToString("0.0")</span>
-                        }
-                        <span class="lib-hero-stat">@featured.TypeLabel</span>
-                        <span class="lib-hero-stat">Ch. @(featured.LatestChapter ?? "—")</span>
-                        <span class="lib-hero-stat">@(featured.Status ?? "Unknown")</span>
-                        <span class="lib-hero-stat lib-hero-provider">@featured.Provider</span>
-                    </div>
-                    <p class="lib-hero-synopsis">@(featured.Synopsis ?? "No synopsis available.")</p>
-                    <div class="lib-hero-genres">
-                        @foreach (var genre in featured.Genres)
-                        {
-                            var current = genre;
-                            <button type="button" class="lib-hero-genre" title="Filter by @current"
-                                    @onclick="@(() => ToggleGenre(current))">@current</button>
-                        }
-                    </div>
-                    <div class="lib-hero-actions">
-                        <button type="button"
-                                class="@($"lib-hero-track{(featured.IsTracked ? " is-tracked" : "")}")"
-                                @onclick="@(() => TrackItem(featured))">
-                            @(featured.IsTracked ? "Tracked ✓" : "+ Track this title")
-                        </button>
-                        @if (featured.ChaptersBehind is > 0)
-                        {
-                            <span class="lib-hero-behind">@featured.ChaptersBehind chapters behind</span>
-                        }
-                        <span class="lib-hero-updated">Updated @featured.UpdatedLabel</span>
-                    </div>
-                </div>
-                <div class="@($"lib-hero-cover {LibraryCoverArt.CoverClass(featured)}")" style="@LibraryCoverArt.StyleFor(featured)" aria-hidden="true">
-                    <span class="lib-hero-cover-spine"></span>
-                    <div class="lib-hero-cover-text">
-                        <span class="lib-hero-cover-title">@featured.Title</span>
-                        <span class="lib-hero-cover-author">@featured.Author</span>
-                    </div>
-                </div>
-            </div>
-            <div class="lib-hero-rail" role="tablist" aria-label="Trending titles">
-                @for (var i = 0; i < TrendingItems.Count; i++)
+            <div class="lib-genre-active">
+                <span class="lib-genre-active-label">Active</span>
+                @foreach (var genre in _selectedGenres.OrderBy(g => g, StringComparer.OrdinalIgnoreCase))
                 {
-                    var index = i;
-                    var item = TrendingItems[i];
-                    <button type="button" role="tab" aria-selected="@(index == _featuredIndex)"
-                            class="@($"lib-hero-thumb {LibraryCoverArt.CoverClass(item)}{(index == _featuredIndex ? " is-active" : "")}")"
-                            style="@LibraryCoverArt.StyleFor(item)" title="@item.Title"
-                            @onclick="@(() => SelectFeatured(index))">
-                        <span class="lib-hero-thumb-title">@item.Title</span>
+                    var current = genre;
+                    <button type="button" class="lib-genre-chip is-checked"
+                            aria-pressed="true" @onclick="@(() => ToggleGenre(current))">
+                        @current
                     </button>
                 }
             </div>
+        }
+
+        @foreach (var group in VisibleGenreGroups)
+        {
+            <div class="lib-genre-group">
+                <span class="lib-genre-group-label">@group.Label</span>
+                <div class="lib-genre-group-chips">
+                    @foreach (var genre in group.Tags)
+                    {
+                        var current = genre;
+                        var isChecked = _selectedGenres.Contains(current);
+                        <button type="button" class="@($"lib-genre-chip{(isChecked ? " is-checked" : "")}")"
+                                aria-pressed="@isChecked" @onclick="@(() => ToggleGenre(current))">
+                            @current
+                        </button>
+                    }
+                </div>
+            </div>
+        }
+
+        <div class="lib-genre-panel-actions">
+            @if (ShowGenreExpandToggle)
+            {
+                <button type="button" class="lib-genre-expand-btn" @onclick="ToggleGenresExpanded">
+                    @if (_genresExpanded)
+                    {
+                        <text>Show fewer tags</text>
+                    }
+                    else
+                    {
+                        <text>Show all @AllGenres.Count tags</text>
+                    }
+                </button>
+            }
+            @if (HasActiveFilters)
+            {
+                <button type="button" class="lib-clear-btn" @onclick="ClearFilters">Clear all</button>
+            }
+        </div>
+    </div>
+
+    @if (!HasActiveFilters)
+    {
+        <section class="lib-spotlight" aria-label="Featured picks">
+            <div class="lib-spotlight-tabs" role="tablist" aria-label="Spotlight carousel">
+                <button type="button" role="tab" class="@($"lib-spotlight-tab{(_heroSlide == HeroSlide.Trending ? " is-active" : "")}")"
+                        aria-selected="@(_heroSlide == HeroSlide.Trending)"
+                        @onclick="@(() => SetHeroSlide(HeroSlide.Trending))">
+                    Trending this week
+                </button>
+                <button type="button" role="tab" class="@($"lib-spotlight-tab{(_heroSlide == HeroSlide.Recommends ? " is-active" : "")}")"
+                        aria-selected="@(_heroSlide == HeroSlide.Recommends)"
+                        @onclick="@(() => SetHeroSlide(HeroSlide.Recommends))">
+                    Recommends
+                </button>
+            </div>
+
+            @if (_heroSlide == HeroSlide.Trending && Featured is { } featured)
+            {
+                <div class="lib-hero" style="@LibraryCoverArt.StyleFor(featured)" aria-label="Trending this week">
+                    <div class="lib-hero-backdrop" aria-hidden="true"></div>
+                    <div class="lib-hero-content" @key="featured.ProviderId">
+                        <div class="lib-hero-info">
+                            <span class="lib-hero-eyebrow">
+                                <span class="lib-hero-pulse" aria-hidden="true"></span>
+                                Trending this week · #@(_featuredIndex + 1) of @TrendingItems.Count
+                            </span>
+                            <h2 class="lib-hero-title">@featured.Title</h2>
+                            <div class="lib-hero-stats">
+                                @if (ProgressBadgeTextFor(featured) is { } heroProgress)
+                                {
+                                    <span class="lib-hero-stat lib-hero-progress">@heroProgress · yours</span>
+                                }
+                                @if (featured.Rating is { } featuredRating)
+                                {
+                                    <span class="lib-hero-stat lib-hero-rating">★ @featuredRating.ToString("0.0")</span>
+                                }
+                                <span class="lib-hero-stat">@featured.TypeLabel</span>
+                                <span class="lib-hero-stat">Ch. @(featured.LatestChapter ?? "—")</span>
+                                <span class="lib-hero-stat">@(featured.Status ?? "Unknown")</span>
+                                <span class="lib-hero-stat lib-hero-provider">@featured.Provider</span>
+                            </div>
+                            <p class="lib-hero-synopsis">@(featured.Synopsis ?? "No synopsis available.")</p>
+                            <div class="lib-hero-genres">
+                                @foreach (var genre in featured.Genres)
+                                {
+                                    var current = genre;
+                                    <button type="button" class="lib-hero-genre" title="Filter by @current"
+                                            @onclick="@(() => ToggleGenre(current))">@current</button>
+                                }
+                            </div>
+                            <div class="lib-hero-actions">
+                                @if (ProgressFor(featured)?.BookmarkId is not null)
+                                {
+                                    <button type="button" class="lib-hero-bookmark" @onclick="@(() => GoToBookmark(featured))">
+                                        Go to bookmark
+                                    </button>
+                                }
+                                <button type="button" class="lib-hero-more" @onclick="@(() => ShowDetailsAsync(featured))">
+                                    More
+                                </button>
+                                <span class="lib-hero-updated">Updated @featured.UpdatedLabel</span>
+                            </div>
+                        </div>
+                        <div class="@($"lib-hero-cover {LibraryCoverArt.CoverClass(featured)}")" style="@LibraryCoverArt.StyleFor(featured)" aria-hidden="true">
+                            <span class="lib-hero-cover-spine"></span>
+                            <div class="lib-hero-cover-text">
+                                <span class="lib-hero-cover-title">@featured.Title</span>
+                                <span class="lib-hero-cover-author">@featured.Author</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="lib-hero-rail" role="tablist" aria-label="Trending titles">
+                        @for (var i = 0; i < TrendingItems.Count; i++)
+                        {
+                            var index = i;
+                            var item = TrendingItems[i];
+                            <button type="button" role="tab" aria-selected="@(index == _featuredIndex)"
+                                    class="@($"lib-hero-thumb {LibraryCoverArt.CoverClass(item)}{(index == _featuredIndex ? " is-active" : "")}")"
+                                    style="@LibraryCoverArt.StyleFor(item)" title="@item.Title"
+                                    @onclick="@(() => SelectFeatured(index))">
+                                <span class="lib-hero-thumb-title">@item.Title</span>
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+            else if (_heroSlide == HeroSlide.Recommends)
+            {
+                <div class="lib-recommends" aria-label="Recommends">
+                    <div class="lib-recommends-toolbar">
+                        <div class="lib-recommends-types" role="tablist" aria-label="Recommends media type">
+                            <button type="button" role="tab" aria-selected="@(_recommendsType is null)"
+                                    class="@RecommendsTabClass(null)" @onclick="@(() => SelectRecommendsType(null))">All</button>
+                            @foreach (var type in MediaTypes)
+                            {
+                                var current = type;
+                                <button type="button" role="tab" aria-selected="@(_recommendsType == current)"
+                                        class="@RecommendsTabClass(current)" @onclick="@(() => SelectRecommendsType(current))">
+                                    @TypeLabel(current)
+                                </button>
+                            }
+                        </div>
+                        <button type="button" class="lib-recommends-shuffle" @onclick="ShuffleRecommends" aria-label="Shuffle recommends">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="16 3 21 3 21 8"/>
+                                <line x1="4" y1="20" x2="21" y2="3"/>
+                                <polyline points="21 16 21 21 16 21"/>
+                                <line x1="15" y1="15" x2="21" y2="21"/>
+                                <line x1="4" y1="4" x2="9" y2="9"/>
+                            </svg>
+                            Shuffle
+                        </button>
+                    </div>
+                    <div class="lib-recommends-head">
+                        <h2 class="lib-recommends-title">Recommends</h2>
+                        <span class="lib-recommends-rule" aria-hidden="true"></span>
+                        <span class="lib-recommends-count">
+                            @if (_loadingRecommends)
+                            {
+                                <text>Loading…</text>
+                            }
+                            else
+                            {
+                                @($"{_recommendsGrid.Count} picks")
+                            }
+                        </span>
+                    </div>
+                    @if (!_loadingRecommends && _recommendsGrid.Count == 0)
+                    {
+                        <div class="lib-recommends-empty">
+                            <p>No recommends for this type yet. Try another tab or shuffle again after catalog sync.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="lib-recommends-grid" @key="@($"{_recommendsType}:{_recommendsSeed}")">
+                            @foreach (var item in _recommendsGrid)
+                            {
+                                <MediaCard Item="item" Progress="ProgressFor(item)" OnMore="ShowDetailsAsync" />
+                            }
+                        </div>
+                    }
+                </div>
+            }
         </section>
     }
 
@@ -198,7 +321,7 @@
             <div class="lib-grid">
                 @foreach (var item in FilteredItems)
                 {
-                    <MediaCard Item="item" OnTrack="TrackItem" OnProgressUpdated="OnProgressUpdatedAsync" />
+                    <MediaCard Item="item" Progress="ProgressFor(item)" OnMore="ShowDetailsAsync" />
                 }
             </div>
             @if (CanLoadMore)

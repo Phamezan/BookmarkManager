@@ -1,28 +1,38 @@
 @namespace BookmarkManager.Client.Features.Library.Components
 @using BookmarkManager.Client.Features.Library
-@inject BookmarkManager.Client.Services.ILibraryService LibraryService
-@inject MudBlazor.ISnackbar Snackbar
-@inject Microsoft.JSInterop.IJSRuntime JsRuntime
+@using BookmarkManager.Contracts
 
 @* Book-style cover card. Real provider cover art when available, otherwise a deterministic
    duotone gradient derived from the title. The left spine edge is color-coded by media type
    via TypeClass. *@
 
+@inject NavigationManager NavigationManager
+
 <article class="@($"lib-card {Item.TypeClass}")">
+    @if (ProgressBadgeText is { } progressBadgeText)
+    {
+        @if (Progress?.BookmarkId is not null)
+        {
+            <button type="button" class="lib-card-progress is-action" title="Go to bookmark (Ctrl+K for command palette)"
+                    @onclick="NavigateToBookmark" @onclick:stopPropagation>@progressBadgeText</button>
+        }
+        else
+        {
+            <span class="lib-card-progress" title="Your reading progress">@progressBadgeText</span>
+        }
+    }
     <div class="@($"lib-cover {CoverClass}")" style="@CoverStyle" tabindex="0">
         <span class="lib-spine" aria-hidden="true"></span>
         @if (Item.Rating is { } rating)
         {
             <span class="lib-rating" title="Average rating">★ @rating.ToString("0.0")</span>
         }
-        @if (Item.ChaptersBehind is > 0)
-        {
-            <span class="lib-behind" title="Chapters behind your bookmark">@((int)Math.Ceiling(Item.ChaptersBehind.Value)) behind</span>
-        }
-        else if (Item.IsTracked)
-        {
-            <span class="lib-caughtup" title="Tracked and caught up">✓</span>
-        }
+        <div class="lib-cover-badges">
+            @if (StatusBadge is { } statusBadge)
+            {
+                <span class="@($"lib-status-badge {statusBadge.CssClass}")">@statusBadge.Label</span>
+            }
+        </div>
         <div class="lib-cover-text">
             <span class="lib-cover-title">@Item.Title</span>
             <span class="lib-cover-author">@Item.Author</span>
@@ -39,37 +49,9 @@
                 <span>Ch. @(Item.LatestChapter ?? "—") · @(Item.Status ?? "Unknown")</span>
                 <span>@Item.Provider · updated @Item.UpdatedLabel</span>
             </div>
-            <button type="button"
-                    class="@($"lib-track-btn{(Item.IsTracked ? " is-tracked" : "")}")"
-                    @onclick="HandleTrack">
-                @(Item.IsTracked ? "Tracked ✓" : "+ Track")
+            <button type="button" class="lib-more-btn" @onclick="HandleMore">
+                More
             </button>
-            @if (Item.IsTracked && Item.BookmarkId.HasValue)
-            {
-                <div class="lib-progress-controls" style="display: flex; gap: 8px; justify-content: center; align-items: center; margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.15);" @onclick:stopPropagation>
-                    <button class="lib-progress-btn" title="Increment chapter" @onclick="IncrementProgress" type="button" style="padding: 4px 8px; background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; font-size: 0.75rem; cursor: pointer; font-weight: bold; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                        +1
-                    </button>
-                    @if ((Item.ChaptersBehind ?? 0) > 0 && double.TryParse(Item.LatestChapter, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var latest))
-                    {
-                        <button class="lib-progress-btn" title="Mark Caught Up" @onclick="() => UpdateProgress(latest)" type="button" style="padding: 4px 8px; background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; font-size: 0.75rem; cursor: pointer; font-weight: bold; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                            Caught Up
-                        </button>
-                    }
-                    <button class="lib-progress-btn" title="Set exact chapter" @onclick="PromptProgress" type="button" style="padding: 4px 8px; background: rgba(255,255,255,0.2); border: none; border-radius: 4px; color: white; font-size: 0.75rem; cursor: pointer; font-weight: bold; transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">
-                        Ch. @(Item.ChaptersRead ?? 0)
-                    </button>
-                    @{
-                        var jumpUrl = Item.LatestChapterUrl ?? Item.SourceUrl;
-                    }
-                    @if (!string.IsNullOrEmpty(jumpUrl))
-                    {
-                        <a href="@jumpUrl" target="_blank" rel="noopener noreferrer" class="lib-progress-btn" title="Jump to Source" style="padding: 4px 8px; background: var(--mud-palette-primary); border: none; border-radius: 4px; color: white; font-size: 0.75rem; text-decoration: none; font-weight: bold; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center;" onmouseover="this.style.background='var(--mud-palette-primary-darken)'" onmouseout="this.style.background='var(--mud-palette-primary)'">
-                            Go ↗
-                        </a>
-                    }
-                </div>
-            }
         </div>
     </div>
     <div class="lib-card-foot">
@@ -80,37 +62,23 @@
 
 @code {
     [Parameter, EditorRequired] public LibraryItem Item { get; set; } = default!;
-    [Parameter] public EventCallback<LibraryItem> OnTrack { get; set; }
-    [Parameter] public EventCallback OnProgressUpdated { get; set; }
+    [Parameter] public LibraryReadingProgressDto? Progress { get; set; }
+    [Parameter] public EventCallback<LibraryItem> OnMore { get; set; }
 
     private string CoverStyle => LibraryCoverArt.StyleFor(Item);
     private string CoverClass => LibraryCoverArt.CoverClass(Item);
 
-    private Task HandleTrack() => OnTrack.InvokeAsync(Item);
+    private LibraryStatusBadge.Badge? StatusBadge => LibraryStatusBadge.Normalize(Item.Status);
 
-    private async Task UpdateProgress(double value)
+    private string? ProgressBadgeText => LibraryProgressDisplay.BadgeText(Progress);
+
+    private Task HandleMore() => OnMore.InvokeAsync(Item);
+
+    private void NavigateToBookmark()
     {
-        if (!Item.BookmarkId.HasValue) return;
-        try
+        if (Progress?.BookmarkId is { } bookmarkId)
         {
-            await LibraryService.UpdateProgressAsync(Item.BookmarkId.Value, value);
-            Snackbar.Add($"Updated progress to Chapter {value}", MudBlazor.Severity.Success);
-            await OnProgressUpdated.InvokeAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to update progress: {ex.Message}", MudBlazor.Severity.Error);
-        }
-    }
-
-    private Task IncrementProgress() => UpdateProgress((Item.ChaptersRead ?? 0) + 1);
-
-    private async Task PromptProgress()
-    {
-        var result = await JsRuntime.InvokeAsync<string>("prompt", "Enter chapter number:", Item.ChaptersRead?.ToString() ?? "0");
-        if (double.TryParse(result, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var value))
-        {
-            await UpdateProgress(value);
+            NavigationManager.NavigateTo($"/bookmarks?bookmarkId={bookmarkId}");
         }
     }
 }

@@ -53,12 +53,6 @@ public partial class Settings
     private bool _triageRunning;
     private TriageJobStatusDto? _triageResult;
 
-    private ReleaseWatcherStatusDto? _watcherStatus;
-    private ReleaseWatcherSettingsDto _watcherSettings = new();
-    private bool _watcherStatusLoading = true;
-    private bool _watcherRunning;
-    private bool _watcherSettingsSaving;
-
     private List<ProviderHealthDto> _providerHealth = [];
     private bool _healthLoading = true;
 
@@ -80,8 +74,6 @@ public partial class Settings
         await Task.WhenAll(
             LoadExtensionStatusAsync(),
             LoadAiTaggingSettingsAsync(),
-            LoadWatcherStatusAsync(),
-            LoadWatcherSettingsAsync(),
             LoadProviderHealthAsync(),
             LoadCatalogSyncStatusAsync());
     }
@@ -318,73 +310,6 @@ public partial class Settings
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to apply theme: {ex.Message}", Severity.Error);
-        }
-    }
-
-    private async Task LoadWatcherStatusAsync()
-    {
-        _watcherStatusLoading = true;
-        try
-        {
-            _watcherStatus = await LibraryService.GetWatcherStatusAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to load watcher status: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _watcherStatusLoading = false;
-        }
-    }
-
-    private async Task LoadWatcherSettingsAsync()
-    {
-        try
-        {
-            _watcherSettings = await LibraryService.GetWatcherSettingsAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to load watcher settings: {ex.Message}", Severity.Error);
-        }
-    }
-
-    private async Task SaveWatcherSettingsAsync()
-    {
-        _watcherSettingsSaving = true;
-        try
-        {
-            _watcherSettings = await LibraryService.UpdateWatcherSettingsAsync(_watcherSettings);
-            Snackbar.Add("Release watcher schedule updated.", Severity.Success);
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to save watcher settings: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _watcherSettingsSaving = false;
-        }
-    }
-
-    private async Task RunReleaseWatcherAsync()
-    {
-        _watcherRunning = true;
-        try
-        {
-            await LibraryService.TriggerWatcherAsync();
-            Snackbar.Add("Release watcher triggered in background.", Severity.Info);
-            await Task.Delay(1000);
-            await LoadWatcherStatusAsync();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to run release watcher: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _watcherRunning = false;
         }
     }
 

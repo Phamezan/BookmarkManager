@@ -1,4 +1,3 @@
-using System.Globalization;
 using BookmarkManager.Client.Features.Library;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
@@ -9,23 +8,30 @@ namespace BookmarkManager.Client.Pages;
 
 public partial class Library : IDisposable
 {
-    private const string SortTrending = "trending";
+    private const string SortNewTrending = "trending";
     private const string SortRating = "rating";
     private const string SortUpdated = "updated";
     private const string SortAlpha = "alpha";
     private const int SearchDebounceMs = 400;
     private const int MinQueryLength = 2;
+    private const int CollapsedGenreGroupLimit = 3;
 
     private static readonly (string Key, string Label)[] SortOptions =
     {
-        (SortTrending, "Trending"),
+        (SortNewTrending, "New & trending"),
         (SortRating, "Top rated"),
         (SortUpdated, "Recently updated"),
         (SortAlpha, "A – Z")
     };
 
+    private enum HeroSlide
+    {
+        Trending,
+        Recommends
+    }
+
     private static string SortLabel(string sort) =>
-        SortOptions.FirstOrDefault(option => option.Key == sort).Label ?? "Trending";
+        SortOptions.FirstOrDefault(option => option.Key == sort).Label ?? "New & trending";
 
     private static readonly LibraryMediaType[] MediaTypes =
     {
@@ -37,75 +43,95 @@ public partial class Library : IDisposable
 
     private const int TrendingPageSize = 48;
     private const int HeroRailSize = 12;
+    private const int RecommendsPoolSize = 96;
+    private const int RecommendsGridSize = 18;
 
     private List<LibraryItem> _hero = new();
+    private List<LibraryItem> _recommendsPool = new();
+    private List<LibraryItem> _recommendsGrid = new();
     private List<LibraryItem> _trending = new();
     private List<LibraryItem> _searchResults = new();
     private int _trendingTotalCount;
     private bool _trendingHasMore;
     private bool _loadingMore;
 
-    private readonly HashSet<(string Provider, string ProviderId)> _trackedKeys = new();
-    private readonly Dictionary<(string Provider, string ProviderId), double> _chaptersRead = new();
-    private readonly Dictionary<(string Provider, string ProviderId), Guid> _trackedBookmarkIds = new();
-    private readonly Dictionary<(string Provider, string ProviderId), string?> _trackedLatestChapters = new();
-    private readonly Dictionary<(string Provider, string ProviderId), string?> _trackedLatestChapterUrls = new();
-
     private string _search = string.Empty;
     private LibraryMediaType? _selectedType;
+    private LibraryMediaType? _recommendsType;
     private readonly HashSet<string> _selectedGenres = new(StringComparer.OrdinalIgnoreCase);
-    private string _sort = SortTrending;
+    private string _sort = SortNewTrending;
+    private bool _myBookmarksOnly;
+    private HeroSlide _heroSlide = HeroSlide.Trending;
     private int _featuredIndex;
+    private int _recommendsSeed = 1;
+    private bool _genresExpanded;
     private bool _loading;
+    private bool _loadingRecommends;
     private CancellationTokenSource? _searchCts;
-    private bool _updatesBehindOnly;
+    private CancellationTokenSource? _recommendsCts;
+    private LibraryBookmarkExclusions _bookmarkExclusions = LibraryBookmarkExclusions.Empty;
+    private Dictionary<string, LibraryReadingProgressDto> _readingProgress = new();
+    private List<LibraryItem> _myBookmarksItems = new();
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadTrackedSeriesAsync();
-        await LoadTrendingAsync();
+        await Task.WhenAll(
+            LoadTrendingAsync(),
+            LoadRecommendsPoolAsync(),
+            LoadBookmarkExclusionsAsync(),
+            LoadReadingProgressAndMatchedSeriesAsync());
     }
 
-    private async Task LoadTrackedSeriesAsync()
+    private LibraryReadingProgressDto? ProgressFor(LibraryItem item)
+    {
+        if (!_readingProgress.TryGetValue(LibraryReadingProgressKey.Build(item.Provider, item.ProviderId), out var progress))
+            return null;
+
+        if (progress.LatestChapterNumber is not null)
+            return progress;
+
+        var latestFromCatalog = LibraryLatestChapterParser.Parse(item.LatestChapter);
+        return latestFromCatalog is null
+            ? progress
+            : progress with { LatestChapterNumber = latestFromCatalog };
+    }
+
+    private string? ProgressBadgeTextFor(LibraryItem item) =>
+        LibraryProgressDisplay.BadgeText(ProgressFor(item));
+
+    private void GoToBookmark(LibraryItem item)
+    {
+        if (ProgressFor(item)?.BookmarkId is { } bookmarkId)
+            NavigationManager.NavigateTo($"/bookmarks?bookmarkId={bookmarkId}");
+    }
+
+    // Both loads key off the same server-side bookmark/series match set, so they're fetched
+    // together: the progress dict badges whatever cards happen to already be on screen, while
+    // the matched-series list is the "My bookmarks" filter's own item source - those matched
+    // series are frequently NOT among the currently loaded trending/search page, so the filter
+    // can't just narrow ActiveItems.
+    private async Task LoadReadingProgressAndMatchedSeriesAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var tracked = await LibraryService.GetTrackedSeriesAsync();
-            _trackedKeys.Clear();
-            _chaptersRead.Clear();
-            _trackedBookmarkIds.Clear();
-            _trackedLatestChapters.Clear();
-            _trackedLatestChapterUrls.Clear();
-            foreach (var ts in tracked)
-            {
-                var key = (ts.Provider, ts.ProviderId);
-                _trackedKeys.Add(key);
-                _chaptersRead[key] = ts.ChaptersRead;
-                _trackedBookmarkIds[key] = ts.BookmarkId;
-                _trackedLatestChapters[key] = ts.LatestKnownChapter;
-                _trackedLatestChapterUrls[key] = ts.LatestChapterUrl;
-            }
+            var progressTask = LibraryService.GetReadingProgressAsync(cancellationToken);
+            var matchedSeriesTask = LibraryService.GetMyBookmarkedSeriesAsync(cancellationToken);
+            await Task.WhenAll(progressTask, matchedSeriesTask);
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            _readingProgress = progressTask.Result.ToDictionary(p => LibraryReadingProgressKey.Build(p.Provider, p.ProviderId));
+            _myBookmarksItems = matchedSeriesTask.Result.Select(dto => LibraryItem.FromDto(dto)).ToList();
+            StateHasChanged();
         }
-        catch (Exception ex)
+        catch (OperationCanceledException)
         {
-            Snackbar.Add($"Failed to load tracked series: {ex.Message}", Severity.Error);
         }
-    }
-
-    private async Task OnProgressUpdatedAsync()
-    {
-        await LoadTrackedSeriesAsync();
-
-        if (_updatesBehindOnly)
+        catch
         {
-            await ReloadAsync();
-            return;
+            _readingProgress = new Dictionary<string, LibraryReadingProgressDto>();
+            _myBookmarksItems = new List<LibraryItem>();
         }
-
-        _hero = _hero.Select(ApplyTrackingState).ToList();
-        _trending = _trending.Select(ApplyTrackingState).ToList();
-        _searchResults = _searchResults.Select(ApplyTrackingState).ToList();
-        StateHasChanged();
     }
 
     private bool IsSearchActive => _search.Trim().Length >= MinQueryLength;
@@ -117,10 +143,44 @@ public partial class Library : IDisposable
 
     private void SelectFeatured(int index) => _featuredIndex = index;
 
-    private int TrackedCount => _trackedKeys.Count;
+    private void SetHeroSlide(HeroSlide slide)
+    {
+        _heroSlide = slide;
+        _featuredIndex = 0;
+        if (slide == HeroSlide.Recommends && _recommendsGrid.Count == 0 && !_loadingRecommends)
+            _ = LoadRecommendsPoolAsync();
+    }
+
+    private void ShuffleRecommends()
+    {
+        _recommendsSeed++;
+        RebuildRecommendsGrid();
+        _heroSlide = HeroSlide.Recommends;
+    }
+
+    private Task SelectRecommendsType(LibraryMediaType? type)
+    {
+        if (_recommendsType == type)
+            return Task.CompletedTask;
+
+        _recommendsType = type;
+        return LoadRecommendsPoolAsync();
+    }
+
+    private string RecommendsTabClass(LibraryMediaType? type) =>
+        _recommendsType == type ? "lib-recommends-tab is-active" : "lib-recommends-tab";
+
+    private void RebuildRecommendsGrid() =>
+        _recommendsGrid = LibraryRecommends.BuildRail(
+            _recommendsPool,
+            RecommendsGridSize,
+            _recommendsSeed,
+            _bookmarkExclusions);
+
+    private void ToggleGenresExpanded() => _genresExpanded = !_genresExpanded;
 
     private bool HasActiveFilters =>
-        IsSearchActive || _selectedType is not null || _selectedGenres.Count > 0;
+        IsSearchActive || _selectedType is not null || _selectedGenres.Count > 0 || _myBookmarksOnly;
 
     private IReadOnlyList<string> AllGenres =>
         ActiveItems.SelectMany(item => item.Genres)
@@ -128,15 +188,46 @@ public partial class Library : IDisposable
                 .OrderBy(genre => genre, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
+    private IReadOnlyList<LibraryGenreTaxonomy.GenreGroup> GenreGroups =>
+        LibraryGenreTaxonomy.GroupGenres(AllGenres);
+
+    private IReadOnlyList<LibraryGenreTaxonomy.GenreGroup> VisibleGenreGroups
+    {
+        get
+        {
+            if (_genresExpanded || GenreGroups.Count <= CollapsedGenreGroupLimit)
+                return GenreGroups;
+
+            var selected = _selectedGenres.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var withSelection = GenreGroups
+                .Where(group => group.Tags.Any(tag => selected.Contains(tag)))
+                .ToList();
+
+            var remainder = GenreGroups
+                .Where(group => withSelection.All(selectedGroup => !string.Equals(selectedGroup.Label, group.Label, StringComparison.OrdinalIgnoreCase)))
+                .Take(Math.Max(0, CollapsedGenreGroupLimit - withSelection.Count));
+
+            return withSelection.Concat(remainder).Take(CollapsedGenreGroupLimit).ToList();
+        }
+    }
+
+    private bool ShowGenreExpandToggle => GenreGroups.Count > CollapsedGenreGroupLimit;
+
     private IReadOnlyList<LibraryItem> TrendingItems => _hero;
 
-    private bool CanLoadMore => !IsSearchActive && !_updatesBehindOnly && _trendingHasMore;
+    private bool CanLoadMore => !IsSearchActive && !_myBookmarksOnly && _trendingHasMore;
 
-    private IReadOnlyList<LibraryItem> FilteredItems => SortItems(FilterItems()).ToList();
+    private IReadOnlyList<LibraryItem> FilteredItems =>
+        _myBookmarksOnly
+            ? SortByCatchUpGap(FilterItems()).ToList()
+            : SortItems(FilterItems()).ToList();
 
     private IEnumerable<LibraryItem> FilterItems()
     {
-        var query = ActiveItems.AsEnumerable();
+        // The "My bookmarks" filter has its own item source (server-matched series, independent
+        // of pagination) rather than narrowing whatever's currently loaded in ActiveItems -
+        // matched series are frequently not on the currently loaded trending/search page at all.
+        var query = (_myBookmarksOnly ? _myBookmarksItems : ActiveItems).AsEnumerable();
 
         if (_selectedGenres.Count > 0)
         {
@@ -146,41 +237,39 @@ public partial class Library : IDisposable
         return query;
     }
 
-    private IEnumerable<LibraryItem> SortItems(IEnumerable<LibraryItem> items)
+    private IEnumerable<LibraryItem> SortByCatchUpGap(IEnumerable<LibraryItem> items) =>
+        items.OrderByDescending(item => CatchUpGap(item) ?? double.NegativeInfinity);
+
+    private double? CatchUpGap(LibraryItem item)
     {
-        if (_updatesBehindOnly)
-        {
-            return items.OrderByDescending(item => item.ChaptersBehind ?? 0).ThenBy(item => item.Title, StringComparer.OrdinalIgnoreCase);
-        }
-        return _sort switch
+        var progress = ProgressFor(item);
+        return progress is { CurrentChapter: { } current, LatestChapterNumber: { } latest }
+            ? latest - current
+            : null;
+    }
+
+    private void ToggleMyBookmarksOnly() => _myBookmarksOnly = !_myBookmarksOnly;
+
+    private IEnumerable<LibraryItem> SortItems(IEnumerable<LibraryItem> items) =>
+        _sort switch
         {
             SortRating => items.OrderByDescending(item => item.Rating ?? -1),
             SortUpdated => items.OrderByDescending(item => item.LastReleaseAt ?? DateTimeOffset.MinValue),
             SortAlpha => items.OrderBy(item => item.Title, StringComparer.OrdinalIgnoreCase),
-            _ => items.OrderByDescending(item => item.IsTrending)
+            _ => items.OrderByDescending(item => item.LastReleaseAt ?? DateTimeOffset.MinValue)
                       .ThenByDescending(item => item.Rating ?? -1)
+                      .ThenByDescending(item => item.IsTrending)
         };
-    }
 
     private static string TypeLabel(LibraryMediaType type) =>
         type == LibraryMediaType.LightNovel ? "Light Novel" : type.ToString();
 
     private string TabClass(LibraryMediaType? type) =>
-        !_updatesBehindOnly && _selectedType == type ? "lib-tab is-active" : "lib-tab";
-
-    private string UpdatesBehindClass() =>
-        _updatesBehindOnly ? "lib-tab is-active" : "lib-tab";
+        _selectedType == type ? "lib-tab is-active" : "lib-tab";
 
     private Task SelectType(LibraryMediaType? type)
     {
-        _updatesBehindOnly = false;
         _selectedType = type;
-        return ReloadAsync();
-    }
-
-    private Task ToggleUpdatesBehind()
-    {
-        _updatesBehindOnly = !_updatesBehindOnly;
         return ReloadAsync();
     }
 
@@ -197,6 +286,7 @@ public partial class Library : IDisposable
         _search = string.Empty;
         _selectedType = null;
         _selectedGenres.Clear();
+        _myBookmarksOnly = false;
         return ReloadAsync();
     }
 
@@ -220,8 +310,9 @@ public partial class Library : IDisposable
         {
             await Task.Delay(SearchDebounceMs, cts.Token);
         }
-        catch (TaskCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException)
         {
+            // Superseded by a newer keystroke - that flow owns the state now.
             return;
         }
 
@@ -236,6 +327,7 @@ public partial class Library : IDisposable
     private CancellationTokenSource ResetSearchCts()
     {
         _searchCts?.Cancel();
+        _searchCts?.Dispose();
         var cts = new CancellationTokenSource();
         _searchCts = cts;
         return cts;
@@ -243,57 +335,6 @@ public partial class Library : IDisposable
 
     private async Task RunSearchAsync(CancellationToken cancellationToken)
     {
-        if (_updatesBehindOnly)
-        {
-            _loading = true;
-            StateHasChanged();
-            try
-            {
-                var tracked = await LibraryService.GetTrackedSeriesAsync(cancellationToken);
-                var items = new List<LibraryItem>();
-                foreach (var ts in tracked)
-                {
-                    var item = new LibraryItem(
-                        ts.Provider,
-                        ts.ProviderId,
-                        ts.Title,
-                        [],
-                        ts.MediaType,
-                        ts.Synopsis,
-                        ts.Genres,
-                        ts.Rating,
-                        ts.Status,
-                        ts.LatestKnownChapter,
-                        ts.LastReleaseAt,
-                        ts.CoverImageUrl,
-                        ts.SourceUrl,
-                        IsTrending: false,
-                        IsTracked: true,
-                        ChaptersRead: ts.ChaptersRead,
-                        BookmarkId: ts.BookmarkId,
-                        LatestChapterUrl: ts.LatestChapterUrl
-                    );
-                    items.Add(item);
-                }
-
-                _searchResults = items.Where(i => i.ChaptersBehind > 0).ToList();
-            }
-            catch (Exception ex)
-            {
-                if (!cancellationToken.IsCancellationRequested)
-                    Snackbar.Add($"Failed to load updates behind: {ex.Message}", Severity.Error);
-            }
-            finally
-            {
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    _loading = false;
-                    StateHasChanged();
-                }
-            }
-            return;
-        }
-
         if (!IsSearchActive)
         {
             await LoadTrendingAsync(cancellationToken);
@@ -309,7 +350,7 @@ public partial class Library : IDisposable
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            _searchResults = response.Items.Select(ApplyTrackingState).ToList();
+            _searchResults = response.Items.Select(dto => LibraryItem.FromDto(dto)).ToList();
             WarnOnProviderFailures(response);
         }
         catch (OperationCanceledException)
@@ -342,7 +383,7 @@ public partial class Library : IDisposable
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            var items = response.Items.Select(dto => ApplyTrackingState(dto) with { IsTrending = true }).ToList();
+            var items = response.Items.Select(dto => LibraryItem.FromDto(dto, isTrending: true)).ToList();
             _trending = items;
             _hero = items.Take(HeroRailSize).ToList();
             _trendingTotalCount = response.TotalCount;
@@ -368,62 +409,126 @@ public partial class Library : IDisposable
         }
     }
 
+    private async Task LoadBookmarkExclusionsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var signals = new List<BookmarkSignal>();
+            var page = 1;
+            const int pageSize = 100;
+
+            while (true)
+            {
+                var result = await BookmarkService.SearchBookmarksAsync(new SearchRequest
+                {
+                    Query = string.Empty,
+                    Page = page,
+                    PageSize = pageSize
+                }, cancellationToken);
+
+                if (cancellationToken.IsCancellationRequested)
+                    return;
+
+                foreach (var bookmark in result.Items)
+                {
+                    if (!string.IsNullOrWhiteSpace(bookmark.Url) || bookmark.AniListId is > 0)
+                        signals.Add(new BookmarkSignal(bookmark.Url, bookmark.Title, bookmark.AniListId));
+                }
+
+                if (page * pageSize >= result.TotalCount || result.Items.Count == 0)
+                    break;
+
+                page++;
+            }
+
+            _bookmarkExclusions = LibraryBookmarkExclusions.FromBookmarks(signals);
+            if (_recommendsPool.Count > 0)
+                RebuildRecommendsGrid();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            _bookmarkExclusions = LibraryBookmarkExclusions.Empty;
+        }
+    }
+
+    private async Task LoadRecommendsPoolAsync(CancellationToken cancellationToken = default)
+    {
+        _recommendsCts?.Cancel();
+        _recommendsCts?.Dispose();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _recommendsCts = cts;
+
+        _loadingRecommends = true;
+        StateHasChanged();
+
+        try
+        {
+            var response = await LibraryService.GetTrendingAsync(_recommendsType, skip: 0, take: RecommendsPoolSize, cts.Token);
+            if (cts.IsCancellationRequested)
+                return;
+
+            _recommendsPool = response.Items.Select(dto => LibraryItem.FromDto(dto, isTrending: true)).ToList();
+            RebuildRecommendsGrid();
+            WarnOnProviderFailures(response);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            if (!cts.IsCancellationRequested)
+                Snackbar.Add($"Failed to load recommends: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            if (!cts.IsCancellationRequested)
+            {
+                _loadingRecommends = false;
+                StateHasChanged();
+            }
+        }
+    }
+
     private async Task LoadMoreAsync()
     {
         if (_loadingMore || !CanLoadMore)
             return;
 
+        // Join the search CTS so a search/filter change started mid-flight cancels this append
+        // instead of letting stale trending rows land under the new UI state.
+        var cancellationToken = (_searchCts ??= new CancellationTokenSource()).Token;
         _loadingMore = true;
         StateHasChanged();
 
         try
         {
-            var response = await LibraryService.GetTrendingAsync(_selectedType, skip: _trending.Count, take: TrendingPageSize);
-            var items = response.Items.Select(dto => ApplyTrackingState(dto) with { IsTrending = true }).ToList();
+            var response = await LibraryService.GetTrendingAsync(_selectedType, skip: _trending.Count, take: TrendingPageSize, cancellationToken);
+            if (cancellationToken.IsCancellationRequested)
+                return;
+
+            var items = response.Items.Select(dto => LibraryItem.FromDto(dto, isTrending: true)).ToList();
             _trending = _trending.Concat(items).ToList();
             _trendingTotalCount = response.TotalCount;
             _trendingHasMore = response.HasMore;
             WarnOnProviderFailures(response);
         }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a new search/filter - that flow owns the state now.
+        }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load more titles: {ex.Message}", Severity.Error);
+            if (!cancellationToken.IsCancellationRequested)
+                Snackbar.Add($"Failed to load more titles: {ex.Message}", Severity.Error);
         }
         finally
         {
             _loadingMore = false;
             StateHasChanged();
         }
-    }
-
-    private LibraryItem ApplyTrackingState(LibraryEntryDto dto)
-    {
-        var item = LibraryItem.FromDto(dto);
-        return ApplyTrackingState(item);
-    }
-
-    private LibraryItem ApplyTrackingState(LibraryItem item)
-    {
-        var key = (item.Provider, item.ProviderId);
-        if (!_trackedKeys.Contains(key))
-        {
-            return item with
-            {
-                IsTracked = false,
-                ChaptersRead = null,
-                BookmarkId = null,
-                LatestChapterUrl = null
-            };
-        }
-
-        return item with
-        {
-            IsTracked = true,
-            ChaptersRead = _chaptersRead.GetValueOrDefault(key),
-            BookmarkId = _trackedBookmarkIds.GetValueOrDefault(key),
-            LatestChapter = _trackedLatestChapters.GetValueOrDefault(key) ?? item.LatestChapter,
-            LatestChapterUrl = _trackedLatestChapterUrls.GetValueOrDefault(key)
-        };
     }
 
     private void WarnOnProviderFailures(LibrarySearchResponse response)
@@ -439,127 +544,75 @@ public partial class Library : IDisposable
         }
     }
 
-    private async Task TrackItem(LibraryItem item)
+    private async Task ShowDetailsAsync(LibraryItem item)
     {
-        if (item.IsTracked)
+        var displayItem = item;
+        if (NeedsEnrichment(item))
         {
-            Snackbar.Add($"\"{item.Title}\" is already tracked.", Severity.Info);
-            return;
-        }
-
-        try
-        {
-            var folderTree = await BookmarkService.GetFolderTreeAsync();
-            var parameters = new DialogParameters<BookmarkManager.Client.Components.Dialogs.TrackSeriesDialog>
+            try
             {
-                { x => x.Item, item },
-                { x => x.FolderTree, folderTree }
-            };
-
-            var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
-            var dialog = await DialogService.ShowAsync<BookmarkManager.Client.Components.Dialogs.TrackSeriesDialog>("Track Series", parameters, options);
-            var result = await dialog.Result;
-
-            if (result is { Canceled: false, Data: BookmarkManager.Client.Components.Dialogs.TrackSeriesDialogResult dialogResult })
+                var enriched = await LibraryService.EnrichCatalogEntryAsync(item.Provider, item.ProviderId);
+                if (enriched is not null)
+                {
+                    displayItem = LibraryItem.FromDto(enriched, item.IsTrending);
+                    ApplyEnrichedItem(displayItem);
+                }
+            }
+            catch
             {
-                var response = await LibraryService.TrackSeriesAsync(new TrackLibraryEntryRequest
-                {
-                    ParentId = dialogResult.ParentId,
-                    Provider = item.Provider,
-                    ProviderId = item.ProviderId,
-                    Title = item.Title,
-                    MediaType = item.Type,
-                    CoverImageUrl = item.CoverImageUrl,
-                    LatestChapter = item.LatestChapter,
-                    SourceUrl = item.SourceUrl,
-                    Genres = dialogResult.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
-                    ChaptersRead = dialogResult.ChaptersRead,
-                    Status = dialogResult.Status
-                });
-
-                var key = (item.Provider, item.ProviderId);
-                _trackedKeys.Add(key);
-                _chaptersRead[key] = dialogResult.ChaptersRead;
-                _trackedBookmarkIds[key] = response.Id;
-                _trackedLatestChapters[key] = item.LatestChapter;
-                _trackedLatestChapterUrls[key] = item.LatestChapterUrl;
-
-                _hero = ApplyTrackedFlag(_hero, key, dialogResult.ChaptersRead, response.Id);
-                _trending = ApplyTrackedFlag(_trending, key, dialogResult.ChaptersRead, response.Id);
-                _searchResults = ApplyTrackedFlag(_searchResults, key, dialogResult.ChaptersRead, response.Id);
-                StateHasChanged();
-
-                ShowUndoSnackbar($"Tracking \"{item.Title}\"", async () =>
-                {
-                    await BookmarkService.DeleteBookmarkAsync(response.Id);
-                    
-                    _trackedKeys.Remove(key);
-                    _chaptersRead.Remove(key);
-                    _trackedBookmarkIds.Remove(key);
-                    _trackedLatestChapters.Remove(key);
-                    _trackedLatestChapterUrls.Remove(key);
-                    _hero = ApplyUntrackedFlag(_hero, key);
-                    _trending = ApplyUntrackedFlag(_trending, key);
-                    _searchResults = ApplyUntrackedFlag(_searchResults, key);
-                    StateHasChanged();
-                });
+                // Popup still opens with whatever thin catalog data we already have.
             }
         }
-        catch (Exception ex)
+
+        var parameters = new DialogParameters<BookmarkManager.Client.Features.Library.Components.MediaDetailsDialog>
         {
-            Snackbar.Add($"Failed to track series: {ex.Message}", Severity.Error);
-        }
+            { x => x.Item, displayItem },
+            { x => x.Progress, ProgressFor(item) }
+        };
+
+        var options = new DialogOptions
+        {
+            CloseButton = false,
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            NoHeader = true,
+            BackdropClick = true,
+            CloseOnEscapeKey = true
+        };
+        await DialogService.ShowAsync<BookmarkManager.Client.Features.Library.Components.MediaDetailsDialog>(string.Empty, parameters, options);
     }
 
-    private void ShowUndoSnackbar(string message, Func<Task> revertAction)
+    private static bool NeedsEnrichment(LibraryItem item) =>
+        string.IsNullOrWhiteSpace(item.Synopsis) ||
+        string.IsNullOrWhiteSpace(item.LatestChapter) ||
+        item.Genres.Count == 0;
+
+    private void ApplyEnrichedItem(LibraryItem enriched)
     {
-        var action = UndoService.Push(message, revertAction);
-        Snackbar.Add(message, Severity.Success, config =>
-        {
-            config.Action = "UNDO";
-            config.ActionColor = Color.Warning;
-            config.OnClick = async snackbar =>
-            {
-                try
-                {
-                    var undone = await UndoService.UndoAsync(action.Id);
-                    if (undone)
-                    {
-                        Snackbar.Add("Action reverted", Severity.Success);
-                    }
-                    else
-                    {
-                        Snackbar.Add("Nothing to undo", Severity.Info);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Snackbar.Add($"Failed to undo action: {ex.Message}", Severity.Error);
-                }
-            };
-        });
+        ReplaceInList(_trending, enriched);
+        ReplaceInList(_hero, enriched);
+        ReplaceInList(_recommendsPool, enriched);
+        ReplaceInList(_recommendsGrid, enriched);
+        ReplaceInList(_searchResults, enriched);
+        StateHasChanged();
     }
 
-    private static List<LibraryItem> ApplyUntrackedFlag(List<LibraryItem> items, (string Provider, string ProviderId) key) =>
-        items.Select(existing => existing.Provider == key.Provider && existing.ProviderId == key.ProviderId
-                ? existing with { IsTracked = false, ChaptersRead = null }
-                : existing)
-            .ToList();
+    private static void ReplaceInList(List<LibraryItem> list, LibraryItem enriched)
+    {
+        var index = list.FindIndex(x =>
+            string.Equals(x.Provider, enriched.Provider, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(x.ProviderId, enriched.ProviderId, StringComparison.OrdinalIgnoreCase));
+        if (index >= 0)
+            list[index] = enriched;
+    }
 
-    private static List<LibraryItem> ApplyTrackedFlag(
-        List<LibraryItem> items,
-        (string Provider, string ProviderId) key,
-        double chaptersRead,
-        Guid bookmarkId) =>
-        items.Select(existing => existing.Provider == key.Provider && existing.ProviderId == key.ProviderId
-                ? existing with { IsTracked = true, ChaptersRead = chaptersRead, BookmarkId = bookmarkId }
-                : existing)
-            .ToList();
-
-    private static double ParseChapterNumber(string? latestChapter) =>
-        latestChapter is not null && double.TryParse(latestChapter, NumberStyles.Any, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : 0;
-
-    public void Dispose() => _searchCts?.Cancel();
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = null;
+        _recommendsCts?.Cancel();
+        _recommendsCts?.Dispose();
+        _recommendsCts = null;
+    }
 }

@@ -1,0 +1,158 @@
+@namespace BookmarkManager.Client.Features.Library.Components
+@using BookmarkManager.Client.Features.Library
+@using BookmarkManager.Contracts
+@using MudBlazor
+@inject NavigationManager NavigationManager
+
+<MudDialog Class="lib-details-dialog" DefaultFocus="DefaultFocus.None">
+    <DialogContent>
+        <div class="lib-modal">
+            <!-- Hero: blurred cover backdrop + poster + title stack -->
+            <header class="lib-modal-hero">
+                <div class="@($"lib-modal-hero-bg {LibraryCoverArt.CoverClass(Item)}")" style="@LibraryCoverArt.StyleFor(Item)" aria-hidden="true"></div>
+                <div class="lib-modal-hero-scrim" aria-hidden="true"></div>
+
+                <button type="button" class="lib-modal-close" @onclick="Close" aria-label="Close">
+                    <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+                </button>
+
+                <div class="lib-modal-hero-inner">
+                    <div class="@($"lib-modal-cover {LibraryCoverArt.CoverClass(Item)}")" style="@LibraryCoverArt.StyleFor(Item)" aria-hidden="true">
+                        <span class="lib-modal-cover-spine"></span>
+                    </div>
+                    <div class="lib-modal-headline">
+                        <span class="lib-modal-kicker">@Item.TypeLabel</span>
+                        <h2 class="lib-modal-title">@Item.Title</h2>
+                        @if (Item.AlternateTitles is { Count: > 0 })
+                        {
+                            <p class="lib-modal-subtitle">@string.Join(" · ", Item.AlternateTitles)</p>
+                        }
+                        @if (Item.Authors.Count > 0)
+                        {
+                            <p class="lib-modal-author">by <strong>@Item.Author</strong></p>
+                        }
+                    </div>
+                </div>
+            </header>
+
+            <div class="lib-modal-body">
+                <!-- Meta stat row -->
+                <div class="lib-modal-stats">
+                    @if (ProgressBadgeText is { } progressBadgeText)
+                    {
+                        <div class="lib-stat" style="border-left: 2px solid var(--mud-palette-primary); padding-left: 8px;">
+                            <span class="lib-stat-value">@progressBadgeText</span>
+                            <span class="lib-stat-label">Your Progress</span>
+                        </div>
+                    }
+                    @if (Item.Rating is { } rating)
+                    {
+                        <div class="lib-stat lib-stat-rating">
+                            <span class="lib-stat-value">★ @rating.ToString("0.0")</span>
+                            <span class="lib-stat-label">Rating</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Item.Status))
+                    {
+                        <div class="@($"lib-stat lib-stat-status {StatusClass}")">
+                            <span class="lib-stat-value">@Item.Status</span>
+                            <span class="lib-stat-label">Status</span>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(Item.LatestChapter))
+                    {
+                        <div class="lib-stat">
+                            <span class="lib-stat-value">Ch. @Item.LatestChapter</span>
+                            <span class="lib-stat-label">Latest</span>
+                        </div>
+                    }
+                    <div class="lib-stat">
+                        <span class="lib-stat-value">@Item.Provider</span>
+                        <span class="lib-stat-label">Source</span>
+                    </div>
+                </div>
+
+                @if (Item.Genres.Count > 0)
+                {
+                    <div class="lib-modal-genres">
+                        @foreach (var genre in VisibleGenres)
+                        {
+                            <span class="lib-genre-badge">@genre</span>
+                        }
+                        @if (Item.Genres.Count > GenreCap)
+                        {
+                            <button type="button" class="lib-genre-more" @onclick="ToggleGenres">
+                                @(_showAllGenres ? "− show less" : $"+{Item.Genres.Count - GenreCap} more")
+                            </button>
+                        }
+                    </div>
+                }
+
+                <section class="lib-modal-synopsis">
+                    <h3 class="lib-modal-section-title">Synopsis</h3>
+                    <p class="lib-modal-synopsis-text">@(Item.Synopsis ?? "No synopsis available.")</p>
+                </section>
+
+                <p class="lib-modal-updated">Updated @Item.UpdatedLabel</p>
+            </div>
+
+            <footer class="lib-modal-actions">
+                <MudButton Variant="Variant.Text" OnClick="Close">Close</MudButton>
+                @if (Progress?.BookmarkId is { } bookmarkId)
+                {
+                    <MudButton Variant="Variant.Filled"
+                               Color="Color.Secondary"
+                               OnClick="GoToBookmark"
+                               StartIcon="@Icons.Material.Filled.Bookmark">
+                        Go to Bookmark
+                    </MudButton>
+                }
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Href="@Item.SourceUrl"
+                           Target="_blank"
+                           StartIcon="@Icons.Material.Filled.OpenInNew">
+                    Open on @Item.Provider
+                </MudButton>
+            </footer>
+        </div>
+    </DialogContent>
+</MudDialog>
+
+@code {
+    private const int GenreCap = 5;
+
+    [Parameter] public LibraryItem Item { get; set; } = default!;
+    [Parameter] public LibraryReadingProgressDto? Progress { get; set; }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private bool _showAllGenres;
+
+    private IEnumerable<string> VisibleGenres =>
+        _showAllGenres ? Item.Genres : Item.Genres.Take(GenreCap);
+
+    private string? ProgressBadgeText => LibraryProgressDisplay.BadgeText(Progress);
+
+    private string StatusClass => (Item.Status ?? string.Empty).ToLowerInvariant() switch
+    {
+        "finished" or "completed" => "is-finished",
+        "releasing" or "ongoing" or "current" => "is-ongoing",
+        "hiatus" => "is-hiatus",
+        "cancelled" or "canceled" => "is-cancelled",
+        _ => string.Empty
+    };
+
+    private void ToggleGenres() => _showAllGenres = !_showAllGenres;
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+
+    private void GoToBookmark()
+    {
+        if (Progress?.BookmarkId is { } bookmarkId)
+        {
+            Close();
+            NavigationManager.NavigateTo($"/bookmarks?bookmarkId={bookmarkId}");
+        }
+    }
+}

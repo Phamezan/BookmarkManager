@@ -17,6 +17,7 @@ public partial class Bookmarks : IDisposable
     [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     [Inject] private IExtensionConnectionService ExtensionConnectionService { get; set; } = default!;
     [Inject] private UndoService UndoService { get; set; } = default!;
+    [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
 
     private List<FolderTreeNodeDto> _folderTree = [];
     private List<BookmarkNodeDto> _items = [];
@@ -31,7 +32,6 @@ public partial class Bookmarks : IDisposable
     private string _dragType = "";
     private Guid _draggedFolderId;
     private string FavoritesDragOverStyle { get; set; } = "";
-    private CancellationTokenSource? _debounceCts;
     private CancellationTokenSource? _wsCts;
     private bool _contextMenuOpen;
     private double _contextMenuX;
@@ -48,7 +48,6 @@ public partial class Bookmarks : IDisposable
 
     private HashSet<string> _activeTagFilters = [];
     private List<TagCountDto> _availableTags = [];
-    private bool _retagBusy;
     private bool ShouldShowTagBar => (_selectedFolderId.HasValue && !IsTopLevelFolder(_selectedFolderId.Value)) || !string.IsNullOrWhiteSpace(_searchQuery);
     private bool _tagsCollapsed = true;
     private readonly HashSet<string> _expandedCategories = [];
@@ -102,11 +101,6 @@ public partial class Bookmarks : IDisposable
                 {
                     items = items.Where(i => i.Metadata?.IsFavorite == true);
                 }
-                else if (_typeFilter == "Behind")
-                {
-                    items = items.Where(i => i.ChaptersBehind > 0);
-                }
-
                 if (_activeTagFilters.Count > 0)
                 {
                     items = items.Where(i =>
@@ -125,9 +119,6 @@ public partial class Bookmarks : IDisposable
                                         .ThenBy(item => item.UpdatedAt),
                     "UpdatedDesc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
                                          .ThenByDescending(item => item.UpdatedAt),
-                    "Behind" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
-                                     .ThenByDescending(item => item.ChaptersBehind ?? 0)
-                                     .ThenBy(item => item.Title),
                     _ => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
                               .ThenBy(item => item.Title)
                 };
@@ -154,7 +145,6 @@ public partial class Bookmarks : IDisposable
 
     private async Task OnFolderSelected(Guid folderId)
     {
-        _debounceCts?.Cancel();
         _selectedFolderId = folderId;
         _preSearchFolderId = folderId;
         _searchQuery = "";
@@ -248,16 +238,4 @@ public partial class Bookmarks : IDisposable
         StateHasChanged();
     }
 
-    private async Task OnProgressUpdated()
-    {
-        if (_selectedFolderId.HasValue)
-        {
-            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
-        }
-        else if (!string.IsNullOrWhiteSpace(_searchQuery))
-        {
-            _items = (await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = _searchQuery })).Items;
-        }
-        StateHasChanged();
-    }
 }

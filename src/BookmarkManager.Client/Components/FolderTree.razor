@@ -5,13 +5,14 @@
              Items="@_treeItems"
              Hover="true"
              SelectionMode="SelectionMode.SingleSelection"
-             @bind-ExpandedItems="@_expandedFolderIds"
              SelectedValue="@_selectedFolderId"
              SelectedValueChanged="@OnSelectedChanged">
      <ItemTemplate Context="item">
         <MudTreeViewItem T="Guid?"
                          Value="@item.Value"
                          Items="@item.Children"
+                         Expanded="@item.Expanded"
+                         ExpandedChanged="@((bool exp) => OnItemExpandedChanged(item, exp))"
                          CanExpand="@(item.Children?.Count > 0)">
             <BodyContent>
                 @{
@@ -30,7 +31,7 @@
                      @oncontextmenu="@((e) => OpenFolderContextMenu(e, item.Value))"
                      @oncontextmenu:preventDefault="true"
                      @oncontextmenu:stopPropagation="true">
-                    <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="mr-2" Style="@($"color: {FolderColorHelper.GetFolderColor(item.Text)};")" />
+                    <MudIcon Icon="@Icons.Material.Filled.Folder" Size="Size.Small" Class="mr-2" Style="@($"color: {FolderColorHelper.GetFolderColor(item.Text ?? string.Empty)};")" />
                     @if (item.Value == _editingItemId)
                     {
                         <input @ref="_editInputRef"
@@ -224,6 +225,40 @@
             _lastFolders = Folders;
             _treeItems = Folders.Select(ToTreeItemData).Select(x => (TreeItemData<Guid?>)x).ToList();
         }
+        else
+        {
+            SyncExpansionStates(_treeItems, _expandedFolderIds);
+        }
+    }
+
+    private void SyncExpansionStates(IEnumerable<ITreeItemData<Guid?>> items, HashSet<Guid> expandedIds)
+    {
+        foreach (var item in items)
+        {
+            if (item.Value.HasValue)
+            {
+                item.Expanded = expandedIds.Contains(item.Value.Value);
+            }
+            if (item.Children?.Count > 0)
+            {
+                SyncExpansionStates(item.Children, expandedIds);
+            }
+        }
+    }
+
+    private async Task OnItemExpandedChanged(ITreeItemData<Guid?> item, bool expanded)
+    {
+        item.Expanded = expanded;
+        if (item.Value.HasValue)
+        {
+            var id = item.Value.Value;
+            if (expanded)
+                _expandedFolderIds.Add(id);
+            else
+                _expandedFolderIds.Remove(id);
+
+            await ExpandedItemsChanged.InvokeAsync(_expandedFolderIds);
+        }
     }
 
     private void OnSelectedChanged(Guid? id)
@@ -251,14 +286,15 @@
             await FolderContextMenu.InvokeAsync((e, id.Value));
     }
 
-    private static FolderTreeItemData ToTreeItemData(FolderTreeNodeDto dto)
+    private FolderTreeItemData ToTreeItemData(FolderTreeNodeDto dto)
     {
         return new FolderTreeItemData
         {
             Value = dto.Id,
             Text = dto.Title,
             BookmarkCount = dto.BookmarkCount,
-            Children = dto.Children.Select(ToTreeItemData).ToList()
+            Children = dto.Children.Select(ToTreeItemData).ToList(),
+            Expanded = _expandedFolderIds.Contains(dto.Id)
         };
     }
 

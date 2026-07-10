@@ -60,8 +60,7 @@
                                   MoveBookmarkAsync="MoveBookmarkAsync"
                                   DeleteBookmarkAsync="DeleteBookmarkAsync"
                                   MoveFolderAsync="MoveFolderAsync"
-                                  DeleteFolderAsync="DeleteFolderAsync"
-                                  OnProgressUpdated="OnProgressUpdated" />
+                                  DeleteFolderAsync="DeleteFolderAsync" />
                 }
             </div>
         </Virtualize>
@@ -96,7 +95,6 @@
     [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
-    [Parameter] public EventCallback OnProgressUpdated { get; set; }
 
     private List<BookmarkNodeDto[]> _rows = [];
     private List<BookmarkNodeDto>? _lastItems;
