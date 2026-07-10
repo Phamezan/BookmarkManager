@@ -1,0 +1,414 @@
+@using BookmarkManager.Contracts
+@using BookmarkManager.Client.Services
+@inject ICommandPaletteService PaletteService
+@inject IBookmarkService BookmarkService
+@inject NavigationManager NavigationManager
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="palette-wrapper @(PaletteService.IsOpen ? "is-open" : "")" id="paletteWrapper">
+    <div class="palette-backdrop" @onclick="ClosePalette"></div>
+    <div class="palette-modal">
+        <!-- Search input -->
+        <div class="palette-search-container">
+            <MudIcon Icon="@Icons.Material.Filled.Search" Class="palette-search-icon" />
+            <input 
+                id="paletteSearchInput"
+                type="text" 
+                class="palette-input" 
+                placeholder="Search bookmarks (type > for folders)..." 
+                value="@_searchQuery"
+                @oninput="HandleSearchInput"
+                autocomplete="off"
+            />
+            <kbd class="palette-key">ESC</kbd>
+        </div>
+
+        <!-- Scrollable content -->
+        <div class="palette-content">
+            <div class="palette-header">
+                <span class="palette-header-title">Bookmarks</span>
+                <span class="palette-header-count">@_results.Count matches</span>
+            </div>
+
+            <div class="palette-list" id="paletteList">
+                @if (_results.Count == 0)
+                {
+                    <div class="palette-no-results">
+                        @if (string.IsNullOrWhiteSpace(_searchQuery))
+                        {
+                            <span>Type to search bookmarks...</span>
+                        }
+                        else
+                        {
+                            <span>No bookmarks found matching "@_searchQuery"</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @for (int i = 0; i < _results.Count; i++)
+                    {
+                        var index = i;
+                        var item = _results[index];
+                        var isActive = index == _selectedIndex;
+                        var badgeClass = GetBadgeClass(item.Category);
+                        var delayStyle = _triggerStagger ? $"animation-delay: {index * 30}ms;" : "";
+
+                        <div class="palette-item @(isActive ? "is-active" : "") @(_triggerStagger ? "stagger-item" : "")" 
+                             style="@delayStyle"
+                             @onclick="() => HandleItemClick(index)"
+                             @onmouseover="() => _selectedIndex = index">
+                            
+                            <div class="palette-item-left">
+                                <div class="palette-item-icon-wrap">
+                                    @if (item.IsFolder)
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Folder" />
+                                    }
+                                    else if (GetFaviconUrl(item.Url) is { } favicon)
+                                    {
+                                        <img src="@favicon" alt="" width="16" height="16" style="border-radius: 2px; object-fit: contain;" onerror="this.style.display='none'" />
+                                    }
+                                    else
+                                    {
+                                        <MudIcon Icon="@Icons.Material.Filled.Bookmark" />
+                                    }
+                                </div>
+                                <div class="palette-item-info">
+                                    <div class="palette-item-title-row">
+                                        <span class="palette-item-title">@item.Title</span>
+                                        @if (!string.IsNullOrWhiteSpace(item.Category))
+                                        {
+                                            <span class="palette-item-badge @badgeClass">@item.Category</span>
+                                        }
+                                    </div>
+                                    <span class="palette-item-subtitle">@item.Subtitle</span>
+                                </div>
+                            </div>
+
+                            @if (isActive)
+                            {
+                                <span class="palette-item-indicator">Selected</span>
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+
+        <!-- Footer actions and keyboard bindings -->
+        <div class="palette-footer">
+            <div class="palette-footer-left" style="display: flex; gap: 16px;">
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span class="palette-key">Shift</span> + <span class="palette-key">J</span> / <span class="palette-key">K</span>
+                    <span style="margin-left: 4px;">Move</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                    <span class="palette-key">&gt;</span>
+                    <span style="margin-left: 4px;">Folder Navigation</span>
+                </div>
+            </div>
+            
+            <div class="palette-footer-right">
+                <div class="palette-footer-hint">
+                    <kbd class="palette-key">Enter</kbd>
+                    <span>@_primaryHint</span>
+                </div>
+                <div class="palette-footer-hint">
+                    <kbd class="palette-key">Shift</kbd> + <kbd class="palette-key">Enter</kbd>
+                    <span>@_secondaryHint</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .palette-wrapper {
+        position: fixed;
+        inset: 0;
+        z-index: 2000;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+        padding-top: 15vh;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.3s ease-out;
+    }
+    .palette-wrapper.is-open {
+        pointer-events: auto;
+        opacity: 1;
+    }
+    .palette-backdrop {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        opacity: 0;
+        transition: opacity 0.3s ease-out;
+    }
+    .palette-wrapper.is-open .palette-backdrop {
+        opacity: 1;
+    }
+    .palette-modal {
+        position: relative;
+        z-index: 10;
+        width: 100%;
+        max-width: 640px;
+        margin: 0 16px;
+        background: rgba(21, 18, 27, 0.75);
+        backdrop-filter: blur(32px);
+        -webkit-backdrop-filter: blur(32px);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 16px;
+        box-shadow: 0 0 80px rgba(139, 92, 246, 0.1), 0 20px 50px rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        transform: scale(0.95) translateY(-20px);
+        opacity: 0;
+        transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.35s ease-out;
+    }
+    .palette-wrapper.is-open .palette-modal {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+    
+    .palette-search-container {
+        padding: 20px 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .palette-search-icon {
+        color: #d0bcff;
+        font-size: 28px;
+    }
+    .palette-input {
+        width: 100%;
+        background: transparent;
+        border: none !important;
+        outline: none !important;
+        box-shadow: none !important;
+        padding: 0;
+        font-size: 20px;
+        font-weight: 500;
+        color: #fff;
+        caret-color: #d0bcff;
+    }
+    .palette-input::placeholder {
+        color: rgba(203, 195, 215, 0.3);
+    }
+    
+    .palette-content {
+        padding: 8px;
+    }
+    .palette-header {
+        padding: 8px 16px;
+        display: flex;
+        justify-content: space-between;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    .palette-header-title {
+        color: rgba(203, 195, 215, 0.5);
+    }
+    .palette-header-count {
+        color: rgba(203, 195, 215, 0.4);
+    }
+    .palette-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 360px;
+        overflow-y: auto;
+    }
+    
+    /* Scrollbar */
+    .palette-list::-webkit-scrollbar {
+        width: 6px;
+    }
+    .palette-list::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .palette-list::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 9999px;
+    }
+    
+    .palette-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        cursor: pointer;
+        transition: all 0.15s ease-out;
+        text-decoration: none !important;
+    }
+    .palette-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+    .palette-item.is-active {
+        background: rgba(208, 188, 255, 0.08);
+        border-color: rgba(208, 188, 255, 0.25);
+        box-shadow: inset 0 0 12px rgba(208, 188, 255, 0.05);
+    }
+    
+    .palette-item-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+    .palette-item-icon-wrap {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.05);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(203, 195, 215, 0.7);
+        transition: background 0.15s ease;
+    }
+    .palette-item:hover .palette-item-icon-wrap {
+        background: rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+    .palette-item.is-active .palette-item-icon-wrap {
+        background: rgba(208, 188, 255, 0.2);
+        color: #d0bcff;
+    }
+    
+    .palette-item-info {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .palette-item-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .palette-item-title {
+        font-size: 14px;
+        font-weight: 500;
+        color: #e7e0ed;
+        transition: color 0.15s ease;
+    }
+    .palette-item.is-active .palette-item-title {
+        color: #fff;
+    }
+    .palette-item-badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(255, 255, 255, 0.05);
+        color: rgba(203, 195, 215, 0.8);
+    }
+    
+    .badge-anime {
+        background: rgba(208, 188, 255, 0.1);
+        border-color: rgba(208, 188, 255, 0.2);
+        color: #d0bcff;
+    }
+    .badge-manga {
+        background: rgba(16, 185, 129, 0.1);
+        border-color: rgba(16, 185, 129, 0.2);
+        color: #6ee7b7;
+    }
+    .badge-novel {
+        background: rgba(245, 158, 11, 0.1);
+        border-color: rgba(245, 158, 11, 0.2);
+        color: #fcd34d;
+    }
+    .badge-folder {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.15);
+        color: rgba(203, 195, 215, 0.9);
+    }
+    
+    .palette-item-subtitle {
+        font-size: 11px;
+        color: rgba(203, 195, 215, 0.4);
+        margin-top: 2px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+        max-width: 460px;
+        display: block;
+    }
+    
+    .palette-item-indicator {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #d0bcff;
+        opacity: 0.6;
+    }
+    
+    .palette-footer {
+        padding: 16px 24px;
+        background: rgba(15, 13, 21, 0.4);
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 12px;
+        color: rgba(203, 195, 215, 0.7);
+    }
+    .palette-footer-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .palette-footer-right {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+    }
+    .palette-key {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        background: rgba(255, 255, 255, 0.05);
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: #fff;
+    }
+    .palette-footer-hint {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .palette-no-results {
+        padding: 32px;
+        text-align: center;
+        font-size: 14px;
+        color: rgba(203, 195, 215, 0.4);
+        width: 100%;
+    }
+
+    @@keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(12px) scale(0.98);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+    .stagger-item {
+        opacity: 0;
+        animation: fadeInUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+</style>
