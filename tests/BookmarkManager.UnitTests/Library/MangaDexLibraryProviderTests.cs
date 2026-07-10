@@ -51,6 +51,33 @@ public sealed class MangaDexLibraryProviderTests
     }
 
     [Fact]
+    public void MapManga_PrefersEnglishFromAltTitlesWhenPrimaryIsOriginalLanguage()
+    {
+        const string json = """
+        {
+          "id": "a1c7c817-4e59-43b7-9365-09675a149a6f",
+          "type": "manga",
+          "attributes": {
+            "title": { "ja": "俺だけレベルアップな件" },
+            "altTitles": [ { "en": "Solo Leveling" }, { "ko": "나 혼자만 레벨업" } ],
+            "description": { "en": "The weakest hunter levels up." },
+            "status": "completed",
+            "originalLanguage": "ko",
+            "tags": []
+          },
+          "relationships": []
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+        var entry = MangaDexLibraryProvider.MapManga(doc.RootElement, "MangaDex");
+
+        Assert.NotNull(entry);
+        Assert.Equal("Solo Leveling", entry!.Title);
+        Assert.Contains("俺だけレベルアップな件", entry.AlternateTitles);
+    }
+
+    [Fact]
     public void MapManga_ReturnsNullWhenTitleMissing()
     {
         using var doc = JsonDocument.Parse("""{ "id": "x", "attributes": {} }""");

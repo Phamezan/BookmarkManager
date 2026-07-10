@@ -174,6 +174,7 @@ public sealed partial class AniListLibraryProvider(
                   coverImage { large }
                   description(asHtml: false)
                   genres
+                  tags { name rank isMediaSpoiler }
                   averageScore
                   status
                   chapters
@@ -206,6 +207,7 @@ public sealed partial class AniListLibraryProvider(
                   coverImage { large }
                   description(asHtml: false)
                   genres
+                  tags { name rank isMediaSpoiler }
                   averageScore
                   status
                   chapters
@@ -238,6 +240,7 @@ public sealed partial class AniListLibraryProvider(
                   coverImage { large }
                   description(asHtml: false)
                   genres
+                  tags { name rank isMediaSpoiler }
                   averageScore
                   status
                   chapters
@@ -269,6 +272,7 @@ public sealed partial class AniListLibraryProvider(
                 coverImage { large }
                 description(asHtml: false)
                 genres
+                tags { name rank isMediaSpoiler }
                 averageScore
                 status
                 chapters
@@ -320,14 +324,16 @@ public sealed partial class AniListLibraryProvider(
             romaji = GetString(titleEl, "romaji");
             english = GetString(titleEl, "english");
             var native = GetString(titleEl, "native");
-            foreach (var t in new[] { romaji, english, native })
+            // English title takes priority when AniList has one — romaji is a romanization of
+            // the native script (e.g. Hangul for Korean manhwa) and reads worse for an English UI.
+            foreach (var t in new[] { english, romaji, native })
             {
                 if (!string.IsNullOrWhiteSpace(t) && !titles.Contains(t))
                     titles.Add(t);
             }
         }
 
-        var primaryTitle = romaji ?? english ?? titles.FirstOrDefault();
+        var primaryTitle = english ?? romaji ?? titles.FirstOrDefault();
         if (string.IsNullOrWhiteSpace(primaryTitle))
             return null;
 
@@ -348,6 +354,26 @@ public sealed partial class AniListLibraryProvider(
             {
                 if (g.ValueKind == JsonValueKind.String && g.GetString() is { Length: > 0 } genre)
                     genres.Add(genre);
+            }
+        }
+
+        // AniList's "tags" field is a much finer-grained taxonomy than "genres" (hundreds of entries
+        // e.g. "Isekai", "Time Skip", "Reincarnation" vs. ~20 broad genres). Rank is AniList's community
+        // relevance vote (0-100); low-rank tags are noise, and spoiler tags shouldn't surface as filters.
+        const int MinTagRank = 60;
+        if (media.TryGetProperty("tags", out var tagsEl) && tagsEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var tag in tagsEl.EnumerateArray())
+            {
+                if (tag.TryGetProperty("isMediaSpoiler", out var spoilerEl) && spoilerEl.ValueKind == JsonValueKind.True)
+                    continue;
+                var rank = tag.TryGetProperty("rank", out var rankEl) && rankEl.ValueKind == JsonValueKind.Number
+                    ? rankEl.GetInt32()
+                    : 0;
+                if (rank < MinTagRank)
+                    continue;
+                if (GetString(tag, "name") is { Length: > 0 } tagName && !genres.Contains(tagName))
+                    genres.Add(tagName);
             }
         }
 

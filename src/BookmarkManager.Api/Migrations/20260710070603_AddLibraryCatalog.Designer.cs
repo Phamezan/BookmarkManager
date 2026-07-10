@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BookmarkManager.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260710025448_AddLatestChapterUrlAndProviderToggles")]
-    partial class AddLatestChapterUrlAndProviderToggles
+    [Migration("20260710070603_AddLibraryCatalog")]
+    partial class AddLibraryCatalog
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -451,39 +451,141 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("ExtensionEvents");
                 });
 
-            modelBuilder.Entity("BookmarkManager.Api.Data.ReleaseEvent", b =>
+            modelBuilder.Entity("BookmarkManager.Api.Data.LibraryCatalogEntry", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Chapter")
+                    b.Property<string>("AlternateTitles")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Authors")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CoverImageUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("FirstImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Genres")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("LastRefreshedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("LastReleaseAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LatestChapter")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LatestVolume")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("MediaType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int?>("PopularityRank")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ProviderId")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("Rating")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Synopsis")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MediaType");
+
+                    b.HasIndex("PopularityRank");
+
+                    b.HasIndex("Provider", "ProviderId")
+                        .IsUnique();
+
+                    b.ToTable("LibraryCatalogEntries");
+                });
+
+            modelBuilder.Entity("BookmarkManager.Api.Data.LibraryCatalogSyncQueueItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ContinuationToken")
+                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTimeOffset?>("ReleasedAt")
+                    b.Property<string>("LastError")
+                        .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
-                    b.Property<Guid>("TrackedSeriesId")
+                    b.Property<string>("MediaTypeQuery")
+                        .IsRequired()
+                        .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Url")
-                        .HasMaxLength(2048)
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Volume")
+                    b.Property<string>("Provider")
+                        .IsRequired()
                         .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("RemainingPages")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TrackedSeriesId");
+                    b.HasIndex("NextAttemptAt");
 
-                    b.ToTable("ReleaseEvents");
+                    b.HasIndex("Provider", "Status");
+
+                    b.ToTable("LibraryCatalogSyncQueue");
                 });
 
             modelBuilder.Entity("BookmarkManager.Api.Data.SnapshotBatch", b =>
@@ -544,60 +646,6 @@ namespace BookmarkManager.Api.Migrations
                     b.HasIndex("SourceCommandId");
 
                     b.ToTable("SnapshotNodeMappings");
-                });
-
-            modelBuilder.Entity("BookmarkManager.Api.Data.TrackedSeries", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("BookmarkId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<double>("ChaptersRead")
-                        .HasColumnType("REAL");
-
-                    b.Property<DateTimeOffset>("LastChecked")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("LastReleaseAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LatestChapterUrl")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LatestKnownChapter")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MediaType")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProviderId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BookmarkId");
-
-                    b.HasIndex("Provider", "ProviderId")
-                        .IsUnique();
-
-                    b.ToTable("TrackedSeries");
                 });
 
             modelBuilder.Entity("BookmarkManager.Api.Data.UrlMigrationProposal", b =>
@@ -677,28 +725,6 @@ namespace BookmarkManager.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
-                });
-
-            modelBuilder.Entity("BookmarkManager.Api.Data.ReleaseEvent", b =>
-                {
-                    b.HasOne("BookmarkManager.Api.Data.TrackedSeries", "TrackedSeries")
-                        .WithMany()
-                        .HasForeignKey("TrackedSeriesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TrackedSeries");
-                });
-
-            modelBuilder.Entity("BookmarkManager.Api.Data.TrackedSeries", b =>
-                {
-                    b.HasOne("BookmarkManager.Api.Data.BookmarkNode", "Bookmark")
-                        .WithMany()
-                        .HasForeignKey("BookmarkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Bookmark");
                 });
 
             modelBuilder.Entity("BookmarkManager.Api.Data.UrlMigrationProposal", b =>

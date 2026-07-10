@@ -47,8 +47,6 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTaggi
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelFullTaggingService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelUpdatesTaggingService))
-    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AnilistTaggingService>();
 builder.Services.AddSingleton<IAnilistTagProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
 builder.Services.AddSingleton<IAnilistScheduleProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
@@ -58,8 +56,6 @@ builder.Services.AddSingleton<KitsuTaggingService>();
 builder.Services.AddSingleton<IKitsuTagProvider>(provider => provider.GetRequiredService<KitsuTaggingService>());
 builder.Services.AddSingleton<NovelFullTaggingService>();
 builder.Services.AddSingleton<INovelFullTagProvider>(provider => provider.GetRequiredService<NovelFullTaggingService>());
-builder.Services.AddSingleton<NovelUpdatesTaggingService>();
-builder.Services.AddSingleton<INovelUpdatesTagProvider>(provider => provider.GetRequiredService<NovelUpdatesTaggingService>());
 builder.Services.AddSingleton<IDuckDuckGoSearchService, DuckDuckGoSearchService>();
 builder.Services.AddScoped<AiSeriesIdentifierService>();
 builder.Services.AddScoped<AiBookmarkAutoTaggingService>();
@@ -109,22 +105,16 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.Kitsu
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.RoyalRoadLibraryProvider))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
-builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.NovelUpdatesLibraryProvider))
-    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
-builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.AniListLibraryProvider>();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.MangaDexLibraryProvider>();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.KitsuLibraryProvider>();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.RoyalRoadLibraryProvider>();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.NovelUpdatesLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.RanobeDbLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.NovelfireLibraryProvider>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryProviderRegistry>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.Library.LibrarySearchService>();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.ReleaseWatcherBackgroundService>();
-builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.ReleaseWatcherBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.ReleaseWatcherBackgroundService>());
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>());
 builder.Services.AddSingleton(BookmarkManager.Api.Services.Library.ProviderBudgetTracker.Instance);
 builder.Services.AddHostedService<PurgeBackgroundJob>();
-builder.Services.AddAutoMapper(typeof(MappingProfile));
+builder.Services.AddAutoMapper(cfg => { }, typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>
     options.CustomizeProblemDetails = ctx =>
     {

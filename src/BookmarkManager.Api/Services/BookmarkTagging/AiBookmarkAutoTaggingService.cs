@@ -15,7 +15,6 @@ internal sealed class AiBookmarkAutoTaggingService
     private readonly IMangaUpdatesTagProvider _mangaUpdates;
     private readonly IKitsuTagProvider _kitsu;
     private readonly INovelFullTagProvider _novelFull;
-    private readonly INovelUpdatesTagProvider _novelUpdates;
     private readonly ILogger<AiBookmarkAutoTaggingService> _logger;
 
     public AiBookmarkAutoTaggingService(
@@ -25,7 +24,6 @@ internal sealed class AiBookmarkAutoTaggingService
         IMangaUpdatesTagProvider mangaUpdates,
         IKitsuTagProvider kitsu,
         INovelFullTagProvider novelFull,
-        INovelUpdatesTagProvider novelUpdates,
         ILogger<AiBookmarkAutoTaggingService> logger)
     {
         _db = db;
@@ -34,7 +32,6 @@ internal sealed class AiBookmarkAutoTaggingService
         _mangaUpdates = mangaUpdates;
         _kitsu = kitsu;
         _novelFull = novelFull;
-        _novelUpdates = novelUpdates;
         _logger = logger;
     }
 
@@ -475,12 +472,8 @@ internal sealed class AiBookmarkAutoTaggingService
 
     private async Task<List<ProviderTagResult>> GetNovelTagsAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
     {
-        var novelUpdates = await _novelUpdates.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false);
-        if (!novelUpdates.WasRejected && novelUpdates.Tags.Count > 0)
-            return [novelUpdates];
-
         var novelFull = await _novelFull.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false);
-        return [novelUpdates, novelFull];
+        return [novelFull];
     }
 
     private static MediaTagLookupContext BuildLookupContext(

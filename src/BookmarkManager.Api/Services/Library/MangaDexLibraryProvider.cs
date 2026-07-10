@@ -271,9 +271,15 @@ public sealed class MangaDexLibraryProvider(
         if (!item.TryGetProperty("attributes", out var attrs) || attrs.ValueKind != JsonValueKind.Object)
             return null;
 
-        var titles = new List<string>();
-        var primaryTitle = ExtractLocalizedString(attrs, "title", out var titleValues) ? titleValues.FirstOrDefault() : null;
-        titles.AddRange(titleValues ?? []);
+        var titlePairs = new List<(string Locale, string Value)>();
+        if (attrs.TryGetProperty("title", out var titleObj) && titleObj.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in titleObj.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.String && prop.Value.GetString() is { Length: > 0 } v)
+                    titlePairs.Add((prop.Name, v));
+            }
+        }
 
         if (attrs.TryGetProperty("altTitles", out var altTitlesEl) && altTitlesEl.ValueKind == JsonValueKind.Array)
         {
@@ -281,19 +287,29 @@ public sealed class MangaDexLibraryProvider(
             {
                 foreach (var prop in altTitleObj.EnumerateObject())
                 {
-                    if (prop.Value.ValueKind == JsonValueKind.String && prop.Value.GetString() is { Length: > 0 } alt && !titles.Contains(alt))
-                        titles.Add(alt);
+                    if (prop.Value.ValueKind == JsonValueKind.String && prop.Value.GetString() is { Length: > 0 } v)
+                        titlePairs.Add((prop.Name, v));
                 }
             }
         }
 
-        if (string.IsNullOrWhiteSpace(primaryTitle))
+        if (titlePairs.Count == 0)
             return null;
 
+        // MangaDex's canonical `title` is often the original-language title, with the English
+        // name only present in `altTitles` as its own locale-tagged entry — search both before
+        // falling back to whichever locale came first.
+        var primaryTitle = titlePairs.FirstOrDefault(p => p.Locale is "en" or "en-us").Value
+            ?? titlePairs[0].Value;
+
+        var titles = titlePairs.Select(p => p.Value).Distinct().ToList();
         var alternateTitles = titles.Where(t => !string.Equals(t, primaryTitle, StringComparison.Ordinal)).Take(5).ToList();
 
         var synopsis = ExtractLocalizedString(attrs, "description", out var descValues) ? descValues.FirstOrDefault() : null;
 
+        // MangaDex tags span 5 groups (genre, theme, format, content, demographic) - all are useful
+        // filter facets (e.g. "Isekai"/"Reincarnation" are "theme", "Josei"/"Shounen" are "demographic"),
+        // so no group is excluded here.
         var genres = new List<string>();
         if (attrs.TryGetProperty("tags", out var tagsEl) && tagsEl.ValueKind == JsonValueKind.Array)
         {
@@ -301,10 +317,7 @@ public sealed class MangaDexLibraryProvider(
             {
                 if (!tag.TryGetProperty("attributes", out var tagAttrs))
                     continue;
-                var group = GetString(tagAttrs, "group");
-                if (!string.Equals(group, "genre", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (tagAttrs.TryGetProperty("name", out var nameEl) && ExtractLocalizedString(nameEl, out var names) && names.FirstOrDefault() is { } genre)
+                if (tagAttrs.TryGetProperty("name", out var nameEl) && ExtractLocalizedString(nameEl, out var names) && names.FirstOrDefault() is { } genre && !genres.Contains(genre))
                     genres.Add(genre);
             }
         }

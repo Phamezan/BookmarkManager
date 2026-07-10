@@ -19,7 +19,8 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
     private sealed class FakeBulkProvider(
         string name,
         IReadOnlyList<string> queries,
-        Func<string, string?, CatalogPageResult>? onGetPage = null) : IBulkCatalogProvider
+        Func<string, string?, CatalogPageResult>? onGetPage = null,
+        Func<string, LibraryEntryDto?>? onGetDetails = null) : IBulkCatalogProvider
     {
         public string ProviderName => name;
         public bool IsEnabled => true;
@@ -29,7 +30,7 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
             Task.FromResult<IReadOnlyList<LibraryEntryDto>>([]);
 
         public Task<LibraryEntryDto?> GetDetailsAsync(string providerId, CancellationToken cancellationToken) =>
-            Task.FromResult<LibraryEntryDto?>(null);
+            Task.FromResult(onGetDetails?.Invoke(providerId));
 
         public Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken) =>
             Task.FromResult<LibraryReleaseInfo?>(null);
@@ -40,19 +41,25 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
                 : new CatalogPageResult([], null));
     }
 
-    private static LibraryEntryDto MakeEntry(string providerId, string title = "Title") => new(
-        "TestProvider",
+    private static LibraryEntryDto MakeEntry(
+        string providerId,
+        string title = "Title",
+        string provider = "TestProvider",
+        string? synopsis = null,
+        string? latestChapter = null,
+        IReadOnlyList<string>? genres = null) => new(
+        provider,
         providerId,
         title,
         [],
         [],
         LibraryMediaType.Manga,
         null,
+        synopsis,
+        genres ?? [],
         null,
-        [],
         null,
-        null,
-        null,
+        latestChapter,
         null,
         null,
         $"https://example.com/{providerId}");
@@ -87,7 +94,8 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         var serviceProvider = services.BuildServiceProvider();
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var registry = new LibraryProviderRegistry(providers, scopeFactory);
-        var service = new LibraryCatalogSyncBackgroundService(scopeFactory, NullLogger<LibraryCatalogSyncBackgroundService>.Instance, registry);
+        var matchService = new BookmarkSeriesMatchService(scopeFactory, NullLogger<BookmarkSeriesMatchService>.Instance);
+        var service = new LibraryCatalogSyncBackgroundService(scopeFactory, NullLogger<LibraryCatalogSyncBackgroundService>.Instance, registry, matchService);
         return (service, scopeFactory);
     }
 
@@ -544,6 +552,75 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         Assert.Equal(1, status.PendingQueueCount);
         Assert.Equal(1, status.FailedQueueCount);
         Assert.True(status.IsCrawling);
+    }
+
+    [Fact]
+    public void ApplyDto_PreservesEnrichedFieldsWhenIncomingListingStubIsThin()
+    {
+        var row = new LibraryCatalogEntry
+        {
+            Synopsis = "Existing synopsis",
+            LatestChapter = "100",
+            Genres = "Fantasy,Action",
+            Authors = "Some Author",
+            Rating = 4.5
+        };
+
+        var thinListing = MakeEntry("shadow-slave", synopsis: null, latestChapter: null);
+        LibraryCatalogSyncBackgroundService.ApplyDto(row, thinListing);
+
+        Assert.Equal("Existing synopsis", row.Synopsis);
+        Assert.Equal("100", row.LatestChapter);
+        Assert.Equal("Fantasy,Action", row.Genres);
+        Assert.Equal("Some Author", row.Authors);
+        Assert.Equal(4.5, row.Rating);
+    }
+
+    [Fact]
+    public async Task ProcessQueueItemAsync_NovelfireEnrichesThinEntriesFromDetailPage()
+    {
+        using var testDb = new TestDatabase();
+        var db = testDb.Db;
+        var provider = new FakeBulkProvider(
+            "Novelfire",
+            ["genre-all"],
+            (_, _) => new CatalogPageResult([MakeEntry("shadow-slave", provider: "Novelfire", synopsis: null, latestChapter: null)], null),
+            id => new LibraryEntryDto(
+                "Novelfire",
+                id,
+                "Shadow Slave",
+                [],
+                ["Guiltythree"],
+                LibraryMediaType.Webnovel,
+                null,
+                "Growing up in poverty, Sunny never expected anything good from life.",
+                ["Fantasy", "Action"],
+                null,
+                "Ongoing",
+                "3090",
+                null,
+                null,
+                "https://novelfire.net/book/shadow-slave"));
+        var (service, _) = CreateService(db, provider);
+
+        var item = new LibraryCatalogSyncQueueItem
+        {
+            Id = Guid.NewGuid(),
+            Provider = "Novelfire",
+            MediaTypeQuery = "genre-all",
+            Status = CatalogSyncQueueStatus.Processing,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.LibraryCatalogSyncQueue.Add(item);
+        await db.SaveChangesAsync();
+
+        await service.ProcessQueueItemAsync(provider, item, CancellationToken.None);
+
+        var row = await db.LibraryCatalogEntries.SingleAsync();
+        Assert.Equal("Growing up in poverty, Sunny never expected anything good from life.", row.Synopsis);
+        Assert.Equal("3090", row.LatestChapter);
+        Assert.Equal("Fantasy,Action", row.Genres);
+        Assert.Equal("Ongoing", row.Status);
     }
 }
 

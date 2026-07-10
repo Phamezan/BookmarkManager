@@ -22,10 +22,6 @@ public class BookmarkNodeDto
     public DateTime? AniListMatchedAt { get; set; }
     public string? MediaStatus { get; set; }
     public DateTime? LastMatchAttemptAt { get; set; }
-    public bool IsTracked { get; set; }
-    public double? ChaptersRead { get; set; }
-    public string? LatestKnownChapter { get; set; }
-    public int? ChaptersBehind { get; set; }
-    public string? LatestChapterUrl { get; set; }
+    public string? CoverImageUrl { get; set; }
     public List<BookmarkNodeDto>? Children { get; set; }
 }

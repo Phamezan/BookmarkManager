@@ -130,11 +130,6 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<int>("PollIntervalSeconds")
                         .HasColumnType("INTEGER");
 
-                    b.Property<int>("ReleaseWatcherIntervalHours")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(6);
-
                     b.Property<DateTime>("UpdatedAt")
                         .HasColumnType("TEXT");
 
@@ -590,41 +585,6 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("LibraryCatalogSyncQueue");
                 });
 
-            modelBuilder.Entity("BookmarkManager.Api.Data.ReleaseEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Chapter")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("ReleasedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("TrackedSeriesId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Url")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Volume")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("TrackedSeriesId");
-
-                    b.ToTable("ReleaseEvents");
-                });
-
             modelBuilder.Entity("BookmarkManager.Api.Data.SnapshotBatch", b =>
                 {
                     b.Property<Guid>("Id")
@@ -683,72 +643,6 @@ namespace BookmarkManager.Api.Migrations
                     b.HasIndex("SourceCommandId");
 
                     b.ToTable("SnapshotNodeMappings");
-                });
-
-            modelBuilder.Entity("BookmarkManager.Api.Data.TrackedSeries", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid>("BookmarkId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<double>("ChaptersRead")
-                        .HasColumnType("REAL");
-
-                    b.Property<int>("ConsecutiveFailureCount")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("LastCheckError")
-                        .HasMaxLength(2000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset>("LastChecked")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTimeOffset?>("LastReleaseAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LatestChapterUrl")
-                        .HasMaxLength(2048)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LatestKnownChapter")
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("MediaType")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTimeOffset?>("NextCheckAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Provider")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ProviderId")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BookmarkId");
-
-                    b.HasIndex("NextCheckAt");
-
-                    b.HasIndex("Provider", "ProviderId")
-                        .IsUnique();
-
-                    b.ToTable("TrackedSeries");
                 });
 
             modelBuilder.Entity("BookmarkManager.Api.Data.UrlMigrationProposal", b =>
@@ -828,28 +722,6 @@ namespace BookmarkManager.Api.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
-                });
-
-            modelBuilder.Entity("BookmarkManager.Api.Data.ReleaseEvent", b =>
-                {
-                    b.HasOne("BookmarkManager.Api.Data.TrackedSeries", "TrackedSeries")
-                        .WithMany()
-                        .HasForeignKey("TrackedSeriesId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("TrackedSeries");
-                });
-
-            modelBuilder.Entity("BookmarkManager.Api.Data.TrackedSeries", b =>
-                {
-                    b.HasOne("BookmarkManager.Api.Data.BookmarkNode", "Bookmark")
-                        .WithMany()
-                        .HasForeignKey("BookmarkId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Bookmark");
                 });
 
             modelBuilder.Entity("BookmarkManager.Api.Data.UrlMigrationProposal", b =>

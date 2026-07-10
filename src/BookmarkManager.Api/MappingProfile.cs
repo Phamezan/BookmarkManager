@@ -35,13 +35,5 @@ public class MappingProfile : Profile
 
         CreateMap<ActivityLogEntry, ActivityEntryDto>();
         CreateMap<BackupManifest, BackupManifestDto>();
-        CreateMap<TrackedSeries, TrackedSeriesDto>()
-            .ForMember(d => d.Title, o => o.MapFrom(s => s.Bookmark.Title))
-            .ForMember(d => d.CoverImageUrl, o => o.MapFrom(s => s.Bookmark.CoverImageUrl))
-            .ForMember(d => d.Synopsis, o => o.MapFrom(s => s.Bookmark.Notes))
-            .ForMember(d => d.Genres, o => o.MapFrom(s => s.Bookmark.Tags != null ? s.Bookmark.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()).ToList() : new List<string>()))
-            .ForMember(d => d.Rating, o => o.MapFrom(s => s.Bookmark.Rating))
-            .ForMember(d => d.SourceUrl, o => o.MapFrom(s => s.Bookmark.Url));
-        CreateMap<TrackedSeriesDto, TrackedSeries>();
     }
 }

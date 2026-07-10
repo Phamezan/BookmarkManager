@@ -26,7 +26,13 @@ public partial class BookmarksController
         .FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
     if (node is null) return NotFound();
     var dto = _mapper.Map<BookmarkNodeDto>(node);
-    await PopulateTrackingInfoAsync([dto], ct);
+
+    var matches = await _matchService.GetMatchesAsync(ct);
+    var match = matches.FirstOrDefault(m => m.BookmarkId == dto.Id);
+    if (match != null)
+    {
+        dto.CoverImageUrl = match.CoverImageUrl;
+    }
     return dto;
     }
 
@@ -38,7 +44,7 @@ public partial class BookmarksController
         .OrderByDescending(n => n.DeletedAt)
         .ToListAsync(ct);
     var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
-    await PopulateTrackingInfoAsync(dtos, ct);
+    await EnrichCoverImagesAsync(dtos, ct);
     return dtos;
     }
 
@@ -50,7 +56,7 @@ public partial class BookmarksController
         .OrderBy(n => n.Title)
         .ToListAsync(ct);
     var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
-    await PopulateTrackingInfoAsync(dtos, ct);
+    await EnrichCoverImagesAsync(dtos, ct);
     return dtos;
     }
 
@@ -82,7 +88,7 @@ public partial class BookmarksController
         .ToListAsync(ct);
 
     var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
-    await PopulateTrackingInfoAsync(dtos, ct);
+    await EnrichCoverImagesAsync(dtos, ct);
     return dtos;
     }
 
@@ -191,33 +197,29 @@ public partial class BookmarksController
         .OrderBy(n => n.Position)
         .ToListAsync(ct);
     var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
-    await PopulateTrackingInfoAsync(dtos, ct);
+    await EnrichCoverImagesAsync(dtos, ct);
     return dtos;
     }
 
-    private async Task PopulateTrackingInfoAsync(List<BookmarkNodeDto> dtos, CancellationToken ct)
+    private async Task EnrichCoverImagesAsync(List<BookmarkNodeDto> dtos, CancellationToken ct)
     {
-        var bookmarkIds = dtos.Where(d => d.Type == NodeType.Bookmark).Select(d => d.Id).ToList();
-        if (bookmarkIds.Count == 0) return;
+        if (dtos.Count == 0) return;
+        var matches = await _matchService.GetMatchesAsync(ct);
+        var matchesByBookmarkId = matches.ToDictionary(m => m.BookmarkId, m => m.CoverImageUrl);
+        EnrichCoverImagesRecursive(dtos, matchesByBookmarkId);
+    }
 
-        var tracked = await _db.TrackedSeries
-            .Where(t => bookmarkIds.Contains(t.BookmarkId))
-            .Select(t => new { t.BookmarkId, t.LatestKnownChapter, t.ChaptersRead, t.LatestChapterUrl })
-            .ToListAsync(ct);
-
-        var dict = tracked.ToDictionary(t => t.BookmarkId, t => t);
-
+    private void EnrichCoverImagesRecursive(List<BookmarkNodeDto> dtos, Dictionary<Guid, string?> matchesByBookmarkId)
+    {
         foreach (var dto in dtos)
         {
-            if (dict.TryGetValue(dto.Id, out var ts))
+            if (matchesByBookmarkId.TryGetValue(dto.Id, out var coverUrl))
             {
-                dto.IsTracked = true;
-                dto.ChaptersRead = ts.ChaptersRead;
-                dto.LatestKnownChapter = ts.LatestKnownChapter;
-                dto.LatestChapterUrl = ts.LatestChapterUrl;
-                dto.ChaptersBehind = TrackedSeries.CalculateChaptersBehind(
-                    ts.LatestKnownChapter,
-                    ts.ChaptersRead);
+                dto.CoverImageUrl = coverUrl;
+            }
+            if (dto.Children != null && dto.Children.Count > 0)
+            {
+                EnrichCoverImagesRecursive(dto.Children, matchesByBookmarkId);
             }
         }
     }

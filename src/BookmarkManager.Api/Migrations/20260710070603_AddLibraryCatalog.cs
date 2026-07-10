@@ -11,6 +11,14 @@ namespace BookmarkManager.Api.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<string>(
+                name: "DisabledProviders",
+                table: "AppConfig",
+                type: "TEXT",
+                maxLength: 2048,
+                nullable: false,
+                defaultValue: "");
+
             migrationBuilder.CreateTable(
                 name: "LibraryCatalogEntries",
                 columns: table => new
@@ -95,6 +103,10 @@ namespace BookmarkManager.Api.Migrations
 
             migrationBuilder.DropTable(
                 name: "LibraryCatalogSyncQueue");
+
+            migrationBuilder.DropColumn(
+                name: "DisabledProviders",
+                table: "AppConfig");
         }
     }
 }

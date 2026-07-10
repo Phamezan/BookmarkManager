@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using AutoMapper;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Contracts;
@@ -16,11 +15,10 @@ namespace BookmarkManager.Api.Controllers;
 [Route("api/library")]
 public sealed class LibraryController(
     LibrarySearchService searchService,
-    AppDbContext db,
-    IMapper mapper,
     LibraryProviderRegistry registry,
-    ReleaseWatcherBackgroundService watcher,
-    LibraryCatalogSyncBackgroundService catalogSync) : ControllerBase
+    LibraryCatalogSyncBackgroundService catalogSync,
+    BookmarkSeriesMatchService matchService,
+    AppDbContext db) : ControllerBase
 {
     [HttpGet("search")]
     public async Task<ActionResult<LibrarySearchResponse>> Search(
@@ -53,6 +51,19 @@ public sealed class LibraryController(
         return Ok(response);
     }
 
+    [HttpGet("catalog/enrich")]
+    public async Task<ActionResult<LibraryEntryDto>> EnrichCatalogEntry(
+        [FromQuery] string provider,
+        [FromQuery] string providerId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(provider) || string.IsNullOrWhiteSpace(providerId))
+            return BadRequest();
+
+        var entry = await searchService.EnrichEntryAsync(provider, providerId, cancellationToken).ConfigureAwait(false);
+        return entry is null ? NotFound() : Ok(entry);
+    }
+
     [HttpGet("catalog/status")]
     public async Task<ActionResult<LibraryCatalogSyncStatusDto>> GetCatalogSyncStatus(CancellationToken cancellationToken)
     {
@@ -66,259 +77,58 @@ public sealed class LibraryController(
         return Accepted();
     }
 
-    [HttpGet("tracked")]
-    public async Task<ActionResult<List<TrackedSeriesDto>>> GetTracked(CancellationToken cancellationToken)
+    [HttpGet("reading-progress")]
+    public async Task<ActionResult<List<LibraryReadingProgressDto>>> GetReadingProgress(CancellationToken cancellationToken)
     {
-        var tracked = await db.TrackedSeries
-            .Include(ts => ts.Bookmark)
-            .Where(ts => !ts.Bookmark.IsDeleted)
+        var matches = await matchService.GetMatchesAsync(cancellationToken).ConfigureAwait(false);
+        if (matches.Count == 0)
+            return Ok(new List<LibraryReadingProgressDto>());
+
+        var providers = matches.Select(m => m.Provider).Distinct().ToList();
+        var providerIds = matches.Select(m => m.ProviderId).Distinct().ToList();
+        var candidateEntries = await db.LibraryCatalogEntries
+            .Where(e => providers.Contains(e.Provider) && providerIds.Contains(e.ProviderId))
+            .Select(e => new { e.Provider, e.ProviderId, e.LatestChapter })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        var latestChapterByKey = candidateEntries.ToDictionary(e => (e.Provider, e.ProviderId), e => e.LatestChapter);
 
-        return Ok(mapper.Map<List<TrackedSeriesDto>>(tracked));
-    }
-
-    [HttpPost("track")]
-    public async Task<ActionResult<BookmarkNodeDto>> Track(
-        [FromBody] TrackLibraryEntryRequest request,
-        CancellationToken cancellationToken)
-    {
-        var existing = await db.TrackedSeries
-            .Include(ts => ts.Bookmark)
-            .FirstOrDefaultAsync(
-                ts => ts.Provider == request.Provider && ts.ProviderId == request.ProviderId,
-                cancellationToken)
+        var bookmarkIds = matches.Select(m => m.BookmarkId).Distinct().ToList();
+        var bookmarksById = await db.BookmarkNodes
+            .Where(b => bookmarkIds.Contains(b.Id))
+            .Select(b => new { b.Id, b.Title, b.Url })
+            .ToDictionaryAsync(b => b.Id, b => b, cancellationToken)
             .ConfigureAwait(false);
 
-        if (existing is not null && !existing.Bookmark.IsDeleted)
+        var dtos = matches.Select(match =>
         {
-            return Ok(mapper.Map<BookmarkNodeDto>(existing.Bookmark));
-        }
+            latestChapterByKey.TryGetValue((match.Provider, match.ProviderId), out var latestChapter);
+            bookmarksById.TryGetValue(match.BookmarkId, out var bookmark);
+            return new LibraryReadingProgressDto(
+                match.Provider,
+                match.ProviderId,
+                match.CurrentChapter,
+                match.RawProgressText,
+                LatestChapterParser.Parse(latestChapter),
+                match.BookmarkId,
+                bookmark?.Title,
+                bookmark?.Url);
+        }).ToList();
 
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        try
-        {
-            string parentBrowserNodeId = "0";
-            BookmarkNode? parentNode = null;
-            if (request.ParentId != Guid.Empty)
-            {
-                parentNode = await db.BookmarkNodes
-                    .FirstOrDefaultAsync(n => n.Id == request.ParentId && !n.IsDeleted, cancellationToken)
-                    .ConfigureAwait(false);
-                if (parentNode is null)
-                {
-                    return NotFound("Parent folder not found");
-                }
-                parentBrowserNodeId = parentNode.BrowserNodeId ?? "0";
-            }
-
-            var maxPos = request.ParentId == Guid.Empty
-                ? await db.BookmarkNodes.Where(n => n.ParentId == null).MaxAsync(n => (int?)n.Position, cancellationToken).ConfigureAwait(false) ?? -1
-                : await db.BookmarkNodes.Where(n => n.ParentId == request.ParentId).MaxAsync(n => (int?)n.Position, cancellationToken).ConfigureAwait(false) ?? -1;
-
-            var bookmarkNode = existing?.Bookmark ?? new BookmarkNode
-            {
-                Id = Guid.NewGuid(),
-                Type = NodeType.Bookmark,
-                Version = 1,
-            };
-
-            bookmarkNode.ParentId = request.ParentId == Guid.Empty ? null : request.ParentId;
-            bookmarkNode.Title = request.Title;
-            bookmarkNode.Url = request.SourceUrl;
-            bookmarkNode.Position = maxPos + 1;
-            bookmarkNode.SyncState = SyncState.Pending;
-            bookmarkNode.UpdatedAt = DateTime.UtcNow;
-            bookmarkNode.CoverImageUrl = request.CoverImageUrl;
-            bookmarkNode.Category = request.MediaType.ToString();
-            bookmarkNode.Tags = request.Genres.Count > 0 ? string.Join(",", request.Genres) : null;
-            bookmarkNode.Status = request.Status;
-            bookmarkNode.CurrentProgress = (int)Math.Floor(request.ChaptersRead);
-
-            if (existing is null)
-            {
-                db.BookmarkNodes.Add(bookmarkNode);
-            }
-            else
-            {
-                bookmarkNode.IsDeleted = false;
-                bookmarkNode.DeletedAt = null;
-                bookmarkNode.PurgeAfter = null;
-                bookmarkNode.Version++;
-            }
-
-            var trackedSeries = existing ?? new TrackedSeries
-            {
-                Id = Guid.NewGuid(),
-                BookmarkId = bookmarkNode.Id,
-                Provider = request.Provider,
-                ProviderId = request.ProviderId,
-            };
-
-            trackedSeries.MediaType = request.MediaType;
-            trackedSeries.LatestKnownChapter = request.LatestChapter;
-            trackedSeries.LastChecked = DateTimeOffset.UtcNow;
-            trackedSeries.ChaptersRead = request.ChaptersRead;
-            trackedSeries.Status = request.Status;
-
-            if (existing is null)
-            {
-                db.TrackedSeries.Add(trackedSeries);
-            }
-
-            object payload = existing is null
-                ? new
-                {
-                    type = "Bookmark",
-                    parentBrowserNodeId,
-                    title = bookmarkNode.Title,
-                    url = bookmarkNode.Url,
-                    position = bookmarkNode.Position
-                }
-                : new
-                {
-                    bookmarkId = bookmarkNode.Id,
-                    type = "Bookmark",
-                    parentBrowserNodeId,
-                    title = bookmarkNode.Title,
-                    url = bookmarkNode.Url,
-                    position = bookmarkNode.Position,
-                    children = (object?)null
-                };
-
-            db.ExtensionCommands.Add(new ExtensionCommandEntry
-            {
-                Id = Guid.NewGuid(),
-                OperationId = Guid.NewGuid(),
-                CommandType = existing is null ? "Create" : "Restore",
-                BookmarkId = bookmarkNode.Id,
-                BrowserNodeId = null,
-                ExpectedVersion = bookmarkNode.Version,
-                PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
-                CreatedAt = DateTime.UtcNow,
-                Status = Services.DeferredCommandHelper.InitialStatus(parentNode)
-            });
-
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-            await BookmarkManager.Api.Infrastructure.SyncWebSocketManager.BroadcastSyncAsync().ConfigureAwait(false);
-
-            return Ok(mapper.Map<BookmarkNodeDto>(bookmarkNode));
-        }
-        catch (Exception)
-        {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw;
-        }
+        return Ok(dtos);
     }
 
-    [HttpPost("track/{bookmarkId:guid}/check")]
-    public async Task<ActionResult<TrackedSeriesDto>> CheckSeriesRelease(
-        Guid bookmarkId,
-        CancellationToken cancellationToken)
+    /// <summary>Full catalog cards for the user's matched bookmarks - local-DB only, independent
+    /// of whatever page of trending/search results the client currently has loaded. Backs the
+    /// "My bookmarks" filter, which needs cards for series that may not be in the top
+    /// trending/search page at all.</summary>
+    [HttpGet("my-bookmarks")]
+    public async Task<ActionResult<List<LibraryEntryDto>>> GetMyBookmarkedSeries(CancellationToken cancellationToken)
     {
-        var series = await db.TrackedSeries
-            .Include(ts => ts.Bookmark)
-            .FirstOrDefaultAsync(ts => ts.BookmarkId == bookmarkId && !ts.Bookmark.IsDeleted, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (series is null)
-        {
-            return NotFound("Tracked series not found");
-        }
-
-        await watcher.CheckAndUpdateSeriesAsync(db, series, cancellationToken).ConfigureAwait(false);
-
-        return Ok(mapper.Map<TrackedSeriesDto>(series));
-    }
-
-    [HttpGet("watcher/status")]
-    public async Task<ActionResult<ReleaseWatcherStatusDto>> GetWatcherStatus(CancellationToken cancellationToken)
-    {
-        var trackedCount = await db.TrackedSeries
-            .Include(ts => ts.Bookmark)
-            .CountAsync(ts => !ts.Bookmark.IsDeleted, cancellationToken)
-            .ConfigureAwait(false);
-
-        return Ok(watcher.GetStatus(trackedCount));
-    }
-
-    [HttpPost("watcher/trigger")]
-    public IActionResult TriggerWatcher()
-    {
-        watcher.TriggerCheck();
-        return Ok();
-    }
-
-    [HttpGet("watcher/settings")]
-    public async Task<ActionResult<ReleaseWatcherSettingsDto>> GetWatcherSettings(
-        CancellationToken cancellationToken)
-    {
-        var intervalHours = await db.AppConfig
-            .Where(config => config.Id == AppConfigConstants.SingletonId)
-            .Select(config => config.ReleaseWatcherIntervalHours)
-            .FirstOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return Ok(new ReleaseWatcherSettingsDto
-        {
-            IntervalHours = intervalHours <= 0
-                ? AppConfigConstants.DefaultReleaseWatcherIntervalHours
-                : intervalHours
-        });
-    }
-
-    [HttpPut("watcher/settings")]
-    public async Task<ActionResult<ReleaseWatcherSettingsDto>> UpdateWatcherSettings(
-        [FromBody] ReleaseWatcherSettingsDto settings,
-        CancellationToken cancellationToken)
-    {
-        var config = await db.AppConfig
-            .FirstOrDefaultAsync(
-                item => item.Id == AppConfigConstants.SingletonId,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (config is null)
-        {
-            return Problem(
-                statusCode: StatusCodes.Status500InternalServerError,
-                title: "Application configuration is unavailable.");
-        }
-
-        config.ReleaseWatcherIntervalHours = settings.IntervalHours;
-        config.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        watcher.NotifyScheduleChanged();
-
-        return Ok(settings);
-    }
-
-    [HttpPut("track/{bookmarkId}/progress")]
-    public async Task<ActionResult<TrackedSeriesDto>> UpdateProgress(
-        Guid bookmarkId,
-        [FromBody] UpdateProgressRequest request,
-        CancellationToken cancellationToken)
-    {
-        var ts = await db.TrackedSeries
-            .Include(item => item.Bookmark)
-            .FirstOrDefaultAsync(
-                item => item.BookmarkId == bookmarkId && !item.Bookmark.IsDeleted,
-                cancellationToken)
-            .ConfigureAwait(false);
-
-        if (ts is null) return NotFound();
-
-        ts.ChaptersRead = request.ChaptersRead;
-        ts.Bookmark.CurrentProgress = (int)Math.Floor(request.ChaptersRead);
-        ts.Bookmark.UpdatedAt = DateTime.UtcNow;
-
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
-
-        return Ok(mapper.Map<TrackedSeriesDto>(ts));
+        var matches = await matchService.GetMatchesAsync(cancellationToken).ConfigureAwait(false);
+        var keys = matches.Select(m => (m.Provider, m.ProviderId)).ToList();
+        var entries = await searchService.GetEntriesByKeysAsync(keys, cancellationToken).ConfigureAwait(false);
+        return Ok(entries);
     }
 
     [HttpGet("providers/health")]

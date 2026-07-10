@@ -12,11 +12,16 @@ public class SearchController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IMapper _mapper;
+    private readonly BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService _matchService;
 
-    public SearchController(AppDbContext db, IMapper mapper)
+    public SearchController(
+        AppDbContext db,
+        IMapper mapper,
+        BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService matchService)
     {
         _db = db;
         _mapper = mapper;
+        _matchService = matchService;
     }
 
     [HttpPost]
@@ -61,6 +66,14 @@ public class SearchController : ControllerBase
             }
         }
 
+        if (request.FolderId.HasValue)
+        {
+            var folderIds = await FolderHierarchy.GetDescendantFolderIdsAsync(_db, request.FolderId.Value, ct);
+            var folderIdsNullable = folderIds.Select(id => (Guid?)id).ToList();
+            folderIdsNullable.Add(request.FolderId.Value);
+            query = query.Where(n => folderIdsNullable.Contains(n.ParentId));
+        }
+
         var total = await query.CountAsync(ct);
 
         var pageSize = Math.Max(1, Math.Min(request.PageSize, 100));
@@ -74,7 +87,16 @@ public class SearchController : ControllerBase
             .ToListAsync(ct);
 
         var dtos = _mapper.Map<List<BookmarkNodeDto>>(items);
-        await PopulateTrackingInfoAsync(dtos, ct);
+
+        var matches = await _matchService.GetMatchesAsync(ct);
+        var matchesByBookmarkId = matches.ToDictionary(m => m.BookmarkId, m => m.CoverImageUrl);
+        foreach (var dto in dtos)
+        {
+            if (matchesByBookmarkId.TryGetValue(dto.Id, out var coverUrl))
+            {
+                dto.CoverImageUrl = coverUrl;
+            }
+        }
 
         return new PagedResult<BookmarkNodeDto>
         {
@@ -83,33 +105,6 @@ public class SearchController : ControllerBase
             Page = page,
             PageSize = pageSize
         };
-    }
-
-    private async Task PopulateTrackingInfoAsync(List<BookmarkNodeDto> dtos, CancellationToken ct)
-    {
-        var bookmarkIds = dtos.Where(d => d.Type == NodeType.Bookmark).Select(d => d.Id).ToList();
-        if (bookmarkIds.Count == 0) return;
-
-        var tracked = await _db.TrackedSeries
-            .Where(t => bookmarkIds.Contains(t.BookmarkId))
-            .Select(t => new { t.BookmarkId, t.LatestKnownChapter, t.ChaptersRead, t.LatestChapterUrl })
-            .ToListAsync(ct);
-
-        var dict = tracked.ToDictionary(t => t.BookmarkId, t => t);
-
-        foreach (var dto in dtos)
-        {
-            if (dict.TryGetValue(dto.Id, out var ts))
-            {
-                dto.IsTracked = true;
-                dto.ChaptersRead = ts.ChaptersRead;
-                dto.LatestKnownChapter = ts.LatestKnownChapter;
-                dto.LatestChapterUrl = ts.LatestChapterUrl;
-                dto.ChaptersBehind = TrackedSeries.CalculateChaptersBehind(
-                    ts.LatestKnownChapter,
-                    ts.ChaptersRead);
-            }
-        }
     }
 
     private static string EscapeLike(string input)

@@ -48,8 +48,8 @@ public sealed class AniListLibraryProviderTests
 
         var entry = Assert.Single(results);
         Assert.Equal("101922", entry.ProviderId);
-        Assert.Equal("Sousou no Frieren", entry.Title);
-        Assert.Contains("Frieren: Beyond Journey's End", entry.AlternateTitles);
+        Assert.Equal("Frieren: Beyond Journey's End", entry.Title);
+        Assert.Contains("Sousou no Frieren", entry.AlternateTitles);
         Assert.Equal(LibraryMediaType.Manga, entry.MediaType);
         Assert.Equal("An elf mage\noutlives her party.", entry.Synopsis?.Trim());
         Assert.Equal(9.0, entry.Rating);

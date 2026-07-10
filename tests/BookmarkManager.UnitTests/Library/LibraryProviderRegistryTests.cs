@@ -47,7 +47,7 @@ public sealed class LibraryProviderRegistryTests
     {
         var registry = new LibraryProviderRegistry([
             new FakeProvider("AniList", true),
-            new FakeProvider("NovelUpdates", false),
+            new FakeProvider("Kitsu", false),
             new FakeProvider("MangaDex", true)
         ], CreateScopeFactory());
 
@@ -59,12 +59,12 @@ public sealed class LibraryProviderRegistryTests
     [Fact]
     public void FindByName_IsCaseInsensitiveAndReturnsRegardlessOfEnabledState()
     {
-        var registry = new LibraryProviderRegistry([new FakeProvider("NovelUpdates", false)], CreateScopeFactory());
+        var registry = new LibraryProviderRegistry([new FakeProvider("Kitsu", false)], CreateScopeFactory());
 
-        var found = registry.FindByName("novelupdates");
+        var found = registry.FindByName("kitsu");
 
         Assert.NotNull(found);
-        Assert.Equal("NovelUpdates", found!.ProviderName);
+        Assert.Equal("Kitsu", found!.ProviderName);
     }
 
     [Fact]

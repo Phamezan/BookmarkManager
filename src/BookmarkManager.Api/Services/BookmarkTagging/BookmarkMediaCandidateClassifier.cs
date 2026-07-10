@@ -16,8 +16,7 @@ internal static class BookmarkMediaCandidateClassifier
         var host = GetHost(url);
         var path = folderPath ?? string.Empty;
 
-        // 1. Novel
-        if (host != null && (host.Contains("novelupdates.com", StringComparison.OrdinalIgnoreCase) || host.Contains("novelfull.com", StringComparison.OrdinalIgnoreCase)))
+        if (host != null && host.Contains("novelfull.com", StringComparison.OrdinalIgnoreCase))
         {
             var clean = MediaTitleNormalizer.CleanTitle(title, url, BookmarkTagDomain.Novel);
             return new MediaCandidateClassification(false, clean, BookmarkTagDomain.Novel, $"Matched Novel host: {host}");

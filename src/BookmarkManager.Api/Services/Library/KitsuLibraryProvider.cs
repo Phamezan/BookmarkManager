@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -33,7 +34,7 @@ public sealed class KitsuLibraryProvider(
 
         var resourceType = mediaType == LibraryMediaType.Anime ? "anime" : "manga";
         var cacheKey = $"{ProviderName}:search:{resourceType}:{cleanQuery.ToLowerInvariant()}";
-        var url = $"{BaseUrl}/{resourceType}?filter[text]={Uri.EscapeDataString(cleanQuery)}&page[limit]=12";
+        var url = $"{BaseUrl}/{resourceType}?filter[text]={Uri.EscapeDataString(cleanQuery)}&page[limit]=12&include=categories";
 
         return ExecuteAsync(
             cacheKey,
@@ -45,10 +46,11 @@ public sealed class KitsuLibraryProvider(
                 if (doc is null || !doc.RootElement.TryGetProperty("data", out var dataArray) || dataArray.ValueKind != JsonValueKind.Array)
                     return (IReadOnlyList<LibraryEntryDto>)[];
 
+                var categoryTitles = ExtractIncludedCategoryTitles(doc.RootElement);
                 var results = new List<LibraryEntryDto>();
                 foreach (var item in dataArray.EnumerateArray())
                 {
-                    var entry = MapResource(item, resourceType, ProviderName);
+                    var entry = MapResource(item, resourceType, ProviderName, categoryTitles);
                     if (entry is not null)
                         results.Add(entry);
                 }
@@ -65,7 +67,7 @@ public sealed class KitsuLibraryProvider(
             return Task.FromResult<LibraryEntryDto?>(null);
 
         var cacheKey = $"{ProviderName}:details:{providerId}";
-        var url = $"{BaseUrl}/{resourceType}/{id}";
+        var url = $"{BaseUrl}/{resourceType}/{id}?include=categories";
 
         return ExecuteAsync(
             cacheKey,
@@ -77,7 +79,8 @@ public sealed class KitsuLibraryProvider(
                 if (doc is null || !doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
                     return null;
 
-                return MapResource(data, resourceType, ProviderName);
+                var categoryTitles = ExtractIncludedCategoryTitles(doc.RootElement);
+                return MapResource(data, resourceType, ProviderName, categoryTitles);
             },
             null,
             cancellationToken);
@@ -121,7 +124,58 @@ public sealed class KitsuLibraryProvider(
         return id.Length > 0;
     }
 
+    /// <summary>Builds a map of Kitsu category resource id -> title from a response's sideloaded
+    /// <c>included</c> array (populated when the request has <c>include=categories</c>).</summary>
+    public static Dictionary<string, string> ExtractIncludedCategoryTitles(JsonElement root)
+    {
+        var titles = new Dictionary<string, string>();
+        if (!root.TryGetProperty("included", out var includedEl) || includedEl.ValueKind != JsonValueKind.Array)
+            return titles;
+
+        foreach (var included in includedEl.EnumerateArray())
+        {
+            if (GetString(included, "type") != "categories")
+                continue;
+            if (!included.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String)
+                continue;
+            if (!included.TryGetProperty("attributes", out var attrs) || attrs.ValueKind != JsonValueKind.Object)
+                continue;
+
+            var title = GetString(attrs, "title");
+            if (!string.IsNullOrWhiteSpace(title))
+                titles[idEl.GetString()!] = title;
+        }
+
+        return titles;
+    }
+
+    private static List<string> ExtractCategoryGenres(JsonElement item, IReadOnlyDictionary<string, string> categoryTitles)
+    {
+        var genres = new List<string>();
+        if (categoryTitles.Count == 0)
+            return genres;
+        if (!item.TryGetProperty("relationships", out var relationships) || relationships.ValueKind != JsonValueKind.Object)
+            return genres;
+        if (!relationships.TryGetProperty("categories", out var categoriesRel) || categoriesRel.ValueKind != JsonValueKind.Object)
+            return genres;
+        if (!categoriesRel.TryGetProperty("data", out var dataEl) || dataEl.ValueKind != JsonValueKind.Array)
+            return genres;
+
+        foreach (var reference in dataEl.EnumerateArray())
+        {
+            if (!reference.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String)
+                continue;
+            if (categoryTitles.TryGetValue(idEl.GetString()!, out var title) && !genres.Contains(title))
+                genres.Add(title);
+        }
+
+        return genres;
+    }
+
     public static LibraryEntryDto? MapResource(JsonElement item, string resourceType, string providerName)
+        => MapResource(item, resourceType, providerName, new Dictionary<string, string>());
+
+    public static LibraryEntryDto? MapResource(JsonElement item, string resourceType, string providerName, IReadOnlyDictionary<string, string> categoryTitles)
     {
         if (!item.TryGetProperty("id", out var idEl) || idEl.ValueKind != JsonValueKind.String)
             return null;
@@ -130,19 +184,31 @@ public sealed class KitsuLibraryProvider(
 
         var id = idEl.GetString()!;
         var canonicalTitle = GetString(attrs, "canonicalTitle");
-        if (string.IsNullOrWhiteSpace(canonicalTitle))
-            return null;
 
-        var alternateTitles = new List<string>();
+        // Kitsu's own "canonical" title is often the romanized native title (romaji/Revised
+        // Romanization of Korean), not English. Prefer titles.en when Kitsu has one.
+        string? englishTitle = null;
+        var allTitles = new List<string>();
         if (attrs.TryGetProperty("titles", out var titlesEl) && titlesEl.ValueKind == JsonValueKind.Object)
         {
+            englishTitle = GetString(titlesEl, "en");
             foreach (var prop in titlesEl.EnumerateObject())
             {
                 if (prop.Value.ValueKind == JsonValueKind.String && prop.Value.GetString() is { Length: > 0 } t &&
-                    !string.Equals(t, canonicalTitle, StringComparison.Ordinal) && !alternateTitles.Contains(t))
-                    alternateTitles.Add(t);
+                    !allTitles.Contains(t))
+                    allTitles.Add(t);
             }
         }
+
+        var primaryTitle = englishTitle ?? canonicalTitle ?? allTitles.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(primaryTitle))
+            return null;
+
+        var alternateTitles = allTitles
+            .Concat(canonicalTitle is not null ? [canonicalTitle] : [])
+            .Where(t => !string.Equals(t, primaryTitle, StringComparison.Ordinal))
+            .Distinct()
+            .ToList();
 
         var synopsis = GetString(attrs, "synopsis");
 
@@ -181,17 +247,18 @@ public sealed class KitsuLibraryProvider(
 
         var slug = GetString(attrs, "slug") ?? id;
         var sourceUrl = $"https://kitsu.io/{resourceType}/{slug}";
+        var genres = ExtractCategoryGenres(item, categoryTitles);
 
         return new LibraryEntryDto(
             providerName,
             $"{resourceType}:{id}",
-            canonicalTitle,
+            primaryTitle,
             alternateTitles,
             [],
             mediaType,
             coverUrl,
             synopsis,
-            [],
+            genres,
             rating,
             status,
             resourceType == "anime" ? latestEpisode : latestChapter,

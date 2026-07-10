@@ -32,6 +32,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<LibraryCatalogSyncBackgroundService> _logger;
     private readonly LibraryProviderRegistry _registry;
+    private readonly BookmarkSeriesMatchService _matchService;
     private readonly Channel<bool> _resyncChannel = Channel.CreateUnbounded<bool>();
     private readonly object _statusLock = new();
     private bool _isCrawling;
@@ -39,11 +40,13 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     public LibraryCatalogSyncBackgroundService(
         IServiceScopeFactory scopeFactory,
         ILogger<LibraryCatalogSyncBackgroundService> logger,
-        LibraryProviderRegistry registry)
+        LibraryProviderRegistry registry,
+        BookmarkSeriesMatchService matchService)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _registry = registry;
+        _matchService = matchService;
     }
 
     /// <summary>Forces a fresh, unbounded ground-up crawl of every sequence, ignoring any prior progress.</summary>
@@ -284,6 +287,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
         await UpsertEntriesAsync(db, provider.ProviderName, page.Entries, page.RankBase, ct).ConfigureAwait(false);
+        await EnrichThinCatalogEntriesAsync(db, provider, page.Entries, ct).ConfigureAwait(false);
 
         var current = await db.LibraryCatalogSyncQueue.FirstAsync(q => q.Id == item.Id, ct).ConfigureAwait(false);
         current.Status = CatalogSyncQueueStatus.Done;
@@ -312,6 +316,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        _matchService.InvalidateCatalog();
     }
 
     private static async Task UpsertEntriesAsync(
@@ -362,20 +367,98 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    private static void ApplyDto(LibraryCatalogEntry row, LibraryEntryDto dto)
+    /// <summary>Bounds how many detail-page fetches run concurrently during enrichment. The actual
+    /// request cadence is still gated by each provider's own <see cref="ProviderRateLimiter"/> - this
+    /// just lets several requests overlap in flight instead of paying each one's full network
+    /// round-trip serially, so a batch of thin rows drains close to the rate limiter's real throughput
+    /// instead of throughput / (round-trip latency).</summary>
+    private const int DetailEnrichmentConcurrency = 4;
+
+    /// <summary>Listing-page bulk crawls for Novelfire/RanobeDB only carry thin card data (title/cover/rating,
+    /// sometimes a chapter count). After each page upsert, fetch the per-title detail page for rows still
+    /// missing synopsis, chapter info, or genres so Browse cards and the details popup aren't empty. Rate
+    /// limiting stays inside each provider's <see cref="IMediaProvider.GetDetailsAsync"/>.</summary>
+    private async Task EnrichThinCatalogEntriesAsync(
+        AppDbContext db,
+        IBulkCatalogProvider provider,
+        IReadOnlyList<LibraryEntryDto> entries,
+        CancellationToken ct)
+    {
+        if (!NeedsDetailEnrichment(provider.ProviderName) || entries.Count == 0)
+            return;
+
+        var providerIds = entries.Select(e => e.ProviderId).ToList();
+        var rows = await db.LibraryCatalogEntries
+            .Where(e => e.Provider == provider.ProviderName && providerIds.Contains(e.ProviderId))
+            .ToDictionaryAsync(e => e.ProviderId, ct)
+            .ConfigureAwait(false);
+
+        var thinStubs = entries
+            .Where(stub => rows.TryGetValue(stub.ProviderId, out var row) && IsThinCatalogEntry(row))
+            .ToList();
+
+        if (thinStubs.Count == 0)
+            return;
+
+        using var throttle = new SemaphoreSlim(DetailEnrichmentConcurrency);
+        var fetches = thinStubs.Select(async stub =>
+        {
+            await throttle.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                return (stub.ProviderId, Details: await provider.GetDetailsAsync(stub.ProviderId, ct).ConfigureAwait(false));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Detail enrichment failed for {Provider}/{ProviderId}.", provider.ProviderName, stub.ProviderId);
+                return (stub.ProviderId, Details: null);
+            }
+            finally
+            {
+                throttle.Release();
+            }
+        });
+
+        var results = await Task.WhenAll(fetches).ConfigureAwait(false);
+
+        foreach (var (providerId, details) in results)
+        {
+            if (details is null || !rows.TryGetValue(providerId, out var row))
+                continue;
+
+            ApplyDto(row, details);
+            row.LastRefreshedAt = DateTimeOffset.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    private static bool NeedsDetailEnrichment(string providerName) =>
+        string.Equals(providerName, "Novelfire", StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(providerName, "RanobeDB", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsThinCatalogEntry(LibraryCatalogEntry row) =>
+        string.IsNullOrWhiteSpace(row.Synopsis) ||
+        string.IsNullOrWhiteSpace(row.LatestChapter) ||
+        string.IsNullOrWhiteSpace(row.Genres);
+
+    /// <summary>Internal (not private) so <see cref="LibrarySearchService.EnrichEntryAsync"/> can reuse
+    /// the exact same field-merge rules for its on-demand, single-entry enrichment path. Optional fields
+    /// from a thin listing-page stub must not wipe richer values already fetched from a detail page.</summary>
+    internal static void ApplyDto(LibraryCatalogEntry row, LibraryEntryDto dto)
     {
         row.Title = dto.Title;
-        row.AlternateTitles = LibraryCatalogEntry.JoinList(dto.AlternateTitles);
-        row.Authors = LibraryCatalogEntry.JoinList(dto.Authors);
+        row.AlternateTitles = LibraryCatalogEntry.JoinList(dto.AlternateTitles) ?? row.AlternateTitles;
+        row.Authors = LibraryCatalogEntry.JoinList(dto.Authors) ?? row.Authors;
         row.MediaType = dto.MediaType;
-        row.CoverImageUrl = dto.CoverImageUrl;
-        row.Synopsis = dto.Synopsis;
-        row.Genres = LibraryCatalogEntry.JoinList(dto.Genres);
-        row.Rating = dto.Rating;
-        row.Status = dto.Status;
-        row.LatestChapter = dto.LatestChapter;
-        row.LatestVolume = dto.LatestVolume;
-        row.LastReleaseAt = dto.LastReleaseAt;
+        row.CoverImageUrl = dto.CoverImageUrl ?? row.CoverImageUrl;
+        row.Synopsis = dto.Synopsis ?? row.Synopsis;
+        row.Genres = LibraryCatalogEntry.JoinList(dto.Genres) ?? row.Genres;
+        row.Rating = dto.Rating ?? row.Rating;
+        row.Status = dto.Status ?? row.Status;
+        row.LatestChapter = dto.LatestChapter ?? row.LatestChapter;
+        row.LatestVolume = dto.LatestVolume ?? row.LatestVolume;
+        row.LastReleaseAt = dto.LastReleaseAt ?? row.LastReleaseAt;
         row.SourceUrl = dto.SourceUrl;
     }
 

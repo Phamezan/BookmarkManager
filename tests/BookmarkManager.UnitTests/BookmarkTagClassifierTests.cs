@@ -33,7 +33,7 @@ public sealed class BookmarkTagClassifierTests
     [InlineData("Light Novels", "Lord of the Mysteries Chapter 100", "https://novelbin.me/novel-book/lord-of-the-mysteries")]
     [InlineData("Web Novels", "Mother of Learning", "https://example.com/mother-of-learning")]
     [InlineData("Novels", "Lord of the Mysteries", "https://example.com/lord-of-the-mysteries")]
-    [InlineData("Wuxia Novels", "Reverend Insanity", "https://novelupdates.com/series/reverend-insanity")]
+    [InlineData("Wuxia Novels", "Reverend Insanity", "https://novelfull.com/novel-book/reverend-insanity")]
     [InlineData("LN", "Classroom of the Elite Volume 1", "https://example.com/classroom-of-the-elite")]
     [InlineData("WN", "Worm", "https://example.com/worm")]
     public void Classify_UsesNovelFolderContext(string folderPath, string title, string url)
@@ -113,7 +113,7 @@ public sealed class BookmarkTagClassifierTests
     [InlineData("Player Who Returned 10,000 Years Later Chapter 132 - Novel Cool", "https://www.novelcool.com/chapter/Player/", "Player Who Returned 10,000 Years Later")]
     [InlineData("I Fell into the Game with Instant Kill - Chapter 137 - Galaxy Translations", "https://galaxytranslations97.com/novel/", "I Fell into the Game with Instant Kill")]
     [InlineData("The Young Master in the Shadows - Chapter 45 - Scribble Hub", "https://www.scribblehub.com/read/", "The Young Master in the Shadows")]
-    [InlineData("Solo Leveling - Novel Updates", "https://novelupdates.com/", "Solo Leveling")]
+    [InlineData("Solo Leveling - Novelusb", "https://novelusb.com/", "Solo Leveling")]
     [InlineData("Lightnovels.me - read A Monster Who Levels Up Chapter 48 online for free - No Pop-Ads", "https://lightnovels.me/chapter-48", "A Monster Who Levels Up")]
     [InlineData("Martial God Asura Chapter 411 - Blood-Coloured Forbidden Medicine - Read Light Novels", "https://readlightnovels.net/martial-god-asura/chapter-411-blood-coloured-forbidden-medicine.html", "Martial God Asura")]
     public void CleanTitle_StripsMetadataAndSiteSuffixes(string title, string url, string expectedCleanedTitle)

@@ -101,6 +101,67 @@ public sealed class LibrarySearchService(
         };
     }
 
+    /// <summary>On-demand, single-title enrichment for catalog rows the bulk crawl only had thin
+    /// listing-page data for (no synopsis/genres/author - see <see cref="RanobeDbLibraryProvider"/> and
+    /// <see cref="NovelfireLibraryProvider"/>, whose list endpoints don't carry those fields). Called when
+    /// the client opens the details popup for an entry that's still missing them; the fetched detail page
+    /// is merged back into <see cref="LibraryCatalogEntry"/> so every later view of the same title -
+    /// anyone's, not just this caller's - is enriched for free, spreading the extra request cost only
+    /// across titles someone actually looked at rather than the entire catalog upfront.</summary>
+    public async Task<LibraryEntryDto?> EnrichEntryAsync(string provider, string providerId, CancellationToken cancellationToken)
+    {
+        var mediaProvider = registry.FindByName(provider);
+        if (mediaProvider is null || !mediaProvider.IsEnabled)
+            return null;
+
+        LibraryEntryDto? dto;
+        try
+        {
+            dto = await mediaProvider.GetDetailsAsync(providerId, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "{Provider} enrichment fetch failed for {ProviderId}.", provider, providerId);
+            return null;
+        }
+
+        if (dto is null)
+            return null;
+
+        var row = await db.LibraryCatalogEntries
+            .FirstOrDefaultAsync(e => e.Provider == provider && e.ProviderId == providerId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (row is null)
+            return dto;
+
+        LibraryCatalogSyncBackgroundService.ApplyDto(row, dto);
+        row.LastRefreshedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return MapCatalogEntry(row);
+    }
+
+    /// <summary>Looks up full catalog cards for a specific set of (provider, providerId) keys -
+    /// local-DB only, no live provider calls - so the client can render cards for series that
+    /// aren't on the currently loaded trending/search page (e.g. the "My bookmarks" filter).</summary>
+    public async Task<List<LibraryEntryDto>> GetEntriesByKeysAsync(
+        IReadOnlyCollection<(string Provider, string ProviderId)> keys, CancellationToken cancellationToken)
+    {
+        if (keys.Count == 0)
+            return [];
+
+        var providers = keys.Select(k => k.Provider).Distinct().ToList();
+        var providerIds = keys.Select(k => k.ProviderId).Distinct().ToList();
+        var rows = await db.LibraryCatalogEntries
+            .Where(e => providers.Contains(e.Provider) && providerIds.Contains(e.ProviderId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var keySet = keys.ToHashSet();
+        return rows.Where(r => keySet.Contains((r.Provider, r.ProviderId))).Select(MapCatalogEntry).ToList();
+    }
+
     private static LibraryEntryDto MapCatalogEntry(LibraryCatalogEntry row) => new(
         row.Provider,
         row.ProviderId,

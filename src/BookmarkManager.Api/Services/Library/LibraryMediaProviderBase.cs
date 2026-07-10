@@ -15,6 +15,11 @@ public abstract class LibraryMediaProviderBase(
     ILogger logger)
 {
     private const int MaxAttempts = 2;
+    private static readonly TimeSpan NullResultCacheTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>Wraps cached values so a legitimate null result ("provider has no such entry") is
+    /// distinguishable from a cache miss and doesn't trigger a network refetch on every request.</summary>
+    private sealed record CacheEnvelope<T>(T? Value);
 
     protected IHttpClientFactory HttpFactory { get; } = httpFactory;
     protected ILogger Logger { get; } = logger;
@@ -35,11 +40,11 @@ public abstract class LibraryMediaProviderBase(
         T fallback,
         CancellationToken cancellationToken)
     {
-        if (cache.TryGetValue(cacheKey, out T? cached) && cached is not null)
+        if (cache.TryGetValue(cacheKey, out CacheEnvelope<T>? cached) && cached is not null)
         {
             ProviderBudgetTracker.Instance.RecordCacheHit(ProviderName);
             Logger.LogInformation("[Request Budget] Provider={Provider} Action=CacheHit Key={Key}", ProviderName, cacheKey);
-            return cached;
+            return cached.Value ?? fallback;
         }
 
         if (Breaker.IsOpen)
@@ -60,14 +65,21 @@ public abstract class LibraryMediaProviderBase(
             {
                 var result = await operation(linked.Token).ConfigureAwait(false);
                 Breaker.RecordSuccess();
-                cache.Set(cacheKey, result, cacheTtl);
+                // Null results ("no such entry") cache too, on a shorter TTL so transient parse
+                // failures recover without hammering the provider on every repeat request.
+                cache.Set(cacheKey, new CacheEnvelope<T>(result), result is null ? NullResultCacheTtl : cacheTtl);
                 ProviderBudgetTracker.Instance.RecordSuccess(ProviderName);
                 return result;
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && attempt < MaxAttempts)
+            {
+                Logger.LogWarning("{Provider} attempt {Attempt} timed out after {TimeoutSeconds}s, retrying.", ProviderName, attempt, timeout.TotalSeconds);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
             {
                 Breaker.RecordFailure();
-                Logger.LogWarning("{Provider} timed out after {TimeoutSeconds}s.", ProviderName, timeout.TotalSeconds);
+                Logger.LogWarning("{Provider} timed out after {TimeoutSeconds}s on final attempt.", ProviderName, timeout.TotalSeconds);
                 ProviderBudgetTracker.Instance.RecordFailure(ProviderName, "Timed out.");
                 return fallback;
             }
