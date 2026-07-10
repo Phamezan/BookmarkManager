@@ -13,7 +13,7 @@ This document provides a comprehensive technical overview of the Bookmark Manage
 - **Broken Link Checker**: Background worker querying active URLs for DNS failures, timeouts, and 404s, moving them to a `"Broken Links"` folder with sync creation safeguards.
 - **AI Auto-Tagging**: Offline TF-IDF keywords and rule-based site categorization suggesting tags inside the bookmark editor.
 - **Safety Database Purging**: Scheduled daily purging of Recycle Bin items older than 30 days, backed by a safety JSON backup system.
-- **Library Discovery & Watcher Tracking**: Discover anime, manga, and novels across AniList, MangaDex, Kitsu, RoyalRoad, and NovelUpdates, tracking progress and updates behind.
+- **Library Discovery**: Browse and search a locally-cached catalog of anime, manga, and novels sourced from AniList, MangaDex, Kitsu, RanobeDB, Novelfire, RoyalRoad, and NovelUpdates, with a details popup per title (cover, synopsis, tags, source link).
 
 ---
 
@@ -83,10 +83,6 @@ sequenceDiagram
   - Columns: `Id`, `OperationId`, `CommandType` (Create/Move/Delete/Reorder/Restore), `BookmarkId`, `BrowserNodeId`, `PayloadJson`, `Status` (Pending/Leased/Succeeded/Failed).
 - **`TrackedRoot`**: Defines root folders sync scopes.
   - Columns: `Id`, `Title`, `BrowserNodeId`, `LastSyncedAt`.
-- **`TrackedSeries`**: Links a bookmark node to a media provider for release tracking.
-  - Columns: `Id`, `BookmarkId`, `Provider`, `ProviderId`, `MediaType`, `LatestKnownChapter`, `LastReleaseAt`, `LastChecked`, `ChaptersRead`, `Status`, `LatestChapterUrl`, `ConsecutiveFailureCount`, `NextCheckAt`, `LastCheckError`.
-- **`ReleaseEvent`**: Logs release history changes detected by the watcher background service.
-  - Columns: `Id`, `TrackedSeriesId`, `Chapter`, `Volume`, `ReleasedAt`, `CreatedAt`, `Url`.
 - **`LibraryCatalogEntry`**: Local mirror of one provider title, populated by the catalog sync background service so the Library "Browse" view can page through the full catalog instead of a live top-N call.
   - Columns: `Id`, `Provider`, `ProviderId` (unique together), `Title`, `AlternateTitles`, `Authors`, `MediaType`, `CoverImageUrl`, `Synopsis`, `Genres`, `Rating`, `Status`, `LatestChapter`, `LatestVolume`, `LastReleaseAt`, `SourceUrl`, `PopularityRank`, `FirstImportedAt`, `LastRefreshedAt`.
 - **`LibraryCatalogSyncQueueItem`**: Durable work queue (Queue-Based Load Leveling) — one row is one "fetch the next page" step of a provider crawl sequence, so a restart mid-crawl resumes instead of losing progress.
@@ -101,22 +97,17 @@ sequenceDiagram
 - Compares database nodes with incoming extension snapshot records.
 - Any database node missing from the snapshot is marked as soft-deleted (`IsDeleted = true`, `DeletedAt = UtcNow`, `PurgeAfter = UtcNow + 30 days`).
 
-### 2. Library Release Watcher
-- Runs on a Settings-configurable interval with schedule jitter to avoid synchronized provider bursts.
-- Persists exponential per-series failure backoff, capped at 24 hours; one provider or series failure does not stop other checks.
-- Writes one `ReleaseEvent` per newly observed chapter and broadcasts manager-only updates without creating Brave extension commands.
-
-### 3. Library Catalog Sync — Queue-Based Load Leveling (LibraryCatalogSyncBackgroundService)
-- Mirrors AniList/MangaDex catalogs into `LibraryCatalogEntry` so Browse pages through thousands of titles instead of a 24-title live top-N call.
+### 2. Library Catalog Sync — Queue-Based Load Leveling (LibraryCatalogSyncBackgroundService)
+- Mirrors AniList/MangaDex/RanobeDB/Novelfire catalogs into `LibraryCatalogEntry` so Browse pages through thousands of titles instead of a 24-title live top-N call.
 - Each "fetch next page" step is a durable `LibraryCatalogSyncQueueItem` row, not in-memory state — a container restart mid-crawl resumes exactly where it left off.
 - One worker loop per bulk-capable provider, throttled by that provider's existing rate limiter (shared with live search/trending, so the crawl never starves interactive requests).
 - Failed pages get exponential backoff and a max attempt count before landing in a `Failed` state for inspection in Settings; a stalled sequence (next token == current token) self-terminates instead of looping forever.
 
-### 4. Safeguarded Folder Creation Deferral (LinkCheckerService)
+### 3. Safeguarded Folder Creation Deferral (LinkCheckerService)
 - When scanning, if a `"Broken Links"` folder doesn't exist, it is created in the DB and enqueued as a browser `Create` command.
 - Moving detected dead links to the `"Broken Links"` folder is **deferred** in the database until the browser confirms the folder's creation and reports its `BrowserNodeId` back to the server. This prevents out-of-order execution errors inside the extension command loop.
 
-### 5. Rule-Based Offline Tag Suggestion (TagExtractorService)
+### 4. Rule-Based Offline Tag Suggestion (TagExtractorService)
 - Strips standard English stop words from the bookmark title.
 - Maps titles containing signature substrings (like `"github"`, `"miruro"`, `"mangadex"`) to standard categories (`Development`, `Anime`, `Manga`, `News`, `Shopping`).
 - Selects the top 5 most common keywords and lists them as click-to-add chip suggestions.

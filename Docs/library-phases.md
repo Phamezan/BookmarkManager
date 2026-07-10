@@ -85,7 +85,7 @@ active). Tracking is session-local until Phase 3 persists it. Tests: 4 integrati
 - Genre chips built from returned results; tabs map to provider media types.
 - Integration tests for merge/dedupe + partial provider failure.
 
-## Phase 3 — One-click track: catalog → bookmark (done)
+## Phase 3 — One-click track: catalog → bookmark (superseded by Phase 8 — removed)
 
 Goal: Track button creates real local bookmark with metadata.
 
@@ -105,7 +105,7 @@ and Undo integration.
 - Undo integration (`UndoService`) for track action.
 - Tests: unit (mapping), integration (track endpoint, duplicate, transaction rollback).
 
-## Phase 4 — Background release watcher (done)
+## Phase 4 — Background release watcher (superseded by Phase 8 — removed)
 
 Goal: server watches providers for new chapters.
 
@@ -125,7 +125,7 @@ live dashboard broadcasts without extension commands.
 - Tests: fake provider returning scripted release sequences; verify idempotency (same
   release seen twice = one event), restart behavior.
 
-## Phase 5 — Read-gap filter + progress UX (done)
+## Phase 5 — Read-gap filter + progress UX (superseded by Phase 8 — removed)
 
 Goal: prioritize catch-up.
 
@@ -213,11 +213,96 @@ point of a browseable discovery library.
   cursor/offset dual-mode), sync-service queue seeding/chaining/backoff tests, search-service
   paged-trending + catalog-merge tests, component test for Load More.
 
+## Phase 8 — Remove one-click tracking; details popup + English-title priority (done)
+
+Goal: the Library page is a pure discovery/browse surface — no bookmark creation, no
+release-watching subsystem. Not a use case for this deployment; the tracking machinery
+(Phases 3–5) added significant surface area (a second bookmark-creation path, a background
+watcher, per-series backoff state, progress controls duplicated on both the Bookmarks and
+Library pages) for a workflow that goes unused.
+
+**Removed:**
+
+- `TrackedSeries` / `ReleaseEvent` entities and their EF Core mappings (migration drops both
+  tables); `ReleaseWatcherBackgroundService`; `AppConfig.ReleaseWatcherIntervalHours`.
+- `LibraryController` endpoints: `tracked`, `track`, `track/{id}/check`, `track/{id}/progress`,
+  `watcher/status`, `watcher/trigger`, `watcher/settings` (GET/PUT).
+- Contracts: `TrackedSeriesDto`, `ReleaseEventDto`, `ReleaseWatcherStatusDto`,
+  `ReleaseWatcherSettingsDto`, `TrackLibraryEntryRequest`, `UpdateProgressRequest`; the
+  `IsTracked`/`ChaptersRead`/`LatestKnownChapter`/`ChaptersBehind`/`LatestChapterUrl` fields on
+  `BookmarkNodeDto` (and the `TrackedSeries` join that populated them in
+  `BookmarksController`/`SearchController`).
+- Client: `TrackSeriesDialog`, the "+ Track"/"Tracked ✓" button and progress buttons on
+  `MediaCard`/`BookmarkCard`, the "Updates Behind" Library tab, the "Library Release Watcher"
+  Settings card, and all `ILibraryService` tracking/progress/watcher methods.
+
+**Added:**
+
+- `MediaDetailsDialog` — the Library card's "More" button now opens a popup with cover image,
+  title + alternate titles, type/status/rating/latest-chapter chips, genres, full synopsis, and
+  a link to the source provider page. Replaces the old inline-card overflow ("+ Track") since a
+  full catalog of thousands of titles has no room to show all of this per-card.
+- English-title priority: when a provider exposes multiple localized titles, prefer the English
+  one over the native/romanized title (AniList `title.english` over `title.romaji`/`native`;
+  Kitsu `titles.en` over `canonicalTitle`, which Kitsu often sets to a romanization). MangaDex
+  already preferred `en`/`en-us` — unchanged.
+
+The Library Catalog Sync background service (Phase 7) and provider health/toggle diagnostics are
+unaffected — Browse still pages through the full locally-mirrored catalog.
+
+## Phase 9 — RanobeDB provider for the LightNovel gap (done)
+
+Goal: `Webnovel` filter returned 0 results and `LightNovel` was sparse (~58 titles). Root
+cause: Browse only reads from `LibraryCatalogEntry`, fed exclusively by providers implementing
+`IBulkCatalogProvider` — AniList and MangaDex. MangaDex excludes novel formats entirely; AniList's
+`type: MANGA` crawl (sorted by popularity) only turns up `format: NOVEL` entries as a thin,
+slow-to-surface slice, and it essentially never carries raw/untranslated Chinese or Korean web
+serials at all. `Webnovel` (any-language translated/raw web fiction) stays a real gap — no
+existing or newly-evaluated provider closes it cleanly (see rejected options below).
+
+**Investigated:**
+
+- **NovelUpdates direct fetch for a bulk crawl** — confirmed hard-blocked: a plain server-side
+  request returns `403` with `Cf-Mitigated: challenge` and a "Just a moment..." Cloudflare
+  Turnstile page, not a simple UA/IP filter. No change from the Phase-1 assessment; the
+  documented fallback (relay the HTML fetch through the Brave extension's already-authenticated
+  browser context) remains unbuilt and is a candidate for a future phase.
+
+**Added:**
+
+- `RanobeDbLibraryProvider` (`IMediaProvider` + `IBulkCatalogProvider`) — RanobeDB
+  (`ranobedb.org/api/v0`, VNDB-style schema, no auth/key) covers Japanese light novels: official
+  volume/release data, `publication_status`, genre/demographic tags, author/artist staff, cover
+  art. All entries map to `LibraryMediaType.LightNovel`. Bulk crawl walks `/series` (~22k rows)
+  paginated at 100/page, ordered by volume count descending as a popularity stand-in (RanobeDB
+  has no follower/trending signal). Does **not** address `Webnovel` — RanobeDB tracks published
+  releases, not web-serial chapters, and has no meaningful raw Chinese/Korean web fiction
+  coverage.
+- `NovelfireLibraryProvider` (`IMediaProvider` + `IBulkCatalogProvider`) — Novelfire
+  (`novelfire.net`, no public API, HTML scrape) covers raw/fan-translated web serials (mostly
+  Chinese; Korean was removed site-wide by the operator for copyright reasons, per the site's own
+  banner). `robots.txt` explicitly disallows `/search?keyword=*` and `/api/*` for all user
+  agents, so `SearchAsync` deliberately always returns empty — this provider is bulk-catalog-only
+  by design. Bulk crawl walks `/genre-all/sort-popular/status-all/all-novel?page=N` (~755 pages
+  at the time of writing, ~24/page, neither path is in the `Disallow` list), then
+  `GetDetailsAsync` hits the per-novel `/book/{slug}` page for author/genres/synopsis/status/
+  latest-chapter. All entries map to `LibraryMediaType.Webnovel`. Bulk-imported entries still
+  surface in live search via the existing catalog-merge behavior in `LibrarySearchService`, so
+  skipping live `SearchAsync` doesn't remove Novelfire titles from search once crawled.
+
+`Webnovel` is now populated by Novelfire; `LightNovel` is now populated by RanobeDB (in addition
+to AniList's thin novel-format slice). The NovelUpdates extension-relay fallback remains a
+possible future improvement if broader Webnovel coverage (beyond what Novelfire hosts) is
+wanted later.
+
 ---
 
 ### Order rationale
 
-1→2 gives visible value fast (real search in existing UI). 3 before 4 because watcher
-needs `TrackedSeries` rows to watch. 5 is thin once 3–4 exist. Scrapy providers
-(RoyalRoad/NovelUpdates) isolated behind the provider interface so their fragility never
-blocks API-backed providers.
+1→2 gives visible value fast (real search in existing UI). Phases 3–5 (one-click track,
+release watcher, read-gap UX) shipped and were later removed in Phase 8 as out of scope for
+this deployment — see Phase 8 for what replaced them. Scrapy providers
+(RoyalRoad/NovelUpdates/Novelfire) isolated behind the provider interface so their fragility
+never blocks API-backed providers. Phase 9 added RanobeDB (LightNovel) and Novelfire
+(Webnovel) to close the two catalog gaps found after the Phase 7 crawl shipped; NovelUpdates'
+Cloudflare block was confirmed empirically rather than assumed.
