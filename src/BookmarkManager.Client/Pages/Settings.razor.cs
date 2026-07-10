@@ -15,6 +15,7 @@ public partial class Settings
     [Inject] private IBookmarkManagerApiClient ApiClient { get; set; } = default!;
     [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ILibraryService LibraryService { get; set; } = default!;
 
     private ExtensionStatusDto? _extensionStatus;
     private bool _statusLoading = true;
@@ -52,6 +53,19 @@ public partial class Settings
     private bool _triageRunning;
     private TriageJobStatusDto? _triageResult;
 
+    private ReleaseWatcherStatusDto? _watcherStatus;
+    private ReleaseWatcherSettingsDto _watcherSettings = new();
+    private bool _watcherStatusLoading = true;
+    private bool _watcherRunning;
+    private bool _watcherSettingsSaving;
+
+    private List<ProviderHealthDto> _providerHealth = [];
+    private bool _healthLoading = true;
+
+    private LibraryCatalogSyncStatusDto? _catalogStatus;
+    private bool _catalogStatusLoading = true;
+    private bool _catalogResyncTriggering;
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -63,10 +77,47 @@ public partial class Settings
             // Ignore failure
         }
 
-        await Task.WhenAll(LoadExtensionStatusAsync(), LoadAiTaggingSettingsAsync());
+        await Task.WhenAll(
+            LoadExtensionStatusAsync(),
+            LoadAiTaggingSettingsAsync(),
+            LoadWatcherStatusAsync(),
+            LoadWatcherSettingsAsync(),
+            LoadProviderHealthAsync(),
+            LoadCatalogSyncStatusAsync());
     }
 
     private void OpenUrlMigrator() => Navigation.NavigateTo("/url-migrator");
+
+    private async Task LoadProviderHealthAsync()
+    {
+        _healthLoading = true;
+        try
+        {
+            _providerHealth = await LibraryService.GetProvidersHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load provider health: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _healthLoading = false;
+        }
+    }
+
+    private async Task ToggleProviderAsync(string name, bool enabled)
+    {
+        try
+        {
+            await LibraryService.ToggleProviderAsync(name, enabled);
+            Snackbar.Add($"{(enabled ? "Enabled" : "Disabled")} {name} provider.", Severity.Success);
+            await LoadProviderHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to toggle provider: {ex.Message}", Severity.Error);
+        }
+    }
 
     private async Task RunLinkCheckerAsync()
     {
@@ -267,6 +318,110 @@ public partial class Settings
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to apply theme: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadWatcherStatusAsync()
+    {
+        _watcherStatusLoading = true;
+        try
+        {
+            _watcherStatus = await LibraryService.GetWatcherStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load watcher status: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _watcherStatusLoading = false;
+        }
+    }
+
+    private async Task LoadWatcherSettingsAsync()
+    {
+        try
+        {
+            _watcherSettings = await LibraryService.GetWatcherSettingsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load watcher settings: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task SaveWatcherSettingsAsync()
+    {
+        _watcherSettingsSaving = true;
+        try
+        {
+            _watcherSettings = await LibraryService.UpdateWatcherSettingsAsync(_watcherSettings);
+            Snackbar.Add("Release watcher schedule updated.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to save watcher settings: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _watcherSettingsSaving = false;
+        }
+    }
+
+    private async Task RunReleaseWatcherAsync()
+    {
+        _watcherRunning = true;
+        try
+        {
+            await LibraryService.TriggerWatcherAsync();
+            Snackbar.Add("Release watcher triggered in background.", Severity.Info);
+            await Task.Delay(1000);
+            await LoadWatcherStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to run release watcher: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _watcherRunning = false;
+        }
+    }
+
+    private async Task LoadCatalogSyncStatusAsync()
+    {
+        _catalogStatusLoading = true;
+        try
+        {
+            _catalogStatus = await LibraryService.GetCatalogSyncStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load catalog sync status: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _catalogStatusLoading = false;
+        }
+    }
+
+    private async Task TriggerCatalogResyncAsync()
+    {
+        _catalogResyncTriggering = true;
+        try
+        {
+            await LibraryService.TriggerCatalogResyncAsync();
+            Snackbar.Add("Full catalog resync started in the background.", Severity.Info);
+            await Task.Delay(1000);
+            await LoadCatalogSyncStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to trigger catalog resync: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _catalogResyncTriggering = false;
         }
     }
 }

@@ -25,7 +25,9 @@ public partial class BookmarksController
     var node = await _db.BookmarkNodes
         .FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
     if (node is null) return NotFound();
-    return _mapper.Map<BookmarkNodeDto>(node);
+    var dto = _mapper.Map<BookmarkNodeDto>(node);
+    await PopulateTrackingInfoAsync([dto], ct);
+    return dto;
     }
 
     [HttpGet("deleted")]
@@ -35,7 +37,9 @@ public partial class BookmarksController
         .Where(n => n.IsDeleted)
         .OrderByDescending(n => n.DeletedAt)
         .ToListAsync(ct);
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await PopulateTrackingInfoAsync(dtos, ct);
+    return dtos;
     }
 
     [HttpGet("favorites")]
@@ -45,7 +49,9 @@ public partial class BookmarksController
         .Where(n => !n.IsDeleted && n.IsFavorite)
         .OrderBy(n => n.Title)
         .ToListAsync(ct);
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await PopulateTrackingInfoAsync(dtos, ct);
+    return dtos;
     }
 
     [HttpGet("recommendations")]
@@ -75,7 +81,9 @@ public partial class BookmarksController
         .Where(n => sampledIds.Contains(n.Id))
         .ToListAsync(ct);
 
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await PopulateTrackingInfoAsync(dtos, ct);
+    return dtos;
     }
 
     [HttpPost("{id:guid}/archive")]
@@ -182,7 +190,35 @@ public partial class BookmarksController
         .Where(n => n.ParentId == parentId && !n.IsDeleted)
         .OrderBy(n => n.Position)
         .ToListAsync(ct);
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await PopulateTrackingInfoAsync(dtos, ct);
+    return dtos;
     }
 
+    private async Task PopulateTrackingInfoAsync(List<BookmarkNodeDto> dtos, CancellationToken ct)
+    {
+        var bookmarkIds = dtos.Where(d => d.Type == NodeType.Bookmark).Select(d => d.Id).ToList();
+        if (bookmarkIds.Count == 0) return;
+
+        var tracked = await _db.TrackedSeries
+            .Where(t => bookmarkIds.Contains(t.BookmarkId))
+            .Select(t => new { t.BookmarkId, t.LatestKnownChapter, t.ChaptersRead, t.LatestChapterUrl })
+            .ToListAsync(ct);
+
+        var dict = tracked.ToDictionary(t => t.BookmarkId, t => t);
+
+        foreach (var dto in dtos)
+        {
+            if (dict.TryGetValue(dto.Id, out var ts))
+            {
+                dto.IsTracked = true;
+                dto.ChaptersRead = ts.ChaptersRead;
+                dto.LatestKnownChapter = ts.LatestKnownChapter;
+                dto.LatestChapterUrl = ts.LatestChapterUrl;
+                dto.ChaptersBehind = TrackedSeries.CalculateChaptersBehind(
+                    ts.LatestKnownChapter,
+                    ts.ChaptersRead);
+            }
+        }
+    }
 }

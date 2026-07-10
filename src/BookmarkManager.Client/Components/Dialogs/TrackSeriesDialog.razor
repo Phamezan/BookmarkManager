@@ -1,0 +1,99 @@
+@namespace BookmarkManager.Client.Components.Dialogs
+@using BookmarkManager.Client.Features.Library
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.h6">Track Series — @Item.Title</MudText>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Add this series to your library bookmarks to track updates.
+            </MudText>
+
+            <MudSelect T="Guid?" Label="Destination folder" @bind-Value="_selectedFolderId" Variant="Variant.Outlined" Required="true">
+                @foreach (var option in _options)
+                {
+                    <MudSelectItem T="Guid?" Value="option.Id">@option.Label</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField @bind-Value="_chaptersRead" Label="Chapters read" Variant="Variant.Outlined" Min="0" Step="1" Required="true" />
+
+            <MudTextField @bind-Value="_tags" Label="Tags (comma separated)" Variant="Variant.Outlined" Placeholder="e.g. Action, Fantasy" />
+
+            <MudSelect T="string" Label="Status" @bind-Value="_status" Variant="Variant.Outlined" Required="true">
+                <MudSelectItem Value="@("Reading")">Reading</MudSelectItem>
+                <MudSelectItem Value="@("Plan to Read")">Plan to Read</MudSelectItem>
+                <MudSelectItem Value="@("Completed")">Completed</MudSelectItem>
+                <MudSelectItem Value="@("On Hold")">On Hold</MudSelectItem>
+                <MudSelectItem Value="@("Dropped")">Dropped</MudSelectItem>
+            </MudSelect>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!_selectedFolderId.HasValue || _chaptersRead < 0)" OnClick="Confirm">Track series</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public LibraryItem Item { get; set; } = default!;
+    [Parameter] public List<FolderTreeNodeDto> FolderTree { get; set; } = [];
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private Guid? _selectedFolderId;
+    private double _chaptersRead;
+    private string _tags = string.Empty;
+    private string _status = "Reading";
+    private List<FolderOption> _options = [];
+
+    protected override void OnParametersSet()
+    {
+        _options = FlattenFolders(FolderTree);
+        if (!_selectedFolderId.HasValue)
+        {
+            _selectedFolderId = _options.FirstOrDefault()?.Id;
+        }
+
+        if (Item != null)
+        {
+            if (double.TryParse(Item.LatestChapter, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var ch))
+            {
+                _chaptersRead = ch;
+            }
+            else
+            {
+                _chaptersRead = 0;
+            }
+
+            _tags = Item.Genres != null ? string.Join(", ", Item.Genres) : string.Empty;
+        }
+    }
+
+    private void Confirm()
+    {
+        if (_selectedFolderId.HasValue)
+        {
+            MudDialog.Close(DialogResult.Ok(new TrackSeriesDialogResult(_selectedFolderId.Value, _chaptersRead, _tags, _status)));
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static List<FolderOption> FlattenFolders(IEnumerable<FolderTreeNodeDto> folders, int depth = 0)
+    {
+        var options = new List<FolderOption>();
+        foreach (var folder in folders)
+        {
+            var label = $"{new string(' ', depth * 2)}{(depth > 0 ? "↳ " : string.Empty)}{folder.Title}";
+            options.Add(new FolderOption(folder.Id, label));
+            options.AddRange(FlattenFolders(folder.Children, depth + 1));
+        }
+
+        return options;
+    }
+
+    private sealed record FolderOption(Guid Id, string Label);
+}

@@ -102,6 +102,10 @@ public partial class Bookmarks : IDisposable
                 {
                     items = items.Where(i => i.Metadata?.IsFavorite == true);
                 }
+                else if (_typeFilter == "Behind")
+                {
+                    items = items.Where(i => i.ChaptersBehind > 0);
+                }
 
                 if (_activeTagFilters.Count > 0)
                 {
@@ -121,6 +125,9 @@ public partial class Bookmarks : IDisposable
                                         .ThenBy(item => item.UpdatedAt),
                     "UpdatedDesc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
                                          .ThenByDescending(item => item.UpdatedAt),
+                    "Behind" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
+                                     .ThenByDescending(item => item.ChaptersBehind ?? 0)
+                                     .ThenBy(item => item.Title),
                     _ => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
                               .ThenBy(item => item.Title)
                 };
@@ -229,4 +236,28 @@ public partial class Bookmarks : IDisposable
         }
     }
 
+    private void OnSortModeChanged(string sortMode)
+    {
+        _sortMode = sortMode;
+        StateHasChanged();
+    }
+
+    private void OnTypeFilterChanged(string typeFilter)
+    {
+        _typeFilter = typeFilter;
+        StateHasChanged();
+    }
+
+    private async Task OnProgressUpdated()
+    {
+        if (_selectedFolderId.HasValue)
+        {
+            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+        }
+        else if (!string.IsNullOrWhiteSpace(_searchQuery))
+        {
+            _items = (await BookmarkService.SearchBookmarksAsync(new SearchRequest { Query = _searchQuery })).Items;
+        }
+        StateHasChanged();
+    }
 }

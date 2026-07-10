@@ -73,13 +73,43 @@ public class SearchController : ControllerBase
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var dtos = _mapper.Map<List<BookmarkNodeDto>>(items);
+        await PopulateTrackingInfoAsync(dtos, ct);
+
         return new PagedResult<BookmarkNodeDto>
         {
-            Items = _mapper.Map<List<BookmarkNodeDto>>(items),
+            Items = dtos,
             TotalCount = total,
             Page = page,
             PageSize = pageSize
         };
+    }
+
+    private async Task PopulateTrackingInfoAsync(List<BookmarkNodeDto> dtos, CancellationToken ct)
+    {
+        var bookmarkIds = dtos.Where(d => d.Type == NodeType.Bookmark).Select(d => d.Id).ToList();
+        if (bookmarkIds.Count == 0) return;
+
+        var tracked = await _db.TrackedSeries
+            .Where(t => bookmarkIds.Contains(t.BookmarkId))
+            .Select(t => new { t.BookmarkId, t.LatestKnownChapter, t.ChaptersRead, t.LatestChapterUrl })
+            .ToListAsync(ct);
+
+        var dict = tracked.ToDictionary(t => t.BookmarkId, t => t);
+
+        foreach (var dto in dtos)
+        {
+            if (dict.TryGetValue(dto.Id, out var ts))
+            {
+                dto.IsTracked = true;
+                dto.ChaptersRead = ts.ChaptersRead;
+                dto.LatestKnownChapter = ts.LatestKnownChapter;
+                dto.LatestChapterUrl = ts.LatestChapterUrl;
+                dto.ChaptersBehind = TrackedSeries.CalculateChaptersBehind(
+                    ts.LatestKnownChapter,
+                    ts.ChaptersRead);
+            }
+        }
     }
 
     private static string EscapeLike(string input)

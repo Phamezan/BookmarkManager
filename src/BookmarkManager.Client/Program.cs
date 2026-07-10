@@ -21,6 +21,7 @@ builder.Services.AddScoped<IBookmarkManagerApiClient, BookmarkManagerApiClient>(
 
 builder.Services.AddScoped<IExtensionConnectionService, ExtensionConnectionService>();
 builder.Services.AddScoped<IBookmarkService, HttpBookmarkService>();
+builder.Services.AddScoped<ILibraryService, HttpLibraryService>();
 builder.Services.AddScoped<UndoService>();
 builder.Services.AddTransient<SyncSocketListener>();
 builder.Services.AddTransient<FolderSelectionPersistence>();

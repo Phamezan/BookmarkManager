@@ -35,7 +35,11 @@ else
                                   MoveSelected="MoveSelected"
                                   DeleteSelected="DeleteSelected"
                                   CreateBookmark="CreateBookmark"
-                                  OpenAutoTaggerDialog="OpenAutoTaggerDialog" />
+                                  OpenAutoTaggerDialog="OpenAutoTaggerDialog"
+                                  SortMode="@_sortMode"
+                                  SortModeChanged="OnSortModeChanged"
+                                  TypeFilter="@_typeFilter"
+                                  TypeFilterChanged="OnTypeFilterChanged" />
 
                 @if (ShouldShowTagBar)
                 {
@@ -180,7 +184,8 @@ else
                           MoveBookmarkAsync="MoveBookmark"
                           DeleteBookmarkAsync="DeleteBookmark"
                           MoveFolderAsync="MoveFolder"
-                          DeleteFolderAsync="DeleteFolder" />
+                          DeleteFolderAsync="DeleteFolder"
+                          OnProgressUpdated="OnProgressUpdated" />
         </main>
     </div>
 }

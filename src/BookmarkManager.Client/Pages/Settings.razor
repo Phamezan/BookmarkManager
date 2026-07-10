@@ -375,5 +375,248 @@
         </MudStack>
     </MudPaper>
 
+    <!-- Library Release Watcher Section -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.Update" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Library Release Watcher</MudText>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="RunReleaseWatcherAsync"
+                           Disabled="@_watcherRunning">
+                    @(_watcherRunning ? "Checking..." : "Check Releases Now")
+                </MudButton>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Diagnostics and status for the background release watcher.
+            </MudText>
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudNumericField T="int"
+                                 Label="Check interval (hours)"
+                                 @bind-Value="_watcherSettings.IntervalHours"
+                                 Min="1"
+                                 Max="168"
+                                 Variant="Variant.Outlined"
+                                 Margin="Margin.Dense"
+                                 Style="max-width: 220px;" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Primary"
+                           OnClick="SaveWatcherSettingsAsync"
+                           Disabled="@_watcherSettingsSaving">
+                    @(_watcherSettingsSaving ? "Saving..." : "Save Schedule")
+                </MudButton>
+            </MudStack>
+
+            @if (_watcherStatusLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_watcherStatus != null)
+            {
+                <MudGrid>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Status</MudText>
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <span class="status-dot @(_watcherStatus.IsRunning ? "is-running" : "is-idle")" style="margin-right: 4px;" aria-hidden="true"></span>
+                                <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                    @(_watcherStatus.IsRunning ? "Running" : "Idle")
+                                </MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Total Tracked Series</MudText>
+                            <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                @_watcherStatus.TotalTrackedCount
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Successful Checks</MudText>
+                            <MudText Typo="Typo.body1" Color="Color.Success" Style="font-weight: 600;">
+                                @_watcherStatus.SuccessCount
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Failed Checks</MudText>
+                            <MudText Typo="Typo.body1" Color="Color.Error" Style="font-weight: 600;">
+                                @_watcherStatus.FailureCount
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Last Checked Time</MudText>
+                            <MudText Typo="Typo.body2">
+                                @(_watcherStatus.LastRunTime?.ToString("yyyy-MM-dd HH:mm:ss") ?? "Never")
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    @if (!string.IsNullOrEmpty(_watcherStatus.LastError))
+                    {
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">
+                                Last Error: @_watcherStatus.LastError
+                            </MudAlert>
+                        </MudItem>
+                    }
+                </MudGrid>
+            }
+        </MudStack>
+    </MudPaper>
+
+    <!-- Library Catalog Sync Section -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.CloudSync" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Library Catalog Sync</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Size="Size.Small"
+                               OnClick="LoadCatalogSyncStatusAsync"
+                               Disabled="@_catalogStatusLoading" />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Sync"
+                           OnClick="TriggerCatalogResyncAsync"
+                           Disabled="@_catalogResyncTriggering">
+                    @(_catalogResyncTriggering ? "Starting..." : "Force Full Resync")
+                </MudButton>
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Background crawl that mirrors AniList/MangaDex catalogs locally so the Library "Browse" view can
+                page through the full catalog instead of a live top-N call. A full resync can take a while due to
+                provider rate limits; progress resumes automatically if the app restarts mid-crawl.
+            </MudText>
+
+            @if (_catalogStatusLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else if (_catalogStatus != null)
+            {
+                <MudGrid>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Status</MudText>
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                <span class="status-dot @(_catalogStatus.IsCrawling ? "is-running" : "is-idle")" style="margin-right: 4px;" aria-hidden="true"></span>
+                                <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                    @(_catalogStatus.IsCrawling ? "Crawling" : "Idle")
+                                </MudText>
+                            </MudStack>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Cached Titles</MudText>
+                            <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                @_catalogStatus.TotalEntries
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Queue (Pending / Processing)</MudText>
+                            <MudText Typo="Typo.body1" Style="font-weight: 600;">
+                                @_catalogStatus.PendingQueueCount / @_catalogStatus.ProcessingQueueCount
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6" md="3">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Failed Queue Items</MudText>
+                            <MudText Typo="Typo.body1" Color="@(_catalogStatus.FailedQueueCount > 0 ? Color.Error : Color.Default)" Style="font-weight: 600;">
+                                @_catalogStatus.FailedQueueCount
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Last Refreshed</MudText>
+                            <MudText Typo="Typo.body2">
+                                @(_catalogStatus.LastRefreshedAt?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") ?? "Never")
+                            </MudText>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            }
+        </MudStack>
+    </MudPaper>
+
+    <!-- Provider Health & Toggles Section -->
+    <MudPaper Elevation="0" Class="ops-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudIcon Icon="@Icons.Material.Filled.LocalHospital" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Provider Health & Diagnostics</MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Size="Size.Small"
+                               OnClick="LoadProviderHealthAsync"
+                               Disabled="@_healthLoading" />
+            </MudStack>
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Monitor health, status, and network request budgets per media catalog provider.
+            </MudText>
+
+            @if (_healthLoading)
+            {
+                <MudProgressLinear Indeterminate="true" />
+            }
+            else
+            {
+                <div style="display: flex; flex-direction: column; gap: 16px;">
+                    @foreach (var provider in _providerHealth)
+                    {
+                        var current = provider;
+                        <div style="display: flex; align-items: flex-start; justify-content: space-between; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px;">
+                            <div style="display: flex; flex-direction: column; gap: 4px;">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <MudText Typo="Typo.subtitle1" Style="font-weight: bold; color: var(--bm-text-primary);">
+                                        @current.ProviderName
+                                    </MudText>
+                                    <span class="status-badge @(current.IsEnabled ? "status-badge--success" : "status-badge--danger")" style="padding: 2px 6px; font-size: 0.7rem; line-height: 1;">
+                                        @(current.IsEnabled ? "Enabled" : "Disabled")
+                                    </span>
+                                </div>
+                                <div style="display: flex; gap: 16px; font-size: 0.8rem; color: var(--bm-text-secondary); margin-top: 4px;">
+                                    <span>Successes: <strong style="color: var(--mud-palette-success);">@current.SuccessCount</strong></span>
+                                    <span>Failures: <strong style="color: var(--mud-palette-error);">@current.FailureCount</strong></span>
+                                    <span>Network: <strong>@current.NetworkCalls</strong></span>
+                                    <span>Cache Hits: <strong>@current.CacheHits</strong></span>
+                                </div>
+                                @if (current.LastSuccess.HasValue)
+                                {
+                                    <span style="font-size: 0.75rem; color: var(--bm-text-secondary);">Last Success: @current.LastSuccess.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                }
+                                @if (!string.IsNullOrEmpty(current.LastError))
+                                {
+                                    <div style="margin-top: 4px; font-size: 0.75rem; color: var(--mud-palette-error); font-family: monospace; background: rgba(244,67,54,0.05); padding: 4px 8px; border-radius: 4px;">
+                                        Last Error: @current.LastError
+                                        @if (current.LastFailure.HasValue)
+                                        {
+                                            <span style="display: block; font-size: 0.7rem; opacity: 0.8;">At: @current.LastFailure.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                            <div style="display: flex; align-items: center;">
+                                <MudSwitch T="bool" Value="@current.IsEnabled" ValueChanged="@((bool val) => ToggleProviderAsync(current.ProviderName, val))" Color="Color.Primary" Label="Active" />
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </MudStack>
+    </MudPaper>
 
 </MudStack>

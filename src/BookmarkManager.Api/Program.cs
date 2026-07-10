@@ -98,6 +98,31 @@ builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.Wayback
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
     });
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IWaybackEpisodeIdResolver, BookmarkManager.Api.Services.UrlMigration.WaybackEpisodeIdResolver>();
+builder.Services.AddMemoryCache();
+builder.Services.Configure<BookmarkManager.Api.Services.Library.LibraryProviderOptions>(
+    builder.Configuration.GetSection(BookmarkManager.Api.Services.Library.LibraryProviderOptions.SectionName));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.AniListLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.MangaDexLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.KitsuLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.RoyalRoadLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.NovelUpdatesLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.AniListLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.MangaDexLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.KitsuLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.RoyalRoadLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.NovelUpdatesLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryProviderRegistry>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Library.LibrarySearchService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.ReleaseWatcherBackgroundService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.ReleaseWatcherBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.ReleaseWatcherBackgroundService>());
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>());
+builder.Services.AddSingleton(BookmarkManager.Api.Services.Library.ProviderBudgetTracker.Instance);
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.AddAutoMapper(typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>
