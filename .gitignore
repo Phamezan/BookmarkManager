@@ -49,10 +49,6 @@ CLAUDE.md
 .gemini/
 GEMINI.md
 .aider*
-.github/copilot-instructions.md
-.github/instructions/
-.github/prompts/
-.github/agents/
 kickbacks.vsix
 implementation.md
 .hermes
