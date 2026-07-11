@@ -1,4 +1,6 @@
 import type {
+  BackupSettings,
+  BackupState,
   CommandCorrelation,
   ExtensionEvent,
   ExtensionSettings,
@@ -22,6 +24,10 @@ const OUTBOX_THRESHOLD = 5000;
 export const DEFAULT_FOLDER_ID = "1";
 const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
 const LAST_ACTIVE_FOLDER_KEY = "bm.lastActiveFolderId";
+const BACKUP_STATE_KEY = "bm.backupState";
+const BACKUP_SETTINGS_KEY = "bm.backupSettings";
+
+export const DEFAULT_BACKUP_SUBFOLDER = "BookmarkManagerBackups";
 
 export class ChromeStorageRepository implements StorageRepository {
   private outboxChain: Promise<void> = Promise.resolve();
@@ -193,6 +199,33 @@ export class ChromeStorageRepository implements StorageRepository {
     await this.storage.set({ "bm.snapshotState": state });
   }
 
+  async getBackupState(): Promise<BackupState> {
+    const result = await this.storage.get(BACKUP_STATE_KEY);
+    return (
+      (result[BACKUP_STATE_KEY] as BackupState | undefined) ?? {
+        entries: [],
+        lastAutoBackupAt: null,
+      }
+    );
+  }
+
+  async saveBackupState(state: BackupState): Promise<void> {
+    await this.storage.set({ [BACKUP_STATE_KEY]: state });
+  }
+
+  async getBackupSettings(): Promise<BackupSettings> {
+    const result = await this.storage.get(BACKUP_SETTINGS_KEY);
+    return (
+      (result[BACKUP_SETTINGS_KEY] as BackupSettings | undefined) ?? {
+        subfolder: DEFAULT_BACKUP_SUBFOLDER,
+      }
+    );
+  }
+
+  async saveBackupSettings(settings: BackupSettings): Promise<void> {
+    await this.storage.set({ [BACKUP_SETTINGS_KEY]: settings });
+  }
+
   async clearAll(): Promise<void> {
     await this.storage.remove([
       "bm.settings",
@@ -203,6 +236,8 @@ export class ChromeStorageRepository implements StorageRepository {
       "bm.syncStatus",
       SHORTCUT_EDITOR_KEY,
       LAST_ACTIVE_FOLDER_KEY,
+      BACKUP_STATE_KEY,
+      BACKUP_SETTINGS_KEY,
     ]);
   }
 }

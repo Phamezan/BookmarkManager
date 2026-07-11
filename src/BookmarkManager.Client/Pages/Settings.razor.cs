@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using BookmarkManager.Client.Components;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
@@ -23,6 +25,25 @@ public partial class Settings
     private AiTaggingSettingsDto _aiSettings = new();
     private bool _aiSettingsLoading = true;
     private bool _aiSettingsSaving;
+
+    // Curated from OpenRouter's live free-tier catalog - excludes moderation-only,
+    // vision, code-only, and sub-10B models that aren't reliable for series-title extraction.
+    private static readonly string[] OpenRouterFreeModels =
+    {
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "nvidia/nemotron-3-super-120b-a12b:free",
+        "nvidia/nemotron-nano-9b-v2:free",
+        "qwen/qwen3-next-80b-a3b-instruct:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "nousresearch/hermes-3-llama-3.1-405b:free",
+        "openai/gpt-oss-120b:free",
+        "google/gemma-4-31b-it:free"
+    };
+
+    private IEnumerable<string> ModelOptionsIncludingCurrent =>
+        string.IsNullOrWhiteSpace(_aiSettings.Model) || OpenRouterFreeModels.Contains(_aiSettings.Model)
+            ? OpenRouterFreeModels
+            : OpenRouterFreeModels.Append(_aiSettings.Model);
     private bool _aiKeyTesting;
     private TestAiKeyResponse? _aiKeyTestResult;
     private bool _groqKeyTesting;

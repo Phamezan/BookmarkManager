@@ -140,4 +140,36 @@ describe("PopupController", () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe("manualBackup", () => {
+    it("sends manualBackup message and returns the response", async () => {
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true, filename: "BookmarkManagerBackups/bookmarks-backup-x.html", error: null };
+        },
+        requestPermission: async () => permissionGranted,
+        now: () => new Date("2026-06-22T10:00:00Z"),
+      });
+
+      const result = await controller.manualBackup();
+      expect(messages).toContainEqual({ type: "manualBackup" });
+      expect(result.success).toBe(true);
+      expect(result.filename).toBe("BookmarkManagerBackups/bookmarks-backup-x.html");
+    });
+  });
+
+  describe("backup settings", () => {
+    it("defaults to BookmarkManagerBackups", async () => {
+      const settings = await controller.getBackupSettings();
+      expect(settings.subfolder).toBe("BookmarkManagerBackups");
+    });
+
+    it("saves and reloads a custom subfolder", async () => {
+      await controller.saveBackupSubfolder("MyBackups");
+      const settings = await controller.getBackupSettings();
+      expect(settings.subfolder).toBe("MyBackups");
+    });
+  });
 });

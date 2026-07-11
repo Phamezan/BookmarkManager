@@ -226,14 +226,23 @@ describe("ServiceWorker WebSocket", () => {
       completeCommand: vi.fn().mockRejectedValue(new Error("offline")),
     };
 
-    return new ServiceWorker({
-      api: failingApi as never,
-      adapter: { getSubtree: vi.fn(), apply: vi.fn() } as never,
-      storage,
-      getExtensionVersion: () => "0.1.0",
-      getBraveVersion: () => "1.0",
-      now: () => new Date(),
-    });
+    const backupManager = {
+      runAutoBackupIfDue: vi.fn().mockResolvedValue({ ran: true }),
+      runManualBackup: vi.fn().mockResolvedValue({ success: true, filename: "f.html", error: null }),
+    };
+
+    return {
+      worker: new ServiceWorker({
+        api: failingApi as never,
+        adapter: { getSubtree: vi.fn(), apply: vi.fn() } as never,
+        storage,
+        backupManager: backupManager as never,
+        getExtensionVersion: () => "0.1.0",
+        getBraveVersion: () => "1.0",
+        now: () => new Date(),
+      }),
+      backupManager,
+    };
   }
 
   beforeEach(() => {
@@ -244,7 +253,7 @@ describe("ServiceWorker WebSocket", () => {
   });
 
   it("does not open a second socket while one is open or connecting", async () => {
-    const worker = await makeWorker();
+    const { worker } = await makeWorker();
 
     await worker.handleMessage({ type: "manualSync" });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -259,7 +268,7 @@ describe("ServiceWorker WebSocket", () => {
 
   it("backs off exponentially on close and resets after a successful open", async () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
-    const worker = await makeWorker();
+    const { worker } = await makeWorker();
 
     await worker.handleMessage({ type: "manualSync" });
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -286,5 +295,37 @@ describe("ServiceWorker WebSocket", () => {
     FakeWebSocket.instances[2]!.simulateClose();
     await vi.advanceTimersByTimeAsync(3000);
     expect(FakeWebSocket.instances).toHaveLength(4);
+  });
+
+  it("triggers an auto-backup check on successful websocket open", async () => {
+    const { worker, backupManager } = await makeWorker();
+
+    await worker.handleMessage({ type: "manualSync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    FakeWebSocket.instances[0]!.simulateOpen();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(backupManager.runAutoBackupIfDue).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not break reconnect-reset when auto-backup rejects", async () => {
+    const { worker, backupManager } = await makeWorker();
+    backupManager.runAutoBackupIfDue.mockRejectedValueOnce(new Error("boom"));
+
+    await worker.handleMessage({ type: "manualSync" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    FakeWebSocket.instances[0]!.simulateOpen();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(FakeWebSocket.instances[0]!.readyState).toBe(FakeWebSocket.OPEN);
+  });
+
+  it("relays the manualBackup message to backupManager.runManualBackup", async () => {
+    const { worker, backupManager } = await makeWorker();
+
+    const result = await worker.handleMessage({ type: "manualBackup" });
+
+    expect(backupManager.runManualBackup).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true, filename: "f.html", error: null });
   });
 });

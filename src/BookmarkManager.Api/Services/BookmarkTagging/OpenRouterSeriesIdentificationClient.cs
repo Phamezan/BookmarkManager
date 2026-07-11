@@ -57,7 +57,7 @@ internal sealed class OpenRouterSeriesIdentificationClient : IAiSeriesIdentifica
         var itemsJson = JsonSerializer.Serialize(request.Items, JsonOptions);
 
         var openRouterRequest = new OpenRouterChatRequest(
-            Model: string.IsNullOrWhiteSpace(settings.Model) ? "google/gemini-2.5-flash:free" : settings.Model,
+            Model: string.IsNullOrWhiteSpace(settings.Model) ? "nvidia/nemotron-3-ultra-550b-a55b:free" : settings.Model,
             Temperature: 0.0,
             Messages: new[]
             {

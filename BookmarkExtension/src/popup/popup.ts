@@ -98,6 +98,22 @@ export class PopupController {
     await this.deps.sendMessage({ type: "refreshCatalog" });
   }
 
+  async manualBackup(): Promise<{ success: boolean; filename: string | null; error: string | null }> {
+    return (await this.deps.sendMessage({ type: "manualBackup" })) as {
+      success: boolean;
+      filename: string | null;
+      error: string | null;
+    };
+  }
+
+  async getBackupSettings(): Promise<{ subfolder: string }> {
+    return await this.deps.storage.getBackupSettings();
+  }
+
+  async saveBackupSubfolder(subfolder: string): Promise<void> {
+    await this.deps.storage.saveBackupSettings({ subfolder });
+  }
+
   async testConnection(): Promise<{ success: boolean; error: string | null }> {
     try {
       const response = (await this.deps.sendMessage({
@@ -278,6 +294,9 @@ if (isBrowser) {
     clearBtn:      document.getElementById("clear-btn")       as HTMLButtonElement | null,
     configShortcut:document.getElementById("configure-shortcut-btn") as HTMLButtonElement | null,
     openManagerBtn:document.getElementById("open-manager-btn") as HTMLButtonElement | null,
+    backupBtn:     document.getElementById("backup-btn")       as HTMLButtonElement | null,
+    backupMsg:     document.getElementById("backup-message")   as HTMLElement | null,
+    backupSubfolder: document.getElementById("backup-subfolder") as HTMLInputElement | null,
     statusDot:     document.getElementById("status-dot")      as HTMLElement | null,
     syncState:     document.getElementById("sync-state")      as HTMLElement | null,
     lastSync:      document.getElementById("last-sync")       as HTMLElement | null,
@@ -339,6 +358,12 @@ if (isBrowser) {
     if (!els.connMsg) return;
     els.connMsg.textContent = text;
     els.connMsg.className = `message${type ? " " + type : ""}`;
+  }
+
+  function setBackupMsg(text: string, type: "success" | "error" | "info" | "" = ""): void {
+    if (!els.backupMsg) return;
+    els.backupMsg.textContent = text;
+    els.backupMsg.className = `message${type ? " " + type : ""}`;
   }
 
   function populateApiBaseUrlSelect(select: HTMLSelectElement, selectedValue: string): void {
@@ -554,6 +579,26 @@ if (isBrowser) {
     }
   });
 
+  els.backupBtn?.addEventListener("click", async () => {
+    const btn = els.backupBtn;
+    if (!btn) return;
+    btn.disabled = true;
+    setBackupMsg("Backing up…", "info");
+    const result = await controller.manualBackup();
+    btn.disabled = false;
+    setBackupMsg(
+      result.success ? `Backup saved: ${result.filename}` : (result.error ?? "Backup failed"),
+      result.success ? "success" : "error",
+    );
+  });
+
+  els.backupSubfolder?.addEventListener("change", async () => {
+    const value = els.backupSubfolder?.value?.trim();
+    if (value) {
+      await controller.saveBackupSubfolder(value);
+    }
+  });
+
   // ── Editor event listeners ──────────────────────────────────────────────────
 
   els.editorDoneBtn?.addEventListener("click", async () => {
@@ -642,6 +687,10 @@ if (isBrowser) {
 
   // ── Boot ────────────────────────────────────────────────────────────────────
   refreshUI();
+
+  controller.getBackupSettings().then((settings) => {
+    if (els.backupSubfolder) els.backupSubfolder.value = settings.subfolder;
+  });
   
   // Efficiently listen for local storage changes instead of unconditionally polling
   chrome.storage.onChanged.addListener((changes, areaName) => {

@@ -24,12 +24,18 @@ public sealed class HostingTests(IntegrationTestWebApplicationFactory factory)
 
         var repositoryRoot = Directory.GetParent(AppContext.BaseDirectory)?.Parent?.Parent?.Parent?.Parent?.Parent;
         Assert.NotNull(repositoryRoot);
+#if DEBUG
+        var configurationName = "Debug";
+#else
+        var configurationName = "Release";
+#endif
+
         var frameworkDirectory = Path.Combine(
             repositoryRoot.FullName,
             "src",
             "BookmarkManager.Client",
             "bin",
-            "Debug",
+            configurationName,
             "net10.0",
             "wwwroot",
             "_framework");

@@ -201,6 +201,21 @@ export interface SyncStatus {
   pendingEventCount: number;
 }
 
+export interface BackupTrackedEntry {
+  downloadId: number;
+  filename: string;
+  timestamp: string;
+}
+
+export interface BackupState {
+  entries: BackupTrackedEntry[];
+  lastAutoBackupAt: string | null;
+}
+
+export interface BackupSettings {
+  subfolder: string;
+}
+
 export interface CommandExecutionResult {
   succeeded: boolean;
   browserNodeId: string | null;
@@ -248,5 +263,9 @@ export interface StorageRepository {
   getSyncStatus(): Promise<SyncStatus | null>;
   getSnapshotState(): Promise<{ lastRequestId: string | null; preparing: SnapshotRootPayload[] | null }>;
   saveSnapshotState(state: { lastRequestId: string | null; preparing: SnapshotRootPayload[] | null }): Promise<void>;
+  getBackupState(): Promise<BackupState>;
+  saveBackupState(state: BackupState): Promise<void>;
+  getBackupSettings(): Promise<BackupSettings>;
+  saveBackupSettings(settings: BackupSettings): Promise<void>;
   clearAll(): Promise<void>;
 }
