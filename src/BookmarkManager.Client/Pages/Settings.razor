@@ -159,11 +159,15 @@
                                       HelperText="OpenRouter API Base URL, e.g. https://openrouter.ai/api/v1" />
                     </MudItem>
                     <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_aiSettings.Model"
-                                      Label="Model"
-                                      Variant="Variant.Outlined"
-                                      Immediate="true"
-                                      HelperText="OpenRouter model ID, e.g. google/gemini-2.5-flash:free" />
+                        <MudSelect T="string" @bind-Value="_aiSettings.Model"
+                                   Label="Model"
+                                   Variant="Variant.Outlined"
+                                   HelperText="Swap if the current model is congested (429).">
+                            @foreach (var option in ModelOptionsIncludingCurrent)
+                            {
+                                <MudSelectItem T="string" Value="@option">@option</MudSelectItem>
+                            }
+                        </MudSelect>
                     </MudItem>
                     <MudItem xs="12">
                         <MudTextField @bind-Value="_aiSettings.ApiKey"
