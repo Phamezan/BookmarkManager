@@ -13,5 +13,7 @@ jobs:
       - name: Deploy app
         run: |
           cd /home/phamezan/BookmarkManager
-          git pull origin main
-          docker compose up -d --build
+          git fetch origin main
+          git reset --hard origin/main
+          docker compose up -d --build --force-recreate
+          docker image prune -f

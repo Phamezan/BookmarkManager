@@ -1,0 +1,35 @@
+name: CI/CD Auto-Merge Pipeline
+
+on:
+  push:
+    branches:
+      - 'feature/*' # Only triggers on feature branches
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test-and-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run Tests
+        run: dotnet test --configuration Release
+
+      - name: Create and Auto-Merge PR
+        env:
+          GH_TOKEN: ${{ secrets.MY_PAT }}
+        run: |
+          # Creates a PR silently
+          gh pr view "${{ github.ref_name }}" &>/dev/null || gh pr create --title "Auto-Merge: ${{ github.ref_name }}" --body "Automated by CI" --base main
+          
+          # Merges the PR immediately and deletes the remote branch
+          gh pr merge --merge --delete-branch
