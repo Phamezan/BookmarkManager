@@ -40,8 +40,8 @@
     }
     else
     {
-        <Virtualize Items="@_rows" Context="row" ItemSize="154" OverscanCount="8">
-            <div class="bookmark-grid" role="list" aria-label="Bookmarks">
+        <Virtualize Items="@_rows" Context="row" ItemSize="160" OverscanCount="8">
+            <div class="bookmark-grid" role="list" aria-label="Bookmarks" style="grid-template-columns: repeat(@_columns, 1fr);">
                 @foreach (var item in row)
                 {
                     <BookmarkCard @key="item.Id"
@@ -68,7 +68,7 @@
 </div>
 
 @code {
-    private const int MinCardWidthPx = 280;
+    private const int MinCardWidthPx = 310;
     private const int GapPx = 12;
 
     private ElementReference _gridContainerRef;
@@ -124,7 +124,8 @@
             try
             {
                 _dotNetRef = Microsoft.JSInterop.DotNetObjectReference.Create(this);
-                _columns = await JSRuntime.InvokeAsync<int>("BookmarkGridInterop.getColumnCount", _gridContainerRef, MinCardWidthPx, GapPx);
+                var rawCols = await JSRuntime.InvokeAsync<int>("BookmarkGridInterop.getColumnCount", _gridContainerRef, MinCardWidthPx, GapPx);
+                _columns = Math.Clamp(rawCols, 1, 4);
                 _resizeObserver = await JSRuntime.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
                     "BookmarkGridInterop.observeResize", _gridContainerRef, _dotNetRef, MinCardWidthPx, GapPx);
                 UpdateRows();
@@ -154,7 +155,7 @@
     {
         try
         {
-            columns = Math.Max(1, columns);
+            columns = Math.Clamp(columns, 1, 4);
             if (columns == _columns) return;
             _columns = columns;
             UpdateRows();

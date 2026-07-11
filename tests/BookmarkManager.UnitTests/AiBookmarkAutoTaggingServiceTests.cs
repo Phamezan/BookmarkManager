@@ -90,7 +90,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         Assert.Null(bookmark.Tags);
         Assert.Equal(1, summary.TotalCandidates);
         Assert.Equal(1, summary.SkippedLowConfidence);
-        Assert.Equal(0, fixture.NovelUpdates.CallCount);
+        Assert.Equal(0, fixture.NovelFull.CallCount);
     }
 
     [Fact]
@@ -104,14 +104,14 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             Folder(folderId, null, "Light Novels"),
             Bookmark(firstId, folderId, "A Monster Who Levels Up Chapter 48", "https://lightnovels.me/a-monster-who-levels-up-48"),
             Bookmark(secondId, folderId, "A Monster Who Levels Up Chapter 49", "https://lightnovels.me/a-monster-who-levels-up-49"));
-        fixture.NovelUpdates.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
+        fixture.NovelFull.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
 
         var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, CancellationToken.None);
 
         var bookmarks = await fixture.Db.BookmarkNodes.Where(node => node.ParentId == folderId).OrderBy(node => node.Title).ToListAsync();
         Assert.All(bookmarks, bookmark => Assert.Equal("Novel,Fantasy,Level System", bookmark.Tags));
         Assert.Equal(2, summary.Tagged);
-        Assert.Equal(1, fixture.NovelUpdates.CallCount);
+        Assert.Equal(1, fixture.NovelFull.CallCount);
     }
 
     [Fact]
@@ -214,7 +214,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         await fixture.SeedAsync(
             Folder(folderId, null, "Novels"),
             Bookmark(bookmarkId, folderId, "A Monster Who Levels Up Chapter 1", "https://example.com/novel"));
-        fixture.NovelUpdates.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
+        fixture.NovelFull.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
 
         var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, CancellationToken.None);
 
@@ -290,7 +290,6 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             MangaUpdates = new FakeProvider();
             Kitsu = new FakeProvider();
             NovelFull = new FakeProvider();
-            NovelUpdates = new FakeProvider();
             var identifierService = new AiSeriesIdentifierService(new HttpClient(identifier), new Uri("https://ai.local/identify"));
             Service = new AiBookmarkAutoTaggingService(
                 Db,
@@ -299,7 +298,6 @@ public sealed class AiBookmarkAutoTaggingServiceTests
                 MangaUpdates,
                 Kitsu,
                 NovelFull,
-                NovelUpdates,
                 NullLogger<AiBookmarkAutoTaggingService>.Instance);
         }
 
@@ -309,7 +307,6 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         public FakeProvider MangaUpdates { get; }
         public FakeProvider Kitsu { get; }
         public FakeProvider NovelFull { get; }
-        public FakeProvider NovelUpdates { get; }
         public AiBookmarkAutoTaggingService Service { get; }
 
         public static async Task<AiAutoTagFixture> CreateAsync()
@@ -335,7 +332,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         }
     }
 
-    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, INovelFullTagProvider, INovelUpdatesTagProvider
+    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, INovelFullTagProvider
     {
         private readonly Dictionary<string, List<string>> _tagsByTitle = new(StringComparer.OrdinalIgnoreCase);
 

@@ -6,24 +6,24 @@
                 <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
                     <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
                         <MudTooltip Text="@(IsAllSelected ? "Deselect all" : "Select all")">
-                            <MudIconButton Icon="@(IsAllSelected ? Icons.Material.Rounded.RemoveDone : Icons.Material.Rounded.DoneAll)"
+                            <MudIconButton Icon="@(IsAllSelected ? DeselectIcon : SelectIcon)"
                                            Size="Size.Small" Color="Color.Primary" OnClick="ToggleSelectAll"
                                            aria-label="Toggle select all" />
                         </MudTooltip>
                         <MudTooltip Text="Clear selection">
-                            <MudIconButton Icon="@Icons.Material.Rounded.Close" Size="Size.Small"
+                            <MudIconButton Icon="@CloseIcon" Size="Size.Small"
                                            OnClick="ClearSelection" aria-label="Clear selection" />
                         </MudTooltip>
                         <MudText Typo="Typo.subtitle2" Class="ml-2 selection-count">@SelectedCount selected</MudText>
                     </MudStack>
                     <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                         <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                                   StartIcon="@Icons.Material.Rounded.DriveFileMove" Size="Size.Small"
+                                   StartIcon="@MoveIcon" Size="Size.Small"
                                    Class="selection-action-btn" OnClick="MoveSelected">
                             Move
                         </MudButton>
                         <MudButton Variant="Variant.Outlined" Color="Color.Error"
-                                   StartIcon="@Icons.Material.Rounded.DeleteOutline" Size="Size.Small"
+                                   StartIcon="@DeleteIcon" Size="Size.Small"
                                    Class="selection-action-btn selection-action-danger" OnClick="DeleteSelected">
                             Delete
                         </MudButton>
@@ -36,29 +36,81 @@
             <MudPaper Elevation="0" Class="explorer-toolbar">
                 <MudTooltip Text="@(IsAllSelected ? "Deselect all" : "Select all")">
                     <MudButton Variant="Variant.Text" Size="Size.Small"
-                               StartIcon="@(IsAllSelected ? Icons.Material.Rounded.RemoveDone : Icons.Material.Rounded.DoneAll)"
+                               StartIcon="@(IsAllSelected ? DeselectIcon : SelectIcon)"
                                OnClick="ToggleSelectAll" Class="select-all-btn">
                         @(IsAllSelected ? "Deselect" : "Select")
                     </MudButton>
                 </MudTooltip>
 
                 <MudTextField Value="SearchQuery" ValueChanged="SearchChanged"
-                              Placeholder="Search title or URL…" Variant="Variant.Outlined" Immediate="true"
-                              DebounceInterval="400" Margin="Margin.Dense" Class="toolbar-search"
-                              Clearable="true"
-                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Rounded.Search" />
+                               Placeholder="Search title or URL…" Variant="Variant.Outlined" Immediate="true"
+                               DebounceInterval="400" Margin="Margin.Dense" Class="toolbar-search"
+                               Clearable="true"
+                               Adornment="Adornment.Start" AdornmentIcon="@SearchIcon" />
 
                 <div class="toolbar-action-group" role="group" aria-label="Bookmark actions">
                     <MudTooltip Text="Add bookmark">
-                        <MudIconButton Icon="@Icons.Material.Rounded.BookmarkAdd" Size="Size.Medium"
+                        <MudIconButton Icon="@BookmarkAddIcon" Size="Size.Medium"
                                        Class="toolbar-action-btn" OnClick="CreateBookmark"
                                        aria-label="Add bookmark" />
                     </MudTooltip>
                     <div class="toolbar-action-divider" aria-hidden="true"></div>
                     <MudTooltip Text="Auto-tag bookmarks">
-                        <MudIconButton Icon="@Icons.Material.Rounded.AutoFixHigh" Size="Size.Medium"
+                        <MudIconButton Icon="@AutoTagIcon" Size="Size.Medium"
                                        Class="toolbar-action-btn" OnClick="OpenAutoTaggerDialog"
                                        aria-label="Auto-tag bookmarks" />
+                    </MudTooltip>
+                    <div class="toolbar-action-divider" aria-hidden="true"></div>
+                    <MudTooltip Text="Filter bookmarks">
+                        <MudMenu Icon="@Icons.Material.Filled.FilterList" Size="Size.Medium" Class="toolbar-action-btn" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Filter bookmarks">
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("All"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>All Bookmarks</span>
+                                    @if (TypeFilter == "All" || string.IsNullOrEmpty(TypeFilter)) { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Favorites"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Favorites</span>
+                                    @if (TypeFilter == "Favorites") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                        </MudMenu>
+                    </MudTooltip>
+                    <div class="toolbar-action-divider" aria-hidden="true"></div>
+                    <MudTooltip Text="Sort order">
+                        <MudMenu Icon="@SortIcon" Size="Size.Medium" Class="toolbar-action-btn" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" aria-label="Sort bookmarks">
+                            <MudMenuItem OnClick="@(() => ChangeSortMode("UpdatedDesc"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Newest First</span>
+                                    @if (SortMode == "UpdatedDesc") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeSortMode("UpdatedAsc"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Oldest First</span>
+                                    @if (SortMode == "UpdatedAsc") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeSortMode("TitleAsc"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Title (A - Z)</span>
+                                    @if (SortMode == "TitleAsc" || string.IsNullOrEmpty(SortMode)) { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeSortMode("TitleDesc"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Title (Z - A)</span>
+                                    @if (SortMode == "TitleDesc") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeSortMode("Status"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Publishing Status</span>
+                                    @if (SortMode == "Status") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                        </MudMenu>
                     </MudTooltip>
                 </div>
             </MudPaper>
@@ -77,4 +129,32 @@
     [Parameter] public EventCallback<string?> SearchChanged { get; set; }
     [Parameter] public EventCallback CreateBookmark { get; set; }
     [Parameter] public EventCallback OpenAutoTaggerDialog { get; set; }
+
+    [Parameter] public string SortMode { get; set; } = "UpdatedDesc";
+    [Parameter] public EventCallback<string> SortModeChanged { get; set; }
+
+    [Parameter] public string TypeFilter { get; set; } = "All";
+    [Parameter] public EventCallback<string> TypeFilterChanged { get; set; }
+
+    private async Task ChangeTypeFilter(string filter)
+    {
+        TypeFilter = filter;
+        await TypeFilterChanged.InvokeAsync(filter);
+    }
+
+    private async Task ChangeSortMode(string mode)
+    {
+        SortMode = mode;
+        await SortModeChanged.InvokeAsync(mode);
+    }
+
+    private const string SelectIcon = "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\" ry=\"2\"></rect>";
+    private const string DeselectIcon = "<polyline points=\"9 11 12 14 22 4\"></polyline><path d=\"M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11\"></path>";
+    private const string CloseIcon = "<line x1=\"18\" y1=\"6\" x2=\"6\" y2=\"18\"></line><line x1=\"6\" y1=\"6\" x2=\"18\" y2=\"18\"></line>";
+    private const string MoveIcon = "<path d=\"M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z\"></path>";
+    private const string DeleteIcon = "<polyline points=\"3 6 5 6 21 6\"></polyline><path d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"></path>";
+    private const string SearchIcon = "<circle cx=\"11\" cy=\"11\" r=\"8\"></circle><line x1=\"21\" y1=\"21\" x2=\"16.65\" y2=\"16.65\"></line>";
+    private const string BookmarkAddIcon = "<path d=\"M16 21l-4-3-4 3V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2z\"></path><line x1=\"18\" y1=\"5\" x2=\"18\" y2=\"11\"></line><line x1=\"15\" y1=\"8\" x2=\"21\" y2=\"8\"></line>";
+    private const string AutoTagIcon = "<polygon points=\"13 2 3 14 12 14 11 22 21 10 12 10 13 2\"></polygon>";
+    private const string SortIcon = "<path d=\"M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z\"/>";
 }

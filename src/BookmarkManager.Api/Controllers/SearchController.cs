@@ -12,11 +12,16 @@ public class SearchController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly IMapper _mapper;
+    private readonly BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService _matchService;
 
-    public SearchController(AppDbContext db, IMapper mapper)
+    public SearchController(
+        AppDbContext db,
+        IMapper mapper,
+        BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService matchService)
     {
         _db = db;
         _mapper = mapper;
+        _matchService = matchService;
     }
 
     [HttpPost]
@@ -61,6 +66,14 @@ public class SearchController : ControllerBase
             }
         }
 
+        if (request.FolderId.HasValue)
+        {
+            var folderIds = await FolderHierarchy.GetDescendantFolderIdsAsync(_db, request.FolderId.Value, ct);
+            var folderIdsNullable = folderIds.Select(id => (Guid?)id).ToList();
+            folderIdsNullable.Add(request.FolderId.Value);
+            query = query.Where(n => folderIdsNullable.Contains(n.ParentId));
+        }
+
         var total = await query.CountAsync(ct);
 
         var pageSize = Math.Max(1, Math.Min(request.PageSize, 100));
@@ -73,9 +86,21 @@ public class SearchController : ControllerBase
             .Take(pageSize)
             .ToListAsync(ct);
 
+        var dtos = _mapper.Map<List<BookmarkNodeDto>>(items);
+
+        var matches = await _matchService.GetMatchesAsync(ct);
+        var matchesByBookmarkId = matches.ToDictionary(m => m.BookmarkId, m => m.CoverImageUrl);
+        foreach (var dto in dtos)
+        {
+            if (matchesByBookmarkId.TryGetValue(dto.Id, out var coverUrl))
+            {
+                dto.CoverImageUrl = coverUrl;
+            }
+        }
+
         return new PagedResult<BookmarkNodeDto>
         {
-            Items = _mapper.Map<List<BookmarkNodeDto>>(items),
+            Items = dtos,
             TotalCount = total,
             Page = page,
             PageSize = pageSize

@@ -29,4 +29,8 @@ public class AnimeScheduleCache
 
     /// <summary>Serialized list of upcoming episodes (episode number + air time).</summary>
     public string EpisodesJson { get; set; } = "[]";
+
+    /// <summary>Total episode count for the season (AniList's static `episodes` field),
+    /// null while the season's length is still unannounced.</summary>
+    public int? TotalEpisodes { get; set; }
 }

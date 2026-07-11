@@ -31,32 +31,38 @@
                 <MudStack Spacing="3">
                     <div class="d-flex align-center justify-space-between">
                         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">SELECT FOLDERS TO TAG</MudText>
-                        <MudCheckBox T="bool" Value="_selectAll" ValueChanged="OnSelectAllChanged" Label="Select All" Color="Color.Primary" Dense="true" />
+                        <MudCheckBox T="bool" Value="_selectAll" ValueChanged="OnSelectAllChanged" Label="Select All"
+                                     Color="Color.Primary" Dense="true" />
                     </div>
-                    <MudSwitch T="bool"
-                               @bind-Value="_useAiSeriesAutoTagging"
-                               Color="Color.Primary"
+                    <MudSwitch T="bool" @bind-Value="_useAiSeriesAutoTagging" Color="Color.Primary"
                                Label="Use OpenRouter series matching (saves tags directly)" />
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        Turn this on to use OpenRouter only for canonical title matching; source providers still supply the tags.
+                        Turn this on to use OpenRouter only for canonical title matching; source providers still supply the
+                        tags.
                     </MudText>
-                    <div style="max-height: 160px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+                    <div
+                        style="max-height: 160px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
                         <MudGrid Spacing="1">
                             @foreach (var folder in _selectableFolders)
                             {
                                 var isChecked = _selectedFolderIds.Contains(folder.Id);
                                 <MudItem xs="12" sm="6">
-                                    <MudPaper Outlined="true" Class="pa-2 d-flex align-center justify-space-between" Style="background: transparent;">
+                                    <MudPaper Outlined="true" Class="pa-2 d-flex align-center justify-space-between"
+                                              Style="background: transparent;">
                                         <div class="d-flex align-center gap-2 text-truncate">
-                                            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" Color="Color.Primary" />
+                                            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                                                     Color="Color.Primary" />
                                             <span class="text-truncate" style="font-size: 0.9rem;">
                                                 @folder.Title
-                                                <span class="mud-text-secondary" style="font-size: 0.75rem; font-weight: 600; margin-left: 4px;">
+                                                <span class="mud-text-secondary"
+                                                      style="font-size: 0.75rem; font-weight: 600; margin-left: 4px;">
                                                     (@_untaggedCounts[folder.Id] untagged)
                                                 </span>
                                             </span>
                                         </div>
-                                        <MudCheckBox T="bool" Value="isChecked" ValueChanged="@((val) => OnFolderCheckChanged(folder.Id, val))" Color="Color.Primary" Dense="true" />
+                                        <MudCheckBox T="bool" Value="isChecked"
+                                                     ValueChanged="@((val) => OnFolderCheckChanged(folder.Id, val))"
+                                                     Color="Color.Primary" Dense="true" />
                                     </MudPaper>
                                 </MudItem>
                             }
@@ -73,132 +79,130 @@
                         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">@_statusText</MudText>
                         @if (_useAiSeriesAutoTagging && !_taggingFinished)
                         {
-                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace; color: #a5b4fc;">AI processing @_processedCount / @_totalCount bookmarks</MudText>
+                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace; color: #a5b4fc;">AI
+                                processing @_processedCount / @_totalCount bookmarks</MudText>
+                            }
+                        else
+                            {
+                                <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">@_processedCount /
+                                    @_totalCount bookmarks</MudText>
+                                }
+                            </div>
+                            @if (_useAiSeriesAutoTagging && !_taggingFinished)
+                            {
+                                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                            }
+                            else
+                            {
+                                <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                            }
+
+                            @if (_rateLimitStopped)
+                            {
+                                <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="my-2">
+                                    Rate limit hit! AI auto-tagging has been paused.
+                                    <br />
+                                    <strong>@_remainingCount</strong> bookmark(s) remain to be tagged.
+                                    <br />
+                                    Please wait a bit (e.g. 60 seconds), close this dialog, and run the Auto Tagger again to resume.
+                                </MudAlert>
+                            }
+
+                            <div id="tagger-terminal-log"
+                                 style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
+                                @foreach (var log in _logs)
+                                {
+                                    <div style="margin-bottom: 2px;">
+                                        <span style="color: #64748b; margin-right: 6px;">[@log.Timestamp]</span>
+                                        @if (log.Type == LogType.Success)
+                                        {
+                                            <span style="color: #10b981;">@log.Message</span>
+                                        }
+                                        else if (log.Type == LogType.Error)
+                                        {
+                                            <span style="color: #ef4444;">@log.Message</span>
+                                        }
+                                        else if (log.Type == LogType.Info)
+                                        {
+                                            <span style="color: #38bdf8;">@log.Message</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@log.Message</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </MudStack>
+                    }
+            else if (_currentState == TaggerState.Review)
+                    {
+                        <!-- Review Screen -->
+                        <MudStack Spacing="2">
+                            <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Review the generated suggestions. Click 'x' to
+                                delete, or add tags manually before saving.</MudText>
+
+                                <div
+                                    style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+                                    <MudStack Spacing="3">
+                                        @foreach (var item in _reviewItems)
+                                        {
+                                            <AutoTaggerReviewRow Item="item" />
+                                        }
+                                    </MudStack>
+                                </div>
+                            </MudStack>
+                        }
+                    </MudStack>
+                </DialogContent>
+
+                <DialogActions>
+                    @if (_currentState == TaggerState.Selection)
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+                        <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                                   StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="StartTaggingAsync"
+                                   Disabled="@(_loading || _selectedFolderIds.Count == 0)">
+                            Start Tagging
+                        </MudButton>
+                    }
+                    else if (_currentState == TaggerState.Tagging)
+                    {
+                        @if (!_taggingFinished)
+                        {
+                            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
+                                       OnClick="StopTagging">Stop Tagging</MudButton>
                         }
                         else
                         {
-                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">@_processedCount / @_totalCount bookmarks</MudText>
-                        }
-                    </div>
-                    @if (_useAiSeriesAutoTagging && !_taggingFinished)
-                    {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
-                    }
-                    else
-                    {
-                        <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
-                    }
-
-                    @if (_rateLimitStopped)
-                    {
-                        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="my-2">
-                            Rate limit hit! AI auto-tagging has been paused.
-                            <br />
-                            <strong>@_remainingCount</strong> bookmark(s) remain to be tagged.
-                            <br />
-                            Please wait a bit (e.g. 60 seconds), close this dialog, and run the Auto Tagger again to resume.
-                        </MudAlert>
-                    }
-
-                    <div id="tagger-terminal-log" style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
-                        @foreach (var log in _logs)
-                        {
-                            <div style="margin-bottom: 2px;">
-                                <span style="color: #64748b; margin-right: 6px;">[@log.Timestamp]</span>
-                                @if (log.Type == LogType.Success)
-                                {
-                                    <span style="color: #10b981;">@log.Message</span>
-                                }
-                                else if (log.Type == LogType.Error)
-                                {
-                                    <span style="color: #ef4444;">@log.Message</span>
-                                }
-                                else if (log.Type == LogType.Info)
-                                {
-                                    <span style="color: #38bdf8;">@log.Message</span>
-                                }
-                                else
-                                {
-                                    <span>@log.Message</span>
-                                }
-                            </div>
-                        }
-                    </div>
-                </MudStack>
-            }
-            else if (_currentState == TaggerState.Review)
-            {
-                <!-- Review Screen -->
-                <MudStack Spacing="2">
-                    <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
-                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Review the generated suggestions. Click 'x' to delete, or add tags manually before saving.</MudText>
-                    
-                    <div style="max-height: 280px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
-                        <MudStack Spacing="3">
-                            @foreach (var item in _reviewItems)
+                            <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+                            @if (_useAiSeriesAutoTagging)
                             {
-                                <AutoTaggerReviewRow Item="item" />
+                                <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                                           StartIcon="@Icons.Material.Filled.Check" OnClick="Cancel">
+                                    Close
+                                </MudButton>
                             }
-                        </MudStack>
-                    </div>
-                </MudStack>
-            }
-        </MudStack>
-    </DialogContent>
-
-    <DialogActions>
-        @if (_currentState == TaggerState.Selection)
-        {
-            <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-            <MudButton Variant="Variant.Filled"
-                       Style="background-color: #10b981; color: white;"
-                       StartIcon="@Icons.Material.Filled.PlayArrow"
-                       OnClick="StartTaggingAsync"
-                       Disabled="@(_loading || _selectedFolderIds.Count == 0)">
-                Start Tagging
-            </MudButton>
-        }
-        else if (_currentState == TaggerState.Tagging)
-        {
-            @if (!_taggingFinished)
-            {
-                <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop" OnClick="StopTagging">Stop Tagging</MudButton>
-            }
-            else
-            {
-                <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-                @if (_useAiSeriesAutoTagging)
-                {
-                    <MudButton Variant="Variant.Filled"
-                               Style="background-color: #10b981; color: white;"
-                               StartIcon="@Icons.Material.Filled.Check"
-                               OnClick="Cancel">
-                        Close
-                    </MudButton>
-                }
-                else
-                {
-                    <MudButton Variant="Variant.Filled"
-                               Style="background-color: #10b981; color: white;"
-                               StartIcon="@Icons.Material.Filled.ArrowForward"
-                               OnClick="GoToReview">
-                        Next
-                    </MudButton>
-                }
-            }
-        }
-        else if (_currentState == TaggerState.Review)
-        {
-            <MudButton Variant="Variant.Text" OnClick="Cancel">Discard</MudButton>
-            <MudButton Variant="Variant.Filled"
-                       Style="background-color: #10b981; color: white;"
-                       StartIcon="@Icons.Material.Filled.Check"
-                       OnClick="ConfirmAndSaveAsync">
-                Apply & Save
-            </MudButton>
-        }
-    </DialogActions>
-</MudDialog>
+                            else
+                            {
+                                <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                                           StartIcon="@Icons.Material.Filled.ArrowForward" OnClick="GoToReview">
+                                    Next
+                                </MudButton>
+                            }
+                        }
+                    }
+                    else if (_currentState == TaggerState.Review)
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="Cancel">Discard</MudButton>
+                        <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                                   StartIcon="@Icons.Material.Filled.Check" OnClick="ConfirmAndSaveAsync">
+                            Apply & Save
+                        </MudButton>
+                    }
+                </DialogActions>
+            </MudDialog>
 
 @code {
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
@@ -218,7 +222,7 @@
     private TaggerState _currentState = TaggerState.Selection;
     private bool _taggingFinished;
     private bool _isTagging => _currentState == TaggerState.Tagging && !_taggingFinished;
-    
+
     private string _statusText = "Ready to start.";
     private int _processedCount;
     private int _totalCount;

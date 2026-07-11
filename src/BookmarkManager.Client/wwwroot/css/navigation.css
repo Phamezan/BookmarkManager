@@ -1,0 +1,433 @@
+
+/* ----------------------------------------------------------------------------
+   3. App Shell
+---------------------------------------------------------------------------- */
+.app-shell {
+    min-height: 100%;
+    background: transparent;
+    color: var(--bm-text);
+}
+
+/* Top bar — slim, glassy, hairline bottom */
+.app-topbar {
+    height: 56px;
+    min-height: 56px;
+    border-bottom: 1px solid var(--bm-border);
+    background: rgba(8, 9, 13, 0.7) !important;
+    color: var(--bm-text);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    position: relative;
+}
+
+.app-title {
+    gap: 0 !important;
+    line-height: 1.2;
+}
+
+.app-title .mud-typography {
+    font-family: "Inter", sans-serif;
+}
+
+.app-title>.mud-typography:first-child {
+    font-size: 0.95rem !important;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--bm-text);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.app-title-mark {
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    background: linear-gradient(135deg, var(--bm-accent) 0%, #C4B5FD 100%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        0 0 14px var(--bm-accent-glow);
+    position: relative;
+    flex-shrink: 0;
+}
+
+.app-title-mark::after {
+    content: "";
+    position: absolute;
+    inset: 4px;
+    border: 1.5px solid rgba(8, 9, 13, 0.85);
+    border-bottom-width: 0;
+    border-right-width: 0;
+    border-radius: 2px 0 0 0;
+}
+
+.app-title .mud-typography-caption {
+    color: var(--bm-text-muted);
+    font-size: 0.7rem !important;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+}
+
+/* Status cluster */
+.topbar-status {
+    min-width: 0;
+    gap: var(--bm-space-2) !important;
+}
+
+/* Connection status chip — refined */
+.topbar-status .mud-chip {
+    height: 28px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    border-radius: var(--bm-radius-full) !important;
+    backdrop-filter: blur(8px);
+    transition: all var(--bm-med) var(--bm-ease);
+}
+
+.topbar-status .mud-chip.mud-chip-size-small {
+    height: 26px;
+}
+
+/* Live status dot inside chip */
+.status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: var(--bm-radius-full);
+    margin-right: 4px;
+    flex-shrink: 0;
+}
+
+.status-dot.is-online {
+    background: var(--bm-success);
+    box-shadow: 0 0 0 2px var(--bm-success-soft), 0 0 8px var(--bm-success);
+    animation: pulseDot 2.4s var(--bm-ease) infinite;
+}
+
+.status-dot.is-offline {
+    background: var(--bm-warning);
+    box-shadow: 0 0 0 2px var(--bm-warning-soft);
+}
+
+@keyframes pulseDot {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.5;
+    }
+}
+
+/* Primary nav — centered on the top app bar, floating glass capsule with a horizontal active aura ribbon. */
+.nav-3d-stage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    perspective: 1000px;
+    z-index: 2;
+}
+
+.primary-nav {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    min-width: 0;
+    height: 44px;
+    padding: 0 6px;
+    gap: 2px;
+    position: relative;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.primary-nav .mud-nav-link {
+    border-radius: 12px;
+    margin: 0;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    color: var(--bm-text-secondary);
+    min-height: 32px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color var(--bm-fast) var(--bm-ease), background var(--bm-fast) var(--bm-ease), transform 260ms cubic-bezier(0.68, -0.6, 0.32, 1.6);
+    position: relative;
+    z-index: 1;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    animation: navItemIn var(--bm-med) var(--bm-ease-out) both;
+}
+
+.primary-nav .mud-nav-link-text {
+    width: 100%;
+}
+
+.primary-nav .nav-link-inner {
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.primary-nav .mud-nav-link:nth-child(2) {
+    animation-delay: 0ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(3) {
+    animation-delay: 40ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(4) {
+    animation-delay: 80ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(5) {
+    animation-delay: 120ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(6) {
+    animation-delay: 160ms;
+}
+
+.primary-nav .mud-nav-link:nth-child(7) {
+    animation-delay: 200ms;
+}
+
+/* Nav Link Text */
+.primary-nav .nav-link-text {
+    opacity: 1;
+    font-weight: 500;
+    margin-left: 8px;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+@keyframes navItemIn {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.primary-nav .mud-nav-link,
+.primary-nav .mud-nav-link:hover,
+.primary-nav .mud-nav-link:focus,
+.primary-nav .mud-nav-link:focus-visible,
+.primary-nav .mud-nav-link:active,
+.primary-nav .mud-nav-link.mud-nav-link-active {
+    background-color: transparent !important;
+}
+
+.primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover {
+    color: var(--bm-text);
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.primary-nav .mud-nav-link.active:not(.mud-nav-link-disabled),
+.primary-nav .mud-nav-link.nav-link-root-active:not(.mud-nav-link-disabled) {
+    color: #818cf8 !important;
+    font-weight: 700;
+    background-color: transparent !important;
+    text-shadow: 0 0 10px rgba(99, 102, 241, 0.45);
+}
+
+.primary-nav .mud-nav-link.active .nav-icon-svg,
+.primary-nav .mud-nav-link.nav-link-root-active .nav-icon-svg {
+    color: #818cf8 !important;
+    filter: drop-shadow(0 0 5px rgba(99, 102, 241, 0.45));
+}
+
+/* Active indicator container (repositioned by JS) */
+.nav-active-indicator {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    height: auto !important;
+    /* let JS set width, height spans height with padding */
+    width: 0;
+    z-index: 0;
+    opacity: 0;
+    transition: opacity var(--bm-fast) var(--bm-ease);
+}
+
+.nav-active-indicator.is-ready {
+    opacity: 1;
+}
+
+/* Active Aura backplate styling */
+.nav-active-indicator-disc {
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: radial-gradient(circle at center, rgba(99, 102, 241, 0.18) 0%, rgba(99, 102, 241, 0.02) 60%, transparent 85%);
+    border: none;
+    box-shadow: none;
+    transform-style: preserve-3d;
+    animation: discIdlePulse 3s var(--bm-ease) infinite;
+}
+
+.nav-active-indicator-disc.is-spinning {
+    animation: discAuraPulseSpin 480ms cubic-bezier(0.68, -0.6, 0.32, 1.6);
+}
+
+@keyframes discIdlePulse {
+
+    0%,
+    100% {
+        filter: brightness(1);
+    }
+
+    50% {
+        filter: brightness(1.2);
+    }
+}
+
+@keyframes discAuraPulseSpin {
+    0% {
+        transform: scale(1);
+    }
+
+    50% {
+        transform: scale(1.08);
+    }
+
+    100% {
+        transform: scale(1);
+    }
+}
+
+/* Transient neon particles spawned on route change (see nav-indicator.js) */
+.nav-particle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    margin: -2.5px 0 0 -2.5px;
+    border-radius: 50%;
+    background: #818cf8;
+    box-shadow: 0 0 6px rgba(99, 102, 241, 0.6);
+    pointer-events: none;
+    z-index: 3;
+    animation: navParticleBurst 560ms var(--bm-ease-out) forwards;
+}
+
+@keyframes navParticleBurst {
+    0% {
+        transform: translate(0, 0) scale(1);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translate(var(--nav-particle-x, 0), var(--nav-particle-y, -18px)) scale(0);
+        opacity: 0;
+    }
+}
+
+.nav-link-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nav-icon-img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+    flex-shrink: 0;
+    transition: transform var(--bm-fast) var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-icon-img {
+    transform: scale(1.15) rotate(-4deg);
+}
+
+.nav-icon-svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    color: currentColor;
+    opacity: 0.85;
+    transition: transform var(--bm-fast) var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-icon-svg {
+    transform: rotate(35deg);
+}
+
+/* Main content area */
+.app-main {
+    background: transparent;
+    min-width: 0;
+    width: auto;
+}
+
+.app-content {
+    height: calc(100vh - 56px);
+    padding: var(--bm-space-5);
+    box-sizing: border-box;
+    max-width: 100%;
+    /* Scroll vertically when a page is taller than the viewport (e.g. Settings). Pages that
+       fill the height and manage their own inner scroll (Bookmarks) fit exactly, so they
+       don't produce a second scrollbar. Horizontal stays clipped. */
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* Subtle steam puff for Grand Line theme link switching (Gear Shift effect) */
+.nav-smoke-puff {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.75) 0%, rgba(217, 56, 58, 0.4) 70%, transparent 100%);
+    box-shadow: 0 0 8px rgba(217, 56, 58, 0.45);
+    border-radius: 50%;
+    filter: blur(3px);
+    pointer-events: none;
+    z-index: 4;
+    transform: translate(-50%, -50%) scale(0.3);
+    animation: navSmokeRise 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes navSmokeRise {
+    0% {
+        transform: translate(-50%, -50%) scale(0.3);
+        opacity: 0.8;
+    }
+
+    100% {
+        transform: translate(calc(-50% + var(--smoke-x)), calc(-50% + var(--smoke-y))) scale(var(--smoke-scale));
+        opacity: 0;
+    }
+}
+
+
+
+/* Custom styling for the tiny Wanted Poster image icon to make it pop */
+.nav-wanted-poster {
+    width: 22px !important;
+    height: 22px !important;
+    border-radius: 2px;
+    border: 1px solid rgba(244, 208, 104, 0.45);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+    object-fit: cover !important;
+    transition: transform 250ms cubic-bezier(0.175, 0.885, 0.32, 1.275), box-shadow 250ms var(--bm-ease);
+}
+
+.primary-nav .mud-nav-link:hover .nav-wanted-poster {
+    transform: scale(1.35) rotate(-6deg) !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6), 0 0 8px var(--bm-accent-glow);
+}

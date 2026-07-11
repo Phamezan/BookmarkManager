@@ -242,12 +242,12 @@ public sealed class UrlMigratorPageTests
         public (Guid Id, string Url)? ManualUrlSet { get; private set; }
         public int StatusCallCount { get; private set; }
 
-        public Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
+        public override Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
         public string? LastStartedHost { get; private set; }
         public bool? LastStartedForce { get; private set; }
         public string? LastSuggestedHost { get; private set; }
 
-        public Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
+        public override Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
         {
             LastStartedHost = deadHost;
             LastStartedForce = force;
@@ -255,13 +255,13 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult(true);
         }
 
-        public Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
+        public override Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
         {
             StatusCallCount++;
             return Task.FromResult(Status);
         }
 
-        public Task<List<UrlMigrationProposalDto>> GetUrlMigrationProposalsAsync(Guid? runId, string? status, CancellationToken cancellationToken = default)
+        public override Task<List<UrlMigrationProposalDto>> GetUrlMigrationProposalsAsync(Guid? runId, string? status, CancellationToken cancellationToken = default)
         {
             if (runId == null && string.IsNullOrEmpty(status))
             {
@@ -272,7 +272,7 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult(Proposals);
         }
 
-        public Task<DecideProposalsResponse?> ApproveProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        public override Task<DecideProposalsResponse?> ApproveProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
         {
             LastApprovedIds = ids;
             foreach (var id in ids)
@@ -283,7 +283,7 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(ids.Count, 0, []));
         }
 
-        public Task<DecideProposalsResponse?> RejectProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        public override Task<DecideProposalsResponse?> RejectProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
         {
             RejectedIds.AddRange(ids);
             foreach (var id in ids)
@@ -294,7 +294,7 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(ids.Count, 0, []));
         }
 
-        public Task<DecideProposalsResponse?> CancelProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
+        public override Task<DecideProposalsResponse?> CancelProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default)
         {
             CancelledIds.AddRange(ids);
             foreach (var id in ids)
@@ -304,9 +304,9 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(ids.Count, 0, []));
         }
 
-        public Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(true);
+        public override Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(true);
 
-        public Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
+        public override Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
         {
             ManualUrlSet = (id, url);
             var p = Proposals.FirstOrDefault(x => x.Id == id);
@@ -314,7 +314,7 @@ public sealed class UrlMigratorPageTests
             return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(1, 0, []));
         }
 
-        public Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, CancellationToken cancellationToken = default)
+        public override Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, CancellationToken cancellationToken = default)
         {
             UpdateBookmarkCalled = true;
             return Task.FromResult<BookmarkNodeDto?>(new BookmarkNodeDto { Id = id, Title = title, Url = url });

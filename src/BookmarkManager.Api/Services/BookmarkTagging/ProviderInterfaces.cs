@@ -17,7 +17,8 @@ public record AnimeScheduleResult(
     List<AnimeScheduleEpisode> Episodes,
     int? ResolvedAniListId = null,
     string? ResolvedTitle = null,
-    string? ResolvedCoverImageUrl = null);
+    string? ResolvedCoverImageUrl = null,
+    int? TotalEpisodes = null);
 
 public interface IAnilistTagProvider
 {
@@ -65,7 +66,4 @@ public interface INovelFullTagProvider
     Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
 }
 
-public interface INovelUpdatesTagProvider
-{
-    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
-}
+

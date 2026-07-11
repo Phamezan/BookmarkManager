@@ -172,13 +172,13 @@
                                                                Color="Color.Error"
                                                                Size="Size.Small"
                                                                Class="migrator-reject-btn"
-                                                               Title="Reject — decline this proposed URL, won't be re-suggested"
+                                                               title="Reject — decline this proposed URL, won't be re-suggested"
                                                                OnClick="@(() => RejectAsync([proposal.Id]))" />
                                                 <MudIconButton Icon="@Icons.Material.Filled.Refresh"
                                                                Color="Color.Warning"
                                                                Size="Size.Small"
                                                                Class="migrator-cancel-btn"
-                                                               Title="Cancel — void this proposal, rerun fresh next time"
+                                                               title="Cancel — void this proposal, rerun fresh next time"
                                                                OnClick="@(() => CancelAsync([proposal.Id]))" />
                                                 @if (!string.IsNullOrEmpty(proposal.ProposedUrl))
                                                 {

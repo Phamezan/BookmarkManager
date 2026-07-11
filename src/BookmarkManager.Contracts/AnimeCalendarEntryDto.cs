@@ -10,4 +10,7 @@ public class AnimeCalendarEntryDto
     public string? CoverImageUrl { get; set; }
     public int EpisodeNumber { get; set; }
     public DateTimeOffset AiringAtUtc { get; set; }
+
+    /// <summary>Total episode count for the season, null while unannounced.</summary>
+    public int? TotalEpisodes { get; set; }
 }

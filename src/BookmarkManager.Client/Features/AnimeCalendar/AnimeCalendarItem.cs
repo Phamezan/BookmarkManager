@@ -17,6 +17,9 @@ public sealed class AnimeCalendarItem
     public string? CoverImageUrl { get; init; }
     public int EpisodeNumber { get; init; }
 
+    /// <summary>Total episode count for the season, null while unannounced.</summary>
+    public int? TotalEpisodes { get; init; }
+
     /// <summary>Air time in the viewer's local zone.</summary>
     public DateTime AiringAtLocal { get; init; }
 
@@ -38,6 +41,12 @@ public sealed class AnimeCalendarItem
         }
     }
 
+    /// <summary>Season completion, i.e. EpisodeNumber / TotalEpisodes as a 0-100 percentage.
+    /// Null when AniList hasn't announced the season's total episode count yet.</summary>
+    public double? EpisodeProgressPercent => TotalEpisodes is int total && total > 0
+        ? Math.Clamp(EpisodeNumber * 100.0 / total, 0, 100)
+        : null;
+
     public static AnimeCalendarItem FromEntry(AnimeCalendarEntryDto entry) => new()
     {
         BookmarkId = entry.BookmarkId,
@@ -47,6 +56,7 @@ public sealed class AnimeCalendarItem
         AniListId = entry.AniListId,
         CoverImageUrl = entry.CoverImageUrl,
         EpisodeNumber = entry.EpisodeNumber,
+        TotalEpisodes = entry.TotalEpisodes,
         AiringAtLocal = entry.AiringAtUtc.ToLocalTime().DateTime
     };
 

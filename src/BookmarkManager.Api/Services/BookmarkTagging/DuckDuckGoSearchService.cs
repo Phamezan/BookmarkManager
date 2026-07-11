@@ -34,7 +34,7 @@ public class DuckDuckGoSearchService : IDuckDuckGoSearchService
 
     private static readonly HashSet<string> ReputableReaderDomains = new(StringComparer.OrdinalIgnoreCase)
     {
-        "mangadex.org", "mangakakalot.com", "manganelo.com", "royalroad.com", "novelupdates.com",
+        "mangadex.org", "mangakakalot.com", "manganelo.com", "royalroad.com",
         "comick.io", "comick.app", "webnovel.com", "novelcool.com", "asuracomic.net", "asuratoon.com",
         "flamecomics.xyz", "flamecomics.me", "reaperscans.to", "reaperscans.com", "chapmanganelo.com",
         "readmng.com", "mangareader.to", "readlightnovel.me", "novelfull.me", "novelfull.com"
@@ -64,7 +64,7 @@ public class DuckDuckGoSearchService : IDuckDuckGoSearchService
         var knownBrands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "reaper scans", "reaperscans", "asura scans", "asurascans", "flame scans", "flamescans",
-            "mangadex", "manganelo", "mangakakalot", "novelupdates", "novel updates", "webnovel", "royalroad",
+            "mangadex", "manganelo", "mangakakalot", "webnovel", "royalroad",
             "royal road", "wuxiaworld", "readmanga", "mangago", "novelcool", "read light novel"
         };
 

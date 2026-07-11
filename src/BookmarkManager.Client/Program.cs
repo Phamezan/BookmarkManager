@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using MudBlazor.Services;
 
-using BookmarkManager.Client.Services;
-
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
@@ -21,7 +19,9 @@ builder.Services.AddScoped<IBookmarkManagerApiClient, BookmarkManagerApiClient>(
 
 builder.Services.AddScoped<IExtensionConnectionService, ExtensionConnectionService>();
 builder.Services.AddScoped<IBookmarkService, HttpBookmarkService>();
+builder.Services.AddScoped<ILibraryService, HttpLibraryService>();
 builder.Services.AddScoped<UndoService>();
+builder.Services.AddScoped<ICommandPaletteService, CommandPaletteService>();
 builder.Services.AddTransient<SyncSocketListener>();
 builder.Services.AddTransient<FolderSelectionPersistence>();
 await builder.Build().RunAsync();
