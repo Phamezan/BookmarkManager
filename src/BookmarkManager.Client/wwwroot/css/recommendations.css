@@ -1,0 +1,156 @@
+
+/* ----------------------------------------------------------------------------
+   12b. Recommendations Page
+---------------------------------------------------------------------------- */
+/* Eyebrow + headline */
+.rec-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--bm-accent);
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-bottom: var(--bm-space-4);
+}
+
+.rec-eyebrow-icon.mud-icon-root {
+    font-size: 1rem !important;
+}
+
+.rec-headline {
+    margin: 0 0 var(--bm-space-2);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-weight: 800;
+    font-size: clamp(1.75rem, 3vw, 2.85rem);
+    line-height: 1.1;
+    color: #fff;
+}
+
+.rec-subtitle {
+    margin: 0 0 var(--bm-space-6);
+    max-width: 520px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--bm-text-secondary);
+}
+
+/* Folder chip row */
+.rec-controls-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--bm-space-3);
+    margin-top: var(--bm-space-2);
+    margin-bottom: var(--bm-space-6);
+}
+
+.rec-folder-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bm-space-2);
+    flex: 1 1 auto;
+}
+
+.rec-folder-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 13px;
+    border-radius: var(--bm-radius-full);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--bm-text-secondary);
+    background: var(--bm-surface-muted);
+    border: 1px solid var(--bm-border);
+    cursor: pointer;
+    transition: all var(--bm-fast) var(--bm-ease);
+}
+
+.rec-folder-chip:hover {
+    border-color: var(--bm-border-strong);
+    color: var(--bm-text);
+}
+
+.rec-folder-chip.is-checked {
+    background: var(--bm-accent-soft);
+    color: var(--bm-accent);
+    border-color: var(--bm-border-accent);
+}
+
+.rec-chip-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-3);
+    margin-left: auto;
+}
+
+.rec-clear-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--bm-accent);
+    cursor: pointer;
+}
+
+.rec-clear-btn:disabled {
+    color: var(--bm-text-muted);
+    cursor: not-allowed;
+}
+
+.rec-clear-btn:not(:disabled):hover {
+    color: var(--bm-accent-hover);
+}
+
+.rec-reshuffle-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 var(--bm-space-3);
+    border-radius: var(--bm-radius-full);
+    border: 1px solid var(--bm-border);
+    background: var(--bm-surface);
+    color: var(--bm-text-secondary);
+    font: inherit;
+    font-weight: 600;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: all var(--bm-fast) var(--bm-ease);
+}
+
+.rec-reshuffle-btn:hover:not(:disabled) {
+    border-color: var(--bm-accent);
+    color: var(--bm-accent);
+    background: var(--bm-accent-soft);
+}
+
+.rec-reshuffle-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.rec-reshuffle-btn.spinning .mud-icon-root {
+    animation: recSpin 0.6s var(--bm-ease);
+}
+
+@keyframes recSpin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.rec-divider {
+    height: 1px;
+    background: var(--bm-border-strong);
+    margin-bottom: var(--bm-space-6);
+}

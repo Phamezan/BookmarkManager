@@ -21,7 +21,8 @@ else
                          FolderSelected="@OnFolderSelected"
                          FolderDrop="@OnFolderDrop"
                          FolderDragStart="@OnFolderDragStart"
-                         FolderContextMenu="@OnFolderContextMenu" />
+                         FolderContextMenu="@OnFolderContextMenu"
+                         FolderCreated="@OnFolderCreated" />
 
         <main class="bookmark-zone">
             <div class="bookmark-header">
@@ -34,7 +35,11 @@ else
                                   MoveSelected="MoveSelected"
                                   DeleteSelected="DeleteSelected"
                                   CreateBookmark="CreateBookmark"
-                                  OpenAutoTaggerDialog="OpenAutoTaggerDialog" />
+                                  OpenAutoTaggerDialog="OpenAutoTaggerDialog"
+                                  SortMode="@_sortMode"
+                                  SortModeChanged="OnSortModeChanged"
+                                  TypeFilter="@_typeFilter"
+                                  TypeFilterChanged="OnTypeFilterChanged" />
 
                 @if (ShouldShowTagBar)
                 {
@@ -71,7 +76,7 @@ else
 
                         @if (!_tagsCollapsed)
                         {
-                            @if (_availableTags.Count > 0 || _retagBusy)
+                            @if (_availableTags.Count > 0)
                             {
                                 <div class="tag-categories-grid">
                                     @foreach (var group in GroupTags(_availableTags))
@@ -237,3 +242,19 @@ else
         }
     </div>
 }
+
+<style>
+    .highlight-flash {
+        animation: highlight-flash-anim 3s ease-out !important;
+    }
+    @@keyframes highlight-flash-anim {
+        0% {
+            background-color: rgba(208, 188, 255, 0.4) !important;
+            box-shadow: 0 0 15px rgba(208, 188, 255, 0.6) !important;
+        }
+        100% {
+            background-color: transparent;
+            box-shadow: none;
+        }
+    }
+</style>

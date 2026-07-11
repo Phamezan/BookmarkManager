@@ -47,8 +47,6 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTaggi
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelFullTaggingService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelUpdatesTaggingService))
-    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AnilistTaggingService>();
 builder.Services.AddSingleton<IAnilistTagProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
 builder.Services.AddSingleton<IAnilistScheduleProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
@@ -58,8 +56,6 @@ builder.Services.AddSingleton<KitsuTaggingService>();
 builder.Services.AddSingleton<IKitsuTagProvider>(provider => provider.GetRequiredService<KitsuTaggingService>());
 builder.Services.AddSingleton<NovelFullTaggingService>();
 builder.Services.AddSingleton<INovelFullTagProvider>(provider => provider.GetRequiredService<NovelFullTaggingService>());
-builder.Services.AddSingleton<NovelUpdatesTaggingService>();
-builder.Services.AddSingleton<INovelUpdatesTagProvider>(provider => provider.GetRequiredService<NovelUpdatesTaggingService>());
 builder.Services.AddSingleton<IDuckDuckGoSearchService, DuckDuckGoSearchService>();
 builder.Services.AddScoped<AiSeriesIdentifierService>();
 builder.Services.AddScoped<AiBookmarkAutoTaggingService>();
@@ -98,8 +94,27 @@ builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.Wayback
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
     });
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IWaybackEpisodeIdResolver, BookmarkManager.Api.Services.UrlMigration.WaybackEpisodeIdResolver>();
+builder.Services.AddMemoryCache();
+builder.Services.Configure<BookmarkManager.Api.Services.Library.LibraryProviderOptions>(
+    builder.Configuration.GetSection(BookmarkManager.Api.Services.Library.LibraryProviderOptions.SectionName));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.AniListLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.MangaDexLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.KitsuLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.RoyalRoadLibraryProvider))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.RanobeDbLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.NovelfireLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryProviderRegistry>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Library.LibrarySearchService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>());
+builder.Services.AddSingleton(BookmarkManager.Api.Services.Library.ProviderBudgetTracker.Instance);
 builder.Services.AddHostedService<PurgeBackgroundJob>();
-builder.Services.AddAutoMapper(typeof(MappingProfile));
+builder.Services.AddAutoMapper(cfg => { }, typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>
     options.CustomizeProblemDetails = ctx =>
     {
@@ -156,7 +171,21 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseBlazorFrameworkFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    // _framework/* is content-hashed by the Blazor publish output, so it's safe to
+    // cache forever - only override hand-authored css/js, which aren't hashed and
+    // otherwise rely on browser heuristic caching (the source of the stale-CSS bug
+    // where edits didn't show up despite hard refreshes).
+    OnPrepareResponse = context =>
+    {
+        var path = context.File.Name;
+        if (path.EndsWith(".css", StringComparison.OrdinalIgnoreCase) || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
+        {
+            context.Context.Response.Headers.CacheControl = "no-cache";
+        }
+    }
+});
 
 app.UseWebSockets();
 

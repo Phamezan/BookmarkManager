@@ -6,10 +6,10 @@ namespace BookmarkManager.UnitTests;
 public sealed class BookmarkMediaCandidateClassifierTests
 {
     [Theory]
-    [InlineData("https://www.novelupdates.com/series/my-novel", "Novel Updates")]
     [InlineData("http://novelfull.com/my-novel.html", "Novel Full")]
     public void Classify_NovelUrls_ReturnNovelDomainAndBypassAi(string url, string description)
     {
+        _ = description;
         var classification = BookmarkMediaCandidateClassifier.Classify(
             "A Monster Who Levels Up Chapter 5", 
             url, 
@@ -28,6 +28,7 @@ public sealed class BookmarkMediaCandidateClassifierTests
     [InlineData("light novel", "lowercase")]
     public void Classify_NovelFolderPaths_ReturnNovelDomainAndBypassAi(string folderPath, string description)
     {
+        _ = description;
         var classification = BookmarkMediaCandidateClassifier.Classify(
             "A Monster Who Levels Up - Chapter 12", 
             "https://example.com/some-link", 
@@ -60,6 +61,7 @@ public sealed class BookmarkMediaCandidateClassifierTests
     [InlineData("manhwa", "lowercase")]
     public void Classify_MangaFolderPaths_ReturnMangaDomainAndBypassAi(string folderPath, string description)
     {
+        _ = description;
         var classification = BookmarkMediaCandidateClassifier.Classify(
             "Solo Leveling - Vol 1 Chapter 2", 
             "https://example.com/some-link", 
@@ -76,6 +78,7 @@ public sealed class BookmarkMediaCandidateClassifierTests
     [InlineData("anime", "lowercase")]
     public void Classify_AnimeFolderPaths_ReturnAnimeDomainAndBypassAi(string folderPath, string description)
     {
+        _ = description;
         var classification = BookmarkMediaCandidateClassifier.Classify(
             "One Piece Episode 24", 
             "https://example.com/some-link", 

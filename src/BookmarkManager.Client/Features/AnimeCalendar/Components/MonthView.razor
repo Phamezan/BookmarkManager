@@ -1,8 +1,13 @@
 @* Design 2a — month grid. Six week-rows for the anchor's month; leading/trailing
-   days dimmed. Days with episodes show small cover-image badges (one per series,
-   overflow collapsed to "+N") so the month reads as a visual overview. Hovering a
-   badge pops up a bigger cover + title + episode + ticking dd:hh:mm:ss countdown;
-   clicking a populated day opens its full Day view. *@
+   days dimmed. Days with episodes show small cover-image badges (one per series);
+   a day with more than MaxCovers scrolls its window via dedicated top/bottom
+   strips (top = scroll up, footer = scroll down). Both strips always render so
+   their height is always reserved — toggling with the "is-hidden" CSS class
+   rather than conditional Razor rendering keeps the cell's height stable, so
+   clicking to scroll doesn't jump the cell content. Strips use stopPropagation
+   so a scroll click can never fall through to the day-nav click on the cell.
+   Hovering a badge pops up a bigger cover + title + episode + ticking
+   dd:hh:mm:ss countdown; clicking a populated day opens its full Day view. *@
 @implements IDisposable
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
@@ -11,37 +16,57 @@
     {
         <div class="acal-month-head">@name</div>
     }
-    @foreach (var cell in _cells)
+    @for (int i = 0; i < _cells.Count; i++)
     {
+        var cell = _cells[i];
+        var cellIndex = i;
         <div class="@CellClass(cell)" @onclick="() => OpenDay(cell)">
-            <div class="acal-month-daynum">@cell.Date.Day.ToString("00")</div>
+            <div class="@($"acal-month-headrow{(cell.CanScrollUp ? " is-scrollable" : "")}")"
+                 @onclick:stopPropagation="@cell.CanScrollUp" @onclick="() => Scroll(cell, -1)">
+                <div class="acal-month-daynum">@cell.Date.Day.ToString("00")</div>
+                @if (cell.Count > 0)
+                {
+                    <div class="@($"acal-scroll-zone acal-scroll-zone-up{(cell.CanScrollUp ? "" : " is-hidden")}")"
+                         aria-label="Show earlier">&#9650;</div>
+                }
+            </div>
             @if (cell.Count > 0)
             {
-                <div class="acal-month-events">
+                <div class="acal-month-events" data-scroll-offset="@cell.ScrollOffset">
                     @foreach (var item in cell.Visible)
                     {
-                        <div class="acal-month-event" @onclick:stopPropagation="true" @onclick="() => OnItemClick.InvokeAsync(item)">
-                            <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
-                                         Width="16px" Height="22px" CssClass="acal-month-cover-mini" />
-                            <span class="acal-event-title-text">@item.Title</span>
-                            <span class="acal-event-ep-text">@item.EpisodeNumber</span>
-
+                        <div class="acal-month-event" @onclick:stopPropagation="true"
+                             @onclick="() => OnItemClick.InvokeAsync(item)">
+                            @if (cell.IsToday)
+                            {
+                                <span class="acal-month-airing-tag">Airing</span>
+                            }
+                            <div class="acal-month-event-row">
+                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="40px" Height="44px"
+                                             CssClass="acal-month-cover-mini" />
+                                <span class="acal-event-title-text">@item.Title</span>
+                                <span class="acal-event-ep-text">@item.EpisodeNumber</span>
+                            </div>
+                            @if (item.EpisodeProgressPercent is double progress)
+                            {
+                                <div class="acal-event-progress">
+                                    <div class="acal-event-progress-fill" style="width: @(progress.ToString("0"))%;"></div>
+                                </div>
+                            }
                             <div class="rich-tip">
-                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title"
-                                             Width="160px" Height="224px" CssClass="acal-tip-cover" />
+                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="170px" Height="250px"
+                                             CssClass="acal-tip-cover" />
                                 <div class="acal-tip-details">
                                     <div class="acal-tip-title">@item.Title</div>
-                                    <div class="acal-tip-ep">Episode @item.EpisodeNumber</div>
+                                    <div class="acal-tip-ep">Episode @item.EpisodeNumber@(item.TotalEpisodes is int t ? $" of {t}" : "")</div>
                                     <div class="acal-tip-time">Airing @item.AiringAtLocal.ToString("h:mm tt")</div>
                                     <div class="acal-tip-countdown">@item.CountdownText</div>
                                 </div>
                             </div>
                         </div>
                     }
-                    @if (cell.Overflow > 0)
-                    {
-                        <div class="acal-event-more">+@cell.Overflow more</div>
-                    }
+                    <div class="@($"acal-scroll-zone acal-scroll-zone-down{(cell.CanScrollDown ? "" : " is-hidden")}")" @onclick:stopPropagation="true"
+                         @onclick="() => Scroll(cell, 1)" aria-label="Show more">&#9660;</div>
                 </div>
             }
             else
@@ -80,16 +105,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            try { await JSRuntime.InvokeVoidAsync("initCalendarTilt", ".acal-month-grid", ".acal-month-cell.is-populated"); }
-            catch { /* Safe fallback during unmounting */ }
-        }
-
         try
         {
             var signature = $"{Anchor:yyyy-MM}|{_totalEpisodes}";
             await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-month-grid", ".acal-month-cell", signature);
+            await JSRuntime.InvokeVoidAsync("initCalendarPopups", ".acal-month-grid");
+            await JSRuntime.InvokeVoidAsync("animateCalendarScroll", ".acal-month-grid");
         }
         catch { /* Safe fallback during unmounting */ }
     }
@@ -125,8 +146,17 @@
         }).ToList();
     }
 
+    // Overflowing cells (Count > MaxCovers) hand their whole surface to the
+    // scroll zones instead — no day-nav for those, so a click anywhere that
+    // isn't the up/down strip or an item can't accidentally jump to Day view.
     private Task OpenDay(Cell cell)
-        => cell.Count > 0 ? OnDaySelected.InvokeAsync(cell.Date) : Task.CompletedTask;
+        => cell.Count > 0 && cell.Count <= MaxCovers ? OnDaySelected.InvokeAsync(cell.Date) : Task.CompletedTask;
+
+    private void Scroll(Cell cell, int direction)
+    {
+        var maxOffset = Math.Max(0, cell.Count - MaxCovers);
+        cell.ScrollOffset = Math.Clamp(cell.ScrollOffset + direction, 0, maxOffset);
+    }
 
     private static string CellClass(Cell cell)
     {
@@ -134,13 +164,23 @@
         if (!cell.InMonth) cls += " is-outside";
         if (cell.Count > 0) cls += " is-populated";
         if (cell.IsToday) cls += " is-today";
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (cell.Date < today && cell.Count == 0) cls += " is-past-empty";
+
         return cls;
     }
 
     private sealed record Cell(DateOnly Date, bool InMonth, bool IsToday, List<AnimeCalendarItem> Items)
     {
         public int Count => Items.Count;
-        public IEnumerable<AnimeCalendarItem> Visible => Items.Take(MaxCovers);
-        public int Overflow => Math.Max(0, Items.Count - MaxCovers);
+
+        /// <summary>Which item the visible MaxCovers-sized window starts at; moved by the
+        /// up/down scroll buttons when a day has more items than fit.</summary>
+        public int ScrollOffset { get; set; }
+
+        public IEnumerable<AnimeCalendarItem> Visible => Items.Skip(ScrollOffset).Take(MaxCovers);
+        public bool CanScrollUp => ScrollOffset > 0;
+        public bool CanScrollDown => ScrollOffset + MaxCovers < Count;
     }
 }

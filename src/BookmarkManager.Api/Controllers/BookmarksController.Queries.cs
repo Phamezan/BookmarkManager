@@ -25,7 +25,15 @@ public partial class BookmarksController
     var node = await _db.BookmarkNodes
         .FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
     if (node is null) return NotFound();
-    return _mapper.Map<BookmarkNodeDto>(node);
+    var dto = _mapper.Map<BookmarkNodeDto>(node);
+
+    var matches = await _matchService.GetMatchesAsync(ct);
+    var match = matches.FirstOrDefault(m => m.BookmarkId == dto.Id);
+    if (match != null)
+    {
+        dto.CoverImageUrl = match.CoverImageUrl;
+    }
+    return dto;
     }
 
     [HttpGet("deleted")]
@@ -35,7 +43,9 @@ public partial class BookmarksController
         .Where(n => n.IsDeleted)
         .OrderByDescending(n => n.DeletedAt)
         .ToListAsync(ct);
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await EnrichCoverImagesAsync(dtos, ct);
+    return dtos;
     }
 
     [HttpGet("favorites")]
@@ -45,7 +55,9 @@ public partial class BookmarksController
         .Where(n => !n.IsDeleted && n.IsFavorite)
         .OrderBy(n => n.Title)
         .ToListAsync(ct);
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await EnrichCoverImagesAsync(dtos, ct);
+    return dtos;
     }
 
     [HttpGet("recommendations")]
@@ -75,7 +87,9 @@ public partial class BookmarksController
         .Where(n => sampledIds.Contains(n.Id))
         .ToListAsync(ct);
 
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await EnrichCoverImagesAsync(dtos, ct);
+    return dtos;
     }
 
     [HttpPost("{id:guid}/archive")]
@@ -182,7 +196,31 @@ public partial class BookmarksController
         .Where(n => n.ParentId == parentId && !n.IsDeleted)
         .OrderBy(n => n.Position)
         .ToListAsync(ct);
-    return _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    var dtos = _mapper.Map<List<BookmarkNodeDto>>(nodes);
+    await EnrichCoverImagesAsync(dtos, ct);
+    return dtos;
     }
 
+    private async Task EnrichCoverImagesAsync(List<BookmarkNodeDto> dtos, CancellationToken ct)
+    {
+        if (dtos.Count == 0) return;
+        var matches = await _matchService.GetMatchesAsync(ct);
+        var matchesByBookmarkId = matches.ToDictionary(m => m.BookmarkId, m => m.CoverImageUrl);
+        EnrichCoverImagesRecursive(dtos, matchesByBookmarkId);
+    }
+
+    private void EnrichCoverImagesRecursive(List<BookmarkNodeDto> dtos, Dictionary<Guid, string?> matchesByBookmarkId)
+    {
+        foreach (var dto in dtos)
+        {
+            if (matchesByBookmarkId.TryGetValue(dto.Id, out var coverUrl))
+            {
+                dto.CoverImageUrl = coverUrl;
+            }
+            if (dto.Children != null && dto.Children.Count > 0)
+            {
+                EnrichCoverImagesRecursive(dto.Children, matchesByBookmarkId);
+            }
+        }
+    }
 }

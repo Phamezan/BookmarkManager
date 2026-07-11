@@ -22,5 +22,6 @@ public class BookmarkNodeDto
     public DateTime? AniListMatchedAt { get; set; }
     public string? MediaStatus { get; set; }
     public DateTime? LastMatchAttemptAt { get; set; }
+    public string? CoverImageUrl { get; set; }
     public List<BookmarkNodeDto>? Children { get; set; }
 }

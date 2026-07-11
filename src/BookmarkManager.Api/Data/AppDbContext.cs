@@ -20,6 +20,8 @@ public class AppDbContext : DbContext
     public DbSet<ExtensionCommandEntry> ExtensionCommands => Set<ExtensionCommandEntry>();
     public DbSet<AnimeScheduleCache> AnimeScheduleCaches => Set<AnimeScheduleCache>();
     public DbSet<UrlMigrationProposal> UrlMigrationProposals => Set<UrlMigrationProposal>();
+    public DbSet<LibraryCatalogEntry> LibraryCatalogEntries => Set<LibraryCatalogEntry>();
+    public DbSet<LibraryCatalogSyncQueueItem> LibraryCatalogSyncQueue => Set<LibraryCatalogSyncQueueItem>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -84,6 +86,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AppConfig>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.DisabledProviders).HasMaxLength(2048).HasDefaultValue("");
         });
 
         modelBuilder.Entity<ExtensionEventEntry>(entity =>
@@ -153,6 +156,39 @@ public class AppDbContext : DbContext
             entity.HasIndex(e => e.RunId);
             entity.HasIndex(e => e.Status);
             entity.HasIndex(e => e.BookmarkId);
+        });
+
+        modelBuilder.Entity<LibraryCatalogEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Provider).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.ProviderId).HasMaxLength(256).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.AlternateTitles).HasMaxLength(2000);
+            entity.Property(e => e.Authors).HasMaxLength(1000);
+            entity.Property(e => e.CoverImageUrl).HasMaxLength(2048);
+            entity.Property(e => e.Genres).HasMaxLength(1000);
+            entity.Property(e => e.Status).HasMaxLength(100);
+            entity.Property(e => e.LatestChapter).HasMaxLength(100);
+            entity.Property(e => e.LatestVolume).HasMaxLength(100);
+            entity.Property(e => e.SourceUrl).HasMaxLength(2048).IsRequired();
+
+            entity.HasIndex(e => new { e.Provider, e.ProviderId }).IsUnique();
+            entity.HasIndex(e => e.MediaType);
+            entity.HasIndex(e => e.PopularityRank);
+        });
+
+        modelBuilder.Entity<LibraryCatalogSyncQueueItem>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Provider).HasMaxLength(100).IsRequired();
+            entity.Property(e => e.MediaTypeQuery).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.ContinuationToken).HasMaxLength(256);
+            entity.Property(e => e.LastError).HasMaxLength(2000);
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+
+            entity.HasIndex(e => new { e.Provider, e.Status });
+            entity.HasIndex(e => e.NextAttemptAt);
         });
     }
 }

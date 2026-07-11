@@ -45,7 +45,7 @@ public static partial class MediaTitleNormalizer
     private static readonly HashSet<string> KnownBrandAliases = new(StringComparer.OrdinalIgnoreCase)
     {
         "lightnovels", "lightnovels me", "read light novels", "novelfull", "novel full", "novelcool", "novel cool",
-        "novelupdates", "novel updates", "novelusb", "scribblehub", "scribble hub", "wuxiaworld",
+        "novelusb", "scribblehub", "scribble hub", "wuxiaworld",
         "asura", "asura scans", "asurascans", "asura comics", "asuracomic", "reaper scans", "reaperscans",
         "mangadex", "manga dex", "mangakakalot", "manga kakalot", "comick", "webtoon", "webtoons",
         "animepahe", "anime pahe", "crunchyroll", "miruro", "gogoanime", "9anime", "aniwatch", "aniwave", "hianime",
@@ -392,11 +392,17 @@ public static partial class MediaTitleNormalizer
     {
         if (normalizedCandidate.Length == 0)
             return 0;
-        if (string.Equals(normalizedCandidate, normalizedQuery, StringComparison.Ordinal))
-            return 1;
 
         var queryTokens = normalizedQuery.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
         var candidateTokens = normalizedCandidate.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        return ScoreTokenSets(queryTokens, candidateTokens);
+    }
+
+    /// <summary>Same scoring formula as <see cref="ScoreTitleSimilarity"/>, but takes pre-tokenized
+    /// sets so callers matching one query against a large candidate pool (e.g. bookmark/catalog
+    /// matching) can tokenize each side once instead of re-normalizing on every pairing.</summary>
+    public static double ScoreTokenSets(HashSet<string> queryTokens, HashSet<string> candidateTokens)
+    {
         if (queryTokens.Count == 0 || candidateTokens.Count == 0)
             return 0;
 

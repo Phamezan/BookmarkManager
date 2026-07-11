@@ -1,10 +1,9 @@
 @using BookmarkManager.Contracts
-@using BookmarkManager.Client.Services
 @using Microsoft.AspNetCore.Components.Web
 
 <div @oncontextmenu="@((MouseEventArgs e) => ContextMenuOpened(e, Item))" @oncontextmenu:preventDefault="true"
      @oncontextmenu:stopPropagation="true" style="display: contents;">
-    <div class="@($"bookmark-card {(IsSelected ? "is-selected" : "")}")" role="listitem"
+    <div id="bookmark-card-@Item.Id" class="@($"bookmark-card {(IsSelected ? "is-selected" : "")}")" role="listitem"
          draggable="true" data-drag-type="bookmark" data-drag-id="@Item.Id"
          @ondragstart="@(() => DragStarted(Item.Id))" @onclick="@((MouseEventArgs e) => RowClicked(e, Item))">
         <div class="bookmark-select" @onclick:stopPropagation>
@@ -19,6 +18,10 @@
                     @if (Item.Type == NodeType.Folder)
                     {
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" style="@($"color: {FolderColorHelper.GetFolderColor(Item.Title)};")"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
+                    }
+                    else if (!string.IsNullOrEmpty(Item.CoverImageUrl))
+                    {
+                        <img src="@Item.CoverImageUrl" alt="" class="cover-image" onerror="this.style.display='none'" />
                     }
                     else if (!string.IsNullOrEmpty(Item.Url))
                     {
@@ -52,12 +55,16 @@
 
         @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
         {
-            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" @onclick:stopPropagation>@Item.Url</a>
+            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" @onclick:stopPropagation>@GetDisplayUrl(Item.Url)</a>
         }
 
         <div class="bookmark-card-footer">
             <div class="bookmark-card-footer-left">
                 <div class="bookmark-card-tags">
+                    @if (!string.IsNullOrEmpty(Item.MediaStatus))
+                    {
+                        <span class="status-badge @GetMediaStatusClass(Item.MediaStatus)" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;">@GetMediaStatusLabel(Item.MediaStatus)</span>
+                    }
                     @if (Item.Metadata?.Category != null)
                     {
                         <span class="tag-badge">@Item.Metadata.Category</span>
@@ -136,4 +143,51 @@
     [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
+
+    private static string GetDisplayUrl(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return string.Empty;
+        try
+        {
+            var uri = new Uri(url);
+            var host = uri.Host;
+            if (host.StartsWith("www."))
+            {
+                host = host.Substring(4);
+            }
+            return host;
+        }
+        catch
+        {
+            return url;
+        }
+    }
+
+    private static string GetMediaStatusClass(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return string.Empty;
+        return status.ToUpperInvariant() switch
+        {
+            "HIATUS" => "status-badge--warning",
+            "CANCELLED" or "DROPPED" => "status-badge--danger",
+            "FINISHED" or "COMPLETED" => "status-badge--success",
+            "RELEASING" or "ONGOING" => "status-badge--watching",
+            "NOT_YET_RELEASED" or "UPCOMING" => "status-badge--active",
+            _ => "status-badge--favorite"
+        };
+    }
+
+    private static string GetMediaStatusLabel(string? status)
+    {
+        if (string.IsNullOrWhiteSpace(status)) return string.Empty;
+        return status.ToUpperInvariant() switch
+        {
+            "HIATUS" => "Hiatus",
+            "CANCELLED" or "DROPPED" => "Dropped",
+            "FINISHED" or "COMPLETED" => "Completed",
+            "RELEASING" or "ONGOING" => "Ongoing",
+            "NOT_YET_RELEASED" or "UPCOMING" => "Upcoming",
+            _ => status
+        };
+    }
 }

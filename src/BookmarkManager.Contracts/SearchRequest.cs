@@ -9,4 +9,5 @@ public class SearchRequest
     public string? Status { get; set; }
     public bool? IsFavorite { get; set; }
     public List<string> Tags { get; set; } = [];
+    public Guid? FolderId { get; set; }
 }

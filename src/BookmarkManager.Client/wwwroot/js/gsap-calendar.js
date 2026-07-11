@@ -73,3 +73,115 @@ window.initCalendarTilt = function (containerSelector, itemSelector) {
         gsap.to(item, { rotateX: 0, rotateY: 0, scale: 1, duration: 0.28, ease: 'back.out(1.4)', overwrite: 'auto' });
     }, true);
 };
+
+// Smooth in-cell overflow scroll: fires after each render, diffs each cell's
+// data-scroll-offset against the value seen last render, and slides/fades the
+// visible-item list in the direction the up/down arrows moved.
+window.animateCalendarScroll = function (containerSelector) {
+    const container = document.querySelector(containerSelector);
+    if (!container) return;
+
+    container.querySelectorAll('.acal-month-events[data-scroll-offset]').forEach(el => {
+        const offset = el.dataset.scrollOffset;
+        const prev = el.dataset.lastScrollOffset;
+        el.dataset.lastScrollOffset = offset;
+
+        if (prev === undefined || prev === offset) return;
+        if (!window.gsap) return;
+
+        const dir = Number(offset) > Number(prev) ? 1 : -1;
+        gsap.fromTo(el,
+            { opacity: 0, y: dir * 22, scale: 0.94 },
+            { opacity: 1, y: 0, scale: 1, duration: 0.38, ease: 'back.out(1.6)', overwrite: 'auto' }
+        );
+    });
+};
+
+// Hoist popover to body on hover to bypass transform boundary containing blocks
+window.initCalendarPopups = function (containerSelector) {
+    const container = document.querySelector(containerSelector);
+    if (!container || container.dataset.popupsInit) return;
+    container.dataset.popupsInit = 'true';
+
+    let activeTip = null;
+    let originalParent = null;
+
+    container.addEventListener('mouseover', (e) => {
+        const eventEl = e.target.closest('.acal-month-event');
+        if (!eventEl) return;
+
+        const tipEl = eventEl.querySelector('.rich-tip');
+        if (!tipEl) return;
+
+        // If another tip is currently active, restore it immediately
+        if (activeTip && activeTip !== tipEl) {
+            activeTip.classList.remove('is-visible');
+            originalParent.appendChild(activeTip);
+            activeTip.style.display = '';
+        }
+
+        activeTip = tipEl;
+        originalParent = eventEl;
+
+        // Position fixed relative to viewport
+        tipEl.style.position = 'fixed';
+        tipEl.style.display = 'flex';
+        tipEl.style.opacity = '0';
+        document.body.appendChild(tipEl);
+
+        const eventRect = eventEl.getBoundingClientRect();
+        const tipWidth = tipEl.offsetWidth || 440; // Measured dynamic width
+        const tipHeight = tipEl.offsetHeight || 270; // Measured height
+
+        // Center horizontally above the hovered item
+        let left = eventRect.left + eventRect.width / 2 - tipWidth / 2;
+        let top = eventRect.top - tipHeight - 8;
+
+        // Collision check: Left/Right boundaries
+        const margin = 16;
+        if (left < margin) {
+            left = margin;
+        } else if (left + tipWidth > window.innerWidth - margin) {
+            left = window.innerWidth - tipWidth - margin;
+        }
+
+        // Collision check: Top boundary (flip downward if it would go off-screen)
+        if (top < margin) {
+            top = eventRect.bottom + 8;
+        }
+
+        // Set live pixel coordinates
+        tipEl.style.left = left + 'px';
+        tipEl.style.top = top + 'px';
+
+        // Force browser reflow to apply transitions
+        tipEl.getBoundingClientRect();
+        tipEl.classList.add('is-visible');
+        tipEl.style.opacity = ''; // Let CSS transition handle opacity
+    }, true);
+
+    container.addEventListener('mouseout', (e) => {
+        const eventEl = e.target.closest('.acal-month-event');
+        if (!eventEl || !activeTip) return;
+
+        const related = e.relatedTarget;
+        if (related && eventEl.contains(related)) return;
+
+        const tipToRestore = activeTip;
+        const parentToRestore = originalParent;
+
+        tipToRestore.classList.remove('is-visible');
+
+        // Restore back to original cell DOM parent after fade transition completes
+        setTimeout(() => {
+            if (tipToRestore.parentNode === document.body && !tipToRestore.classList.contains('is-visible')) {
+                parentToRestore.appendChild(tipToRestore);
+                tipToRestore.style.display = '';
+            }
+        }, 150);
+
+        activeTip = null;
+        originalParent = null;
+    }, true);
+};
+

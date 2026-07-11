@@ -1,0 +1,84 @@
+@namespace BookmarkManager.Client.Features.Library.Components
+@using BookmarkManager.Client.Features.Library
+@using BookmarkManager.Contracts
+
+@* Book-style cover card. Real provider cover art when available, otherwise a deterministic
+   duotone gradient derived from the title. The left spine edge is color-coded by media type
+   via TypeClass. *@
+
+@inject NavigationManager NavigationManager
+
+<article class="@($"lib-card {Item.TypeClass}")">
+    @if (ProgressBadgeText is { } progressBadgeText)
+    {
+        @if (Progress?.BookmarkId is not null)
+        {
+            <button type="button" class="lib-card-progress is-action" title="Go to bookmark (Ctrl+K for command palette)"
+                    @onclick="NavigateToBookmark" @onclick:stopPropagation>@progressBadgeText</button>
+        }
+        else
+        {
+            <span class="lib-card-progress" title="Your reading progress">@progressBadgeText</span>
+        }
+    }
+    <div class="@($"lib-cover {CoverClass}")" style="@CoverStyle" tabindex="0">
+        <span class="lib-spine" aria-hidden="true"></span>
+        @if (Item.Rating is { } rating)
+        {
+            <span class="lib-rating" title="Average rating">★ @rating.ToString("0.0")</span>
+        }
+        <div class="lib-cover-badges">
+            @if (StatusBadge is { } statusBadge)
+            {
+                <span class="@($"lib-status-badge {statusBadge.CssClass}")">@statusBadge.Label</span>
+            }
+        </div>
+        <div class="lib-cover-text">
+            <span class="lib-cover-title">@Item.Title</span>
+            <span class="lib-cover-author">@Item.Author</span>
+        </div>
+        <div class="lib-hover">
+            <p class="lib-hover-synopsis">@(Item.Synopsis ?? "No synopsis available.")</p>
+            <div class="lib-hover-genres">
+                @foreach (var genre in Item.Genres.Take(3))
+                {
+                    <span class="lib-hover-genre">@genre</span>
+                }
+            </div>
+            <div class="lib-hover-meta">
+                <span>Ch. @(Item.LatestChapter ?? "—") · @(Item.Status ?? "Unknown")</span>
+                <span>@Item.Provider · updated @Item.UpdatedLabel</span>
+            </div>
+            <button type="button" class="lib-more-btn" @onclick="HandleMore">
+                More
+            </button>
+        </div>
+    </div>
+    <div class="lib-card-foot">
+        <span class="lib-card-title" title="@Item.Title">@Item.Title</span>
+        <span class="lib-card-sub">@Item.TypeLabel · Ch. @(Item.LatestChapter ?? "—")</span>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public LibraryItem Item { get; set; } = default!;
+    [Parameter] public LibraryReadingProgressDto? Progress { get; set; }
+    [Parameter] public EventCallback<LibraryItem> OnMore { get; set; }
+
+    private string CoverStyle => LibraryCoverArt.StyleFor(Item);
+    private string CoverClass => LibraryCoverArt.CoverClass(Item);
+
+    private LibraryStatusBadge.Badge? StatusBadge => LibraryStatusBadge.Normalize(Item.Status);
+
+    private string? ProgressBadgeText => LibraryProgressDisplay.BadgeText(Progress);
+
+    private Task HandleMore() => OnMore.InvokeAsync(Item);
+
+    private void NavigateToBookmark()
+    {
+        if (Progress?.BookmarkId is { } bookmarkId)
+        {
+            NavigationManager.NavigateTo($"/bookmarks?bookmarkId={bookmarkId}");
+        }
+    }
+}

@@ -15,6 +15,7 @@ public partial class Settings
     [Inject] private IBookmarkManagerApiClient ApiClient { get; set; } = default!;
     [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
+    [Inject] private ILibraryService LibraryService { get; set; } = default!;
 
     private ExtensionStatusDto? _extensionStatus;
     private bool _statusLoading = true;
@@ -43,9 +44,7 @@ public partial class Settings
         new ThemeOption { Id = "default", Name = "Premium Dark", Description = "Default indigo & deep obsidian style", BgColor = "#08090D", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#F4F4F6", AccentColor = "#818CF8" },
         new ThemeOption { Id = "grand-line", Name = "Grand Line Gold", Description = "Weathered parchment & straw gold pirate theme", BgColor = "#0D0E12", BorderColor = "rgba(244,208,104,0.12)", TextColor = "#F4ECD8", AccentColor = "#F4D068" },
         new ThemeOption { Id = "catppuccin-mocha", Name = "Catppuccin Mocha", Description = "Cozy dark pastel cappuccino palette", BgColor = "#1e1e2e", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#cdd6f4", AccentColor = "#cba6f7" },
-        new ThemeOption { Id = "catppuccin-latte", Name = "Catppuccin Latte", Description = "Warm cream light cappuccino style", BgColor = "#eff1f5", BorderColor = "rgba(0,0,0,0.08)", TextColor = "#4c4f69", AccentColor = "#8839ef" },
-        new ThemeOption { Id = "sakura", Name = "Sakura Sunset", Description = "Vibrant dark cherry & pink blossom theme", BgColor = "#1a1016", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#fff3f8", AccentColor = "#ff79c6" },
-        new ThemeOption { Id = "cyberpunk", Name = "Cyberpunk Neon", Description = "Futuristic neon pink and cyan layout", BgColor = "#030008", BorderColor = "rgba(0,255,255,0.15)", TextColor = "#00ffff", AccentColor = "#ff007f" }
+        new ThemeOption { Id = "sakura", Name = "Sakura Sunset", Description = "Vibrant dark cherry & pink blossom theme", BgColor = "#1a1016", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#fff3f8", AccentColor = "#ff79c6" }
     };
 
     private string _selectedThemeId = "default";
@@ -53,6 +52,13 @@ public partial class Settings
     private string _triageMatchBaseUrl = string.Empty;
     private bool _triageRunning;
     private TriageJobStatusDto? _triageResult;
+
+    private List<ProviderHealthDto> _providerHealth = [];
+    private bool _healthLoading = true;
+
+    private LibraryCatalogSyncStatusDto? _catalogStatus;
+    private bool _catalogStatusLoading = true;
+    private bool _catalogResyncTriggering;
 
     protected override async Task OnInitializedAsync()
     {
@@ -65,10 +71,45 @@ public partial class Settings
             // Ignore failure
         }
 
-        await Task.WhenAll(LoadExtensionStatusAsync(), LoadAiTaggingSettingsAsync());
+        await Task.WhenAll(
+            LoadExtensionStatusAsync(),
+            LoadAiTaggingSettingsAsync(),
+            LoadProviderHealthAsync(),
+            LoadCatalogSyncStatusAsync());
     }
 
     private void OpenUrlMigrator() => Navigation.NavigateTo("/url-migrator");
+
+    private async Task LoadProviderHealthAsync()
+    {
+        _healthLoading = true;
+        try
+        {
+            _providerHealth = await LibraryService.GetProvidersHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load provider health: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _healthLoading = false;
+        }
+    }
+
+    private async Task ToggleProviderAsync(string name, bool enabled)
+    {
+        try
+        {
+            await LibraryService.ToggleProviderAsync(name, enabled);
+            Snackbar.Add($"{(enabled ? "Enabled" : "Disabled")} {name} provider.", Severity.Success);
+            await LoadProviderHealthAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to toggle provider: {ex.Message}", Severity.Error);
+        }
+    }
 
     private async Task RunLinkCheckerAsync()
     {
@@ -269,6 +310,43 @@ public partial class Settings
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to apply theme: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task LoadCatalogSyncStatusAsync()
+    {
+        _catalogStatusLoading = true;
+        try
+        {
+            _catalogStatus = await LibraryService.GetCatalogSyncStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load catalog sync status: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _catalogStatusLoading = false;
+        }
+    }
+
+    private async Task TriggerCatalogResyncAsync()
+    {
+        _catalogResyncTriggering = true;
+        try
+        {
+            await LibraryService.TriggerCatalogResyncAsync();
+            Snackbar.Add("Full catalog resync started in the background.", Severity.Info);
+            await Task.Delay(1000);
+            await LoadCatalogSyncStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to trigger catalog resync: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _catalogResyncTriggering = false;
         }
     }
 }

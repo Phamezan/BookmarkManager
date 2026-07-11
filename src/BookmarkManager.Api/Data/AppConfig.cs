@@ -12,4 +12,5 @@ public class AppConfig
     public int ConfigVersion { get; set; }
     public int PollIntervalSeconds { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public string DisabledProviders { get; set; } = string.Empty;
 }

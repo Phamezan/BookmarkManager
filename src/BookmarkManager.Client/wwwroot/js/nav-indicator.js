@@ -28,28 +28,43 @@ window.repositionNavIndicator = function() {
 
     const navRect = nav.getBoundingClientRect();
     const linkRect = activeLink.getBoundingClientRect();
-    // Absolutely positioned children offset from the containing block's padding
-    // edge, not its border edge, but getBoundingClientRect() measures the border
-    // edge — subtract the nav's own border width or the indicator drifts right/down
-    // by exactly that amount relative to the link it's supposed to sit under.
-    const left = linkRect.left - navRect.left - nav.clientLeft + nav.scrollLeft;
+    const isVertical = getComputedStyle(nav).flexDirection === 'column';
     const wasReady = indicator.classList.contains('is-ready');
 
-    // GSAP owns the slide/width-morph tween (app.css no longer transitions
-    // transform/width on .nav-active-indicator — only opacity is CSS-driven).
-    // First paint snaps into place instantly; every route change after that
-    // gets the bouncy tween.
-    if (window.gsap) {
-        gsap.to(indicator, {
-            x: left,
-            width: linkRect.width,
-            duration: wasReady ? 0.48 : 0,
-            ease: 'back.out(1.7)',
-            overwrite: 'auto'
-        });
+    if (isVertical) {
+        const top = linkRect.top - navRect.top - nav.clientTop + nav.scrollTop;
+        if (window.gsap) {
+            gsap.to(indicator, {
+                y: top,
+                height: linkRect.height,
+                x: 0,
+                width: 'auto',
+                duration: wasReady ? 0.48 : 0,
+                ease: 'back.out(1.7)',
+                overwrite: 'auto'
+            });
+        } else {
+            indicator.style.transform = `translateY(${top}px)`;
+            indicator.style.height = `${linkRect.height}px`;
+            indicator.style.width = 'auto';
+        }
     } else {
-        indicator.style.transform = `translateX(${left}px)`;
-        indicator.style.width = `${linkRect.width}px`;
+        const left = linkRect.left - navRect.left - nav.clientLeft + nav.scrollLeft;
+        if (window.gsap) {
+            gsap.to(indicator, {
+                x: left,
+                width: linkRect.width,
+                y: 0,
+                height: 'auto',
+                duration: wasReady ? 0.48 : 0,
+                ease: 'back.out(1.7)',
+                overwrite: 'auto'
+            });
+        } else {
+            indicator.style.transform = `translateX(${left}px)`;
+            indicator.style.width = `${linkRect.width}px`;
+            indicator.style.height = 'auto';
+        }
     }
     indicator.classList.add('is-ready');
 
@@ -59,9 +74,10 @@ window.repositionNavIndicator = function() {
         // Force reflow so re-adding the class restarts the animation.
         void disc.offsetWidth;
         disc.classList.add('is-spinning');
-        spawnNavParticles(indicator, linkRect.width);
+        const indicatorWidth = indicator.getBoundingClientRect().width;
+        spawnNavParticles(indicator, indicatorWidth);
         if (document.documentElement.getAttribute('data-theme') === 'grand-line') {
-            spawnGearSmoke(indicator, linkRect.width);
+            spawnGearSmoke(indicator, indicatorWidth);
         }
     }
 };

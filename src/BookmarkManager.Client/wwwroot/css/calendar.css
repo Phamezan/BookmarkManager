@@ -1,0 +1,1020 @@
+
+/* ----------------------------------------------------------------------------
+   12c. Anime Calendar Page
+---------------------------------------------------------------------------- */
+.ac-unmatched-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--bm-space-2);
+    padding: var(--bm-space-3) var(--bm-space-4);
+    margin-bottom: var(--bm-space-4);
+    border-radius: var(--bm-radius);
+    background: var(--bm-warning-soft, rgba(234, 179, 8, 0.1));
+    border: 1px solid var(--bm-warning, #eab308);
+    color: var(--bm-text-secondary);
+    font-size: 0.85rem;
+}
+
+.ac-unmatched-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bm-space-2);
+    width: 100%;
+}
+
+/* Featured pick */
+.rec-featured {
+    position: relative;
+    margin-bottom: var(--bm-space-8);
+}
+
+.rec-featured-eyebrow {
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--bm-accent);
+    margin-bottom: var(--bm-space-3);
+}
+
+.rec-featured-title {
+    margin: 0 0 var(--bm-space-3);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    font-weight: 800;
+    font-size: clamp(2rem, 3.4vw, 2.6rem);
+    line-height: 1.2;
+    color: #fff;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.rec-featured-url {
+    font-size: 0.92rem;
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    color: var(--bm-text-muted);
+    margin-bottom: var(--bm-space-4);
+    word-break: break-all;
+}
+
+.rec-featured-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bm-space-2);
+    margin-bottom: var(--bm-space-5);
+}
+
+.rec-featured-tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    color: var(--bm-accent);
+    background: var(--bm-accent-soft);
+    border: 1px solid var(--bm-border-accent);
+    border-radius: var(--bm-radius-full);
+    padding: 6px 15px;
+}
+
+.rec-featured-category {
+    color: var(--bm-watching);
+    background: var(--bm-watching-soft);
+    border-color: color-mix(in srgb, var(--bm-watching) 35%, transparent);
+}
+
+.rec-featured-favorite {
+    gap: 5px;
+    color: var(--bm-favorite);
+    background: var(--bm-favorite-soft);
+    border-color: color-mix(in srgb, var(--bm-favorite) 35%, transparent);
+}
+
+.rec-featured-favorite .mud-icon-root {
+    font-size: 0.9rem !important;
+}
+
+.rec-featured-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--bm-space-3);
+}
+
+.rec-visit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bm-accent);
+    color: var(--bm-bg);
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 13px 28px;
+    border-radius: var(--bm-radius);
+    text-decoration: none;
+    transition: background var(--bm-fast) var(--bm-ease);
+}
+
+.rec-visit-btn:hover {
+    background: var(--bm-accent-hover);
+}
+
+.rec-text-action {
+    background: none;
+    border: none;
+    font: inherit;
+    color: var(--bm-text-secondary);
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 13px var(--bm-space-3);
+    cursor: pointer;
+    transition: color var(--bm-fast) var(--bm-ease);
+}
+
+.rec-text-action:hover {
+    color: var(--bm-text);
+}
+
+.rec-text-action.danger:hover {
+    color: var(--bm-danger);
+}
+
+.rec-featured-nav {
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-4);
+    margin-left: auto;
+    font-size: 0.82rem;
+    color: var(--bm-text-muted);
+}
+
+.rec-featured-nav-arrow {
+    background: none;
+    border: none;
+    font: inherit;
+    color: inherit;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    transition: color var(--bm-fast) var(--bm-ease);
+}
+
+.rec-featured-nav-arrow:hover {
+    color: var(--bm-text);
+}
+
+.rec-featured-position {
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+}
+
+.rec-featured-skeleton {
+    height: 220px;
+    margin-bottom: var(--bm-space-6);
+    border-radius: var(--bm-radius-xl);
+    border: 1px solid var(--bm-border);
+    background: linear-gradient(90deg,
+            var(--bm-surface-muted) 25%,
+            var(--bm-surface-raised) 50%,
+            var(--bm-surface-muted) 75%);
+    background-size: 200% 100%;
+    animation: skeletonShimmer 1.8s infinite linear;
+}
+
+/* More to rediscover list */
+.rec-more-heading {
+    margin: 0 0 var(--bm-space-2);
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--bm-text-muted);
+}
+
+.rec-more-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.rec-more-list .skeleton-card {
+    height: 64px;
+    margin-bottom: var(--bm-space-2);
+}
+
+.rec-more-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--bm-space-4);
+    padding: 18px 0;
+    border-top: 1px solid var(--bm-border);
+    animation: recRowIn var(--bm-med) var(--bm-ease-out) both;
+    animation-delay: calc(var(--rec-index, 0) * 40ms);
+    /* Draggable (gsap-recommendations.js) translates this on the x axis —
+       keep vertical touch scroll working and give it a stacking context so
+       the drag/absorb transforms don't clip against siblings. */
+    touch-action: pan-y;
+    position: relative;
+}
+
+@keyframes recRowIn {
+    from {
+        opacity: 0;
+        transform: translateY(4px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.rec-more-index {
+    font-family: "Newsreader", serif;
+    font-style: italic;
+    font-size: 1rem;
+    color: var(--bm-text-muted);
+    width: 28px;
+    flex-shrink: 0;
+    padding-top: 3px;
+}
+
+.rec-more-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.rec-more-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--bm-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.rec-more-host {
+    font-size: 0.85rem;
+    color: var(--bm-text-muted);
+    font-family: "JetBrains Mono", ui-monospace, monospace;
+    margin-top: 4px;
+}
+
+.rec-more-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--bm-space-2);
+    margin-top: var(--bm-space-3);
+}
+
+.rec-more-tag {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--bm-accent);
+    background: var(--bm-accent-soft);
+    padding: 5px 13px;
+    border-radius: var(--bm-radius-full);
+}
+
+.rec-more-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--bm-fast) var(--bm-ease);
+}
+
+.rec-more-row:hover .rec-more-actions,
+.rec-more-row:focus-within .rec-more-actions {
+    opacity: 1;
+}
+
+@media (hover: none) {
+    .rec-more-actions {
+        opacity: 1;
+    }
+}
+
+/* ===========================================================================
+   Anime Calendar — self-contained violet-dark panel (designs 1d / 2a / 2b / 2c).
+   Every rule scoped under .anime-cal so the dark surface never leaks into the
+   light app shell. Palette kept literal to match the handoff mockups.
+   =========================================================================== */
+/* This page only: let the workspace/zone grow past viewport height instead of
+   clipping the month grid into a fixed inner scroll box. Shorter monitors
+   (1920x1080) get a normal page scrollbar and see every row; the shared
+   .bookmarks-workspace/.bookmark-zone classes on the main Bookmarks page keep
+   their fixed-height internal scrolling untouched. */
+.bookmarks-workspace.anime-cal-workspace {
+    height: auto;
+    min-height: calc(100vh - 56px - 40px);
+}
+
+.bookmark-zone.anime-cal-zone {
+    height: auto;
+    overflow: visible;
+}
+
+.anime-cal {
+    --acal-bg: var(--bm-bg-elevated);
+    --acal-card: var(--bm-surface);
+    --acal-card-hi: var(--bm-surface-raised);
+    --acal-border: var(--bm-border);
+    --acal-border-hi: var(--bm-border-strong);
+    --acal-accent: var(--bm-accent);
+    --acal-accent-bright: var(--bm-accent);
+    --acal-label: var(--bm-accent);
+    --acal-today: var(--bm-warning);
+    --acal-text: var(--bm-text);
+    --acal-text-dim: var(--bm-text-secondary);
+    --acal-text-mute: var(--bm-text-muted);
+
+    position: relative;
+    background: transparent;
+    padding: 4px 0 0;
+    color: var(--acal-text);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 0;
+}
+
+@media (max-width: 1920px), (max-height: 1080px) {
+    .bookmarks-workspace.anime-cal-workspace {
+        height: auto;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+    }
+    .bookmark-zone.anime-cal-zone {
+        height: auto;
+        overflow: visible;
+    }
+}
+
+/* Toolbar */
+.acal-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 22px;
+    flex-wrap: wrap;
+}
+
+.acal-eyebrow {
+    font: 600 10px ui-monospace, monospace;
+    letter-spacing: 0.16em;
+    color: var(--acal-label);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+.acal-title {
+    position: relative;
+    margin: 0;
+    padding-left: 14px;
+    font: 800 32px/1.1 system-ui, sans-serif;
+    letter-spacing: -0.01em;
+    color: var(--acal-text);
+}
+
+.acal-title::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 4px;
+    bottom: 4px;
+    width: 4px;
+    border-radius: var(--bm-radius-full);
+    background: var(--acal-accent-bright);
+    box-shadow: 0 0 10px var(--acal-accent-bright);
+}
+
+.acal-toolbar-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.acal-view-btn,
+.acal-nav-btn {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--acal-border);
+    color: var(--bm-text-secondary);
+    font: 600 11px system-ui, sans-serif;
+    padding: 7px 14px;
+    border-radius: var(--bm-radius-full);
+    cursor: pointer;
+    transition: background var(--bm-fast) var(--bm-ease-out),
+        color var(--bm-fast) var(--bm-ease-out),
+        border-color var(--bm-fast) var(--bm-ease-out),
+        transform var(--bm-fast) var(--bm-ease-out),
+        box-shadow var(--bm-fast) var(--bm-ease-out);
+}
+
+.acal-view-btn:hover,
+.acal-nav-btn:hover {
+    border-color: var(--acal-border-hi);
+    color: var(--acal-text);
+    transform: translateY(-1px);
+}
+
+.acal-view-btn:active,
+.acal-nav-btn:active {
+    transform: scale(0.92);
+}
+
+.acal-view-btn.is-active {
+    background: linear-gradient(135deg, var(--acal-accent), var(--acal-accent-bright));
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 4px 16px var(--bm-accent-glow);
+}
+
+.acal-nav-btn {
+    padding: 7px 12px;
+    font-size: 14px;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Poster placeholder (shared) */
+.acal-pstr {
+    border-radius: 5px;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    flex: none;
+    overflow: hidden;
+    position: relative;
+}
+
+.acal-pstr img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.acal-pstr--placeholder span {
+    font: 600 7px ui-monospace, monospace;
+    letter-spacing: 0.04em;
+    color: rgba(255, 255, 255, 0.55);
+    padding-bottom: 4px;
+    text-transform: uppercase;
+}
+
+/* Shared episode card */
+.acal-ep-card {
+    display: flex;
+    gap: 10px;
+    background: var(--acal-card);
+    border: 1px solid var(--acal-border);
+    border-radius: 9px;
+    padding: 9px;
+    align-items: flex-start;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.acal-ep-card:hover {
+    border-color: var(--acal-border-hi);
+}
+
+.acal-ep-card.is-emphasized {
+    background: var(--acal-card-hi);
+    border-color: var(--acal-border-hi);
+}
+
+.acal-ep-body {
+    min-width: 0;
+    flex: 1;
+}
+
+.acal-ep-title {
+    font: 600 13px system-ui, sans-serif;
+    color: var(--acal-text);
+}
+
+.acal-ep-meta {
+    font: 500 11.5px system-ui, sans-serif;
+    color: var(--bm-text-secondary);
+    margin-top: 3px;
+}
+
+.acal-ep-source {
+    font: 500 10px system-ui, sans-serif;
+    color: var(--bm-accent-hover);
+    margin-top: 6px;
+}
+
+.acal-ep-countdown {
+    font: 700 12px ui-monospace, monospace;
+    color: var(--bm-warning);
+    letter-spacing: 0.03em;
+    margin-top: 4px;
+}
+
+/* Hero sizing - Week + Day views, EpisodeCard's Large parameter */
+.acal-ep-card.is-large {
+    align-items: center;
+    gap: 16px;
+    padding: 12px;
+}
+
+.acal-ep-card.is-large .acal-ep-title {
+    font-size: 17px;
+}
+
+.acal-ep-card.is-large .acal-ep-meta {
+    font-size: 13px;
+    margin-top: 5px;
+}
+
+.acal-ep-card.is-large .acal-ep-source {
+    font-size: 11px;
+    margin-top: 8px;
+}
+
+.acal-ep-card.is-large .acal-ep-countdown {
+    font-size: 14px;
+    margin-top: 6px;
+}
+
+/* Empty / not-yet-built states */
+.acal-placeholder,
+.acal-empty {
+    font: 500 12px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+    padding: 24px;
+    text-align: center;
+}
+
+/* ---- Connected vertical timeline (Agenda 1d + Day 2c) ---- */
+.acal-timeline {
+    position: relative;
+    padding-left: 26px;
+}
+
+.acal-timeline--day {
+    padding-left: 28px;
+    margin-bottom: 20px;
+}
+
+.acal-timeline-rail {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    background: linear-gradient(var(--acal-accent), var(--acal-border));
+}
+
+.acal-timeline-group {
+    position: relative;
+    margin-bottom: 22px;
+}
+
+.acal-timeline-group:last-child {
+    margin-bottom: 0;
+}
+
+.acal-timeline-node {
+    position: absolute;
+    left: -26px;
+    top: 2px;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: var(--acal-accent-bright);
+    box-shadow: 0 0 0 4px var(--acal-bg);
+}
+
+.acal-timeline-node.is-today {
+    background: var(--acal-today);
+}
+
+.acal-timeline-node.is-small {
+    left: -18px;
+    top: 6px;
+    width: 9px;
+    height: 9px;
+    box-shadow: 0 0 0 3px var(--acal-bg);
+}
+
+.acal-timeline-daylabel {
+    font: 600 11px system-ui, sans-serif;
+    color: var(--acal-label);
+    margin-bottom: 6px;
+}
+
+.acal-timeline-daylabel.is-today {
+    color: var(--bm-warning);
+}
+
+.acal-timeline-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.acal-timeline-slot {
+    position: relative;
+    margin-bottom: 20px;
+}
+
+.acal-timeline-slot:last-child {
+    margin-bottom: 0;
+}
+
+.acal-timeline-time {
+    font: 600 11px system-ui, sans-serif;
+    color: var(--acal-label);
+    margin-bottom: 6px;
+}
+
+.acal-day-footer {
+    font: 500 11px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+    padding: 12px;
+    background: var(--acal-card);
+    border-radius: 6px;
+    text-align: center;
+}
+
+/* ---- Month grid (2a) ---- */
+.acal-month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    /* Fixed size, not vh-scaled: the page/workspace scrolls past viewport
+       height now (see .anime-cal-workspace/.anime-cal-zone), so cells don't
+       need to shrink to fit a short viewport - full size on every monitor. */
+    gap: 6px;
+    background: transparent;
+    /* Lets populated cells (see gsap-calendar.js initCalendarTilt) tilt in 3D
+       on hover instead of just skewing flat. */
+    perspective: 800px;
+}
+
+.acal-month-head {
+    background: transparent;
+    padding: 8px 8px 12px;
+    text-align: center;
+    font: 700 10px system-ui, sans-serif;
+    color: var(--acal-label);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.acal-month-cell {
+    background: var(--bm-surface-muted);
+    border: 1px solid var(--acal-border);
+    border-radius: 10px;
+    padding: 10px 8px;
+    /* Fixed - page scrolls past viewport height now, so cells stay full
+       size instead of shrinking on shorter monitors. */
+    min-height: 118px;
+    display: flex;
+    flex-direction: column;
+    /* flex-start, not space-between: with only 2 children (daynum, events)
+       space-between shoved the whole events block toward the cell's bottom
+       edge, leaving a big gap that made the scroll arrow read as a separate
+       floating widget instead of sitting right under the daynum. */
+    justify-content: flex-start;
+    gap: 8px;
+    transform-style: preserve-3d;
+    will-change: transform;
+    transition: border-color var(--bm-med) var(--bm-ease-out),
+        box-shadow var(--bm-med) var(--bm-ease-out),
+        background var(--bm-med) var(--bm-ease-out),
+        transform var(--bm-med) var(--bm-ease-out);
+}
+
+@media (max-width: 1920px), (max-height: 1080px) {
+    .acal-month-grid {
+        gap: 4px;
+    }
+    .acal-month-cell {
+        min-height: 95px;
+        padding: 6px 6px;
+        gap: 4px;
+    }
+}
+
+.acal-month-cell.is-populated {
+    background: var(--bm-surface);
+    border-color: var(--bm-border-strong);
+    cursor: pointer;
+}
+
+.acal-month-cell.is-populated:hover {
+    border-color: var(--bm-accent-hover);
+    background: var(--bm-surface-raised);
+    box-shadow: 0 0 0 1px var(--bm-border-accent), var(--bm-shadow-glow);
+    transform: translateY(-1px);
+}
+
+.acal-month-cell.is-today {
+    box-shadow: inset 0 0 0 1px rgba(255, 180, 84, 0.4);
+}
+
+.acal-month-cell.is-today .acal-month-daynum {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 5px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--acal-today), #ff8a3d);
+    color: #1a0f00;
+    box-shadow: 0 0 12px rgba(255, 180, 84, 0.55);
+}
+
+.acal-month-cell.is-outside .acal-month-daynum {
+    color: var(--acal-text-mute);
+}
+
+.acal-month-headrow {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+}
+
+.acal-month-headrow.is-scrollable {
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background var(--bm-fast) var(--bm-ease);
+}
+
+.acal-month-headrow.is-scrollable:hover {
+    background: var(--bm-accent-soft);
+}
+
+.acal-month-daynum {
+    font: 700 13px system-ui, sans-serif;
+    color: var(--acal-text);
+    align-self: flex-start;
+}
+
+.acal-month-empty {
+    font: 500 10px system-ui, sans-serif;
+    color: #3a3350;
+}
+
+/* Hybrid Month Cell Event Row */
+.acal-month-events {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    margin-top: 4px;
+}
+
+.acal-month-event {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: linear-gradient(90deg, var(--bm-accent-soft), var(--bm-surface-muted));
+    border: 1px solid var(--bm-border-accent);
+    border-radius: 8px;
+    padding: 4px 8px 6px;
+    cursor: pointer;
+    transition: background var(--bm-med) var(--bm-ease-out),
+        border-color var(--bm-med) var(--bm-ease-out),
+        transform var(--bm-med) cubic-bezier(0.34, 1.56, 0.64, 1),
+        box-shadow var(--bm-med) var(--bm-ease-out);
+}
+
+.acal-month-event-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.acal-month-event-row::before {
+    content: "";
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--acal-accent-bright);
+    box-shadow: 0 0 6px var(--acal-accent-bright);
+}
+
+.acal-month-event:hover {
+    background: linear-gradient(90deg, var(--bm-accent-glow), var(--bm-accent-soft));
+    border-color: var(--acal-accent-bright);
+    transform: translateX(2px) scale(1.03);
+    box-shadow: var(--bm-shadow-glow);
+    z-index: 5;
+}
+
+.acal-month-cover-mini {
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.acal-month-cover-mini img {
+    display: block;
+    transition: transform 420ms var(--bm-ease-out);
+}
+
+.acal-month-event:hover .acal-month-cover-mini img {
+    transform: scale(1.12);
+}
+
+.acal-event-title-text {
+    font: 500 10.5px system-ui, sans-serif;
+    color: var(--acal-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-grow: 1;
+}
+
+.acal-event-ep-text {
+    font: 600 9.5px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+    flex-shrink: 0;
+}
+
+/* In-cell paging when a day has more items than fit in MaxCovers slots. The
+   up strip lives inside .acal-month-headrow, right next to the daynum (same
+   container - not a separate block below it), and pages up; the down strip
+   sits in the footer of .acal-month-events and pages down. Both always
+   render whenever the cell has any items (never toggled by CanScrollUp/Down
+   directly) so their space is always reserved in the cell's layout - only
+   visibility/hit-testing flips via .is-hidden, so scrolling never shifts the
+   cell's height. Each strip eats its own click so it never falls through to
+   the day-nav click on the cell behind it. */
+.acal-scroll-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 15px;
+    font-size: 11px;
+    line-height: 1;
+    color: var(--acal-label);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background var(--bm-fast) var(--bm-ease), color var(--bm-fast) var(--bm-ease);
+}
+
+.acal-scroll-zone-up {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px;
+    height: 20px;
+    pointer-events: none;
+}
+
+.acal-scroll-zone-down {
+    width: 100%;
+    margin-top: 2px;
+}
+
+.acal-scroll-zone.is-hidden {
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.acal-scroll-zone:hover {
+    background: var(--bm-accent-soft);
+    color: var(--acal-text);
+}
+
+/* Countdown progress — fills as the wait for this episode elapses. */
+.acal-event-progress {
+    width: 100%;
+    height: 3px;
+    border-radius: var(--bm-radius-full);
+    background: var(--bm-surface-muted);
+    overflow: hidden;
+}
+
+.acal-event-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--acal-accent-bright);
+}
+
+.acal-month-airing-tag {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    font: 700 8.5px system-ui, sans-serif;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--bm-bg);
+    background: var(--bm-success);
+    padding: 2px 6px;
+    border-radius: var(--bm-radius-full);
+    box-shadow: 0 0 8px var(--bm-success-soft);
+}
+
+/* Rich hover popover card */
+.rich-tip {
+    position: fixed;
+    transform: scale(0.95);
+    transform-origin: center center;
+    display: flex;
+    gap: 16px;
+    width: max-content;
+    min-width: 440px;
+    max-width: 680px;
+    padding: 16px;
+    background: var(--bm-bg-elevated);
+    border: 1px solid var(--bm-border-strong);
+    border-radius: 8px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px var(--bm-accent-soft);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--bm-fast) var(--bm-ease-out),
+        transform var(--bm-fast) var(--bm-ease-out);
+    z-index: 9999;
+    line-height: normal;
+}
+
+.rich-tip.is-visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: auto;
+}
+
+.acal-tip-cover {
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.acal-tip-cover img {
+    display: block;
+    transition: transform 500ms var(--bm-ease-out);
+}
+
+.acal-month-event:hover .acal-tip-cover img {
+    transform: scale(1.05);
+}
+
+.acal-tip-details {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    flex: 1;
+    text-align: left;
+}
+
+.acal-tip-title {
+    font: 600 17px system-ui, sans-serif;
+    color: var(--bm-text);
+    line-height: 1.3;
+    margin-bottom: 8px;
+    word-break: break-word;
+    white-space: normal;
+}
+
+.acal-tip-ep {
+    font: 600 14px system-ui, sans-serif;
+    color: var(--bm-warning);
+    margin-bottom: 4px;
+}
+
+.acal-tip-time {
+    font: 500 12px system-ui, sans-serif;
+    color: var(--bm-text-secondary);
+}
+
+.acal-tip-countdown {
+    font: 700 18px ui-monospace, monospace;
+    color: var(--bm-accent-hover);
+    letter-spacing: 0.03em;
+    margin-top: 8px;
+}
+
+.acal-month-footer {
+    margin-top: 16px;
+    font: 500 11px system-ui, sans-serif;
+    color: var(--acal-text-dim);
+}
