@@ -143,6 +143,7 @@ label {
 }
 
 input[type="url"],
+input[type="text"],
 select#api-url {
   flex: 1;
   background: var(--bg);
@@ -172,9 +173,11 @@ select#api-url {
   background-repeat: no-repeat;
 }
 
-input[type="url"]::placeholder { color: var(--text-muted); }
+input[type="url"]::placeholder,
+input[type="text"]::placeholder { color: var(--text-muted); }
 
 input[type="url"]:focus,
+input[type="text"]:focus,
 select#api-url:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-glow);
@@ -212,6 +215,22 @@ select#api-url:focus {
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+}
+
+.btn-full {
+  width: 100%;
+  height: 34px;
+  padding: 0 14px;
+  gap: 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.btn-full svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
 }
 
 /* ── Status rows ─────────────────────────────────────────────────────────── */

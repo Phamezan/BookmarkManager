@@ -1,5 +1,6 @@
 import type { BookmarkAdapter, StorageRepository } from "../api/contracts";
 import { SyncCoordinator } from "./sync-coordinator";
+import { BackupManager } from "../backup/backup-manager";
 import { matchEventToCorrelation } from "../commands/command-executor";
 import { migrate } from "../storage/migrations";
 import {
@@ -28,6 +29,7 @@ export interface ServiceWorkerDeps {
   api: SettingsAwareApiClient;
   adapter: BookmarkAdapter;
   storage: StorageRepository;
+  backupManager: BackupManager;
   getExtensionVersion: () => string;
   getBraveVersion: () => string;
   now: () => Date;
@@ -408,6 +410,8 @@ export class ServiceWorker {
         } catch {
           return { success: false, error: "Connection failed" };
         }
+      case "manualBackup":
+        return await this.deps.backupManager.runManualBackup();
       default:
         return { success: false, error: "Unknown message type" };
     }
@@ -453,6 +457,9 @@ export class ServiceWorker {
 
       ws.onopen = () => {
         this.wsReconnectAttempt = 0;
+        this.deps.backupManager
+          .runAutoBackupIfDue()
+          .catch((e) => console.error("[worker] auto-backup failed:", e));
       };
 
       ws.onmessage = (event) => {
@@ -508,11 +515,21 @@ export class ServiceWorker {
 const storage = new ChromeStorageRepository(chrome.storage.local);
 const adapter = new ChromeBookmarkAdapter(chrome.bookmarks as never);
 const api = new SettingsAwareApiClient(storage);
+const backupManager = new BackupManager({
+  storage,
+  downloads: {
+    download: (opts) => chrome.downloads.download(opts),
+    removeFile: (id) => chrome.downloads.removeFile(id),
+  },
+  getTree: () => chrome.bookmarks.getTree() as never,
+  now: () => new Date(),
+});
 
 const worker = new ServiceWorker({
   api,
   adapter,
   storage,
+  backupManager,
   getExtensionVersion: () => chrome.runtime.getManifest().version,
   getBraveVersion: () => {
     const match = navigator.userAgent.match(/Brave\/(\S+)/);

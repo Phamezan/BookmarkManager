@@ -6,6 +6,7 @@ export interface BraveBookmarkTreeNode {
   title: string;
   url?: string;
   index?: number;
+  dateAdded?: number;
   children?: BraveBookmarkTreeNode[];
 }
 
