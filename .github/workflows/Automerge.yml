@@ -21,8 +21,11 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Build
+        run: dotnet build --configuration Release
+
       - name: Run Tests
-        run: dotnet test --configuration Release
+        run: dotnet test --configuration Release --no-build
 
       - name: Create and Auto-Merge PR
         env:
