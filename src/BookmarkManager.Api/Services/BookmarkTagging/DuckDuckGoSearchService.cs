@@ -64,7 +64,7 @@ public class DuckDuckGoSearchService : IDuckDuckGoSearchService
         var knownBrands = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "reaper scans", "reaperscans", "asura scans", "asurascans", "flame scans", "flamescans",
-            "mangadex", "manganelo", "mangakakalot", "webnovel", "royalroad",
+            "mangadex", "manganelo", "mangakakalot", "novelupdates", "novel updates", "webnovel", "royalroad",
             "royal road", "wuxiaworld", "readmanga", "mangago", "novelcool", "read light novel"
         };
 

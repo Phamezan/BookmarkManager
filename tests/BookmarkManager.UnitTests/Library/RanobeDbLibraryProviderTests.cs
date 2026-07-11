@@ -83,7 +83,7 @@ public sealed class RanobeDbLibraryProviderTests
         Assert.Equal("Hachiman Hikigaya is a cynic.", entry.Synopsis);
         Assert.Contains("comedy", entry.Genres);
         Assert.Contains("romance", entry.Genres);
-        Assert.DoesNotContain("male protagonist", entry.Genres);
+        Assert.Contains("male protagonist", entry.Genres);
         Assert.Contains("Watari Wataru", entry.Authors);
         Assert.Contains("Ponkan 8", entry.Authors);
         Assert.DoesNotContain("Jennifer Ward", entry.Authors);

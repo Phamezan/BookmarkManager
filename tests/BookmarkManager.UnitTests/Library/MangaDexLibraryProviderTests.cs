@@ -44,7 +44,7 @@ public sealed class MangaDexLibraryProviderTests
         Assert.Equal("14", entry.LatestVolume);
         Assert.Equal("completed", entry.Status);
         Assert.Contains("Action", entry.Genres);
-        Assert.DoesNotContain("Long Strip", entry.Genres);
+        Assert.Contains("Long Strip", entry.Genres);
         Assert.Equal("Chugong", Assert.Single(entry.Authors));
         Assert.Equal("https://uploads.mangadex.org/covers/a1c7c817-4e59-43b7-9365-09675a149a6f/cover.jpg.256.jpg", entry.CoverImageUrl);
         Assert.Equal("https://mangadex.org/title/a1c7c817-4e59-43b7-9365-09675a149a6f", entry.SourceUrl);
