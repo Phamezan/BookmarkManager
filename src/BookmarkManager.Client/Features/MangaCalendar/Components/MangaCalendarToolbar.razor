@@ -1,0 +1,47 @@
+@* Manga/manhwa counterpart of AnimeCalendar's CalendarToolbar. *@
+@using BookmarkManager.Client.Features.MangaCalendar
+
+<div class="acal-toolbar">
+    <div>
+        <div class="acal-eyebrow">@Eyebrow</div>
+        <h2 class="acal-title">@Title</h2>
+    </div>
+    <div class="acal-toolbar-actions">
+        <button type="button" class="acal-nav-btn" title="Previous" @onclick="OnPrev">&lsaquo;</button>
+        @foreach (var view in Views)
+        {
+            var isActive = view == Current;
+            <button type="button" class="acal-view-btn@(isActive ? " is-active" : "")"
+                    @onclick="() => SelectAsync(view)">
+                @Label(view)
+            </button>
+        }
+        <button type="button" class="acal-nav-btn" title="Next" @onclick="OnNext">&rsaquo;</button>
+    </div>
+</div>
+
+@code {
+    [Parameter] public MangaCalendarView Current { get; set; }
+    [Parameter] public EventCallback<MangaCalendarView> CurrentChanged { get; set; }
+    [Parameter] public string Eyebrow { get; set; } = "Calendar";
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnPrev { get; set; }
+    [Parameter] public EventCallback OnNext { get; set; }
+
+    private static readonly MangaCalendarView[] Views =
+    [
+        MangaCalendarView.Month,
+        MangaCalendarView.Week,
+        MangaCalendarView.Day
+    ];
+
+    private static string Label(MangaCalendarView view) => view switch
+    {
+        MangaCalendarView.Month => "Month",
+        MangaCalendarView.Week => "Week",
+        MangaCalendarView.Day => "Day",
+        _ => view.ToString()
+    };
+
+    private Task SelectAsync(MangaCalendarView view) => CurrentChanged.InvokeAsync(view);
+}

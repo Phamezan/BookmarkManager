@@ -226,6 +226,147 @@ public sealed class MangaDexLibraryProvider(
             cancellationToken);
     }
 
+    /// <summary>Global "what's releasing" feed for the Manga calendar - independent of any bookmark.
+    /// Covers all origin languages (manga, manhwa, manhua) - no originalLanguage filter, unlike the
+    /// earlier manhwa-only cut of this feed. contentRating is capped at safe/suggestive to keep the
+    /// feed non-18+ (erotica/pornographic are excluded).</summary>
+    public Task<IReadOnlyList<MangaCalendarEntryDto>> GetLatestManhwaReleasesAsync(int limit, CancellationToken cancellationToken)
+    {
+        var cacheKey = $"{ProviderName}:manga-feed:{limit}";
+        var url = $"{BaseUrl}/chapter?limit={limit}&translatedLanguage[]=en" +
+                   "&contentRating[]=safe&contentRating[]=suggestive" +
+                   "&order[readableAt]=desc&includes[]=manga";
+
+        return ExecuteAsync(
+            cacheKey,
+            ReleaseCacheTtl,
+            TimeSpan.FromSeconds(20),
+            async ct =>
+            {
+                await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
+                using var doc = await GetJsonAsync(url, ct).ConfigureAwait(false);
+                var entries = ParseManhwaFeed(doc);
+
+                // cover_art is a relationship of the manga, not the chapter - /chapter's
+                // includes[]=cover_art doesn't attach anything. Batch-fetch covers for the distinct
+                // manga in this page via /cover instead.
+                var coverUrls = await FetchCoverUrlsAsync(entries.Select(e => e.ProviderId), ct).ConfigureAwait(false);
+                foreach (var entry in entries)
+                {
+                    if (coverUrls.TryGetValue(entry.ProviderId, out var coverUrl))
+                        entry.CoverImageUrl = coverUrl;
+                }
+
+                return (IReadOnlyList<MangaCalendarEntryDto>)entries;
+            },
+            [],
+            cancellationToken);
+    }
+
+    private async Task<Dictionary<string, string>> FetchCoverUrlsAsync(IEnumerable<string> mangaIds, CancellationToken cancellationToken)
+    {
+        var ids = mangaIds.Distinct().ToList();
+        var result = new Dictionary<string, string>();
+        if (ids.Count == 0)
+            return result;
+
+        var query = string.Join("&", ids.Select(id => $"manga[]={Uri.EscapeDataString(id)}"));
+        var url = $"{BaseUrl}/cover?{query}&limit=100";
+
+        await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var doc = await GetJsonAsync(url, cancellationToken).ConfigureAwait(false);
+        if (doc is null || !doc.RootElement.TryGetProperty("data", out var dataArray) || dataArray.ValueKind != JsonValueKind.Array)
+            return result;
+
+        foreach (var cover in dataArray.EnumerateArray())
+        {
+            var mangaId = FindRelationshipId(cover, "manga");
+            var fileName = cover.TryGetProperty("attributes", out var coverAttrs) ? GetString(coverAttrs, "fileName") : null;
+            if (mangaId is not null && fileName is not null)
+                result[mangaId] = $"https://uploads.mangadex.org/covers/{mangaId}/{fileName}.256.jpg";
+        }
+
+        return result;
+    }
+
+    private List<MangaCalendarEntryDto> ParseManhwaFeed(JsonDocument? doc)
+    {
+        if (doc is null || !doc.RootElement.TryGetProperty("data", out var dataArray) || dataArray.ValueKind != JsonValueKind.Array)
+            return [];
+
+        var results = new List<MangaCalendarEntryDto>();
+        foreach (var chapter in dataArray.EnumerateArray())
+        {
+            var entry = MapChapterToReleaseEntry(chapter);
+            if (entry is not null)
+                results.Add(entry);
+        }
+
+        return results;
+    }
+
+    private MangaCalendarEntryDto? MapChapterToReleaseEntry(JsonElement chapter)
+    {
+        if (!chapter.TryGetProperty("attributes", out var attrs))
+            return null;
+
+        var mangaId = FindRelationshipId(chapter, "manga");
+        if (mangaId is null)
+            return null;
+
+        var mangaTitle = FindRelationshipLocalizedTitle(chapter, "manga");
+        var title = mangaTitle ?? GetString(attrs, "title") ?? "Untitled";
+
+        DateTimeOffset? readableAt = attrs.TryGetProperty("readableAt", out var readableAtEl) && readableAtEl.ValueKind == JsonValueKind.String &&
+                                      DateTimeOffset.TryParse(readableAtEl.GetString(), out var parsed)
+            ? parsed
+            : null;
+        if (readableAt is null)
+            return null;
+
+        return new MangaCalendarEntryDto
+        {
+            Title = title,
+            Url = $"https://mangadex.org/title/{mangaId}",
+            Provider = ProviderName,
+            ProviderId = mangaId,
+            CoverImageUrl = null,
+            LatestChapter = GetString(attrs, "chapter"),
+            LatestVolume = GetString(attrs, "volume"),
+            ReleasedAtUtc = readableAt.Value
+        };
+    }
+
+    private static string? FindRelationshipLocalizedTitle(JsonElement item, string relationshipType)
+    {
+        if (!item.TryGetProperty("relationships", out var relationships) || relationships.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var rel in relationships.EnumerateArray())
+        {
+            if (GetString(rel, "type") != relationshipType)
+                continue;
+            if (rel.TryGetProperty("attributes", out var relAttrs) && ExtractLocalizedString(relAttrs, "title", out var titles))
+                return titles.FirstOrDefault();
+        }
+
+        return null;
+    }
+
+    private static string? FindRelationshipId(JsonElement item, string relationshipType)
+    {
+        if (!item.TryGetProperty("relationships", out var relationships) || relationships.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var rel in relationships.EnumerateArray())
+        {
+            if (GetString(rel, "type") == relationshipType)
+                return GetString(rel, "id");
+        }
+
+        return null;
+    }
+
     private async Task<JsonDocument?> GetJsonAsync(string url, CancellationToken cancellationToken)
     {
         var http = CreateClient();

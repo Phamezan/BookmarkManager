@@ -1,0 +1,44 @@
+@* Global manhwa release calendar - MangaDex's own Korean-origin chapter feed, not tied to the
+   user's bookmarks (see MangaCalendarPanel.razor.cs for why bookmark-matching was dropped). *@
+@using BookmarkManager.Client.Components
+
+<div class="anime-cal-workspace">
+    <div class="rec-controls-row">
+        <span class="rec-subtitle" style="margin-bottom: 0;">Recently released manhwa chapters (non-18+), pulled from MangaDex.</span>
+        <div class="rec-chip-actions">
+            <button type="button" class="rec-clear-btn" disabled="@_loading" @onclick="LoadScheduleAsync">
+                @if (_loading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
+                }
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <div class="rec-divider"></div>
+
+    <div class="anime-cal">
+        <MangaCalendarToolbar Current="_view" CurrentChanged="SetView"
+                               Eyebrow="@ToolbarEyebrow" Title="@ToolbarTitle"
+                               OnPrev="GoPrev" OnNext="GoNext" />
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Class="mb-2" />
+        }
+
+        @switch (_view)
+        {
+            case MangaCalendarView.Month:
+                <MangaMonthView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" OnDaySelected="OnMonthDaySelected" />
+                break;
+            case MangaCalendarView.Day:
+                <MangaDayView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />
+                break;
+            default:
+                <MangaWeekView Items="_items" Anchor="_anchor" OnItemClick="OnItemClicked" />
+                break;
+        }
+    </div>
+</div>

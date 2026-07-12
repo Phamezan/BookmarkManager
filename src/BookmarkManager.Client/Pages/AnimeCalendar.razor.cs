@@ -12,7 +12,11 @@ namespace BookmarkManager.Client.Pages;
 
 public partial class AnimeCalendar
 {
+    private enum MediaTab { Anime, Manhwa }
+
     private const string StorageKey = "animeCalendar.folderIds";
+
+    private MediaTab _mediaTab = MediaTab.Anime;
 
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;

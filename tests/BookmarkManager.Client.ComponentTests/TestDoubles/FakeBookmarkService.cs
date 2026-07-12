@@ -161,8 +161,13 @@ public class FakeBookmarkService : IBookmarkService
     public Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default) 
         => OnClearAnimeMatch != null ? OnClearAnimeMatch(bookmarkId) : Task.FromResult<BookmarkNodeDto?>(null);
 
-    public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default) 
+    public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default)
         => OnAutoMatchAnime != null ? OnAutoMatchAnime(folderIds, bookmarkIds) : Task.FromResult(new AutoMatchAnimeResponse());
+
+    public MangaCalendarScheduleResponse MangaScheduleResponse { get; set; } = new();
+
+    public Task<MangaCalendarScheduleResponse> GetMangaScheduleAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(MangaScheduleResponse);
 
     public virtual Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(DeadDomainCandidates);
     

@@ -1,0 +1,155 @@
+@* Manga/manhwa month grid - mirrors AnimeCalendar's MonthView but plots each series' latest
+   release day instead of a future airing day; no live countdown since releases are already past. *@
+@using BookmarkManager.Client.Features.MangaCalendar
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="acal-month-grid">
+    @foreach (var name in DayHeaders)
+    {
+        <div class="acal-month-head">@name</div>
+    }
+    @for (int i = 0; i < _cells.Count; i++)
+    {
+        var cell = _cells[i];
+        <div class="@CellClass(cell)" @onclick="() => OpenDay(cell)">
+            <div class="@($"acal-month-headrow{(cell.CanScrollUp ? " is-scrollable" : "")}")"
+                 @onclick:stopPropagation="@cell.CanScrollUp" @onclick="() => Scroll(cell, -1)">
+                <div class="acal-month-daynum">@cell.Date.Day.ToString("00")</div>
+                @if (cell.Count > 0)
+                {
+                    <div class="@($"acal-scroll-zone acal-scroll-zone-up{(cell.CanScrollUp ? "" : " is-hidden")}")"
+                         aria-label="Show earlier">&#9650;</div>
+                }
+            </div>
+            @if (cell.Count > 0)
+            {
+                <div class="acal-month-events" data-scroll-offset="@cell.ScrollOffset">
+                    @foreach (var item in cell.Visible)
+                    {
+                        <div class="acal-month-event" @onclick:stopPropagation="true"
+                             @onclick="() => OnItemClick.InvokeAsync(item)">
+                            <div class="acal-month-event-row">
+                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="40px" Height="44px"
+                                             CssClass="acal-month-cover-mini" />
+                                <span class="acal-event-title-text">@item.Title</span>
+                                <span class="acal-event-ep-text">@(item.LatestChapter is { Length: > 0 } c ? $"Ch. {c}" : "")</span>
+                            </div>
+                            <div class="rich-tip">
+                                <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="170px" Height="250px"
+                                             CssClass="acal-tip-cover" />
+                                <div class="acal-tip-details">
+                                    <div class="acal-tip-title">@item.Title</div>
+                                    <div class="acal-tip-ep">@(item.LatestChapter is { Length: > 0 } c2 ? $"Chapter {c2}" : "New chapter")</div>
+                                    <div class="acal-tip-time">Released @item.ReleasedAtLocal.ToString("MMM d, h:mm tt")</div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    <div class="@($"acal-scroll-zone acal-scroll-zone-down{(cell.CanScrollDown ? "" : " is-hidden")}")" @onclick:stopPropagation="true"
+                         @onclick="() => Scroll(cell, 1)" aria-label="Show more">&#9660;</div>
+                </div>
+            }
+            else
+            {
+                <div class="acal-month-empty">—</div>
+            }
+        </div>
+    }
+</div>
+
+<div class="acal-month-footer">@_totalReleases chapter@(_totalReleases == 1 ? "" : "s") released this month</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MangaCalendarItem> Items { get; set; } = [];
+    [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<MangaCalendarItem> OnItemClick { get; set; }
+    [Parameter] public EventCallback<DateOnly> OnDaySelected { get; set; }
+
+    private static readonly string[] DayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    private const int MaxCovers = 3;
+
+    private List<Cell> _cells = [];
+    private int _totalReleases;
+
+    // OnParametersSet rebuilds _cells from scratch on every parent re-render (which happens
+    // after every item click, since EventCallback.InvokeAsync re-renders the owning parent, not
+    // just this component) - without this, each rebuild would reset every cell's in-cell scroll
+    // position back to the top. Keyed by date and never cleared, so paging state survives across
+    // rebuilds within the same month.
+    private readonly Dictionary<DateOnly, int> _scrollOffsets = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            var signature = $"{Anchor:yyyy-MM}|{_totalReleases}";
+            await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-month-grid", ".acal-month-cell", signature);
+            await JSRuntime.InvokeVoidAsync("initCalendarPopups", ".acal-month-grid");
+            await JSRuntime.InvokeVoidAsync("animateCalendarScroll", ".acal-month-grid");
+        }
+        catch { /* Safe fallback during unmounting */ }
+    }
+
+    protected override void OnParametersSet()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var first = new DateOnly(Anchor.Year, Anchor.Month, 1);
+        var gridStart = first.AddDays(-(int)first.DayOfWeek);
+
+        var perDay = Items
+            .Where(i => i.ReleasedDay.Year == Anchor.Year && i.ReleasedDay.Month == Anchor.Month)
+            .GroupBy(i => i.ReleasedDay)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(i => i.ReleasedAtLocal)
+                      .GroupBy(i => i.SeriesKey)
+                      .Select(s => s.First())
+                      .ToList());
+
+        _totalReleases = perDay.Values.Sum(v => v.Count);
+
+        _cells = Enumerable.Range(0, 42).Select(offset =>
+        {
+            var date = gridStart.AddDays(offset);
+            var inMonth = date.Month == Anchor.Month && date.Year == Anchor.Year;
+            var items = inMonth && perDay.TryGetValue(date, out var list) ? list : [];
+            var cell = new Cell(date, inMonth, date == today, items);
+            var maxOffset = Math.Max(0, items.Count - MaxCovers);
+            cell.ScrollOffset = _scrollOffsets.TryGetValue(date, out var saved) ? Math.Clamp(saved, 0, maxOffset) : 0;
+            return cell;
+        }).ToList();
+    }
+
+    private Task OpenDay(Cell cell)
+        => cell.Count > 0 && cell.Count <= MaxCovers ? OnDaySelected.InvokeAsync(cell.Date) : Task.CompletedTask;
+
+    private void Scroll(Cell cell, int direction)
+    {
+        var maxOffset = Math.Max(0, cell.Count - MaxCovers);
+        cell.ScrollOffset = Math.Clamp(cell.ScrollOffset + direction, 0, maxOffset);
+        _scrollOffsets[cell.Date] = cell.ScrollOffset;
+    }
+
+    private static string CellClass(Cell cell)
+    {
+        var cls = "acal-month-cell";
+        if (!cell.InMonth) cls += " is-outside";
+        if (cell.Count > 0) cls += " is-populated";
+        if (cell.IsToday) cls += " is-today";
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        if (cell.Date < today && cell.Count == 0) cls += " is-past-empty";
+
+        return cls;
+    }
+
+    private sealed record Cell(DateOnly Date, bool InMonth, bool IsToday, List<MangaCalendarItem> Items)
+    {
+        public int Count => Items.Count;
+        public int ScrollOffset { get; set; }
+        public IEnumerable<MangaCalendarItem> Visible => Items.Skip(ScrollOffset).Take(MaxCovers);
+        public bool CanScrollUp => ScrollOffset > 0;
+        public bool CanScrollDown => ScrollOffset + MaxCovers < Count;
+    }
+}

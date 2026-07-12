@@ -107,6 +107,13 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Library.Royal
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.RanobeDbLibraryProvider>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.NovelfireLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.AniListLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.MangaDexLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.KitsuLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.IMediaProvider, BookmarkManager.Api.Services.Library.RoyalRoadLibraryProvider>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.MangaDexLibraryProvider>(provider =>
+    (BookmarkManager.Api.Services.Library.MangaDexLibraryProvider)provider.GetServices<BookmarkManager.Api.Services.Library.IMediaProvider>()
+        .First(p => p.ProviderName == "MangaDex"));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryProviderRegistry>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.Library.LibrarySearchService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService>();

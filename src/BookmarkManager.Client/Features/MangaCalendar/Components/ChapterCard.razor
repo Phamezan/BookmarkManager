@@ -1,0 +1,39 @@
+@* Manga/manhwa counterpart of AnimeCalendar's EpisodeCard - cover + title + latest chapter/release
+   age line. No countdown (Library providers only report the most recent release, not a schedule). *@
+@using BookmarkManager.Client.Features.MangaCalendar
+
+<div class="@CardClass" @onclick="HandleClick">
+    <CoverPoster CoverImageUrl="@Item.CoverImageUrl" Title="@Item.Title"
+                 Width="@CoverWidth" Height="@CoverHeight" />
+    <div class="acal-ep-body">
+        <div class="acal-ep-title">@Item.Title</div>
+        <div class="acal-ep-meta">@MetaLine</div>
+        @if (ShowSourceLinks)
+        {
+            <div class="acal-ep-source">@Item.Provider</div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public MangaCalendarItem Item { get; set; } = default!;
+    [Parameter] public EventCallback<MangaCalendarItem> OnClick { get; set; }
+
+    [Parameter] public bool Emphasized { get; set; }
+    [Parameter] public bool Detailed { get; set; }
+    [Parameter] public bool ShowSourceLinks { get; set; }
+    [Parameter] public bool Large { get; set; }
+
+    [Parameter] public string CoverWidth { get; set; } = "36px";
+    [Parameter] public string CoverHeight { get; set; } = "48px";
+
+    private string CardClass => $"acal-ep-card{(Emphasized ? " is-emphasized" : "")}{(Large ? " is-large" : "")}";
+
+    private string ChapterLabel => Item.LatestChapter is { Length: > 0 } chapter ? $"Ch. {chapter}" : "New chapter";
+
+    private string MetaLine => Detailed
+        ? $"{ChapterLabel} · {Item.ReleasedAtLocal:MMM d, h:mm tt}"
+        : $"{ChapterLabel} · {Item.TimeAgoText}";
+
+    private Task HandleClick() => OnClick.InvokeAsync(Item);
+}
