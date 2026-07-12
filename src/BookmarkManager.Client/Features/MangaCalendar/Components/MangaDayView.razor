@@ -1,0 +1,54 @@
+@* Manga/manhwa day timeline - mirrors AnimeCalendar's DayView for the anchor day's releases. *@
+@using BookmarkManager.Client.Features.MangaCalendar
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+<div class="acal-timeline acal-timeline--day">
+    <div class="acal-timeline-rail"></div>
+    @if (_items.Count == 0)
+    {
+        <div class="acal-empty">No chapters released @(_isToday ? "today" : "this day").</div>
+    }
+    else
+    {
+        @foreach (var item in _items)
+        {
+            <div class="acal-timeline-slot">
+                <span class="acal-timeline-node is-small"></span>
+                <div class="acal-timeline-time">@item.ReleasedAtLocal.ToString("h:mm tt")</div>
+                <ChapterCard Item="item" OnClick="OnItemClick" Detailed="true" ShowSourceLinks="true" Large="true"
+                             CoverWidth="112px" CoverHeight="150px" />
+            </div>
+        }
+    }
+</div>
+
+@if (_items.Count > 0)
+{
+    <div class="acal-day-footer">@_items.Count chapter@(_items.Count == 1 ? "" : "s") released @(_isToday ? "today" : "this day")</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MangaCalendarItem> Items { get; set; } = [];
+    [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<MangaCalendarItem> OnItemClick { get; set; }
+
+    private List<MangaCalendarItem> _items = [];
+    private bool _isToday;
+
+    protected override void OnParametersSet()
+    {
+        var day = DateOnly.FromDateTime(Anchor);
+        _isToday = day == DateOnly.FromDateTime(DateTime.Today);
+        _items = MangaCalendarItem.Deduplicate(Items.Where(i => i.ReleasedDay == day));
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            var signature = $"{Anchor:yyyy-MM-dd}|{_items.Count}";
+            await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-timeline--day", ".acal-timeline-slot", signature);
+        }
+        catch { /* Safe fallback during unmounting */ }
+    }
+}

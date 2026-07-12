@@ -358,6 +358,38 @@
     }
 }
 
+/* Media tabs - Anime vs Manhwa, kept as two independent calendars */
+.acal-media-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.acal-media-tab {
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--acal-border);
+    color: var(--bm-text-secondary);
+    font: 700 12px system-ui, sans-serif;
+    padding: 8px 18px;
+    border-radius: var(--bm-radius-full);
+    cursor: pointer;
+    transition: background var(--bm-fast) var(--bm-ease-out),
+        color var(--bm-fast) var(--bm-ease-out),
+        border-color var(--bm-fast) var(--bm-ease-out);
+}
+
+.acal-media-tab:hover {
+    border-color: var(--acal-border-hi);
+    color: var(--acal-text);
+}
+
+.acal-media-tab.is-active {
+    background: linear-gradient(135deg, var(--acal-accent), var(--acal-accent-bright));
+    border-color: transparent;
+    color: #fff;
+    box-shadow: 0 4px 16px var(--bm-accent-glow);
+}
+
 /* Toolbar */
 .acal-toolbar {
     display: flex;
@@ -686,6 +718,11 @@
     /* Fixed - page scrolls past viewport height now, so cells stay full
        size instead of shrinking on shorter monitors. */
     min-height: 118px;
+    /* Grid items default to min-width:auto, which resolves to their content's min-content
+       width - a long nowrap title deep inside would otherwise force this 1fr column (and every
+       column, since grid tracks size together) wider than the others despite the ellipsis on
+       .acal-event-title-text. min-width:0 opts the cell itself out of that. */
+    min-width: 0;
     display: flex;
     flex-direction: column;
     /* flex-start, not space-between: with only 2 children (daynum, events)
@@ -846,6 +883,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     flex-grow: 1;
+    /* Flex items default to min-width:auto, which lets a long title's intrinsic width push
+       the row (and the whole card/cell) wider instead of triggering the ellipsis above. */
+    min-width: 0;
 }
 
 .acal-event-ep-text {
@@ -890,7 +930,12 @@
 
 .acal-scroll-zone-down {
     width: 100%;
-    margin-top: 2px;
+    /* Taller target with more clearance from the last item above it - a thin strip
+       right against the last item made repeated clicks land on that item instead
+       (list repaints in place after each scroll, so the cursor doesn't move but a
+       barely-missed click below the old strip now lands on new item content). */
+    height: 22px;
+    margin-top: 6px;
 }
 
 .acal-scroll-zone.is-hidden {

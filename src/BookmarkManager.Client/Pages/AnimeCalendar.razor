@@ -1,11 +1,29 @@
 @page "/anime-calendar"
 @using BookmarkManager.Client.Features.AnimeCalendar
+@using BookmarkManager.Client.Features.MangaCalendar.Components
 @implements IDisposable
 
 <PageTitle>Anime Calendar</PageTitle>
 
 <div class="bookmarks-workspace anime-cal-workspace">
     <main class="bookmark-zone anime-cal-zone flex-grow-1" style="grid-column: 1 / -1;">
+        <div class="acal-media-tabs" role="tablist">
+            <button type="button" role="tab" class="@($"acal-media-tab{(_mediaTab == MediaTab.Anime ? " is-active" : "")}")"
+                    aria-selected="@(_mediaTab == MediaTab.Anime)" @onclick="() => _mediaTab = MediaTab.Anime">
+                Anime
+            </button>
+            <button type="button" role="tab" class="@($"acal-media-tab{(_mediaTab == MediaTab.Manhwa ? " is-active" : "")}")"
+                    aria-selected="@(_mediaTab == MediaTab.Manhwa)" @onclick="() => _mediaTab = MediaTab.Manhwa">
+                Manga
+            </button>
+        </div>
+
+        @if (_mediaTab == MediaTab.Manhwa)
+        {
+            <MangaCalendarPanel />
+        }
+        else
+        {
         <div class="rec-controls-row">
             @if (_flatFolders.Count == 0)
             {
@@ -95,6 +113,7 @@
                         break;
                 }
             </div>
+        }
         }
     </main>
 </div>

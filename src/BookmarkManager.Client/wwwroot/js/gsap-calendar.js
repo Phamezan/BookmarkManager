@@ -183,5 +183,26 @@ window.initCalendarPopups = function (containerSelector) {
         activeTip = null;
         originalParent = null;
     }, true);
+
+    // Clicking an item (e.g. to open its URL) doesn't move the mouse away, so mouseout above
+    // never fires and the hoisted tip stays parented under <body> right as Blazor re-renders
+    // the clicked item after the event handler runs - Blazor's diff expects the tip back inside
+    // the card, the mismatch corrupts the DOM patch, and the page jumps to the top. Restore the
+    // tip synchronously in a capture-phase click listener so it's back in place before Blazor's
+    // own click handling (and re-render) runs.
+    container.addEventListener('click', () => {
+        if (!activeTip) return;
+
+        const tipToRestore = activeTip;
+        const parentToRestore = originalParent;
+        activeTip = null;
+        originalParent = null;
+
+        tipToRestore.classList.remove('is-visible');
+        if (tipToRestore.parentNode === document.body) {
+            parentToRestore.appendChild(tipToRestore);
+            tipToRestore.style.display = '';
+        }
+    }, true);
 };
 

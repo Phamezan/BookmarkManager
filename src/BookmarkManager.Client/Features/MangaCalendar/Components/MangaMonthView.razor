@@ -1,14 +1,6 @@
-@* Design 2a — month grid. Six week-rows for the anchor's month; leading/trailing
-   days dimmed. Days with episodes show small cover-image badges (one per series);
-   a day with more than MaxCovers scrolls its window via dedicated top/bottom
-   strips (top = scroll up, footer = scroll down). Both strips always render so
-   their height is always reserved — toggling with the "is-hidden" CSS class
-   rather than conditional Razor rendering keeps the cell's height stable, so
-   clicking to scroll doesn't jump the cell content. Strips use stopPropagation
-   so a scroll click can never fall through to the day-nav click on the cell.
-   Hovering a badge pops up a bigger cover + title + episode + ticking
-   dd:hh:mm:ss countdown; clicking a populated day opens its full Day view. *@
-@implements IDisposable
+@* Manga/manhwa month grid - mirrors AnimeCalendar's MonthView but plots each series' latest
+   release day instead of a future airing day; no live countdown since releases are already past. *@
+@using BookmarkManager.Client.Features.MangaCalendar
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 <div class="acal-month-grid">
@@ -19,7 +11,6 @@
     @for (int i = 0; i < _cells.Count; i++)
     {
         var cell = _cells[i];
-        var cellIndex = i;
         <div class="@CellClass(cell)" @onclick="() => OpenDay(cell)">
             <div class="@($"acal-month-headrow{(cell.CanScrollUp ? " is-scrollable" : "")}")"
                  @onclick:stopPropagation="@cell.CanScrollUp" @onclick="() => Scroll(cell, -1)">
@@ -37,30 +28,19 @@
                     {
                         <div class="acal-month-event" @onclick:stopPropagation="true"
                              @onclick="() => OnItemClick.InvokeAsync(item)">
-                            @if (cell.IsToday)
-                            {
-                                <span class="acal-month-airing-tag">Airing</span>
-                            }
                             <div class="acal-month-event-row">
                                 <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="40px" Height="44px"
                                              CssClass="acal-month-cover-mini" />
                                 <span class="acal-event-title-text">@item.Title</span>
-                                <span class="acal-event-ep-text">@item.EpisodeNumber</span>
+                                <span class="acal-event-ep-text">@(item.LatestChapter is { Length: > 0 } c ? $"Ch. {c}" : "")</span>
                             </div>
-                            @if (item.EpisodeProgressPercent is double progress)
-                            {
-                                <div class="acal-event-progress">
-                                    <div class="acal-event-progress-fill" style="width: @(progress.ToString("0"))%;"></div>
-                                </div>
-                            }
                             <div class="rich-tip">
                                 <CoverPoster CoverImageUrl="@item.CoverImageUrl" Title="@item.Title" Width="170px" Height="250px"
                                              CssClass="acal-tip-cover" />
                                 <div class="acal-tip-details">
                                     <div class="acal-tip-title">@item.Title</div>
-                                    <div class="acal-tip-ep">Episode @item.EpisodeNumber@(item.TotalEpisodes is int t ? $" of {t}" : "")</div>
-                                    <div class="acal-tip-time">Airing @item.AiringAtLocal.ToString("h:mm tt")</div>
-                                    <div class="acal-tip-countdown">@item.CountdownText</div>
+                                    <div class="acal-tip-ep">@(item.LatestChapter is { Length: > 0 } c2 ? $"Chapter {c2}" : "New chapter")</div>
+                                    <div class="acal-tip-time">Released @item.ReleasedAtLocal.ToString("MMM d, h:mm tt")</div>
                                 </div>
                             </div>
                         </div>
@@ -77,22 +57,20 @@
     }
 </div>
 
-<div class="acal-month-footer">@_totalEpisodes episode@(_totalEpisodes == 1 ? "" : "s") airing this month</div>
+<div class="acal-month-footer">@_totalReleases chapter@(_totalReleases == 1 ? "" : "s") released this month</div>
 
 @code {
-    [Parameter, EditorRequired] public IReadOnlyList<AnimeCalendarItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyList<MangaCalendarItem> Items { get; set; } = [];
     [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
-    [Parameter] public EventCallback<AnimeCalendarItem> OnItemClick { get; set; }
+    [Parameter] public EventCallback<MangaCalendarItem> OnItemClick { get; set; }
     [Parameter] public EventCallback<DateOnly> OnDaySelected { get; set; }
 
     private static readonly string[] DayHeaders = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-    // How many cover badges fit a cell before collapsing the rest into "+N".
     private const int MaxCovers = 3;
 
     private List<Cell> _cells = [];
-    private int _totalEpisodes;
-    private Timer? _countdownTicker;
+    private int _totalReleases;
 
     // OnParametersSet rebuilds _cells from scratch on every parent re-render (which happens
     // after every item click, since EventCallback.InvokeAsync re-renders the owning parent, not
@@ -101,20 +79,11 @@
     // rebuilds within the same month.
     private readonly Dictionary<DateOnly, int> _scrollOffsets = [];
 
-    protected override void OnInitialized()
-    {
-        // Only the hovered popover's countdown is visible at once, but ticking here
-        // (rather than per-item) keeps whichever one is open live to the second.
-        _countdownTicker = new Timer(_ => InvokeAsync(StateHasChanged), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-    }
-
-    public void Dispose() => _countdownTicker?.Dispose();
-
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         try
         {
-            var signature = $"{Anchor:yyyy-MM}|{_totalEpisodes}";
+            var signature = $"{Anchor:yyyy-MM}|{_totalReleases}";
             await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-month-grid", ".acal-month-cell", signature);
             await JSRuntime.InvokeVoidAsync("initCalendarPopups", ".acal-month-grid");
             await JSRuntime.InvokeVoidAsync("animateCalendarScroll", ".acal-month-grid");
@@ -126,23 +95,19 @@
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
         var first = new DateOnly(Anchor.Year, Anchor.Month, 1);
-        var gridStart = first.AddDays(-(int)first.DayOfWeek); // back up to the Sunday
+        var gridStart = first.AddDays(-(int)first.DayOfWeek);
 
-        // Count episodes per day within the visible month; drive both cell badges
-        // and the footer total off the same in-month tally.
         var perDay = Items
-            .Where(i => i.AiringDay.Year == Anchor.Year && i.AiringDay.Month == Anchor.Month)
-            .GroupBy(i => i.AiringDay)
+            .Where(i => i.ReleasedDay.Year == Anchor.Year && i.ReleasedDay.Month == Anchor.Month)
+            .GroupBy(i => i.ReleasedDay)
             .ToDictionary(
                 g => g.Key,
-                // One badge per series per day (the user bookmarks per-episode, so the
-                // same show can appear multiple times); keep the earliest airing of each.
-                g => g.OrderBy(i => i.AiringAtLocal)
+                g => g.OrderBy(i => i.ReleasedAtLocal)
                       .GroupBy(i => i.SeriesKey)
                       .Select(s => s.First())
                       .ToList());
 
-        _totalEpisodes = perDay.Values.Sum(v => v.Count);
+        _totalReleases = perDay.Values.Sum(v => v.Count);
 
         _cells = Enumerable.Range(0, 42).Select(offset =>
         {
@@ -156,9 +121,6 @@
         }).ToList();
     }
 
-    // Overflowing cells (Count > MaxCovers) hand their whole surface to the
-    // scroll zones instead — no day-nav for those, so a click anywhere that
-    // isn't the up/down strip or an item can't accidentally jump to Day view.
     private Task OpenDay(Cell cell)
         => cell.Count > 0 && cell.Count <= MaxCovers ? OnDaySelected.InvokeAsync(cell.Date) : Task.CompletedTask;
 
@@ -182,15 +144,11 @@
         return cls;
     }
 
-    private sealed record Cell(DateOnly Date, bool InMonth, bool IsToday, List<AnimeCalendarItem> Items)
+    private sealed record Cell(DateOnly Date, bool InMonth, bool IsToday, List<MangaCalendarItem> Items)
     {
         public int Count => Items.Count;
-
-        /// <summary>Which item the visible MaxCovers-sized window starts at; moved by the
-        /// up/down scroll buttons when a day has more items than fit.</summary>
         public int ScrollOffset { get; set; }
-
-        public IEnumerable<AnimeCalendarItem> Visible => Items.Skip(ScrollOffset).Take(MaxCovers);
+        public IEnumerable<MangaCalendarItem> Visible => Items.Skip(ScrollOffset).Take(MaxCovers);
         public bool CanScrollUp => ScrollOffset > 0;
         public bool CanScrollDown => ScrollOffset + MaxCovers < Count;
     }

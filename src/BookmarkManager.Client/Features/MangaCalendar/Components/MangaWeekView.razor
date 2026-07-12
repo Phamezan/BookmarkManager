@@ -1,0 +1,66 @@
+@* Manga/manhwa week timeline - mirrors AnimeCalendar's WeekView, grouped by release day. *@
+@using BookmarkManager.Client.Features.MangaCalendar
+@inject Microsoft.JSInterop.IJSRuntime JSRuntime
+
+@if (_days.Count == 0)
+{
+    <div class="acal-empty">No chapters released this week.</div>
+}
+else
+{
+    <div class="acal-timeline">
+        <div class="acal-timeline-rail"></div>
+        @foreach (var day in _days)
+        {
+            var isToday = day.Date == _today;
+            <div class="acal-timeline-group">
+                <span class="acal-timeline-node@(isToday ? " is-today" : "")"></span>
+                <div class="acal-timeline-daylabel@(isToday ? " is-today" : "")">
+                    @day.Date.ToString("ddd dd").ToUpperInvariant()@(isToday ? " · TODAY" : "")
+                </div>
+                <div class="acal-timeline-cards">
+                    @foreach (var item in day.Items)
+                    {
+                        <ChapterCard Item="item" OnClick="OnItemClick" Emphasized="isToday" Large="true"
+                                     CoverWidth="64px" CoverHeight="88px" />
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MangaCalendarItem> Items { get; set; } = [];
+    [Parameter] public DateTime Anchor { get; set; } = DateTime.Today;
+    [Parameter] public EventCallback<MangaCalendarItem> OnItemClick { get; set; }
+
+    private DateOnly _today;
+    private List<DayGroup> _days = [];
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            var signature = $"{Anchor:yyyy-MM-dd}|{_days.Sum(d => d.Items.Count)}";
+            await JSRuntime.InvokeVoidAsync("animateCalendarStagger", ".acal-timeline", ".acal-timeline-group", signature);
+        }
+        catch { /* Safe fallback during unmounting */ }
+    }
+
+    protected override void OnParametersSet()
+    {
+        _today = DateOnly.FromDateTime(DateTime.Today);
+        var weekStart = DateOnly.FromDateTime(Anchor.AddDays(-(int)Anchor.DayOfWeek));
+        var weekEnd = weekStart.AddDays(6);
+
+        _days = Items
+            .Where(i => i.ReleasedDay >= weekStart && i.ReleasedDay <= weekEnd)
+            .GroupBy(i => i.ReleasedDay)
+            .OrderBy(g => g.Key)
+            .Select(g => new DayGroup(g.Key, MangaCalendarItem.Deduplicate(g)))
+            .ToList();
+    }
+
+    private sealed record DayGroup(DateOnly Date, List<MangaCalendarItem> Items);
+}
