@@ -15,6 +15,9 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<FolderTreeNodeDto>>("api/folders/tree", cancellationToken) ?? [];
 
+    public async Task<List<MindMapNodeDto>> GetMindMapNodesAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<MindMapNodeDto>>("api/bookmarks/mindmap", cancellationToken) ?? [];
+
     public async Task<List<BookmarkNodeDto>> GetBookmarksAsync(Guid parentId, CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<BookmarkNodeDto>>($"api/bookmarks/{parentId}/children", cancellationToken) ?? [];
 

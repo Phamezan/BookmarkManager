@@ -1,0 +1,103 @@
+@page "/mind-map"
+@using BookmarkManager.Contracts
+
+<PageTitle>Mind Map — Bookmark Manager</PageTitle>
+
+<div class="mindmap-page">
+    <div id="mindmap-host" class="mindmap-host"></div>
+
+    <div class="mindmap-toolbar">
+        <div class="mindmap-toolbar-row">
+            <MudAutocomplete T="MindMapNodeDto"
+                             @bind-Value="SearchSelection"
+                             SearchFunc="SearchNodesAsync"
+                             ToStringFunc="@(n => n?.Title ?? string.Empty)"
+                             Placeholder="Jump to folder or bookmark…"
+                             Variant="Variant.Outlined"
+                             Margin="Margin.Dense"
+                             Dense="true"
+                             Clearable="true"
+                             ResetValueOnEmptyText="true"
+                             MinCharacters="2"
+                             MaxItems="12"
+                             Class="mindmap-search"
+                             AdornmentIcon="@Icons.Material.Filled.Search"
+                             Adornment="Adornment.Start">
+                <ItemTemplate Context="item">
+                    <div class="mindmap-search-item">
+                        <MudIcon Icon="@(item.Type == NodeType.Folder ? Icons.Material.Filled.Folder : Icons.Material.Filled.Link)"
+                                 Size="Size.Small" />
+                        <span class="mindmap-search-title">@item.Title</span>
+                    </div>
+                </ItemTemplate>
+            </MudAutocomplete>
+
+            <MudSelect T="string" Value="_style" ValueChanged="OnStyleChangedAsync"
+                       Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Class="mindmap-style-select">
+                <MudSelectItem Value="@("stars")">✦ Energy stars</MudSelectItem>
+                <MudSelectItem Value="@("orbital")">◍ Orbital</MudSelectItem>
+                <MudSelectItem Value="@("glyph")">▣ Glyph cores</MudSelectItem>
+            </MudSelect>
+
+            <MudTooltip Text="Fit view">
+                <MudIconButton Icon="@Icons.Material.Filled.CenterFocusStrong" Size="Size.Small"
+                               OnClick="ZoomToFitAsync" Class="mindmap-tool-btn" />
+            </MudTooltip>
+            <MudTooltip Text="Expand all folders">
+                <MudIconButton Icon="@Icons.Material.Filled.UnfoldMore" Size="Size.Small"
+                               OnClick="ExpandAllAsync" Class="mindmap-tool-btn" />
+            </MudTooltip>
+            <MudTooltip Text="Collapse to top level">
+                <MudIconButton Icon="@Icons.Material.Filled.UnfoldLess" Size="Size.Small"
+                               OnClick="CollapseAllAsync" Class="mindmap-tool-btn" />
+            </MudTooltip>
+        </div>
+
+        @if (_legend.Count > 0)
+        {
+            <div class="mindmap-legend">
+                @foreach (var entry in _legend)
+                {
+                    <button type="button" class="mindmap-legend-item" @onclick="() => FocusNodeAsync(entry.Id)">
+                        <span class="mindmap-legend-dot" style="background:@entry.Color;color:@entry.Color"></span>
+                        <span>@entry.Title</span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+
+    <div class="mindmap-hint">
+        Click folder to expand · Click bookmark to open · Drag to pin · Right-click to unpin · Scroll to zoom
+    </div>
+
+    @if (_loading)
+    {
+        <div class="mindmap-overlay">
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            <MudText Typo="Typo.body2" Class="mt-4">Charting your bookmarks…</MudText>
+        </div>
+    }
+    else if (_loadError is not null)
+    {
+        <div class="mindmap-overlay">
+            <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">@_loadError</MudAlert>
+        </div>
+    }
+    else if (_isEmpty)
+    {
+        <div class="mindmap-overlay">
+            <MudText Typo="Typo.h6">Nothing to map yet</MudText>
+            <MudText Typo="Typo.body2" Class="mt-2" Style="color: var(--bm-text-secondary);">
+                Add some bookmarks and this page turns them into a constellation.
+            </MudText>
+        </div>
+    }
+    else
+    {
+        <div class="mindmap-stats">
+            @_folderCount folders · @_bookmarkCount bookmarks
+        </div>
+    }
+</div>

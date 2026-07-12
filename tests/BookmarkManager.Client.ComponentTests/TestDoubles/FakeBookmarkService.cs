@@ -59,6 +59,9 @@ public class FakeBookmarkService : IBookmarkService
     public Guid? LastTagsFolderId { get; private set; }
 
     public Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default) => Task.FromResult(FolderTree);
+
+    public List<MindMapNodeDto> MindMapNodes { get; set; } = [];
+    public Task<List<MindMapNodeDto>> GetMindMapNodesAsync(CancellationToken cancellationToken = default) => Task.FromResult(MindMapNodes);
     
     public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
         => Task.FromResult(folderIds.Count == 0 ? new AnimeCalendarScheduleResponse() : ScheduleResponse);

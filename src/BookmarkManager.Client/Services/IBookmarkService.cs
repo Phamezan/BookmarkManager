@@ -5,6 +5,7 @@ namespace BookmarkManager.Client.Services;
 public interface IBookmarkService
 {
     Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default);
+    Task<List<MindMapNodeDto>> GetMindMapNodesAsync(CancellationToken cancellationToken = default);
     Task<List<BookmarkNodeDto>> GetBookmarksAsync(Guid parentId, CancellationToken cancellationToken = default);
     Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default);

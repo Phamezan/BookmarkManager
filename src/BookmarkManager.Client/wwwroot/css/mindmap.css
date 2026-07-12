@@ -1,0 +1,174 @@
+/* ============================================================================
+   Mind Map page — full-bleed canvas visualizer with floating glass controls.
+   Canvas rendering styles live in js/mindmap.js; this file only styles the
+   HTML chrome around it.
+   ============================================================================ */
+
+.mindmap-page {
+    position: fixed;
+    top: 56px; /* app-topbar height */
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(ellipse 80% 70% at 50% 42%, rgba(13, 15, 24, 0.9) 0%, transparent 75%);
+}
+
+.mindmap-host {
+    position: absolute;
+    inset: 0;
+}
+
+.mindmap-toolbar {
+    position: absolute;
+    top: var(--bm-space-4);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: var(--bm-space-2);
+    align-items: center;
+    z-index: 5;
+    pointer-events: none;
+}
+
+.mindmap-toolbar-row {
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-2);
+    padding: var(--bm-space-2) var(--bm-space-3);
+    background: var(--bm-surface);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-lg);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    box-shadow: var(--bm-shadow);
+    pointer-events: auto;
+}
+
+.mindmap-search {
+    min-width: 300px;
+}
+
+.mindmap-style-select {
+    min-width: 160px;
+}
+
+.mindmap-search-item {
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-2);
+    min-width: 0;
+}
+
+.mindmap-search-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mindmap-tool-btn {
+    color: var(--bm-text-secondary);
+}
+
+.mindmap-tool-btn:hover {
+    color: var(--bm-text);
+}
+
+.mindmap-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--bm-space-1) var(--bm-space-3);
+    padding: var(--bm-space-1) var(--bm-space-3);
+    background: var(--bm-surface-muted);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-full);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    pointer-events: auto;
+    max-width: min(90vw, 900px);
+}
+
+.mindmap-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--bm-text-secondary);
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    cursor: pointer;
+    border-radius: var(--bm-radius-sm);
+    font-family: inherit;
+    transition: color var(--bm-fast) var(--bm-ease);
+}
+
+.mindmap-legend-item:hover {
+    color: var(--bm-text);
+}
+
+.mindmap-legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 8px currentColor, 0 0 3px currentColor;
+    flex-shrink: 0;
+}
+
+.mindmap-hint {
+    position: absolute;
+    bottom: var(--bm-space-4);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: var(--bm-text-muted);
+    background: var(--bm-surface-raised);
+    border: 1px solid var(--bm-border);
+    padding: 6px 14px;
+    border-radius: var(--bm-radius-full);
+    z-index: 5;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.mindmap-stats {
+    position: absolute;
+    bottom: var(--bm-space-4);
+    right: var(--bm-space-4);
+    font-size: 12px;
+    color: var(--bm-text-muted);
+    z-index: 5;
+    pointer-events: none;
+}
+
+.mindmap-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 4;
+    text-align: center;
+    padding: var(--bm-space-6);
+}
+
+@media (max-width: 900px) {
+    .mindmap-toolbar-row {
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: 92vw;
+    }
+
+    .mindmap-search {
+        min-width: 220px;
+    }
+
+    .mindmap-hint {
+        display: none;
+    }
+}
