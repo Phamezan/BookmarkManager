@@ -20,8 +20,20 @@
         "default": "Ctrl+Shift+F"
       },
       "description": "Bookmark current page in the last remembered folder context"
+    },
+    "toggle-palette": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+P"
+      },
+      "description": "Toggle the in-tab command palette (rebind to Ctrl+P at brave://extensions/shortcuts to override print)"
     }
   },
+  "web_accessible_resources": [
+    {
+      "resources": ["palette-host.html"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ],
   "icons": {
     "16": "assets/icons/icon16.png",
     "48": "assets/icons/icon48.png",

@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider IsDarkMode="true" />
+<MudPopoverProvider />
+
+@Body
+
+<style>
+    /* The palette page renders inside a transparent extension iframe overlaying
+       the current tab, so the app shell background must not paint. */
+    html, body, #app {
+        background: transparent !important;
+    }
+</style>

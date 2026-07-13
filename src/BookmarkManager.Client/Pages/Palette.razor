@@ -1,0 +1,34 @@
+@page "/palette"
+@layout PaletteLayout
+@inject ICommandPaletteService PaletteService
+@inject NavigationManager NavigationManager
+
+<CommandPalette Embedded="_embedded" ContextUrl="@_contextUrl" />
+
+@code {
+    private bool _embedded;
+    private string? _contextUrl;
+
+    protected override void OnInitialized()
+    {
+        var uri = NavigationManager.Uri;
+        var query = uri.Contains('?') ? uri.Split('?')[1] : "";
+        var queryParams = query.Split('&')
+            .Select(x => x.Split('='))
+            .Where(x => x.Length == 2)
+            .ToDictionary(x => x[0], x => Uri.UnescapeDataString(x[1]), StringComparer.OrdinalIgnoreCase);
+
+        _embedded = queryParams.TryGetValue("embedded", out var embedded) && embedded == "1";
+        _contextUrl = queryParams.TryGetValue("context", out var context) ? context : null;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // The child CommandPalette subscribed during its render, so opening
+            // here triggers its reset + focus + default-results load.
+            PaletteService.Open();
+        }
+    }
+}

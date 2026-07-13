@@ -1,0 +1,19 @@
+# TLS overlay for the in-tab command palette (extension iframe requires https).
+# Requires a mkcert (or equivalent) PEM cert/key pair in ./certs:
+#   mkcert -cert-file certs/lan.pem -key-file certs/lan-key.pem <lan-hostname> <lan-ip>
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+# The plain http endpoint stays on 8080; https is added on 8443.
+# Note: Kestrel__Endpoints__* config supersedes ASPNETCORE_URLS, so the http
+# endpoint must be re-declared here alongside the https one.
+services:
+  bookmarkmanager:
+    ports:
+      - "${BOOKMARK_MANAGER_TLS_PORT:-8443}:8443"
+    environment:
+      Kestrel__Endpoints__Http__Url: http://0.0.0.0:8080
+      Kestrel__Endpoints__Https__Url: https://0.0.0.0:8443
+      Kestrel__Endpoints__Https__Certificate__Path: /certs/lan.pem
+      Kestrel__Endpoints__Https__Certificate__KeyPath: /certs/lan-key.pem
+    volumes:
+      - ./certs:/certs:ro

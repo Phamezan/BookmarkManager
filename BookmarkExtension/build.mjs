@@ -17,6 +17,7 @@ function cleanDist() {
 function copyStaticFiles() {
   cpSync(join(__dirname, "manifest.json"), join(distDir, "manifest.json"));
   cpSync(join(__dirname, "popup"), join(distDir, "popup"), { recursive: true });
+  cpSync(join(__dirname, "palette-host.html"), join(distDir, "palette-host.html"));
 
   const iconsSrc = join(__dirname, "assets", "icons");
   const iconsDest = join(distDir, "assets", "icons");
@@ -30,6 +31,8 @@ function copyStaticFiles() {
 const entrypoints = {
   "service-worker": "src/background/service-worker.ts",
   "popup/popup": "src/popup/popup.ts",
+  "palette-host": "src/palette/palette-host.ts",
+  "palette-injector": "src/palette/palette-injector.ts",
 };
 
 const commonOptions = {
@@ -71,6 +74,7 @@ async function build() {
     manifest.background?.scripts?.[0],
     manifest.action?.default_popup,
     ...(manifest.icons ? Object.values(manifest.icons) : []),
+    ...(manifest.web_accessible_resources?.flatMap((entry) => entry.resources) ?? []),
   ].filter(Boolean);
 
   for (const file of referencedFiles) {

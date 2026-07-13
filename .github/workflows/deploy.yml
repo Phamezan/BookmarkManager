@@ -15,5 +15,11 @@ jobs:
           cd /home/phamezan/BookmarkManager
           git fetch origin main
           git reset --hard origin/main
-          docker compose up -d --build --force-recreate
+          # Include the TLS overlay (https :8443 for the in-tab palette) only
+          # when the mkcert cert pair is present on the server.
+          COMPOSE_FILES="-f docker-compose.yml"
+          if [ -f certs/lan.pem ] && [ -f certs/lan-key.pem ]; then
+            COMPOSE_FILES="$COMPOSE_FILES -f docker-compose.tls.yml"
+          fi
+          docker compose $COMPOSE_FILES up -d --build --force-recreate
           docker image prune -f

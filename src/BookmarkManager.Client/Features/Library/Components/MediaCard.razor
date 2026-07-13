@@ -13,7 +13,7 @@
     {
         @if (Progress?.BookmarkId is not null)
         {
-            <button type="button" class="lib-card-progress is-action" title="Go to bookmark (Ctrl+K for command palette)"
+            <button type="button" class="lib-card-progress is-action" title="Go to bookmark (Ctrl+P for command palette)"
                     @onclick="NavigateToBookmark" @onclick:stopPropagation>@progressBadgeText</button>
         }
         else
