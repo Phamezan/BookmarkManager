@@ -13,6 +13,7 @@ import {
 import { ChromeStorageRepository } from "../storage/storage-repository";
 import { ChromeBookmarkAdapter } from "../bookmarks/bookmark-adapter";
 import { SettingsAwareApiClient } from "../api/settings-aware-client";
+import { resolvePaletteBaseUrl } from "../palette/palette-url";
 import type { ExtensionEvent } from "../api/contracts";
 
 const ALARM_NAME = "bookmark-sync";
@@ -379,6 +380,55 @@ export class ServiceWorker {
     }, 2000);
   }
 
+  // ── In-Tab Command Palette ───────────────────────────────────────────────────
+
+  /**
+   * Handles the `toggle-palette` command. Invoking the command grants
+   * activeTab, which authorizes the content-script injection without broad
+   * host permissions. The injector guards against double registration, so
+   * re-running executeScript on every toggle is idempotent.
+   */
+  async handleTogglePalette(): Promise<void> {
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab?.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
+        console.warn("[worker] toggle-palette: no active http(s) tab");
+        return;
+      }
+
+      const settings = await this.deps.storage.getSettings();
+      const paletteBaseUrl = resolvePaletteBaseUrl(settings?.apiBaseUrl);
+      if (!paletteBaseUrl) {
+        console.warn("[worker] toggle-palette: no API base URL configured");
+        this.showBadge("!", "#F59E0B");
+        return;
+      }
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["palette-injector.js"],
+      });
+      await chrome.tabs.sendMessage(tab.id, { type: "palette/toggle" });
+    } catch (e) {
+      console.error("[worker] toggle-palette failed:", e);
+      this.showBadge("X", "#EF4444");
+    }
+  }
+
+  /** Opens a palette-requested URL in a new foreground tab. */
+  private async handlePaletteOpenTab(url: unknown): Promise<{ success: boolean }> {
+    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
+      return { success: false };
+    }
+    await chrome.tabs.create({ url, active: true });
+    return { success: true };
+  }
+
+  private async getPaletteConfig(): Promise<{ paletteBaseUrl: string | null }> {
+    const settings = await this.deps.storage.getSettings();
+    return { paletteBaseUrl: resolvePaletteBaseUrl(settings?.apiBaseUrl) };
+  }
+
   // ── Sync / Alarm ─────────────────────────────────────────────────────────────
 
   async scheduleSync(): Promise<void> {
@@ -394,8 +444,12 @@ export class ServiceWorker {
     }
   }
 
-  async handleMessage(message: { type: string }): Promise<unknown> {
+  async handleMessage(message: { type: string; url?: unknown }): Promise<unknown> {
     switch (message.type) {
+      case "palette/openTab":
+        return await this.handlePaletteOpenTab(message.url);
+      case "palette/getConfig":
+        return await this.getPaletteConfig();
       case "manualSync":
         this.connectWebSocket();
         await this.coordinator.runSyncCycle();
@@ -572,6 +626,10 @@ chrome.commands.onCommand.addListener((command) => {
   if (command === "quick-bookmark") {
     worker.handleQuickBookmark().catch((e) =>
       console.error("[worker] handleQuickBookmark failed:", e)
+    );
+  } else if (command === "toggle-palette") {
+    worker.handleTogglePalette().catch((e) =>
+      console.error("[worker] handleTogglePalette failed:", e)
     );
   }
 });
