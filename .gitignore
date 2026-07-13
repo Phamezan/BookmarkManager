@@ -18,6 +18,9 @@ coverage/
 # ASP.NET Data Protection key ring (secret material, never commit)
 .dataprotection-keys/
 
+# Local TLS certificates (mkcert LAN cert/key, never commit)
+/certs/
+
 # Local runtime data, backups, and secrets
 # Anchored to repo root so it does not also match src/BookmarkManager.Api/Data/
 # (case-insensitive on Windows), which is real source code.
@@ -59,3 +62,6 @@ implementation.md
 
 calendar.md
 skills-lock.json
+
+# graphify knowledge graph index (local, regenerable via /graphify --update)
+graphify-out/
