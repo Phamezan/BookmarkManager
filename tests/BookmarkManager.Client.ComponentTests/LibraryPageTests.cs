@@ -280,7 +280,7 @@ public sealed class LibraryPageTests
         page.WaitForAssertion(() => Assert.Contains("Go to bookmark", page.Markup), TimeSpan.FromSeconds(2));
 
         var badge = page.Find(".lib-card-progress.is-action");
-        Assert.Equal("Go to bookmark (Ctrl+K for command palette)", badge.GetAttribute("title"));
+        Assert.Equal("Go to bookmark (Ctrl+P for command palette)", badge.GetAttribute("title"));
 
         badge.Click();
 

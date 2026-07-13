@@ -31,6 +31,16 @@ public partial class CommandPalette : IDisposable
         public BookmarkNodeDto? BookmarkNode { get; set; }
     }
 
+    /// <summary>
+    /// True when the palette runs inside the extension's in-tab iframe. All
+    /// actions then travel via postMessage to the extension host frame instead
+    /// of navigating or opening windows inside the iframe document.
+    /// </summary>
+    [Parameter] public bool Embedded { get; set; }
+
+    /// <summary>URL of the tab the embedded palette overlays.</summary>
+    [Parameter] public string? ContextUrl { get; set; }
+
     private string _searchQuery = string.Empty;
     private List<PaletteItem> _results = [];
     private int _selectedIndex = 0;
@@ -71,6 +81,11 @@ public partial class CommandPalette : IDisposable
             _ = LoadDefaultResultsAsync();
             _ = JSRuntime.InvokeVoidAsync("focusPaletteInput");
         }
+        else if (Embedded)
+        {
+            // Tell the extension host frame to hide the overlay iframe.
+            _ = JSRuntime.InvokeVoidAsync("paletteEmbedded.close");
+        }
         StateHasChanged();
     }
 
@@ -83,6 +98,13 @@ public partial class CommandPalette : IDisposable
 
     private void UpdateHints()
     {
+        if (Embedded)
+        {
+            _primaryHint = IsContextOnManager ? "Go to Bookmark" : "Open Here";
+            _secondaryHint = "Open in New Tab";
+            return;
+        }
+
         var relativeUri = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
         var currentRoute = "/" + relativeUri.Split('?')[0];
 
@@ -301,6 +323,23 @@ public partial class CommandPalette : IDisposable
         PaletteService.Close();
     }
 
+    /// <summary>
+    /// Invoked when the extension re-shows a kept-alive palette iframe. Reopens
+    /// (or re-resets) the palette so it comes back fresh and focused.
+    /// </summary>
+    [JSInvokable]
+    public void OpenPalette()
+    {
+        if (!PaletteService.IsOpen)
+        {
+            PaletteService.Open();
+        }
+        else
+        {
+            OnToggle();
+        }
+    }
+
     [JSInvokable]
     public void NavigateList(int direction)
     {
@@ -332,6 +371,15 @@ public partial class CommandPalette : IDisposable
             return;
         }
 
+        if (Embedded)
+        {
+            // On a manager tab Enter deep-links inside that dashboard; on any
+            // other site it navigates the tab to the bookmark itself.
+            var url = IsContextOnManager ? BuildManagerDeepLink(selected, GetContextOrigin()) : selected.Url;
+            await NavigateCurrentTabAsync(url);
+            return;
+        }
+
         var relativeUri = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
         var currentRoute = "/" + relativeUri.Split('?')[0];
 
@@ -357,6 +405,12 @@ public partial class CommandPalette : IDisposable
             return;
         }
 
+        if (Embedded)
+        {
+            await OpenTabViaExtensionAsync(selected.Url);
+            return;
+        }
+
         var relativeUri = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
         var currentRoute = "/" + relativeUri.Split('?')[0];
 
@@ -368,6 +422,32 @@ public partial class CommandPalette : IDisposable
         {
             await OpenInNewTabAsync(selected);
         }
+    }
+
+    /// <summary>
+    /// Ctrl+Enter. Embedded: opens the bookmark in the manager dashboard (new
+    /// tab, deep link with highlight). Native: same as Go to Bookmark.
+    /// </summary>
+    [JSInvokable]
+    public async Task ExecuteTertiary()
+    {
+        if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
+
+        var selected = _results[_selectedIndex];
+        if (selected.IsFolder)
+        {
+            await AutocompleteFolder(selected);
+            return;
+        }
+
+        if (Embedded)
+        {
+            var managerOrigin = NavigationManager.BaseUri.TrimEnd('/');
+            await OpenTabViaExtensionAsync(BuildManagerDeepLink(selected, managerOrigin));
+            return;
+        }
+
+        GoToBookmark(selected);
     }
 
     private async Task AutocompleteFolder(PaletteItem selected)
@@ -441,6 +521,41 @@ public partial class CommandPalette : IDisposable
     {
         PaletteService.Close();
         NavigationManager.NavigateTo($"/bookmarks?bookmarkId={item.Id}");
+    }
+
+    // ── Embedded (in-tab iframe) helpers ─────────────────────────────────────
+
+    private bool IsContextOnManager =>
+        Uri.TryCreate(ContextUrl, UriKind.Absolute, out var context)
+        && Uri.TryCreate(NavigationManager.BaseUri, UriKind.Absolute, out var baseUri)
+        && string.Equals(context.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Origin of the overlaid tab (scheme + host + port), used so a deep link
+    /// opened on a manager tab stays on the origin the user is browsing.
+    /// </summary>
+    private string GetContextOrigin()
+    {
+        return Uri.TryCreate(ContextUrl, UriKind.Absolute, out var context)
+            ? context.GetLeftPart(UriPartial.Authority)
+            : NavigationManager.BaseUri.TrimEnd('/');
+    }
+
+    private static string BuildManagerDeepLink(PaletteItem item, string origin) =>
+        $"{origin}/bookmarks?bookmarkId={item.Id}";
+
+    private async Task NavigateCurrentTabAsync(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        PaletteService.Close();
+        await JSRuntime.InvokeVoidAsync("paletteEmbedded.navigate", url);
+    }
+
+    private async Task OpenTabViaExtensionAsync(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        PaletteService.Close();
+        await JSRuntime.InvokeVoidAsync("paletteEmbedded.openNewTab", url);
     }
 
     private string GetBadgeClass(string? category)
