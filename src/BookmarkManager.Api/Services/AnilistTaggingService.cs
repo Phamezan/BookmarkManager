@@ -53,7 +53,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         var now = DateTimeOffset.UtcNow;
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
-            AutoTagRunTelemetry.TryGetCurrent()?.Record("AniList", "lookup", 0, 0, cacheHit: true);
+            ProviderAutoTagTelemetry.RecordCacheHit("AniList");
             return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason);
         }
 
@@ -71,12 +71,11 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
             _logger.LogInformation("Querying AniList tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
 
             using var resp = await http.PostAsJsonAsync("https://graphql.anilist.co", body, cancellationToken).ConfigureAwait(false);
-            AutoTagRunTelemetry.TryGetCurrent()?.Record(
+            ProviderAutoTagTelemetry.RecordHttp(
                 "AniList",
                 "lookup",
-                (long)limiterWait.TotalMilliseconds,
-                httpStopwatch.ElapsedMilliseconds,
-                cacheHit: false);
+                httpStopwatch.Elapsed,
+                limiterWait);
             if (!resp.IsSuccessStatusCode)
             {
                 var error = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -103,6 +102,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         }
         catch (Exception ex)
         {
+            ProviderAutoTagTelemetry.RecordFailure("AniList", "lookup");
             _logger.LogWarning(ex, "Failed to query AniList for tags of '{Title}'", context.OriginalTitle);
             _cache[cacheKey] = new CacheEntry([], false, ex.Message, now.Add(EmptyCacheDuration));
             return new ProviderTagResult([], false, ex.Message);

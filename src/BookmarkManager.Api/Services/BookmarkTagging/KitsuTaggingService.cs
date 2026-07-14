@@ -46,7 +46,7 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
         var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
-            AutoTagRunTelemetry.TryGetCurrent()?.Record("Kitsu", "lookup", 0, 0, cacheHit: true);
+            ProviderAutoTagTelemetry.RecordCacheHit("Kitsu");
             return cached.Result;
         }
 
@@ -55,12 +55,13 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
             _logger.LogInformation("Querying Kitsu tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
             var httpStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var result = await FetchTagsFromKitsuAsync(cleanQuery, candidate, context.Domain, cancellationToken).ConfigureAwait(false);
-            AutoTagRunTelemetry.TryGetCurrent()?.Record("Kitsu", "lookup", 0, httpStopwatch.ElapsedMilliseconds, cacheHit: false);
+            ProviderAutoTagTelemetry.RecordHttp("Kitsu", "lookup", httpStopwatch.Elapsed);
             _cache[cacheKey] = new KitsuCacheEntry(result, now.Add(result.Tags.Count == 0 ? EmptyCacheDuration : SuccessCacheDuration));
             return result;
         }
         catch (Exception ex)
         {
+            ProviderAutoTagTelemetry.RecordFailure("Kitsu", "lookup");
             _logger.LogWarning(ex, "Failed to query Kitsu for tags of '{Title}'", context.OriginalTitle);
             var emptyResult = new ProviderTagResult([], false, null);
             _cache[cacheKey] = new KitsuCacheEntry(emptyResult, now.Add(EmptyCacheDuration));

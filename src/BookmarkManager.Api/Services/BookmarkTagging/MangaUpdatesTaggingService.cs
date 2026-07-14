@@ -92,13 +92,13 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         {
             if (cachedSeries.SeriesId is null)
             {
-                RecordTelemetry("MangaUpdates", "lookup", cacheHit: true);
+                ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "lookup");
                 return new([], false, null);
             }
 
             if (_tagsCache.TryGetValue((context.Domain, cachedSeries.SeriesId.Value), out var cachedTags) && cachedTags.ExpiresAt > now)
             {
-                RecordTelemetry("MangaUpdates", "lookup", cacheHit: true);
+                ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "lookup");
                 return new(cachedTags.Tags.ToList(), cachedTags.WasRejected, cachedTags.RejectionReason);
             }
         }
@@ -107,7 +107,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         {
             _logger.LogInformation("Querying MangaUpdates tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
             var searchMatch = cachedSeries?.SeriesId is long cachedId
-                ? new SearchMatch(cachedId, default)
+                ? new SearchMatch(cachedId, SearchRecord: null)
                 : await SearchBestMatchAsync(cleanQuery, candidate, context.Domain, context.FolderPath, context.Url, cancellationToken).ConfigureAwait(false);
             var seriesId = searchMatch?.SeriesId;
             _seriesCache[seriesCacheKey] = new SeriesCacheEntry(seriesId, now.Add(seriesId is null ? EmptyCacheDuration : SuccessCacheDuration));
@@ -123,7 +123,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                 && searchRecord.ValueKind == JsonValueKind.Object
                 && TryBuildMangaTagsFromSearchRecord(searchRecord, context.Domain, out var inlineResult))
             {
-                RecordTelemetry("MangaUpdates", "search-inline", cacheHit: false);
+                ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "search-inline");
                 result = inlineResult;
             }
             else
@@ -242,7 +242,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             var limiterWait = await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
             var httpStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var response = await send().ConfigureAwait(false);
-            RecordTelemetry("MangaUpdates", operation, limiterWait, httpStopwatch.Elapsed);
+            ProviderAutoTagTelemetry.RecordHttp("MangaUpdates", operation, httpStopwatch.Elapsed, limiterWait);
             if (response.StatusCode != HttpStatusCode.TooManyRequests || attempt == 2)
                 return response;
 
@@ -254,22 +254,6 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 
         throw new InvalidOperationException("Unreachable MangaUpdates retry state.");
     }
-
-    private static void RecordTelemetry(
-        string provider,
-        string operation,
-        TimeSpan? limiterWait = null,
-        TimeSpan? httpDuration = null,
-        bool cacheHit = false)
-    {
-        AutoTagRunTelemetry.TryGetCurrent()?.Record(
-            provider,
-            operation,
-            limiterWait.HasValue ? (long)limiterWait.Value.TotalMilliseconds : 0,
-            httpDuration.HasValue ? (long)httpDuration.Value.TotalMilliseconds : 0,
-            cacheHit);
-    }
-
 
     private static string? GuessPreferredMedium(string? folderPath, string? url)
     {
@@ -570,7 +554,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         bool MatchesRequestedDomain,
         string Reason);
 
-    private sealed record SearchMatch(long SeriesId, JsonElement SearchRecord);
+    private sealed record SearchMatch(long SeriesId, JsonElement? SearchRecord);
 
     private sealed record SeriesCacheEntry(long? SeriesId, DateTimeOffset ExpiresAt);
     private sealed record TagsCacheEntry(List<string> Tags, bool WasRejected, string? RejectionReason, DateTimeOffset ExpiresAt);

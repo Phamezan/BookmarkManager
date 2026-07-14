@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
@@ -10,7 +11,7 @@ internal sealed class AutoTagRunTelemetry : IDisposable
 {
     private static readonly AsyncLocal<AutoTagRunTelemetry?> Current = new();
 
-    private readonly List<ProviderCallRecord> _records = [];
+    private readonly ConcurrentBag<ProviderCallRecord> _records = [];
     private readonly Stopwatch _runStopwatch = Stopwatch.StartNew();
 
     public static AutoTagRunTelemetry? TryGetCurrent() => Current.Value;
@@ -23,18 +24,17 @@ internal sealed class AutoTagRunTelemetry : IDisposable
     }
 
     public void Record(string provider, string operation, long limiterWaitMs, long httpMs, bool cacheHit)
-    {
-        _records.Add(new ProviderCallRecord(provider, operation, limiterWaitMs, httpMs, cacheHit));
-    }
+        => _records.Add(new ProviderCallRecord(provider, operation, limiterWaitMs, httpMs, cacheHit));
 
     public void AppendSummaryTo(ICollection<string> messages)
     {
-        if (_records.Count == 0)
+        var records = _records.ToArray();
+        if (records.Length == 0)
             return;
 
         messages.Add($"Provider timing ({_runStopwatch.Elapsed.TotalSeconds:0.0}s total):");
 
-        foreach (var group in _records
+        foreach (var group in records
                      .GroupBy(record => (record.Provider, record.Operation))
                      .OrderBy(group => group.Key.Provider, StringComparer.OrdinalIgnoreCase)
                      .ThenBy(group => group.Key.Operation, StringComparer.OrdinalIgnoreCase))
@@ -63,6 +63,11 @@ internal sealed class AutoTagRunTelemetry : IDisposable
         if (ReferenceEquals(Current.Value, this))
             Current.Value = null;
     }
+
+    internal IReadOnlyList<(string Provider, string Operation, long LimiterWaitMs, long HttpMs, bool CacheHit)> SnapshotRecords()
+        => _records
+            .Select(record => (record.Provider, record.Operation, record.LimiterWaitMs, record.HttpMs, record.CacheHit))
+            .ToList();
 
     private sealed record ProviderCallRecord(
         string Provider,
