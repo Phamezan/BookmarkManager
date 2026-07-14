@@ -66,6 +66,11 @@
         }
     };
 
+    window.copyToClipboard = function (text) {
+        if (!text) return Promise.resolve();
+        return navigator.clipboard.writeText(text);
+    };
+
     // Embedded mode: the /palette page runs inside the extension's palette-host
     // iframe. Actions are relayed to that host frame via postMessage; the host
     // validates the sender origin before acting.
@@ -80,6 +85,36 @@
             window.parent.postMessage({ source: 'bm-palette', type: 'close' }, '*');
         }
     };
+
+    // Embedded mode: report the modal's rendered height up the frame chain so
+    // the extension can size its overlay iframe to the palette itself instead
+    // of a fixed box (avoids a blank strip below the footer on pages where
+    // cross-origin iframe transparency fails). contentRect ignores the open
+    // animation's transform, so reported heights are stable; +2 covers the
+    // modal's top/bottom borders.
+    if (window.parent !== window && typeof ResizeObserver !== 'undefined') {
+        let observedModal = null;
+        const modalResizeObserver = new ResizeObserver(function (entries) {
+            const rect = entries[entries.length - 1].contentRect;
+            const height = Math.ceil(rect.height) + 2;
+            if (height > 2) {
+                window.parent.postMessage({ source: 'bm-palette', type: 'resize', height: height }, '*');
+            }
+        });
+        new MutationObserver(function () {
+            const modal = document.querySelector('.palette-modal');
+            if (modal === observedModal) {
+                return;
+            }
+            if (observedModal) {
+                modalResizeObserver.unobserve(observedModal);
+            }
+            observedModal = modal;
+            if (modal) {
+                modalResizeObserver.observe(modal);
+            }
+        }).observe(document.documentElement, { childList: true, subtree: true });
+    }
 
     // Host frame notifications when the kept-alive iframe is re-shown/hidden.
     // Only meaningful when actually framed; top-level pages ignore these.

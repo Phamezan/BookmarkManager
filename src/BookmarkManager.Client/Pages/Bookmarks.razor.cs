@@ -39,6 +39,7 @@ public partial class Bookmarks : IDisposable
     private string _contextMenuType = "";
     private BookmarkNodeDto? _contextMenuBookmark;
     private Guid _contextMenuFolderId;
+    private List<FolderTreeNodeDto> _contextSiblingFolders = [];
     private string _typeFilterBacking = "All";
     private string _typeFilter
     {
