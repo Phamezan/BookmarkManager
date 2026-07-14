@@ -5,7 +5,7 @@
  * what site the user is on.
  *
  * Message relay:
- *   inner Blazor frame → this page → content script (navigate/close)
+ *   inner Blazor frame → this page → content script (navigate/close/resize)
  *   inner Blazor frame → this page → service worker  (open-tab)
  *   content script     → this page → inner Blazor frame (show/hide)
  *
@@ -40,7 +40,12 @@ async function bootstrap(): Promise<void> {
   document.body.appendChild(inner);
 
   window.addEventListener("message", (event: MessageEvent) => {
-    const data = event.data as { source?: string; type?: string; url?: unknown } | null;
+    const data = event.data as {
+      source?: string;
+      type?: string;
+      url?: unknown;
+      height?: unknown;
+    } | null;
     if (!data) return;
 
     // Actions from the Blazor palette frame.
@@ -65,6 +70,14 @@ async function bootstrap(): Promise<void> {
           return;
         case "close":
           window.parent.postMessage({ source: "bm-palette-host", type: "close" }, "*");
+          return;
+        case "resize":
+          if (typeof data.height === "number" && Number.isFinite(data.height) && data.height > 0) {
+            window.parent.postMessage(
+              { source: "bm-palette-host", type: "resize", height: data.height },
+              "*",
+            );
+          }
           return;
         default:
           return;

@@ -11,4 +11,10 @@
     html, body, #app {
         background: transparent !important;
     }
+    /* Must stay "light" to match the extension's palette-host frame chain;
+       a color-scheme mismatch makes Chromium paint this cross-origin iframe
+       on an opaque canvas (MudBlazor's dark theme would set it to dark). */
+    html {
+        color-scheme: light !important;
+    }
 </style>

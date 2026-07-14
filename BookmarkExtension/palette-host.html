@@ -11,6 +11,9 @@
         height: 100%;
         overflow: hidden;
         background: transparent;
+        /* Must match the palette document's color-scheme, or Chromium paints
+           the inner cross-origin iframe on an opaque canvas. */
+        color-scheme: light;
       }
       iframe {
         display: block;
@@ -18,6 +21,7 @@
         height: 100%;
         border: none;
         background: transparent;
+        color-scheme: light;
       }
     </style>
   </head>
