@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.RateLimiting;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
@@ -19,13 +20,16 @@ public sealed class ProviderRateLimiter : IAsyncDisposable
         });
     }
 
-    public async ValueTask WaitAsync(CancellationToken cancellationToken)
+    public async ValueTask<TimeSpan> WaitAsync(CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
         using var lease = await _limiter.AcquireAsync(1, cancellationToken).ConfigureAwait(false);
         if (!lease.IsAcquired)
         {
             throw new InvalidOperationException("External provider rate-limit queue is full.");
         }
+
+        return stopwatch.Elapsed;
     }
 
     public async ValueTask DisposeAsync()

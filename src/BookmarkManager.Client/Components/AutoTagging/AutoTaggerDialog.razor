@@ -2,7 +2,7 @@
 @using BookmarkManager.Contracts
 @using BookmarkManager.Client.Services
 @using MudBlazor
-@using System.Threading
+@using BookmarkManager.Client.Services.AutoTagging
 
 <MudDialog Class="auto-tagger-dialog">
     <TitleContent>
@@ -75,87 +75,85 @@
             {
                 <!-- Tagging Screen -->
                 <MudStack Spacing="2">
-                    <div class="d-flex justify-space-between align-center">
+                    <div class="d-flex justify-space-between align-center flex-wrap gap-2">
                         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">@_statusText</MudText>
-                        @if (_useAiSeriesAutoTagging && !_taggingFinished)
-                        {
-                            <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace; color: #a5b4fc;">AI
-                                processing @_processedCount / @_totalCount bookmarks</MudText>
-                            }
-                        else
+                        <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">
+                            @_processedCount / @_totalCount bookmarks
+                            @if (!string.IsNullOrWhiteSpace(_etaText))
                             {
-                                <MudText Typo="Typo.caption" Style="font-weight: 600; font-family: monospace;">@_processedCount /
-                                    @_totalCount bookmarks</MudText>
-                                }
-                            </div>
-                            @if (_useAiSeriesAutoTagging && !_taggingFinished)
-                            {
-                                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+                                <span class="mud-text-secondary"> · @_etaText</span>
                             }
-                            else
-                            {
-                                <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
-                            }
+                        </MudText>
+                    </div>
 
-                            @if (_rateLimitStopped)
-                            {
-                                <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="my-2">
-                                    Rate limit hit! AI auto-tagging has been paused.
-                                    <br />
-                                    <strong>@_remainingCount</strong> bookmark(s) remain to be tagged.
-                                    <br />
-                                    Please wait a bit (e.g. 60 seconds), close this dialog, and run the Auto Tagger again to resume.
-                                </MudAlert>
-                            }
-
-                            <div id="tagger-terminal-log"
-                                 style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
-                                @foreach (var log in _logs)
-                                {
-                                    <div style="margin-bottom: 2px;">
-                                        <span style="color: #64748b; margin-right: 6px;">[@log.Timestamp]</span>
-                                        @if (log.Type == LogType.Success)
-                                        {
-                                            <span style="color: #10b981;">@log.Message</span>
-                                        }
-                                        else if (log.Type == LogType.Error)
-                                        {
-                                            <span style="color: #ef4444;">@log.Message</span>
-                                        }
-                                        else if (log.Type == LogType.Info)
-                                        {
-                                            <span style="color: #38bdf8;">@log.Message</span>
-                                        }
-                                        else
-                                        {
-                                            <span>@log.Message</span>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        </MudStack>
-                    }
-            else if (_currentState == TaggerState.Review)
+                    @if (!string.IsNullOrWhiteSpace(_currentBookmarkTitle))
                     {
-                        <!-- Review Screen -->
-                        <MudStack Spacing="2">
-                            <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
-                            <MudText Typo="Typo.body2" Class="mud-text-secondary">Review the generated suggestions. Click 'x' to
-                                delete, or add tags manually before saving.</MudText>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="font-family: monospace;">
+                            Current: @_currentBookmarkTitle
+                        </MudText>
+                    }
 
-                                <div
-                                    style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
-                                    <MudStack Spacing="3">
-                                        @foreach (var item in _reviewItems)
-                                        {
-                                            <AutoTaggerReviewRow Item="item" />
-                                        }
-                                    </MudStack>
-                                </div>
-                            </MudStack>
+                    <MudProgressLinear Value="@ProgressPercent" Color="Color.Primary" Size="Size.Medium" Class="my-1" />
+
+                    @if (_rateLimitStopped)
+                    {
+                        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="my-2">
+                            Rate limit hit! AI auto-tagging has been paused.
+                            <br />
+                            <strong>@_remainingCount</strong> bookmark(s) remain to be tagged.
+                            <br />
+                            Please wait a bit (e.g. 60 seconds), close this dialog, and run the Auto Tagger again to resume.
+                        </MudAlert>
+                    }
+
+                    <div id="tagger-terminal-log"
+                                 style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
+                        @foreach (var log in _logs)
+                        {
+                            <div style="margin-bottom: 2px;">
+                                <span style="color: #64748b; margin-right: 6px;">[@log.Timestamp]</span>
+                                @if (log.Type == LogType.Success)
+                                {
+                                    <span style="color: #10b981;">@log.Message</span>
+                                }
+                                else if (log.Type == LogType.Error)
+                                {
+                                    <span style="color: #ef4444;">@log.Message</span>
+                                }
+                                else if (log.Type == LogType.Info)
+                                {
+                                    <span style="color: #38bdf8;">@log.Message</span>
+                                }
+                                else
+                                {
+                                    <span>@log.Message</span>
+                                }
+                            </div>
                         }
-                    </MudStack>
-                </DialogContent>
+                    </div>
+                </MudStack>
+            }
+            else if (_currentState == TaggerState.Review)
+            {
+                <!-- Review Screen -->
+                <MudStack Spacing="2">
+                    <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
+                    <MudText Typo="Typo.body2" Class="mud-text-secondary">Review the generated suggestions. Click 'x' to
+                        delete, or add tags manually before saving.</MudText>
+
+                    <div
+                        style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+                        <MudStack Spacing="3">
+                            @foreach (var item in _reviewItems)
+                            {
+                                <AutoTaggerReviewRow Item="item" />
+                            }
+                        </MudStack>
+                    </div>
+                </MudStack>
+            }
+        </MudStack>
+    </DialogContent>
 
                 <DialogActions>
                     @if (_currentState == TaggerState.Selection)
@@ -205,12 +203,6 @@
             </MudDialog>
 
 @code {
-    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
-    [Parameter] public Guid? CurrentFolderId { get; set; }
-    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
-    [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
-    [Inject] private ISnackbar Snackbar { get; set; } = default!;
-
     private enum TaggerState
     {
         Selection,
@@ -231,6 +223,9 @@
     private bool _rateLimitStopped;
     private int _remainingCount;
     private int _preferredBatchSize = 25;
+    private DateTimeOffset _taggingStartedAt;
+    private string? _etaText;
+    private string? _currentBookmarkTitle;
 
     private List<FolderTreeNodeDto> _selectableFolders = [];
     private Dictionary<Guid, int> _untaggedCounts = new();
@@ -334,6 +329,9 @@
         _cts = new CancellationTokenSource();
         _rateLimitStopped = false;
         _remainingCount = 0;
+        _taggingStartedAt = DateTimeOffset.UtcNow;
+        _etaText = null;
+        _currentBookmarkTitle = null;
 
         AddLog(_useAiSeriesAutoTagging
             ? "Initializing OpenRouter series-matching Auto Tagger..."
@@ -429,6 +427,7 @@
                     }
 
                     _processedCount += chunk.Count;
+                    RefreshEta();
                     StateHasChanged();
                     await ScrollTerminalToBottomAsync();
                 }
@@ -456,117 +455,6 @@
             _cts = null;
             StateHasChanged();
         }
-    }
-
-    private async Task RunAiSeriesAutoTaggingAsync()
-    {
-        int batchSize = _preferredBatchSize;
-        bool stoppedEarly = false;
-
-        foreach (var folderId in _selectedFolderIds)
-        {
-            _cts!.Token.ThrowIfCancellationRequested();
-
-            var folder = _selectableFolders.First(f => f.Id == folderId);
-            var excludedBookmarkIds = new HashSet<Guid>();
-            var folderProcessed = 0;
-            var totalTagged = 0;
-            var totalAlreadyTagged = 0;
-            var totalLowConfidence = 0;
-            var totalNoSourceTags = 0;
-            var totalFailedChunks = 0;
-            var folderTotal = _untaggedCounts.GetValueOrDefault(folderId, 0);
-
-            _statusText = $"AI tagging '{folder.Title}'...";
-            AddLog($"Running OpenRouter series matching for '{folder.Title}'...", LogType.Info);
-            AddLog($"Processing in batches of {batchSize}; activity will appear after each server batch.", LogType.Info);
-            StateHasChanged();
-
-            var batchNumber = 1;
-            while (true)
-            {
-                _cts.Token.ThrowIfCancellationRequested();
-                AddLog($"→ Batch {batchNumber}: requesting up to {batchSize} bookmark(s) from server...", LogType.Info);
-                StateHasChanged();
-                await ScrollTerminalToBottomAsync();
-
-                var summary = await BookmarkService.AiAutoTagFolderBatchAsync(folderId, new AiAutoTagBatchRequestDto
-                {
-                    ForceRefresh = false,
-                    MaxCandidates = batchSize,
-                    ExcludedBookmarkIds = excludedBookmarkIds.ToList()
-                }, _cts.Token);
-
-                if (summary.StopForRateLimit)
-                {
-                    _rateLimitStopped = true;
-                    _remainingCount = _totalCount - _processedCount;
-                    AddLog("OpenRouter rate limit reached. Pausing tagging to avoid further errors.", LogType.Error);
-                    AddLog($"[INFO] {_remainingCount} bookmark(s) remain untagged.", LogType.Info);
-                    AddLog("[INFO] Please wait a moment (e.g. 60 seconds) and run the Auto Tagger again to resume.", LogType.Info);
-                    stoppedEarly = true;
-                    break;
-                }
-
-                foreach (var id in summary.ProcessedBookmarkIds)
-                    excludedBookmarkIds.Add(id);
-
-                var processedThisBatch = summary.ProcessedBookmarkIds.Count;
-                folderProcessed += processedThisBatch;
-                _processedCount += processedThisBatch;
-                totalTagged += summary.Tagged;
-                totalAlreadyTagged += summary.SkippedAlreadyTagged;
-                totalLowConfidence += summary.SkippedLowConfidence;
-                totalNoSourceTags += summary.SkippedNoSourceTags;
-                totalFailedChunks += summary.FailedChunks;
-
-                foreach (var message in summary.Messages)
-                    AddLog(message, LogType.Info);
-
-                AddLog(
-                    $"✓ Batch {batchNumber} returned: processed {processedThisBatch}, tagged {summary.Tagged}, low confidence {summary.SkippedLowConfidence}, no source tags {summary.SkippedNoSourceTags}, failed chunks {summary.FailedChunks}.",
-                    summary.Tagged > 0 ? LogType.Success : LogType.Info);
-
-                _statusText = $"AI tagging '{folder.Title}' ({folderProcessed} / {folderTotal})...";
-                StateHasChanged();
-                await ScrollTerminalToBottomAsync();
-
-                if (processedThisBatch == 0)
-                {
-                    _rateLimitStopped = false;
-                    _remainingCount = _totalCount - _processedCount;
-                    AddLog("No bookmarks were processed in this batch. Stopping so these bookmarks can be retried later instead of being skipped.", summary.FailedChunks > 0 ? LogType.Error : LogType.Info);
-                    stoppedEarly = true;
-                    break;
-                }
-
-                if (!summary.HasMore)
-                    break;
-
-                batchNumber++;
-            }
-
-            if (stoppedEarly)
-            {
-                break;
-            }
-
-            AddLog(
-                $"✓ '{folder.Title}' complete: tagged {totalTagged}, already tagged {totalAlreadyTagged}, low confidence {totalLowConfidence}, no source tags {totalNoSourceTags}, failed chunks {totalFailedChunks}.",
-                totalTagged > 0 ? LogType.Success : LogType.Info);
-            StateHasChanged();
-            await ScrollTerminalToBottomAsync();
-        }
-
-        if (!stoppedEarly)
-        {
-            AddLog("AI auto-tagging complete. Tags were saved directly to the database.", LogType.Success);
-        }
-        else
-        {
-            AddLog("AI auto-tagging paused. Some bookmarks could not be processed.", LogType.Error);
-        }
-        _taggingFinished = true;
     }
 
     private void GoToReview()

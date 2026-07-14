@@ -15,7 +15,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
     private static readonly ProviderRateLimiter RateLimiter = new(
         tokenLimit: 1,
         tokensPerPeriod: 1,
-        replenishmentPeriod: TimeSpan.FromSeconds(2));
+        replenishmentPeriod: TimeSpan.FromSeconds(1));
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<MangaUpdatesTaggingService> _logger;
@@ -91,16 +91,25 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         if (_seriesCache.TryGetValue(seriesCacheKey, out var cachedSeries) && cachedSeries.ExpiresAt > now)
         {
             if (cachedSeries.SeriesId is null)
+            {
+                ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "lookup");
                 return new([], false, null);
+            }
 
             if (_tagsCache.TryGetValue((context.Domain, cachedSeries.SeriesId.Value), out var cachedTags) && cachedTags.ExpiresAt > now)
+            {
+                ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "lookup");
                 return new(cachedTags.Tags.ToList(), cachedTags.WasRejected, cachedTags.RejectionReason);
+            }
         }
 
         try
         {
             _logger.LogInformation("Querying MangaUpdates tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
-            var seriesId = cachedSeries?.SeriesId ?? await SearchSeriesIdAsync(cleanQuery, candidate, context.Domain, context.FolderPath, context.Url, cancellationToken).ConfigureAwait(false);
+            var searchMatch = cachedSeries?.SeriesId is long cachedId
+                ? new SearchMatch(cachedId, SearchRecord: null)
+                : await SearchBestMatchAsync(cleanQuery, candidate, context.Domain, context.FolderPath, context.Url, cancellationToken).ConfigureAwait(false);
+            var seriesId = searchMatch?.SeriesId;
             _seriesCache[seriesCacheKey] = new SeriesCacheEntry(seriesId, now.Add(seriesId is null ? EmptyCacheDuration : SuccessCacheDuration));
             if (seriesId is null)
                 return new([], false, null);
@@ -108,7 +117,19 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             if (_tagsCache.TryGetValue((context.Domain, seriesId.Value), out var freshTags) && freshTags.ExpiresAt > now)
                 return new(freshTags.Tags.ToList(), freshTags.WasRejected, freshTags.RejectionReason);
 
-            var result = await FetchSeriesTagsAsync(seriesId.Value, context.Domain, cancellationToken).ConfigureAwait(false);
+            MangaUpdatesTagResult result;
+            if (context.Domain == BookmarkTagDomain.Manga
+                && searchMatch?.SearchRecord is { } searchRecord
+                && searchRecord.ValueKind == JsonValueKind.Object
+                && TryBuildMangaTagsFromSearchRecord(searchRecord, context.Domain, out var inlineResult))
+            {
+                ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "search-inline");
+                result = inlineResult;
+            }
+            else
+            {
+                result = await FetchSeriesTagsAsync(seriesId.Value, context.Domain, cancellationToken).ConfigureAwait(false);
+            }
             
             var wasRejected = !result.MatchesRequestedDomain && !result.Reason.StartsWith("Series lookup returned");
             var rejectionReason = wasRejected ? result.Reason : null;
@@ -139,11 +160,12 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         }
     }
 
-    private async Task<long?> SearchSeriesIdAsync(string cleanQuery, string scoreQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url, CancellationToken cancellationToken)
+    private async Task<SearchMatch?> SearchBestMatchAsync(string cleanQuery, string scoreQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url, CancellationToken cancellationToken)
     {
         var http = CreateClient();
         using var response = await SendWithRetryAsync(
             () => http.PostAsJsonAsync("https://api.mangaupdates.com/v1/series/search", new { search = cleanQuery }, cancellationToken),
+            "search",
             cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -153,7 +175,11 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         }
 
         using var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
-        return doc is null ? null : TryExtractBestSeriesId(doc.RootElement, scoreQuery, requestedDomain, folderPath, url);
+        if (doc is null)
+            return null;
+
+        var match = TryExtractBestSearchRecord(doc.RootElement, scoreQuery, requestedDomain, folderPath, url);
+        return match is null ? null : new SearchMatch(match.Value.SeriesId, match.Value.Record);
     }
 
     private async Task<MangaUpdatesTagResult> FetchSeriesTagsAsync(long seriesId, BookmarkTagDomain requestedDomain, CancellationToken cancellationToken)
@@ -161,6 +187,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         var http = CreateClient();
         using var response = await SendWithRetryAsync(
             () => http.GetAsync($"https://api.mangaupdates.com/v1/series/{seriesId}", cancellationToken),
+            "series",
             cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -205,12 +232,17 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         return http;
     }
 
-    private async Task<HttpResponseMessage> SendWithRetryAsync(Func<Task<HttpResponseMessage>> send, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        Func<Task<HttpResponseMessage>> send,
+        string operation,
+        CancellationToken cancellationToken)
     {
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var limiterWait = await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var httpStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var response = await send().ConfigureAwait(false);
+            ProviderAutoTagTelemetry.RecordHttp("MangaUpdates", operation, httpStopwatch.Elapsed, limiterWait);
             if (response.StatusCode != HttpStatusCode.TooManyRequests || attempt == 2)
                 return response;
 
@@ -222,7 +254,6 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 
         throw new InvalidOperationException("Unreachable MangaUpdates retry state.");
     }
-
 
     private static string? GuessPreferredMedium(string? folderPath, string? url)
     {
@@ -240,6 +271,9 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
     }
 
     public static long? TryExtractBestSeriesId(JsonElement root, string cleanQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url)
+        => TryExtractBestSearchRecord(root, cleanQuery, requestedDomain, folderPath, url)?.SeriesId;
+
+    public static (long SeriesId, JsonElement Record)? TryExtractBestSearchRecord(JsonElement root, string cleanQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url)
     {
         if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
             return null;
@@ -248,6 +282,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 
         var bestScore = 0.0;
         long? bestId = null;
+        JsonElement? bestRecord = null;
         foreach (var item in results.EnumerateArray())
         {
             if (!item.TryGetProperty("record", out var record) || record.ValueKind != JsonValueKind.Object)
@@ -272,10 +307,44 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             {
                 bestScore = score;
                 bestId = id;
+                bestRecord = record;
             }
         }
 
-        return bestScore >= 0.60 ? bestId : null;
+        return bestScore >= 0.60 && bestId is not null && bestRecord is not null
+            ? (bestId.Value, bestRecord.Value)
+            : null;
+    }
+
+    public static bool SearchRecordHasInlineTags(JsonElement record)
+        => record.ValueKind == JsonValueKind.Object && ExtractTags(record).Count > 0;
+
+    public static bool TryBuildMangaTagsFromSearchRecord(
+        JsonElement record,
+        BookmarkTagDomain requestedDomain,
+        out MangaUpdatesTagResult result)
+    {
+        result = new([], null, MatchesRequestedDomain: false, "Search record did not contain inline tags.");
+        if (requestedDomain != BookmarkTagDomain.Manga || !SearchRecordHasInlineTags(record))
+            return false;
+
+        var tags = ExtractTags(record);
+        var medium = ExtractMediumType(record);
+        var compatibility = GetMediumCompatibility(requestedDomain, medium, record);
+        if (!compatibility.Matches)
+        {
+            result = new([], medium, MatchesRequestedDomain: false, compatibility.Reason);
+            return true;
+        }
+
+        if (medium is "Manga" or "Manhwa" or "Manhua" or "OEL")
+        {
+            var tagToInsert = medium == "OEL" ? "Manga" : medium;
+            tags.Insert(0, tagToInsert);
+        }
+
+        result = new(tags, medium, MatchesRequestedDomain: true, compatibility.Reason);
+        return true;
     }
 
     private static double ScoreSearchRecord(JsonElement record, string cleanQuery)
@@ -479,7 +548,13 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 
 
 
-    private sealed record MangaUpdatesTagResult(List<string> Tags, string? Medium, bool MatchesRequestedDomain, string Reason);
+    public sealed record MangaUpdatesTagResult(
+        List<string> Tags,
+        string? Medium,
+        bool MatchesRequestedDomain,
+        string Reason);
+
+    private sealed record SearchMatch(long SeriesId, JsonElement? SearchRecord);
 
     private sealed record SeriesCacheEntry(long? SeriesId, DateTimeOffset ExpiresAt);
     private sealed record TagsCacheEntry(List<string> Tags, bool WasRejected, string? RejectionReason, DateTimeOffset ExpiresAt);

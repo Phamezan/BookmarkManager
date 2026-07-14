@@ -202,4 +202,76 @@ public sealed class MangaUpdatesTaggingTests
 
         Assert.Equal(20L, seriesId);
     }
+
+    [Fact]
+    public void TryBuildMangaTagsFromSearchRecord_UsesInlineGenresWithoutSeriesDetail()
+    {
+        const string json = """
+        {
+          "series_id": 42,
+          "title": "Solo Leveling",
+          "type": "Manhwa",
+          "genres": [
+            { "genre": "Action" },
+            { "genre": "Fantasy" }
+          ]
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        var built = MangaUpdatesTaggingService.TryBuildMangaTagsFromSearchRecord(
+            doc.RootElement,
+            BookmarkTagDomain.Manga,
+            out var result);
+
+        Assert.True(built);
+        Assert.True(result.MatchesRequestedDomain);
+        Assert.Equal(new[] { "Manhwa", "Action", "Fantasy" }, result.Tags);
+    }
+
+    [Fact]
+    public void TryBuildMangaTagsFromSearchRecord_SkipsWhenInlineTagsMissing()
+    {
+        const string json = """
+        {
+          "series_id": 42,
+          "title": "Solo Leveling",
+          "type": "Manga"
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        var built = MangaUpdatesTaggingService.TryBuildMangaTagsFromSearchRecord(
+            doc.RootElement,
+            BookmarkTagDomain.Manga,
+            out _);
+
+        Assert.False(built);
+    }
+
+    [Fact]
+    public void TryBuildMangaTagsFromSearchRecord_DoesNotApplyToNovelDomain()
+    {
+        const string json = """
+        {
+          "series_id": 42,
+          "title": "Solo Leveling",
+          "type": "Novel",
+          "genres": [
+            { "genre": "Action" }
+          ]
+        }
+        """;
+
+        using var doc = JsonDocument.Parse(json);
+
+        var built = MangaUpdatesTaggingService.TryBuildMangaTagsFromSearchRecord(
+            doc.RootElement,
+            BookmarkTagDomain.Novel,
+            out _);
+
+        Assert.False(built);
+    }
 }

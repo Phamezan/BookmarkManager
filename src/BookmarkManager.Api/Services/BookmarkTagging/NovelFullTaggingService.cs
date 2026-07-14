@@ -52,18 +52,22 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
         var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
+            ProviderAutoTagTelemetry.RecordCacheHit("NovelFull");
             return cached.Result;
         }
 
         try
         {
             _logger.LogInformation("Querying NovelFull tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
+            var httpStopwatch = System.Diagnostics.Stopwatch.StartNew();
             var result = await FetchTagsFromNovelFullAsync(cleanQuery, candidate, cancellationToken).ConfigureAwait(false);
+            ProviderAutoTagTelemetry.RecordHttp("NovelFull", "lookup", httpStopwatch.Elapsed);
             _cache[cacheKey] = new NovelFullCacheEntry(result, now.Add(result.Tags.Count == 0 ? EmptyCacheDuration : SuccessCacheDuration));
             return result;
         }
         catch (Exception ex)
         {
+            ProviderAutoTagTelemetry.RecordFailure("NovelFull", "lookup");
             _logger.LogWarning(ex, "Failed to query NovelFull for tags of '{Title}'", context.OriginalTitle);
             var emptyResult = new ProviderTagResult([], false, null);
             _cache[cacheKey] = new NovelFullCacheEntry(emptyResult, now.Add(EmptyCacheDuration));

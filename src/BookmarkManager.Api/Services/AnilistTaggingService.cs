@@ -52,11 +52,15 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
         var now = DateTimeOffset.UtcNow;
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+        {
+            ProviderAutoTagTelemetry.RecordCacheHit("AniList");
             return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason);
+        }
 
         try
         {
-            await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var limiterWait = await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var httpStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             var body = CreateGraphQlBody(cleanQuery, context.Domain);
             var http = _httpFactory.CreateClient(nameof(AnilistTaggingService));
@@ -67,6 +71,11 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
             _logger.LogInformation("Querying AniList tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
 
             using var resp = await http.PostAsJsonAsync("https://graphql.anilist.co", body, cancellationToken).ConfigureAwait(false);
+            ProviderAutoTagTelemetry.RecordHttp(
+                "AniList",
+                "lookup",
+                httpStopwatch.Elapsed,
+                limiterWait);
             if (!resp.IsSuccessStatusCode)
             {
                 var error = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -93,6 +102,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         }
         catch (Exception ex)
         {
+            ProviderAutoTagTelemetry.RecordFailure("AniList", "lookup");
             _logger.LogWarning(ex, "Failed to query AniList for tags of '{Title}'", context.OriginalTitle);
             _cache[cacheKey] = new CacheEntry([], false, ex.Message, now.Add(EmptyCacheDuration));
             return new ProviderTagResult([], false, ex.Message);
