@@ -52,11 +52,15 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
         var now = DateTimeOffset.UtcNow;
         if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+        {
+            AutoTagRunTelemetry.TryGetCurrent()?.Record("AniList", "lookup", 0, 0, cacheHit: true);
             return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason);
+        }
 
         try
         {
-            await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var limiterWait = await RateLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var httpStopwatch = System.Diagnostics.Stopwatch.StartNew();
 
             var body = CreateGraphQlBody(cleanQuery, context.Domain);
             var http = _httpFactory.CreateClient(nameof(AnilistTaggingService));
@@ -67,6 +71,12 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
             _logger.LogInformation("Querying AniList tags. OriginalTitle='{OriginalTitle}', Host='{Host}', Domain={Domain}, Candidate='{Candidate}', QuerySentToProvider='{Query}'", context.OriginalTitle, context.NormalizedTitle.Host, context.Domain, candidate, cleanQuery);
 
             using var resp = await http.PostAsJsonAsync("https://graphql.anilist.co", body, cancellationToken).ConfigureAwait(false);
+            AutoTagRunTelemetry.TryGetCurrent()?.Record(
+                "AniList",
+                "lookup",
+                (long)limiterWait.TotalMilliseconds,
+                httpStopwatch.ElapsedMilliseconds,
+                cacheHit: false);
             if (!resp.IsSuccessStatusCode)
             {
                 var error = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

@@ -115,6 +115,67 @@ public sealed class AiBookmarkAutoTaggingServiceTests
     }
 
     [Fact]
+    public async Task TagFolderAsync_FlushesTagsIncrementallyEveryTenBookmarks()
+    {
+        await using var fixture = await AiAutoTagFixture.CreateAsync();
+        var folderId = Guid.NewGuid();
+        var nodes = new List<BookmarkNode> { Folder(folderId, null, "Light Novels") };
+        for (var i = 0; i < 12; i++)
+        {
+            var id = Guid.NewGuid();
+            var series = $"Unique Novel {i:D2}";
+            var title = $"{series} Chapter 1";
+            nodes.Add(Bookmark(id, folderId, title, $"https://lightnovels.me/unique-novel-{i}", position: i));
+            fixture.NovelFull.SetTags(series, ["Fantasy"]);
+        }
+
+        await fixture.SeedAsync(nodes.ToArray());
+
+        var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, CancellationToken.None);
+
+        Assert.Equal(12, summary.Tagged);
+        Assert.Equal(1, summary.Messages.Count(message => message.StartsWith("Saved 10 tagged bookmark(s)", StringComparison.Ordinal)));
+        Assert.Equal(1, summary.Messages.Count(message => message.StartsWith("Saved 2 tagged bookmark(s)", StringComparison.Ordinal)));
+
+        var taggedCount = await fixture.Db.BookmarkNodes.CountAsync(node => node.ParentId == folderId && node.Tags != null);
+        Assert.Equal(12, taggedCount);
+    }
+
+    [Fact]
+    public async Task TagFolderAsync_WhenCanceled_PersistsTagsCompletedBeforeCancel()
+    {
+        await using var fixture = await AiAutoTagFixture.CreateAsync();
+        var folderId = Guid.NewGuid();
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var thirdId = Guid.NewGuid();
+        await fixture.SeedAsync(
+            Folder(folderId, null, "Light Novels"),
+            Bookmark(firstId, folderId, "Solo Leveling Chapter 1", "https://lightnovels.me/solo-leveling-1"),
+            Bookmark(secondId, folderId, "Tower of God Chapter 1", "https://lightnovels.me/tower-of-god-1"),
+            Bookmark(thirdId, folderId, "Noblesse Chapter 1", "https://lightnovels.me/noblesse-1"));
+        fixture.NovelFull.SetTags("Solo Leveling", ["Fantasy"]);
+        fixture.NovelFull.SetTags("Tower of God", ["Action"]);
+        fixture.NovelFull.SetTags("Noblesse", ["Drama"]);
+
+        using var cts = new CancellationTokenSource();
+        fixture.NovelFull.CancelAfterCalls = 3;
+        fixture.NovelFull.CancellationSource = cts;
+
+        var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, cts.Token);
+
+        Assert.Contains(summary.Messages, message => message.Contains("canceled", StringComparison.OrdinalIgnoreCase));
+        Assert.InRange(summary.Tagged, 1, 2);
+        Assert.True(summary.HasMore);
+
+        var tagged = await fixture.Db.BookmarkNodes
+            .Where(node => node.ParentId == folderId && node.Tags != null)
+            .Select(node => node.Id)
+            .ToListAsync();
+        Assert.Equal(summary.Tagged, tagged.Count);
+    }
+
+    [Fact]
     public async Task TagFolderAsync_SavesDirectlyToBookmarkNodeTagsAndUpdatedAt()
     {
         await using var fixture = await AiAutoTagFixture.CreateAsync();
@@ -262,7 +323,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             UpdatedAt = DateTime.UtcNow
         };
 
-    private static BookmarkNode Bookmark(Guid id, Guid parentId, string title, string url, string? tags = null, DateTime? updatedAt = null)
+    private static BookmarkNode Bookmark(Guid id, Guid parentId, string title, string url, string? tags = null, DateTime? updatedAt = null, int position = 0)
         => new()
         {
             Id = id,
@@ -270,7 +331,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             Type = NodeType.Bookmark,
             Title = title,
             Url = url,
-            Position = 0,
+            Position = position,
             SyncState = SyncState.Synced,
             Version = 1,
             Tags = tags,
@@ -337,12 +398,19 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         private readonly Dictionary<string, List<string>> _tagsByTitle = new(StringComparer.OrdinalIgnoreCase);
 
         public int CallCount { get; private set; }
+        public int? CancelAfterCalls { get; set; }
+        public CancellationTokenSource? CancellationSource { get; set; }
 
         public void SetTags(string title, List<string> tags) => _tagsByTitle[title] = tags;
 
         public Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
         {
             CallCount++;
+            if (CancelAfterCalls is int threshold && CallCount >= threshold && CancellationSource is not null)
+                CancellationSource.Cancel();
+
+            cancellationToken.ThrowIfCancellationRequested();
+
             return Task.FromResult(new ProviderTagResult(
                 _tagsByTitle.TryGetValue(context.OriginalTitle, out var tags) ? tags : [],
                 WasRejected: false,

@@ -1,6 +1,7 @@
 using BookmarkManager.Api.Data;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
+using System.Collections.Concurrent;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
@@ -8,6 +9,8 @@ internal sealed class AiBookmarkAutoTaggingService
 {
     private const double MinimumConfidence = 0.70;
     private const int MaxTags = 15;
+    private const int TagSaveBatchSize = 10;
+    private const int ProviderLookupConcurrency = 6;
 
     private readonly AppDbContext _db;
     private readonly AiSeriesIdentifierService _identifier;
@@ -48,7 +51,51 @@ internal sealed class AiBookmarkAutoTaggingService
         IReadOnlyCollection<Guid> excludedBookmarkIds,
         CancellationToken cancellationToken)
     {
+        using var telemetryScope = AutoTagRunTelemetry.BeginScope();
         var summary = new AiAutoTagSummaryDto();
+        var runState = new TagFolderRunState();
+        var runCanceled = false;
+
+        try
+        {
+            return await TagFolderCoreAsync(
+                folderId,
+                forceRefresh,
+                maxCandidates,
+                excludedBookmarkIds,
+                summary,
+                runState,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            runCanceled = true;
+        }
+
+        if (runState.TagsPendingSave > 0)
+        {
+            await SaveTaggedBookmarksAsync(summary, runState.TagsPendingSave, CancellationToken.None).ConfigureAwait(false);
+            runState.TagsPendingSave = 0;
+        }
+
+        summary.RemainingCandidates = Math.Max(0, runState.TotalEligibleCount - summary.ProcessedBookmarkIds.Count);
+        summary.HasMore = summary.RemainingCandidates > 0;
+        summary.Messages.Add(runCanceled
+            ? "Run canceled; saved tagged bookmarks completed before cancel."
+            : "Run ended before completion.");
+        telemetryScope.AppendSummaryTo(summary.Messages);
+        return summary;
+    }
+
+    private async Task<AiAutoTagSummaryDto> TagFolderCoreAsync(
+        Guid folderId,
+        bool forceRefresh,
+        int? maxCandidates,
+        IReadOnlyCollection<Guid> excludedBookmarkIds,
+        AiAutoTagSummaryDto summary,
+        TagFolderRunState runState,
+        CancellationToken cancellationToken)
+    {
         var excluded = excludedBookmarkIds.ToHashSet();
         var allNodes = await _db.BookmarkNodes
             .Where(node => !node.IsDeleted)
@@ -97,7 +144,8 @@ internal sealed class AiBookmarkAutoTaggingService
                 folderPaths.GetValueOrDefault(bookmark.ParentId ?? Guid.Empty, string.Empty)));
         }
 
-        var totalEligibleCount = candidates.Count;
+        var totalEligibleCountLocal = candidates.Count;
+        runState.TotalEligibleCount = totalEligibleCountLocal;
 
         if (maxCandidates is > 0 && candidates.Count > maxCandidates.Value)
         {
@@ -133,49 +181,49 @@ internal sealed class AiBookmarkAutoTaggingService
             }
         }
 
-        var sourceTagCache = new Dictionary<(BookmarkTagDomain Domain, string CanonicalTitle), List<string>>();
+        var sourceTagCache = new ConcurrentDictionary<SourceTagLookupKey, List<string>>();
+        var providerFailedKeys = new ConcurrentDictionary<SourceTagLookupKey, byte>();
 
         // 1. Process deterministic candidates (bypass AI)
         if (deterministicCandidates.Count > 0)
         {
             summary.Messages.Add($"Deterministic pass: processing {deterministicCandidates.Count} obvious candidate(s) without AI.");
+
+            var deterministicLookups = new List<SourceTagLookupRequest>();
             foreach (var candidate in deterministicCandidates)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                var classification = BookmarkMediaCandidateClassifier.Classify(
+                    candidate.Bookmark.Title,
+                    candidate.Bookmark.Url,
+                    candidate.FolderPath);
+                var route = ResolveDeterministicRoute(candidate.Bookmark, candidate.FolderPath, classification.Domain);
+                deterministicLookups.Add(new SourceTagLookupRequest(
+                    new SourceTagLookupKey(route.Domain, NormalizeCacheTitle(classification.CanonicalTitle)),
+                    classification.CanonicalTitle,
+                    candidate.Bookmark.Url,
+                    candidate.FolderPath));
+            }
 
+            await PrefetchSourceTagsAsync(
+                    deterministicLookups,
+                    sourceTagCache,
+                    providerFailedKeys,
+                    summary,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            foreach (var candidate in deterministicCandidates)
+            {
                 var classification = BookmarkMediaCandidateClassifier.Classify(
                     candidate.Bookmark.Title,
                     candidate.Bookmark.Url,
                     candidate.FolderPath);
 
                 var route = ResolveDeterministicRoute(candidate.Bookmark, candidate.FolderPath, classification.Domain);
-                var cacheKey = (route.Domain, NormalizeCacheTitle(classification.CanonicalTitle));
-                List<string> sourceTags;
-                var providerFailed = false;
-
-                if (!sourceTagCache.TryGetValue(cacheKey, out sourceTags!))
-                {
-                    summary.Messages.Add($"  → Looking up '{classification.CanonicalTitle}' on {route.Domain} providers...");
-                    try
-                    {
-                        sourceTags = await FetchSourceTagsAsync(
-                                route.Domain,
-                                classification.CanonicalTitle,
-                                candidate.Bookmark.Url,
-                                candidate.FolderPath,
-                                cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        _logger.LogWarning(ex, "Deterministic bookmark auto-tag provider lookup failed for {Title}.", classification.CanonicalTitle);
-                        sourceTags = [];
-                        providerFailed = true;
-                        summary.Messages.Add($"Provider lookup failed for '{classification.CanonicalTitle}': {ex.Message}");
-                    }
-
-                    sourceTagCache[cacheKey] = sourceTags;
-                }
+                var cacheKey = new SourceTagLookupKey(route.Domain, NormalizeCacheTitle(classification.CanonicalTitle));
+                sourceTagCache.TryGetValue(cacheKey, out var sourceTags);
+                sourceTags ??= [];
+                var providerFailed = providerFailedKeys.ContainsKey(cacheKey);
 
                 if (providerFailed)
                 {
@@ -223,6 +271,7 @@ internal sealed class AiBookmarkAutoTaggingService
                 candidate.Bookmark.Tags = string.Join(',', finalTags);
                 candidate.Bookmark.UpdatedAt = DateTime.UtcNow;
                 summary.Tagged++;
+                runState.TagsPendingSave++;
                 summary.ProcessedBookmarkIds.Add(candidate.Bookmark.Id);
                 summary.BookmarkStatuses.Add(new AiAutoTagBookmarkStatusDto
                 {
@@ -232,6 +281,8 @@ internal sealed class AiBookmarkAutoTaggingService
                     Reason = $"Classified deterministically as {classification.Domain}."
                 });
                 summary.Messages.Add($"  ✓ '{classification.CanonicalTitle}' tagged: [{string.Join(", ", finalTags)}]");
+                runState.TagsPendingSave = await SaveTaggedBookmarksIfNeededAsync(summary, runState.TagsPendingSave, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
 
@@ -307,6 +358,9 @@ internal sealed class AiBookmarkAutoTaggingService
                 }
             }
 
+            var aiLookups = new List<SourceTagLookupRequest>();
+            var aiApplyItems = new List<(AiSeriesIdentification Identification, BookmarkCandidate Candidate, RouteDecision Route)>();
+
             foreach (var identification in identificationSummary.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -344,33 +398,31 @@ internal sealed class AiBookmarkAutoTaggingService
                     continue;
                 }
 
-                var cacheKey = (route.Domain, NormalizeCacheTitle(identification.CanonicalTitle));
-                List<string> sourceTags;
-                var providerFailed = false;
+                aiLookups.Add(new SourceTagLookupRequest(
+                    new SourceTagLookupKey(route.Domain, NormalizeCacheTitle(identification.CanonicalTitle)),
+                    identification.CanonicalTitle,
+                    candidate.Bookmark.Url,
+                    candidate.FolderPath));
+                aiApplyItems.Add((identification, candidate, route));
+            }
 
-                if (!sourceTagCache.TryGetValue(cacheKey, out sourceTags!))
-                {
-                    summary.Messages.Add($"  → Looking up '{identification.CanonicalTitle}' on {route.Domain} providers...");
-                    try
-                    {
-                        sourceTags = await FetchSourceTagsAsync(
-                                route.Domain,
-                                identification.CanonicalTitle,
-                                candidate.Bookmark.Url,
-                                candidate.FolderPath,
-                                cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        _logger.LogWarning(ex, "AI bookmark auto-tag provider lookup failed for {Title}.", identification.CanonicalTitle);
-                        sourceTags = [];
-                        providerFailed = true;
-                        summary.Messages.Add($"Provider lookup failed for '{identification.CanonicalTitle}': {ex.Message}");
-                    }
+            if (aiLookups.Count > 0)
+            {
+                await PrefetchSourceTagsAsync(
+                        aiLookups,
+                        sourceTagCache,
+                        providerFailedKeys,
+                        summary,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
 
-                    sourceTagCache[cacheKey] = sourceTags;
-                }
+            foreach (var (identification, candidate, route) in aiApplyItems)
+            {
+                var cacheKey = new SourceTagLookupKey(route.Domain, NormalizeCacheTitle(identification.CanonicalTitle));
+                sourceTagCache.TryGetValue(cacheKey, out var sourceTags);
+                sourceTags ??= [];
+                var providerFailed = providerFailedKeys.ContainsKey(cacheKey);
 
                 if (providerFailed)
                 {
@@ -418,6 +470,7 @@ internal sealed class AiBookmarkAutoTaggingService
                 candidate.Bookmark.Tags = string.Join(',', finalTags);
                 candidate.Bookmark.UpdatedAt = DateTime.UtcNow;
                 summary.Tagged++;
+                runState.TagsPendingSave++;
                 summary.ProcessedBookmarkIds.Add(candidate.Bookmark.Id);
                 summary.BookmarkStatuses.Add(new AiAutoTagBookmarkStatusDto
                 {
@@ -427,14 +480,115 @@ internal sealed class AiBookmarkAutoTaggingService
                     Reason = $"Identified by AI as {identification.CanonicalTitle}."
                 });
                 summary.Messages.Add($"  ✓ '{identification.CanonicalTitle}' tagged: [{string.Join(", ", finalTags)}]");
+                runState.TagsPendingSave = await SaveTaggedBookmarksIfNeededAsync(summary, runState.TagsPendingSave, cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
             }
         }
 
-        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        summary.RemainingCandidates = totalEligibleCount - summary.ProcessedBookmarkIds.Count;
+        if (runState.TagsPendingSave > 0)
+            runState.TagsPendingSave = await SaveTaggedBookmarksAsync(summary, runState.TagsPendingSave, cancellationToken).ConfigureAwait(false);
+
+        runState.TotalEligibleCount = totalEligibleCountLocal;
+        summary.RemainingCandidates = runState.TotalEligibleCount - summary.ProcessedBookmarkIds.Count;
         summary.HasMore = summary.RemainingCandidates > 0;
-        summary.Messages.Add($"Saved {summary.Tagged} tagged bookmark(s) to database.");
+        if (summary.Tagged > 0)
+            summary.Messages.Add($"Finished with {summary.Tagged} tagged bookmark(s) saved to database.");
+        AutoTagRunTelemetry.TryGetCurrent()?.AppendSummaryTo(summary.Messages);
         return summary;
+    }
+
+    private async Task<int> SaveTaggedBookmarksIfNeededAsync(
+        AiAutoTagSummaryDto summary,
+        int tagsPendingSave,
+        CancellationToken cancellationToken)
+    {
+        if (tagsPendingSave < TagSaveBatchSize)
+            return tagsPendingSave;
+
+        return await SaveTaggedBookmarksAsync(summary, tagsPendingSave, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<int> SaveTaggedBookmarksAsync(
+        AiAutoTagSummaryDto summary,
+        int tagsPendingSave,
+        CancellationToken cancellationToken)
+    {
+        if (tagsPendingSave <= 0)
+            return 0;
+
+        await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        summary.Messages.Add($"Saved {tagsPendingSave} tagged bookmark(s) to database.");
+        return 0;
+    }
+
+    private async Task PrefetchSourceTagsAsync(
+        IReadOnlyList<SourceTagLookupRequest> requests,
+        ConcurrentDictionary<SourceTagLookupKey, List<string>> cache,
+        ConcurrentDictionary<SourceTagLookupKey, byte> providerFailedKeys,
+        AiAutoTagSummaryDto summary,
+        CancellationToken cancellationToken)
+    {
+        var unique = requests
+            .GroupBy(request => request.Key)
+            .Select(group => group.First())
+            .Where(request => !cache.ContainsKey(request.Key))
+            .ToList();
+
+        if (unique.Count == 0)
+            return;
+
+        summary.Messages.Add(
+            $"Prefetching provider tags for {unique.Count} unique series (up to {ProviderLookupConcurrency} concurrent lookups)...");
+
+        using var semaphore = new SemaphoreSlim(ProviderLookupConcurrency);
+        var tasks = unique.Select(async request =>
+        {
+            await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (cache.ContainsKey(request.Key))
+                    return;
+
+                try
+                {
+                    var tags = await FetchSourceTagsAsync(
+                            request.Key.Domain,
+                            request.CanonicalTitle,
+                            request.Url,
+                            request.FolderPath,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    cache[request.Key] = tags;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Bookmark auto-tag provider lookup failed for {Title} ({Domain}).",
+                        request.CanonicalTitle,
+                        request.Key.Domain);
+                    cache[request.Key] = [];
+                    providerFailedKeys[request.Key] = 1;
+                    lock (summary.Messages)
+                    {
+                        summary.Messages.Add($"Provider lookup failed for '{request.CanonicalTitle}': {ex.Message}");
+                    }
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        try
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Keep provider results that finished before cancel; apply pass uses partial cache.
+        }
     }
 
     private async Task<List<string>> FetchSourceTagsAsync(
@@ -447,16 +601,8 @@ internal sealed class AiBookmarkAutoTaggingService
         var context = BuildLookupContext(domain, canonicalTitle, url, folderPath);
         List<ProviderTagResult> results = domain switch
         {
-            BookmarkTagDomain.Anime =>
-            [
-                await _anilist.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false),
-                await _kitsu.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false)
-            ],
-            BookmarkTagDomain.Manga =>
-            [
-                await _mangaUpdates.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false),
-                await _kitsu.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false)
-            ],
+            BookmarkTagDomain.Anime => await FetchAnimeProviderResultsAsync(context, cancellationToken).ConfigureAwait(false),
+            BookmarkTagDomain.Manga => await FetchMangaProviderResultsAsync(context, cancellationToken).ConfigureAwait(false),
             BookmarkTagDomain.Novel => await GetNovelTagsAsync(context, cancellationToken).ConfigureAwait(false),
             _ => []
         };
@@ -468,6 +614,26 @@ internal sealed class AiBookmarkAutoTaggingService
             .Select(tag => tag.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    private async Task<List<ProviderTagResult>> FetchAnimeProviderResultsAsync(
+        MediaTagLookupContext context,
+        CancellationToken cancellationToken)
+    {
+        var anilistTask = _anilist.GetTagsForTitleAsync(context, cancellationToken);
+        var kitsuTask = _kitsu.GetTagsForTitleAsync(context, cancellationToken);
+        await Task.WhenAll(anilistTask, kitsuTask).ConfigureAwait(false);
+        return [await anilistTask.ConfigureAwait(false), await kitsuTask.ConfigureAwait(false)];
+    }
+
+    private async Task<List<ProviderTagResult>> FetchMangaProviderResultsAsync(
+        MediaTagLookupContext context,
+        CancellationToken cancellationToken)
+    {
+        var mangaUpdatesTask = _mangaUpdates.GetTagsForTitleAsync(context, cancellationToken);
+        var kitsuTask = _kitsu.GetTagsForTitleAsync(context, cancellationToken);
+        await Task.WhenAll(mangaUpdatesTask, kitsuTask).ConfigureAwait(false);
+        return [await mangaUpdatesTask.ConfigureAwait(false), await kitsuTask.ConfigureAwait(false)];
     }
 
     private async Task<List<ProviderTagResult>> GetNovelTagsAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
@@ -643,6 +809,20 @@ internal sealed class AiBookmarkAutoTaggingService
 
     private static string NormalizeCacheTitle(string title)
         => title.Trim().ToLowerInvariant();
+
+    private sealed record SourceTagLookupKey(BookmarkTagDomain Domain, string CanonicalTitle);
+
+    private sealed record SourceTagLookupRequest(
+        SourceTagLookupKey Key,
+        string CanonicalTitle,
+        string? Url,
+        string? FolderPath);
+
+    private sealed class TagFolderRunState
+    {
+        public int TagsPendingSave { get; set; }
+        public int TotalEligibleCount { get; set; }
+    }
 
     private sealed record BookmarkCandidate(BookmarkNode Bookmark, string FolderPath);
 
