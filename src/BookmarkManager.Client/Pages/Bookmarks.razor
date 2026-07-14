@@ -197,6 +197,24 @@ else
         @if (_contextMenuType == "bookmark" && _contextMenuBookmark is not null)
         {
             <div class="custom-context-menu-header">@_contextMenuBookmark.Title</div>
+            @if (!string.IsNullOrEmpty(_contextMenuBookmark.Url))
+            {
+                <button class="custom-context-menu-item" @onclick="OpenContextBookmarkInNewTab">
+                    <MudIcon Icon="@Icons.Material.Filled.OpenInNew" Size="Size.Small" />
+                    <span>Open in New Tab</span>
+                </button>
+                <button class="custom-context-menu-item" @onclick="CopyContextBookmarkUrl">
+                    <MudIcon Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" />
+                    <span>Copy URL</span>
+                </button>
+            }
+            @if (_contextMenuBookmark.ParentId is Guid bookmarkParentId)
+            {
+                <button class="custom-context-menu-item" @onclick="GoToContextBookmarkFolder">
+                    <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" />
+                    <span>Go to @GetParentFolderName(bookmarkParentId)</span>
+                </button>
+            }
             <button class="custom-context-menu-item" @onclick="ToggleFavoriteContextBookmark">
                 <MudIcon Icon="@(_contextMenuBookmark.Metadata?.IsFavorite == true ? Icons.Material.Filled.Star : Icons.Material.Filled.StarBorder)"
                          Size="Size.Small" Style="@(_contextMenuBookmark.Metadata?.IsFavorite == true ? "color: #fbbf24;" : "")" />
@@ -206,9 +224,27 @@ else
                 <MudIcon Icon="@Icons.Material.Filled.Edit" Size="Size.Small" />
                 <span>Edit Bookmark</span>
             </button>
+            @if (_contextSiblingFolders.Count > 0)
+            {
+                <div class="custom-context-menu-divider" />
+                <div class="custom-context-menu-subheader">Move to folder</div>
+                <div class="custom-context-menu-quick-actions">
+                    @foreach (var folder in _contextSiblingFolders)
+                    {
+                        <button class="custom-context-menu-item" @onclick="@(() => MoveContextBookmarkToFolder(folder.Id))">
+                            <MudIcon Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" />
+                            <span>@folder.Title</span>
+                        </button>
+                    }
+                </div>
+            }
             <button class="custom-context-menu-item" @onclick="MoveContextBookmark">
                 <MudIcon Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" />
-                <span>Move Bookmark</span>
+                <span>Move to…</span>
+            </button>
+            <button class="custom-context-menu-item" @onclick="ArchiveContextBookmark">
+                <MudIcon Icon="@Icons.Material.Filled.Archive" Size="Size.Small" />
+                <span>Archive</span>
             </button>
             <div class="custom-context-menu-divider" />
             <button class="custom-context-menu-item danger" @onclick="DeleteContextBookmark">
@@ -221,6 +257,10 @@ else
             var folder = FindFolderById(_folderTree, _contextMenuFolderId);
             var isFolderFavorite = _favorites.Any(f => f.Id == _contextMenuFolderId);
             <div class="custom-context-menu-header">@(folder?.Title ?? "Folder Options")</div>
+            <button class="custom-context-menu-item" @onclick="OpenContextFolder">
+                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small" />
+                <span>Open Folder</span>
+            </button>
             <button class="custom-context-menu-item" @onclick="ToggleFavoriteContextFolder">
                 <MudIcon Icon="@(isFolderFavorite ? Icons.Material.Filled.Star : Icons.Material.Filled.StarBorder)"
                          Size="Size.Small" Style="@(isFolderFavorite ? "color: #fbbf24;" : "")" />
@@ -230,9 +270,23 @@ else
                 <MudIcon Icon="@Icons.Material.Filled.AddLink" Size="Size.Small" />
                 <span>New Bookmark</span>
             </button>
+            @if (_contextSiblingFolders.Count > 0)
+            {
+                <div class="custom-context-menu-divider" />
+                <div class="custom-context-menu-subheader">Move to folder</div>
+                <div class="custom-context-menu-quick-actions">
+                    @foreach (var sibling in _contextSiblingFolders)
+                    {
+                        <button class="custom-context-menu-item" @onclick="@(() => MoveContextFolderToSibling(sibling.Id))">
+                            <MudIcon Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" />
+                            <span>@sibling.Title</span>
+                        </button>
+                    }
+                </div>
+            }
             <button class="custom-context-menu-item" @onclick="MoveContextFolder">
                 <MudIcon Icon="@Icons.Material.Filled.DriveFileMove" Size="Size.Small" />
-                <span>Move Folder</span>
+                <span>Move to…</span>
             </button>
             <div class="custom-context-menu-divider" />
             <button class="custom-context-menu-item danger" @onclick="DeleteContextFolder">

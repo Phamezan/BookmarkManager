@@ -5,7 +5,7 @@
 @inject NavigationManager NavigationManager
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<div class="palette-wrapper @(PaletteService.IsOpen ? "is-open" : "")" id="paletteWrapper">
+<div class="palette-wrapper @(PaletteService.IsOpen ? "is-open" : "") @(Embedded ? "embedded" : "")" id="paletteWrapper">
     <div class="palette-backdrop" @onclick="ClosePalette"></div>
     <div class="palette-modal">
         <!-- Search input -->
@@ -402,6 +402,37 @@
         font-size: 14px;
         color: rgba(203, 195, 215, 0.4);
         width: 100%;
+    }
+
+    /* Embedded (extension iframe) mode: the iframe itself is already sized and
+       positioned around the modal, so drop the dim backdrop and the viewport
+       offset, and let the modal fill the iframe width. The transparent
+       backdrop still catches clicks inside the iframe for close-on-click-out. */
+    .palette-wrapper.embedded {
+        padding-top: 0;
+    }
+    .palette-wrapper.embedded .palette-backdrop {
+        background: transparent;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+    .palette-wrapper.embedded .palette-modal {
+        margin: 0;
+        max-width: none;
+    }
+    /* Embedded footer carries an extra Ctrl+Enter hint; drop the navigation
+       hints and keep each hint on one line so nothing wraps or clips. */
+    .palette-wrapper.embedded .palette-footer-left {
+        display: none;
+    }
+    .palette-wrapper.embedded .palette-footer {
+        justify-content: flex-end;
+    }
+    .palette-wrapper.embedded .palette-footer-right {
+        gap: 16px;
+    }
+    .palette-wrapper.embedded .palette-footer-hint {
+        white-space: nowrap;
     }
 
     @@keyframes fadeInUp {

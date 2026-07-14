@@ -175,6 +175,7 @@ app.UseExceptionHandler(exceptionBuilder =>
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.UseDevBlazorAssetNoCache();
 }
 
 app.UseBlazorFrameworkFiles();

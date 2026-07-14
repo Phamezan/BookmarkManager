@@ -997,6 +997,25 @@ a.root-card:hover {
     max-width: 240px;
 }
 
+.custom-context-menu-subheader {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--bm-text-muted);
+    padding: var(--bm-space-1) var(--bm-space-3) 2px;
+    font-weight: 700;
+    text-align: left !important;
+}
+
+.custom-context-menu-quick-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-height: 180px;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
 /* ----------------------------------------------------------------------------
    14. Breadcrumbs
 ---------------------------------------------------------------------------- */

@@ -1,4 +1,4 @@
-import type { ShortcutEditorState, StorageRepository } from "../api/contracts";
+import type { PendingDuplicateState, ShortcutEditorState, StorageRepository } from "../api/contracts";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
 type ApiBaseUrlOption = {
@@ -195,6 +195,26 @@ export class PopupController {
   async dismissEditor(): Promise<void> {
     await this.deps.storage.clearShortcutEditorState();
   }
+
+  // ── Series-Duplicate Confirmation ─────────────────────────────────────────
+
+  /** Loads the pending series-duplicate confirmation, if any. */
+  async loadPendingDuplicate(): Promise<PendingDuplicateState | null> {
+    return await this.deps.storage.getPendingDuplicateState();
+  }
+
+  /** User chose "create anyway": the background worker creates the bookmark. */
+  async confirmDuplicateCreate(): Promise<{ success: boolean }> {
+    const result = (await this.deps.sendMessage({ type: "duplicate/confirmCreate" })) as {
+      success?: boolean;
+    } | null;
+    return { success: result?.success === true };
+  }
+
+  /** User declined: drop the pending creation without bookmarking anything. */
+  async dismissPendingDuplicate(): Promise<void> {
+    await this.deps.storage.clearPendingDuplicateState();
+  }
 }
 
 /**
@@ -303,6 +323,14 @@ if (isBrowser) {
     pendingCount:  document.getElementById("pending-count")   as HTMLElement | null,
     connMsg:       document.getElementById("connection-message") as HTMLElement | null,
     errorCode:     document.getElementById("error-code")      as HTMLElement | null,
+    // Duplicate confirmation mode
+    duplicateMode:    document.getElementById("duplicate-mode")       as HTMLElement | null,
+    duplicateHost:    document.getElementById("duplicate-host")       as HTMLElement | null,
+    duplicateMsg:     document.getElementById("duplicate-message")    as HTMLElement | null,
+    duplicateList:    document.getElementById("duplicate-list")       as HTMLElement | null,
+    duplicateCloseBtn:  document.getElementById("duplicate-close-btn")  as HTMLButtonElement | null,
+    duplicateCancelBtn: document.getElementById("duplicate-cancel-btn") as HTMLButtonElement | null,
+    duplicateCreateBtn: document.getElementById("duplicate-create-btn") as HTMLButtonElement | null,
     // Editor mode
     editorFavicon: document.getElementById("editor-favicon")  as HTMLImageElement | null,
     editorModeLabel: document.getElementById("editor-mode-label") as HTMLElement | null,
@@ -436,6 +464,44 @@ if (isBrowser) {
   function showEditorMode(editorActive: boolean): void {
     if (els.normalMode) els.normalMode.hidden = editorActive;
     if (els.editorMode) els.editorMode.hidden = !editorActive;
+    if (editorActive && els.duplicateMode) els.duplicateMode.hidden = true;
+  }
+
+  function showDuplicateMode(active: boolean): void {
+    if (els.duplicateMode) els.duplicateMode.hidden = !active;
+    if (active) {
+      if (els.normalMode) els.normalMode.hidden = true;
+      if (els.editorMode) els.editorMode.hidden = true;
+    }
+  }
+
+  function renderDuplicate(pending: PendingDuplicateState): void {
+    let host = pending.url;
+    try {
+      host = new URL(pending.url).hostname;
+    } catch {
+      // keep raw url as host fallback
+    }
+    if (els.duplicateHost) els.duplicateHost.textContent = host;
+    if (els.duplicateMsg) {
+      els.duplicateMsg.textContent =
+        "This series looks bookmarked already. Create another bookmark for it?";
+    }
+    if (els.duplicateList) {
+      els.duplicateList.textContent = "";
+      for (const dup of pending.duplicates.slice(0, 5)) {
+        const li = document.createElement("li");
+        li.textContent = dup.title;
+        li.title = dup.title;
+        if (dup.parentTitle) {
+          const folder = document.createElement("span");
+          folder.className = "duplicate-folder";
+          folder.textContent = ` — ${dup.parentTitle}`;
+          li.appendChild(folder);
+        }
+        els.duplicateList.appendChild(li);
+      }
+    }
   }
 
   function setEditorMsg(text: string, type: "success" | "error" | "info" | "" = ""): void {
@@ -527,6 +593,16 @@ if (isBrowser) {
   }
 
   async function refreshUI(): Promise<void> {
+    // Pending duplicate confirmation outranks the editor: quick-bookmark
+    // writes it instead of creating, so nothing exists to edit yet.
+    const pending = await controller.loadPendingDuplicate();
+    if (pending) {
+      renderDuplicate(pending);
+      showDuplicateMode(true);
+      await refreshNormalStatus();
+      return;
+    }
+    showDuplicateMode(false);
     const { editor, catalog } = await controller.loadEditorState();
     if (editor) {
       renderEditor(editor, catalog);
@@ -657,10 +733,40 @@ if (isBrowser) {
     await controller.dismissEditor();
   });
 
+  // ── Duplicate confirmation listeners ────────────────────────────────────────
+
+  els.duplicateCreateBtn?.addEventListener("click", async () => {
+    const btn = els.duplicateCreateBtn;
+    if (!btn) return;
+    btn.disabled = true;
+    const result = await controller.confirmDuplicateCreate();
+    btn.disabled = false;
+    if (result.success) {
+      // Worker cleared pending state and wrote editor state;
+      // storage.onChanged re-renders into the editor.
+      await refreshUI();
+    } else if (els.duplicateMsg) {
+      els.duplicateMsg.textContent = "Failed to create bookmark. Try again.";
+      els.duplicateMsg.className = "message error";
+    }
+  });
+
+  const cancelPendingDuplicate = async () => {
+    await controller.dismissPendingDuplicate();
+    window.close();
+  };
+  els.duplicateCancelBtn?.addEventListener("click", cancelPendingDuplicate);
+  els.duplicateCloseBtn?.addEventListener("click", cancelPendingDuplicate);
+
   // Keyboard shortcuts within popup.
   document.addEventListener("keydown", (e) => {
     // Escape clears only the transient editor state (cancel).
     if (e.key === "Escape") {
+      if (els.duplicateMode?.hidden === false) {
+        e.preventDefault();
+        void cancelPendingDuplicate();
+        return;
+      }
       const editorVisible = els.editorMode?.hidden === false;
       if (editorVisible) {
         e.preventDefault();
@@ -673,6 +779,7 @@ if (isBrowser) {
       return;
     }
     if (els.editorMode?.hidden === false) return;
+    if (els.duplicateMode?.hidden === false) return;
     const key = e.key.toLowerCase();
     if (key === "o" || key === "enter") {
       e.preventDefault();

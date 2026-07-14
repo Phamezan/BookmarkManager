@@ -33,17 +33,29 @@ declare global {
       chrome.runtime.getURL("palette-host.html") +
       "?context=" +
       encodeURIComponent(window.location.href);
+    // Sized to the palette modal rather than the full viewport so the host
+    // page stays visible even if the browser refuses iframe transparency
+    // (cross-origin frames get an opaque canvas in some color-scheme cases).
     Object.assign(iframe.style, {
       position: "fixed",
-      inset: "0",
-      width: "100%",
-      height: "100%",
+      top: "10vh",
+      left: "50%",
+      transform: "translateX(-50%)",
+      width: "min(680px, calc(100vw - 32px))",
+      // Placeholder until the palette reports its real modal height via the
+      // resize relay; then the iframe hugs the modal exactly.
+      height: "min(620px, 80vh)",
       border: "none",
       margin: "0",
       padding: "0",
       zIndex: "2147483647",
       background: "transparent",
-      colorScheme: "normal",
+      // Pinned to "light" (not "normal"): Chromium gives a cross-origin iframe
+      // an opaque canvas when the frame element's used color-scheme differs
+      // from the embedded document's. "normal" resolves to the host page's
+      // scheme (dark on e.g. GitHub) while our documents resolve to light —
+      // pinning both sides to light keeps the canvas transparent everywhere.
+      colorScheme: "light",
       display: "block",
     });
     (document.body ?? document.documentElement).appendChild(iframe);
@@ -80,13 +92,42 @@ declare global {
     }
   });
 
+  // The iframe no longer covers the viewport, so clicks on the page around it
+  // land here — treat them as click-outside-to-close, like the dashboard
+  // backdrop. Clicks inside the iframe never bubble into this document.
+  document.addEventListener(
+    "mousedown",
+    (event: MouseEvent) => {
+      if (isVisible && event.target !== frame) {
+        hide();
+      }
+    },
+    true,
+  );
+
   window.addEventListener("message", (event: MessageEvent) => {
     if (event.origin !== EXTENSION_ORIGIN) return;
-    const data = event.data as { source?: string; type?: string; url?: unknown } | null;
+    const data = event.data as {
+      source?: string;
+      type?: string;
+      url?: unknown;
+      height?: unknown;
+    } | null;
     if (!data || data.source !== "bm-palette-host") return;
 
     if (data.type === "close") {
       hide();
+    } else if (
+      data.type === "resize" &&
+      frame &&
+      typeof data.height === "number" &&
+      Number.isFinite(data.height) &&
+      data.height > 0
+    ) {
+      // Palette reported its modal's rendered height — shrink the overlay to
+      // it so no dead iframe area shows below the footer (the modal has no
+      // viewport-relative sizing, so this cannot feedback-loop).
+      frame.style.height = `min(${Math.ceil(data.height)}px, 80vh)`;
     } else if (
       data.type === "navigate" &&
       typeof data.url === "string" &&

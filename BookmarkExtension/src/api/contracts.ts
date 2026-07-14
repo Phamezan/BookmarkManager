@@ -26,6 +26,20 @@ export interface ShortcutEditorState {
   wasCreated: boolean;
 }
 
+/**
+ * Transient state written by the `quick-bookmark` command when the page looks
+ * like an already-bookmarked series. Consumed by the popup to ask the user to
+ * confirm before the bookmark is actually created. Lives in
+ * `chrome.storage.local` under `bm.pendingDuplicateState`.
+ */
+export interface PendingDuplicateState {
+  url: string;
+  title: string;
+  folderId: string;
+  duplicates: { id: string; title: string; parentTitle: string | null }[];
+  capturedAt: string;
+}
+
 export type ExtensionEventType =
   | "Created"
   | "Changed"
@@ -250,6 +264,9 @@ export interface StorageRepository {
   getShortcutEditorState(): Promise<ShortcutEditorState | null>;
   saveShortcutEditorState(state: ShortcutEditorState): Promise<void>;
   clearShortcutEditorState(): Promise<void>;
+  getPendingDuplicateState(): Promise<PendingDuplicateState | null>;
+  savePendingDuplicateState(state: PendingDuplicateState): Promise<void>;
+  clearPendingDuplicateState(): Promise<void>;
   getLastActiveFolder(): Promise<string>;
   saveLastActiveFolder(folderId: string): Promise<void>;
   enqueueEvent(event: ExtensionEvent): Promise<void>;

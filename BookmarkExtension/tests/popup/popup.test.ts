@@ -172,4 +172,47 @@ describe("PopupController", () => {
       expect(settings.subfolder).toBe("MyBackups");
     });
   });
+
+  describe("series-duplicate confirmation", () => {
+    const pending = {
+      url: "https://site.com/manga/solo-leveling/chapter-125",
+      title: "Solo Leveling Ch 125",
+      folderId: "50",
+      duplicates: [{ id: "10", title: "Solo Leveling Ch 124", parentTitle: "Manga" }],
+      capturedAt: "2026-07-14T00:00:00Z",
+    };
+
+    it("loads pending duplicate state", async () => {
+      expect(await controller.loadPendingDuplicate()).toBeNull();
+      await repo.savePendingDuplicateState(pending);
+      expect(await controller.loadPendingDuplicate()).toEqual(pending);
+    });
+
+    it("confirmDuplicateCreate sends the confirm message to the worker", async () => {
+      const result = await controller.confirmDuplicateCreate();
+      expect(messages).toContainEqual({ type: "duplicate/confirmCreate" });
+      expect(result.success).toBe(true);
+    });
+
+    it("confirmDuplicateCreate reports failure when the worker declines", async () => {
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: false };
+        },
+        requestPermission: async () => permissionGranted,
+        now: () => new Date("2026-06-22T10:00:00Z"),
+      });
+      const result = await controller.confirmDuplicateCreate();
+      expect(result.success).toBe(false);
+    });
+
+    it("dismissPendingDuplicate clears the pending state without creating", async () => {
+      await repo.savePendingDuplicateState(pending);
+      await controller.dismissPendingDuplicate();
+      expect(await controller.loadPendingDuplicate()).toBeNull();
+      expect(messages).toEqual([]);
+    });
+  });
 });
