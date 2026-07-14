@@ -69,7 +69,8 @@ internal sealed partial class AiBookmarkAutoTaggingService
                 folderPaths.GetValueOrDefault(bookmark.ParentId ?? Guid.Empty, string.Empty)));
         }
 
-        runState.TotalEligibleCount = candidates.Count;
+        var totalEligibleCount = candidates.Count;
+        runState.TotalEligibleCount = totalEligibleCount;
 
         if (maxCandidates is > 0 && candidates.Count > maxCandidates.Value)
         {
@@ -103,7 +104,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
         return new PreparedRunCandidates(
             deterministicCandidates,
             ambiguousCandidates,
-            candidates.Count,
+            totalEligibleCount,
             IsEmpty: false);
     }
 }
