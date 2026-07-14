@@ -142,6 +142,63 @@ public sealed class AiBookmarkAutoTaggingServiceTests
     }
 
     [Fact]
+    public async Task TagFolderAsync_WithMaxCandidates_ReportsHasMoreWhenMoreRemain()
+    {
+        await using var fixture = await AiAutoTagFixture.CreateAsync();
+        var folderId = Guid.NewGuid();
+        var nodes = new List<BookmarkNode> { Folder(folderId, null, "Light Novels") };
+        for (var i = 0; i < 25; i++)
+        {
+            var id = Guid.NewGuid();
+            var series = $"Batch Novel {i:D2}";
+            nodes.Add(Bookmark(id, folderId, $"{series} Chapter 1", $"https://lightnovels.me/batch-novel-{i}", position: i));
+            fixture.NovelFull.SetTags(series, ["Fantasy"]);
+        }
+
+        await fixture.SeedAsync(nodes.ToArray());
+
+        var summary = await fixture.Service.TagFolderAsync(
+            folderId,
+            forceRefresh: false,
+            maxCandidates: 10,
+            excludedBookmarkIds: [],
+            CancellationToken.None);
+
+        Assert.Equal(10, summary.ProcessedBookmarkIds.Count);
+        Assert.Equal(10, summary.Tagged);
+        Assert.True(summary.HasMore);
+        Assert.Equal(15, summary.RemainingCandidates);
+    }
+
+    [Fact]
+    public async Task TagFolderAsync_WithMaxCandidates_ReportsNoMoreWhenBatchExhaustsRemainder()
+    {
+        await using var fixture = await AiAutoTagFixture.CreateAsync();
+        var folderId = Guid.NewGuid();
+        var nodes = new List<BookmarkNode> { Folder(folderId, null, "Light Novels") };
+        for (var i = 0; i < 5; i++)
+        {
+            var id = Guid.NewGuid();
+            var series = $"Small Batch Novel {i:D2}";
+            nodes.Add(Bookmark(id, folderId, $"{series} Chapter 1", $"https://lightnovels.me/small-batch-{i}", position: i));
+            fixture.NovelFull.SetTags(series, ["Fantasy"]);
+        }
+
+        await fixture.SeedAsync(nodes.ToArray());
+
+        var summary = await fixture.Service.TagFolderAsync(
+            folderId,
+            forceRefresh: false,
+            maxCandidates: 10,
+            excludedBookmarkIds: [],
+            CancellationToken.None);
+
+        Assert.Equal(5, summary.ProcessedBookmarkIds.Count);
+        Assert.False(summary.HasMore);
+        Assert.Equal(0, summary.RemainingCandidates);
+    }
+
+    [Fact]
     public async Task TagFolderAsync_WhenCanceled_PersistsTagsCompletedBeforeCancel()
     {
         await using var fixture = await AiAutoTagFixture.CreateAsync();

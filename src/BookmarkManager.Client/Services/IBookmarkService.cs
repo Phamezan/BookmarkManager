@@ -50,6 +50,7 @@ public interface IBookmarkService
     Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default);
     Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default);
     Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default);
+    Task<List<Guid>> GetAnimeFolderIdsAsync(CancellationToken cancellationToken = default);
 
     // ── Manga Calendar ───────────────────────────────────────────────────
     Task<MangaCalendarScheduleResponse> GetMangaScheduleAsync(CancellationToken cancellationToken = default);

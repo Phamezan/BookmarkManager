@@ -437,6 +437,38 @@ public class AnimeCalendarController : ControllerBase
         bookmark.MediaStatus = best.Status;
     }
 
+    // Folder IDs whose subtree contains at least one anime bookmark - a folder qualifies when
+    // any descendant bookmark carries the "Anime" tag or category, so ancestor folders stay
+    // selectable the same way schedule scoping treats a selected folder (folder + descendants).
+    [HttpGet("anime-folder-ids")]
+    public async Task<ActionResult<List<Guid>>> GetAnimeFolderIdsAsync(CancellationToken ct)
+    {
+        var folderParents = await _db.BookmarkNodes
+            .AsNoTracking()
+            .Where(n => n.Type == NodeType.Folder && !n.IsDeleted)
+            .Select(n => new { n.Id, n.ParentId })
+            .ToDictionaryAsync(n => n.Id, n => n.ParentId, ct);
+
+        var bookmarkMarkers = await _db.BookmarkNodes
+            .AsNoTracking()
+            .Where(n => n.Type == NodeType.Bookmark && !n.IsDeleted && n.ParentId != null)
+            .Select(n => new { n.ParentId, n.Category, n.Tags })
+            .ToListAsync(ct);
+
+        var animeFolderIds = new HashSet<Guid>();
+        foreach (var bookmark in bookmarkMarkers.Where(b => HasAnimeMarker(b.Category, b.Tags)))
+        {
+            var current = bookmark.ParentId;
+            // Walk up the parent chain; stop when a folder is already marked (its ancestors are too).
+            while (current is Guid folderId && folderParents.TryGetValue(folderId, out var parent) && animeFolderIds.Add(folderId))
+            {
+                current = parent;
+            }
+        }
+
+        return Ok(animeFolderIds.ToList());
+    }
+
     private async Task<List<BookmarkNode>> GetAnimeBookmarksInScopeAsync(IReadOnlyCollection<Guid> folderIds, CancellationToken ct)
     {
         if (folderIds.Count == 0) return [];
@@ -461,12 +493,14 @@ public class AnimeCalendarController : ControllerBase
         return candidateBookmarks.Where(IsAnimeBookmark).ToList();
     }
 
-    private static bool IsAnimeBookmark(BookmarkNode node)
+    private static bool IsAnimeBookmark(BookmarkNode node) => HasAnimeMarker(node.Category, node.Tags);
+
+    private static bool HasAnimeMarker(string? category, string? tags)
     {
-        if (string.Equals(node.Category, "Anime", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(category, "Anime", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        return (node.Tags ?? string.Empty)
+        return (tags ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries)
             .Any(tag => string.Equals(tag.Trim(), "Anime", StringComparison.OrdinalIgnoreCase));
     }

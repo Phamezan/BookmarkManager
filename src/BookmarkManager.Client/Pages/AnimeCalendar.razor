@@ -24,13 +24,9 @@
         }
         else
         {
-        <div class="rec-controls-row">
-            @if (_flatFolders.Count == 0)
-            {
-                <span class="rec-subtitle" style="margin-bottom: 0;">No folders yet.</span>
-            }
-            else
-            {
+        @if (_flatFolders.Count > 0)
+        {
+            <div class="rec-controls-row">
                 <div class="rec-folder-chips">
                     @foreach (var folder in _flatFolders)
                     {
@@ -57,8 +53,8 @@
                         Clear all
                     </button>
                 </div>
-            }
-        </div>
+            </div>
+        }
 
         @if (_aniListDegraded)
         {
@@ -76,7 +72,23 @@
 
         <div class="rec-divider"></div>
 
-        @if (_selectedFolderIds.Count == 0)
+        @if (_flatFolders.Count == 0)
+        {
+            <div class="empty-state">
+                <div class="empty-state-icon-wrap" aria-hidden="true">
+                    <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" />
+                </div>
+                <div class="empty-state-copy">
+                    <MudText Typo="Typo.h6" Class="empty-state-title">No anime-tagged bookmarks found</MudText>
+                    <MudText Typo="Typo.body2" Class="empty-state-sub">Run the auto-tagger to tag your bookmarks - folders containing bookmarks tagged "Anime" will show up here.</MudText>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2"
+                               StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="GoToAutoTagging">
+                        Go to autotagging
+                    </MudButton>
+                </div>
+            </div>
+        }
+        else if (_selectedFolderIds.Count == 0)
         {
             <div class="empty-state">
                 <div class="empty-state-icon-wrap" aria-hidden="true">

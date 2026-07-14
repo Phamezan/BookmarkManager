@@ -156,6 +156,35 @@ public sealed class AnimeCalendarControllerTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task GetAnimeFolderIds_ReturnsFolderAndAncestors_ForAnimeTaggedBookmarksOnly()
+    {
+        var rootId = Guid.NewGuid();
+        var animeSubId = Guid.NewGuid();
+        var mangaFolderId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var now = DateTime.UtcNow;
+            db.BookmarkNodes.AddRange(
+                new BookmarkNode { Id = rootId, Title = "Media", Type = NodeType.Folder, SyncState = SyncState.Synced, Version = 1, UpdatedAt = now },
+                new BookmarkNode { Id = animeSubId, ParentId = rootId, Title = "Shows", Type = NodeType.Folder, SyncState = SyncState.Synced, Version = 1, UpdatedAt = now },
+                new BookmarkNode { Id = mangaFolderId, ParentId = rootId, Title = "Manga", Type = NodeType.Folder, SyncState = SyncState.Synced, Version = 1, UpdatedAt = now },
+                new BookmarkNode { Id = Guid.NewGuid(), ParentId = animeSubId, Title = "Frieren", Type = NodeType.Bookmark, Tags = "Anime, Fantasy", SyncState = SyncState.Synced, Version = 1, UpdatedAt = now },
+                new BookmarkNode { Id = Guid.NewGuid(), ParentId = mangaFolderId, Title = "Some Manga", Type = NodeType.Bookmark, Category = "Manga", SyncState = SyncState.Synced, Version = 1, UpdatedAt = now });
+            await db.SaveChangesAsync();
+        }
+
+        using var client = Factory.CreateClient();
+        var result = await client.GetFromJsonAsync<List<Guid>>("/api/anime-calendar/anime-folder-ids", Options);
+
+        Assert.NotNull(result);
+        Assert.Contains(animeSubId, result!);
+        Assert.Contains(rootId, result); // ancestor of an anime folder qualifies too
+        Assert.DoesNotContain(mangaFolderId, result);
+    }
+
+    [Fact]
     public async Task GetSchedule_RelabelsEntry_WhenScheduleResolvesToSequelSeason()
     {
         // A bookmark matched to a finished season should surface its franchise's newer season:

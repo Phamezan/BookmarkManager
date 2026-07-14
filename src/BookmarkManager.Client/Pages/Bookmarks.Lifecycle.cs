@@ -70,6 +70,26 @@ public partial class Bookmarks
         _wsCts = new CancellationTokenSource();
         _ = StartWebSocketListenerAsync(_wsCts.Token);
         StateHasChanged();
+
+        // "?autotag=..." deep link (e.g. from the anime calendar's empty state) opens the
+        // auto-tagger dialog once the tree is loaded. Fire-and-forget: awaiting would hold
+        // LoadDataAsync open until the user closes the dialog.
+        if (!_autoTagQueryHandled && HasAutoTagQueryFlag())
+        {
+            _autoTagQueryHandled = true;
+            _ = InvokeAsync(OpenAutoTaggerDialog);
+        }
+    }
+
+    private bool _autoTagQueryHandled;
+
+    private bool HasAutoTagQueryFlag()
+    {
+        var uri = NavigationManager.Uri;
+        var query = uri.Contains('?') ? uri.Split('?')[1] : "";
+        return query.Split('&')
+            .Select(x => x.Split('='))
+            .Any(x => x[0].Equals("autotag", StringComparison.OrdinalIgnoreCase));
     }
 
     private Guid? _processedBookmarkId;

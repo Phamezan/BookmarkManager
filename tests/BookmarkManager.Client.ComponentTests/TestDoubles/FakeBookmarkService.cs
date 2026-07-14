@@ -164,6 +164,23 @@ public class FakeBookmarkService : IBookmarkService
     public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default)
         => OnAutoMatchAnime != null ? OnAutoMatchAnime(folderIds, bookmarkIds) : Task.FromResult(new AutoMatchAnimeResponse());
 
+    // Null = "every folder counts as anime" so existing tests keep their chips visible.
+    public List<Guid>? AnimeFolderIds { get; set; }
+
+    public Task<List<Guid>> GetAnimeFolderIdsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(AnimeFolderIds ?? FlattenFolderIds(FolderTree));
+
+    private static List<Guid> FlattenFolderIds(List<FolderTreeNodeDto> nodes)
+    {
+        var ids = new List<Guid>();
+        foreach (var node in nodes)
+        {
+            ids.Add(node.Id);
+            ids.AddRange(FlattenFolderIds(node.Children));
+        }
+        return ids;
+    }
+
     public MangaCalendarScheduleResponse MangaScheduleResponse { get; set; } = new();
 
     public Task<MangaCalendarScheduleResponse> GetMangaScheduleAsync(CancellationToken cancellationToken = default)
