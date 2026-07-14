@@ -12,12 +12,16 @@ import {
 } from "../bookmarks/event-normalizer";
 import { ChromeStorageRepository } from "../storage/storage-repository";
 import { ChromeBookmarkAdapter } from "../bookmarks/bookmark-adapter";
+import { DuplicateDetector, normalizeBookmarkUrl } from "../bookmarks/duplicate-detector";
 import { SettingsAwareApiClient } from "../api/settings-aware-client";
 import { resolvePaletteBaseUrl } from "../palette/palette-url";
 import type { ExtensionEvent } from "../api/contracts";
 
 const ALARM_NAME = "bookmark-sync";
 const POLL_INTERVAL_MINUTES = 1.0;
+
+const DUPLICATE_SCAN_ALARM_NAME = "duplicate-scan";
+const DUPLICATE_SCAN_INTERVAL_MINUTES = 5;
 
 const WS_RECONNECT_BASE_MS = 3000;
 const WS_RECONNECT_MAX_MS = 60000;
@@ -31,6 +35,7 @@ export interface ServiceWorkerDeps {
   adapter: BookmarkAdapter;
   storage: StorageRepository;
   backupManager: BackupManager;
+  duplicateDetector?: DuplicateDetector;
   getExtensionVersion: () => string;
   getBraveVersion: () => string;
   now: () => Date;
@@ -40,6 +45,12 @@ export class ServiceWorker {
   private coordinator: SyncCoordinator;
   private deps: ServiceWorkerDeps;
   private bookmarkListenersRegistered = false;
+  private importInProgress = false;
+  /**
+   * Normalized URLs whose series-duplicate creation the user just confirmed
+   * in the popup — the following onCreated must not re-warn about them.
+   */
+  private confirmedDuplicateUrls = new Set<string>();
 
   constructor(deps: ServiceWorkerDeps) {
     this.deps = deps;
@@ -122,11 +133,16 @@ export class ServiceWorker {
 
     bookmarks.onImportBegan.addListener(() => {
       console.log("[bookmark] onImportBegan");
+      this.importInProgress = true;
     });
 
     bookmarks.onImportEnded.addListener(() => {
       console.log("[bookmark] onImportEnded");
+      this.importInProgress = false;
       this.coordinator.runSyncCycle();
+      // Imports are the most likely source of duplicate folders — scan once
+      // right away rather than waiting for the next alarm tick.
+      this.deps.duplicateDetector?.scanFolders();
     });
   }
 
@@ -136,6 +152,39 @@ export class ServiceWorker {
     await this.deps.storage.enqueueEvent(stamped);
     console.log("[bookmark] Event enqueued, triggering sync");
     this.coordinator.runSyncCycle();
+    this.runDuplicateChecks(stamped);
+  }
+
+  /**
+   * Fires duplicate detection for user-originated creations. Skips events
+   * caused by server commands (echoes) and events during a browser import
+   * (the post-import scan covers those). Fire-and-forget: detection failures
+   * never affect the sync path.
+   */
+  private runDuplicateChecks(event: ExtensionEvent): void {
+    const detector = this.deps.duplicateDetector;
+    if (!detector) return;
+    if (event.eventType !== "Created") return;
+    if (event.causedByOperationId !== null || this.importInProgress) return;
+
+    const node = (event.payload as { node?: { type?: string; title?: string; url?: string | null } })
+      .node;
+    if (!node) return;
+
+    if (node.type === "Bookmark" && typeof node.url === "string") {
+      const normalized = normalizeBookmarkUrl(node.url);
+      if (this.confirmedDuplicateUrls.has(normalized)) {
+        this.confirmedDuplicateUrls.delete(normalized);
+        return;
+      }
+      detector.checkNewBookmark({
+        id: event.browserNodeId,
+        title: node.title ?? "",
+        url: node.url,
+      });
+    } else if (node.type === "Folder") {
+      detector.scanFolders();
+    }
   }
 
   /**
@@ -274,6 +323,26 @@ export class ServiceWorker {
         return;
       }
 
+      // Series-level duplicate gate: when this exact URL is not bookmarked
+      // yet (an exact match becomes an edit, not a new bookmark) but another
+      // chapter of the same series is, don't create — stash the pending
+      // creation and let the popup ask the user to confirm.
+      if (this.deps.duplicateDetector && !(await this.hasExactBookmark(url))) {
+        const duplicates = await this.deps.duplicateDetector.getSeriesDuplicates(url, "");
+        if (duplicates.length > 0) {
+          await this.deps.storage.clearShortcutEditorState();
+          await this.deps.storage.savePendingDuplicateState({
+            url,
+            title,
+            folderId,
+            duplicates,
+            capturedAt: this.deps.now().toISOString(),
+          });
+          await this.openPopupOrBadge();
+          return;
+        }
+      }
+
       const target = await this.resolveOrCreateBookmark(url, title, folderId);
 
       await this.deps.storage.saveShortcutEditorState({
@@ -290,6 +359,41 @@ export class ServiceWorker {
       console.error("[worker] quick-bookmark failed:", e);
       this.showBadge("X", "#EF4444");
     }
+  }
+
+  private async hasExactBookmark(url: string): Promise<boolean> {
+    const results = await chrome.bookmarks.search({ url });
+    return results.some((n) => n.url === url);
+  }
+
+  /**
+   * Handles the popup's "create anyway" confirmation for a pending
+   * series-duplicate creation: creates the bookmark, suppresses the
+   * duplicate warning its onCreated would otherwise raise, and hands the
+   * popup the normal shortcut editor state for the new bookmark.
+   */
+  private async handleDuplicateConfirmCreate(): Promise<{ success: boolean }> {
+    const pending = await this.deps.storage.getPendingDuplicateState();
+    if (!pending) return { success: false };
+
+    this.confirmedDuplicateUrls.add(normalizeBookmarkUrl(pending.url));
+    const created = await chrome.bookmarks.create({
+      parentId: pending.folderId,
+      title: pending.title,
+      url: pending.url,
+    });
+    console.log("[worker] duplicate confirmed, bookmark created:", created.id);
+
+    await this.deps.storage.clearPendingDuplicateState();
+    await this.deps.storage.saveShortcutEditorState({
+      bookmarkId: created.id,
+      url: pending.url,
+      title: pending.title,
+      parentId: pending.folderId,
+      capturedAt: this.deps.now().toISOString(),
+      wasCreated: true,
+    });
+    return { success: true };
   }
 
   /**
@@ -435,12 +539,19 @@ export class ServiceWorker {
     await chrome.alarms.create(ALARM_NAME, {
       periodInMinutes: POLL_INTERVAL_MINUTES,
     });
+    if (this.deps.duplicateDetector) {
+      await chrome.alarms.create(DUPLICATE_SCAN_ALARM_NAME, {
+        periodInMinutes: DUPLICATE_SCAN_INTERVAL_MINUTES,
+      });
+    }
     await this.coordinator.runSyncCycle();
   }
 
   async handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
     if (alarm.name === ALARM_NAME) {
       await this.coordinator.runSyncCycle();
+    } else if (alarm.name === DUPLICATE_SCAN_ALARM_NAME) {
+      await this.deps.duplicateDetector?.scanFolders();
     }
   }
 
@@ -450,6 +561,8 @@ export class ServiceWorker {
         return await this.handlePaletteOpenTab(message.url);
       case "palette/getConfig":
         return await this.getPaletteConfig();
+      case "duplicate/confirmCreate":
+        return await this.handleDuplicateConfirmCreate();
       case "manualSync":
         this.connectWebSocket();
         await this.coordinator.runSyncCycle();
@@ -579,11 +692,24 @@ const backupManager = new BackupManager({
   now: () => new Date(),
 });
 
+const duplicateDetector = new DuplicateDetector({
+  bookmarks: {
+    get: (id) => chrome.bookmarks.get(id) as never,
+    getTree: () => chrome.bookmarks.getTree() as never,
+  },
+  notifications: {
+    create: (options) => chrome.notifications.create(options),
+  },
+  storage: chrome.storage.local,
+  now: () => new Date(),
+});
+
 const worker = new ServiceWorker({
   api,
   adapter,
   storage,
   backupManager,
+  duplicateDetector,
   getExtensionVersion: () => chrome.runtime.getManifest().version,
   getBraveVersion: () => {
     const match = navigator.userAgent.match(/Brave\/(\S+)/);

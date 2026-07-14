@@ -5,12 +5,14 @@ import type {
   ExtensionEvent,
   ExtensionSettings,
   OutboxEntry,
+  PendingDuplicateState,
   ServerConfig,
   ShortcutEditorState,
   SnapshotRootPayload,
   SyncStatus,
 } from "../api/contracts";
 import type { StorageRepository } from "../api/contracts";
+import { DUPLICATE_NOTIFIED_KEY } from "../bookmarks/duplicate-detector";
 
 type ChromeStorageLocal = {
   get(keys: string | string[] | null): Promise<Record<string, unknown>>;
@@ -23,6 +25,7 @@ const OUTBOX_THRESHOLD = 5000;
 /** Bookmarks Bar node id used as the default quick-bookmark destination. */
 export const DEFAULT_FOLDER_ID = "1";
 const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
+const PENDING_DUPLICATE_KEY = "bm.pendingDuplicateState";
 const LAST_ACTIVE_FOLDER_KEY = "bm.lastActiveFolderId";
 const BACKUP_STATE_KEY = "bm.backupState";
 const BACKUP_SETTINGS_KEY = "bm.backupSettings";
@@ -63,6 +66,19 @@ export class ChromeStorageRepository implements StorageRepository {
 
   async clearShortcutEditorState(): Promise<void> {
     await this.storage.remove(SHORTCUT_EDITOR_KEY);
+  }
+
+  async getPendingDuplicateState(): Promise<PendingDuplicateState | null> {
+    const result = await this.storage.get(PENDING_DUPLICATE_KEY);
+    return (result[PENDING_DUPLICATE_KEY] as PendingDuplicateState | undefined) ?? null;
+  }
+
+  async savePendingDuplicateState(state: PendingDuplicateState): Promise<void> {
+    await this.storage.set({ [PENDING_DUPLICATE_KEY]: state });
+  }
+
+  async clearPendingDuplicateState(): Promise<void> {
+    await this.storage.remove(PENDING_DUPLICATE_KEY);
   }
 
   async getLastActiveFolder(): Promise<string> {
@@ -235,9 +251,11 @@ export class ChromeStorageRepository implements StorageRepository {
       "bm.snapshotState",
       "bm.syncStatus",
       SHORTCUT_EDITOR_KEY,
+      PENDING_DUPLICATE_KEY,
       LAST_ACTIVE_FOLDER_KEY,
       BACKUP_STATE_KEY,
       BACKUP_SETTINGS_KEY,
+      DUPLICATE_NOTIFIED_KEY,
     ]);
   }
 }

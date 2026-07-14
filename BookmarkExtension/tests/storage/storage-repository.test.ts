@@ -192,6 +192,27 @@ describe("ChromeStorageRepository", () => {
     });
   });
 
+  describe("pending duplicate state", () => {
+    const pending = {
+      url: "https://site.com/manga/solo-leveling/chapter-125",
+      title: "Solo Leveling Ch 125",
+      folderId: "50",
+      duplicates: [{ id: "10", title: "Solo Leveling Ch 124", parentTitle: "Manga" }],
+      capturedAt: "2026-07-14T00:00:00Z",
+    };
+
+    it("returns null when nothing is pending", async () => {
+      expect(await repo.getPendingDuplicateState()).toBeNull();
+    });
+
+    it("saves, retrieves, and clears pending state", async () => {
+      await repo.savePendingDuplicateState(pending);
+      expect(await repo.getPendingDuplicateState()).toEqual(pending);
+      await repo.clearPendingDuplicateState();
+      expect(await repo.getPendingDuplicateState()).toBeNull();
+    });
+  });
+
   describe("clearAll", () => {
     it("removes all bm.* keys except schemaVersion", async () => {
       await repo.saveSettings({
@@ -205,9 +226,17 @@ describe("ChromeStorageRepository", () => {
         sanitizedErrorCode: null,
         pendingEventCount: 0,
       });
+      await repo.savePendingDuplicateState({
+        url: "https://a.com/x/chapter-1",
+        title: "x",
+        folderId: "1",
+        duplicates: [],
+        capturedAt: "2026-07-14T00:00:00Z",
+      });
       await repo.clearAll();
       expect(await repo.getSettings()).toBeNull();
       expect(await repo.getSyncStatus()).toBeNull();
+      expect(await repo.getPendingDuplicateState()).toBeNull();
     });
   });
 });

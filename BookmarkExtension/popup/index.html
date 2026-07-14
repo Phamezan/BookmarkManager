@@ -99,6 +99,23 @@
 
       </div>
 
+      <!-- ── Duplicate Confirmation Mode (shortcut) ─────────────────── -->
+      <section class="card editor-card" id="duplicate-mode" hidden>
+        <div class="editor-head">
+          <div class="editor-head-info">
+            <span class="editor-mode-label">Series already bookmarked</span>
+            <span id="duplicate-host" class="editor-host"></span>
+          </div>
+          <button id="duplicate-close-btn" type="button" class="editor-close" aria-label="Cancel" title="Cancel">&times;</button>
+        </div>
+        <p id="duplicate-message" class="message info" role="alert" aria-live="polite"></p>
+        <ul id="duplicate-list" class="duplicate-list"></ul>
+        <div class="editor-actions">
+          <button id="duplicate-cancel-btn" type="button" class="btn-danger editor-remove-btn">Cancel</button>
+          <button id="duplicate-create-btn" type="button" class="btn-primary editor-done-btn">Create anyway</button>
+        </div>
+      </section>
+
       <!-- ── Editor Mode (shortcut) ─────────────────────────────────── -->
       <section class="card editor-card" id="editor-mode" hidden>
         <div class="editor-head">
