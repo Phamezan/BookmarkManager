@@ -213,6 +213,9 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<AutoMatchAnimeResponse>(HttpMethod.Post, "api/anime-calendar/auto-match", new AutoMatchAnimeRequest { FolderIds = folderIds, BookmarkIds = bookmarkIds }, cancellationToken)
            ?? new AutoMatchAnimeResponse();
 
+    public async Task<List<Guid>> GetAnimeFolderIdsAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<Guid>>("api/anime-calendar/anime-folder-ids", cancellationToken) ?? [];
+
     public async Task<MangaCalendarScheduleResponse> GetMangaScheduleAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<MangaCalendarScheduleResponse>("api/manga-calendar/schedule", cancellationToken)
            ?? new MangaCalendarScheduleResponse();

@@ -10,7 +10,6 @@ public partial class AnimeCalendar
     // the burst collapse into a single schedule sweep instead of one per message.
     private static readonly TimeSpan SyncQuietPeriod = TimeSpan.FromSeconds(1);
 
-    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     [Inject] private SyncSocketListener SyncSocketListener { get; set; } = default!;
 
     private CancellationTokenSource? _wsCts;

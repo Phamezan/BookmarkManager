@@ -19,6 +19,7 @@ public partial class AnimeCalendar
     private MediaTab _mediaTab = MediaTab.Anime;
 
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+    [Inject] private NavigationManager NavigationManager { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
     [Inject] private FolderSelectionPersistence FolderSelectionPersistence { get; set; } = default!;
@@ -38,10 +39,19 @@ public partial class AnimeCalendar
 
     protected override async Task OnInitializedAsync()
     {
-        var tree = await BookmarkService.GetFolderTreeAsync();
-        _flatFolders = FolderSelectionPersistence.FlattenFolders(tree);
+        var treeTask = BookmarkService.GetFolderTreeAsync();
+        var animeFolderIdsTask = BookmarkService.GetAnimeFolderIdsAsync();
+        var tree = await treeTask;
+        var animeFolderIds = (await animeFolderIdsTask).ToHashSet();
+
+        // Only offer folders whose subtree actually contains anime-tagged bookmarks -
+        // the rest would always produce an empty calendar.
+        _flatFolders = FolderSelectionPersistence.FlattenFolders(tree)
+            .Where(folder => animeFolderIds.Contains(folder.Id))
+            .ToList();
 
         _selectedFolderIds = await FolderSelectionPersistence.LoadFolderIdsAsync(StorageKey);
+        _selectedFolderIds.IntersectWith(animeFolderIds);
 
         if (_selectedFolderIds.Count > 0)
         {
@@ -54,6 +64,9 @@ public partial class AnimeCalendar
 
         StartWebSocketListener();
     }
+
+    // "autotag=1" tells the bookmarks page to open the auto-tagger dialog on arrival.
+    private void GoToAutoTagging() => NavigationManager.NavigateTo("/bookmarks?autotag=1");
 
     private void OnMonthDaySelected(DateOnly date)
     {

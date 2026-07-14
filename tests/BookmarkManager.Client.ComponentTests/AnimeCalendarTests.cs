@@ -12,7 +12,7 @@ namespace BookmarkManager.Client.ComponentTests;
 public sealed class AnimeCalendarTests
 {
     [Fact]
-    public async Task NoFoldersSelected_ShowsChooseFoldersEmptyState()
+    public async Task NoAnimeFolders_ShowsGoToAutotaggingEmptyState()
     {
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
@@ -30,7 +30,73 @@ public sealed class AnimeCalendarTests
         });
 
         page.WaitForAssertion(() =>
+        {
+            Assert.Contains("No anime-tagged bookmarks found", page.Markup);
+            Assert.Contains("Go to autotagging", page.Markup);
+        });
+    }
+
+    [Fact]
+    public async Task NoFoldersSelected_ShowsChooseFoldersEmptyState()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        context.Services.AddTransient<FolderSelectionPersistence>();
+        context.Services.AddTransient<SyncSocketListener>();
+        context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService
+        {
+            FolderTree = [new FolderTreeNodeDto { Id = Guid.NewGuid(), Title = "Anime" }]
+        });
+
+        var page = context.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AnimeCalendar>(1);
+            builder.CloseComponent();
+        });
+
+        page.WaitForAssertion(() =>
             Assert.Contains("Choose folders to build your calendar", page.Markup));
+    }
+
+    [Fact]
+    public async Task FolderChips_OnlyShowFoldersContainingAnimeBookmarks()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var animeFolderId = Guid.NewGuid();
+        var otherFolderId = Guid.NewGuid();
+        var fakeService = new FakeBookmarkService
+        {
+            FolderTree =
+            [
+                new FolderTreeNodeDto { Id = animeFolderId, Title = "Anime" },
+                new FolderTreeNodeDto { Id = otherFolderId, Title = "Recipes" }
+            ],
+            AnimeFolderIds = [animeFolderId]
+        };
+        context.Services.AddTransient<FolderSelectionPersistence>();
+        context.Services.AddTransient<SyncSocketListener>();
+        context.Services.AddSingleton<IBookmarkService>(fakeService);
+
+        var page = context.Render(builder =>
+        {
+            builder.OpenComponent<MudBlazor.MudPopoverProvider>(0);
+            builder.CloseComponent();
+            builder.OpenComponent<AnimeCalendar>(1);
+            builder.CloseComponent();
+        });
+
+        page.WaitForAssertion(() =>
+        {
+            var chips = page.FindAll(".rec-folder-chip");
+            Assert.Contains(chips, chip => chip.TextContent.Trim() == "Anime");
+            Assert.DoesNotContain(chips, chip => chip.TextContent.Trim() == "Recipes");
+        });
     }
 
     [Fact]
