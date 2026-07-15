@@ -408,6 +408,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             MangaUpdates = new FakeProvider();
             Kitsu = new FakeProvider();
             NovelFull = new FakeProvider();
+            Catalog = new FakeProvider();
             var identifierService = new AiSeriesIdentifierService(new HttpClient(identifier), new Uri("https://ai.local/identify"));
             Service = new AiBookmarkAutoTaggingService(
                 Db,
@@ -416,6 +417,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
                 MangaUpdates,
                 Kitsu,
                 NovelFull,
+                Catalog,
                 NullLogger<AiBookmarkAutoTaggingService>.Instance);
         }
 
@@ -425,6 +427,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         public FakeProvider MangaUpdates { get; }
         public FakeProvider Kitsu { get; }
         public FakeProvider NovelFull { get; }
+        public FakeProvider Catalog { get; }
         public AiBookmarkAutoTaggingService Service { get; }
 
         public static async Task<AiAutoTagFixture> CreateAsync()
@@ -450,7 +453,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         }
     }
 
-    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, INovelFullTagProvider
+    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, INovelFullTagProvider, ICatalogTagProvider
     {
         private readonly Dictionary<string, List<string>> _tagsByTitle = new(StringComparer.OrdinalIgnoreCase);
 

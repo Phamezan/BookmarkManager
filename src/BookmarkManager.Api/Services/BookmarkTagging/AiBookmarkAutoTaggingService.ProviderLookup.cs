@@ -7,9 +7,10 @@ internal sealed partial class AiBookmarkAutoTaggingService
 {
     private async Task PrefetchSourceTagsAsync(
         IReadOnlyList<SourceTagLookupRequest> requests,
-        ConcurrentDictionary<SourceTagLookupKey, List<string>> cache,
+        ConcurrentDictionary<SourceTagLookupKey, List<ProvenanceTagEntry>> cache,
         ConcurrentDictionary<SourceTagLookupKey, byte> providerFailedKeys,
         AiAutoTagSummaryDto summary,
+        bool bypassProviderCache,
         CancellationToken cancellationToken)
     {
         var unique = requests
@@ -31,6 +32,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
             providerFailedKeys,
             summary,
             semaphore,
+            bypassProviderCache,
             cancellationToken));
 
         try
@@ -45,10 +47,11 @@ internal sealed partial class AiBookmarkAutoTaggingService
 
     private async Task PrefetchSingleLookupAsync(
         SourceTagLookupRequest request,
-        ConcurrentDictionary<SourceTagLookupKey, List<string>> cache,
+        ConcurrentDictionary<SourceTagLookupKey, List<ProvenanceTagEntry>> cache,
         ConcurrentDictionary<SourceTagLookupKey, byte> providerFailedKeys,
         AiAutoTagSummaryDto summary,
         SemaphoreSlim semaphore,
+        bool bypassProviderCache,
         CancellationToken cancellationToken)
     {
         await semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -64,6 +67,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
                         request.CanonicalTitle,
                         request.Url,
                         request.FolderPath,
+                        bypassProviderCache,
                         cancellationToken)
                     .ConfigureAwait(false);
                 cache[request.Key] = tags;
@@ -89,15 +93,16 @@ internal sealed partial class AiBookmarkAutoTaggingService
         }
     }
 
-    private async Task<List<string>> FetchSourceTagsAsync(
+    private async Task<List<ProvenanceTagEntry>> FetchSourceTagsAsync(
         BookmarkTagDomain domain,
         string canonicalTitle,
         string? url,
         string? folderPath,
+        bool bypassProviderCache,
         CancellationToken cancellationToken)
     {
-        var context = BuildLookupContext(domain, canonicalTitle, url, folderPath);
-        List<ProviderTagResult> results = domain switch
+        var context = BuildLookupContext(domain, canonicalTitle, url, folderPath, bypassProviderCache);
+        List<(ProviderTagResult Result, string ProviderName)> results = domain switch
         {
             BookmarkTagDomain.Anime => await FetchAnimeProviderResultsAsync(context, cancellationToken).ConfigureAwait(false),
             BookmarkTagDomain.Manga => await FetchMangaProviderResultsAsync(context, cancellationToken).ConfigureAwait(false),
@@ -106,49 +111,65 @@ internal sealed partial class AiBookmarkAutoTaggingService
         };
 
         return results
-            .Where(result => !result.WasRejected)
-            .SelectMany(result => result.Tags)
-            .Where(tag => !string.IsNullOrWhiteSpace(tag))
-            .Select(tag => tag.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(rp => !rp.Result.WasRejected)
+            .SelectMany(rp => rp.Result.Tags
+                .Where(tag => !string.IsNullOrWhiteSpace(tag))
+                .Select(tag => new ProvenanceTagEntry(tag.Trim(), rp.ProviderName)))
+            .DistinctBy(entry => entry.Tag, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private async Task<List<ProviderTagResult>> FetchAnimeProviderResultsAsync(
+    private async Task<List<(ProviderTagResult Result, string ProviderName)>> FetchAnimeProviderResultsAsync(
         MediaTagLookupContext context,
         CancellationToken cancellationToken)
     {
         var anilistTask = _anilist.GetTagsForTitleAsync(context, cancellationToken);
         var kitsuTask = _kitsu.GetTagsForTitleAsync(context, cancellationToken);
         await Task.WhenAll(anilistTask, kitsuTask).ConfigureAwait(false);
-        return [await anilistTask.ConfigureAwait(false), await kitsuTask.ConfigureAwait(false)];
+        return [
+            (await anilistTask.ConfigureAwait(false), "AniList"),
+            (await kitsuTask.ConfigureAwait(false), "Kitsu")
+        ];
     }
 
-    private async Task<List<ProviderTagResult>> FetchMangaProviderResultsAsync(
+    private async Task<List<(ProviderTagResult Result, string ProviderName)>> FetchMangaProviderResultsAsync(
         MediaTagLookupContext context,
         CancellationToken cancellationToken)
     {
         var mangaUpdatesTask = _mangaUpdates.GetTagsForTitleAsync(context, cancellationToken);
         var kitsuTask = _kitsu.GetTagsForTitleAsync(context, cancellationToken);
         await Task.WhenAll(mangaUpdatesTask, kitsuTask).ConfigureAwait(false);
-        return [await mangaUpdatesTask.ConfigureAwait(false), await kitsuTask.ConfigureAwait(false)];
+        return [
+            (await mangaUpdatesTask.ConfigureAwait(false), "MangaUpdates"),
+            (await kitsuTask.ConfigureAwait(false), "Kitsu")
+        ];
     }
 
-    private async Task<List<ProviderTagResult>> GetNovelTagsAsync(
+    private async Task<List<(ProviderTagResult Result, string ProviderName)>> GetNovelTagsAsync(
         MediaTagLookupContext context,
         CancellationToken cancellationToken)
     {
-        var novelFull = await _novelFull.GetTagsForTitleAsync(context, cancellationToken).ConfigureAwait(false);
-        return [novelFull];
+        var mangaUpdatesTask = _mangaUpdates.GetTagsForTitleAsync(context, cancellationToken);
+        var kitsuTask = _kitsu.GetTagsForTitleAsync(context, cancellationToken);
+        var novelFullTask = _novelFull.GetTagsForTitleAsync(context, cancellationToken);
+        var catalogTask = _catalog.GetTagsForTitleAsync(context, cancellationToken);
+        await Task.WhenAll(mangaUpdatesTask, kitsuTask, novelFullTask, catalogTask).ConfigureAwait(false);
+        return [
+            (await mangaUpdatesTask.ConfigureAwait(false), "MangaUpdates"),
+            (await kitsuTask.ConfigureAwait(false), "Kitsu"),
+            (await novelFullTask.ConfigureAwait(false), "NovelFull"),
+            (await catalogTask.ConfigureAwait(false), "Catalog")
+        ];
     }
 
     private static MediaTagLookupContext BuildLookupContext(
         BookmarkTagDomain domain,
         string canonicalTitle,
         string? url,
-        string? folderPath)
+        string? folderPath,
+        bool bypassProviderCache)
     {
         var normalizedTitle = MediaTitleNormalizer.Normalize(canonicalTitle, url, domain);
-        return new MediaTagLookupContext(canonicalTitle, url, domain, folderPath, normalizedTitle);
+        return new MediaTagLookupContext(canonicalTitle, url, domain, folderPath, normalizedTitle, bypassProviderCache);
     }
 }

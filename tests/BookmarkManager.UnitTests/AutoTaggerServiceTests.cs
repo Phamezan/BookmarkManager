@@ -51,7 +51,7 @@ public sealed class AutoTaggerServiceTests
 
         var anilist = new FakeAnilistProvider(["Shounen"]);
         var mangaUpdates = new FakeMangaUpdatesProvider(["Manga"]);
-        var tagging = new BookmarkTaggingService(anilist, mangaUpdates, new FakeKitsuProvider([]), new FakeNovelFullProvider([]), new TagExtractorService(), NullLogger<BookmarkTaggingService>.Instance);
+        var tagging = new BookmarkTaggingService(anilist, mangaUpdates, new FakeKitsuProvider([]), new FakeNovelFullProvider([]), new FakeCatalogProvider([]), new TagExtractorService(), NullLogger<BookmarkTaggingService>.Instance);
         var service = new AutoTaggerService(db, tagging, NullLogger<AutoTaggerService>.Instance);
 
         var result = await service.ProcessUntaggedAsync(CancellationToken.None);
@@ -104,6 +104,17 @@ public sealed class AutoTaggerServiceTests
     }
 
     private sealed class FakeNovelFullProvider(List<string> tags) : INovelFullTagProvider
+    {
+        public int CallCount { get; private set; }
+
+        public Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(new ProviderTagResult(tags, false, null));
+        }
+    }
+
+    private sealed class FakeCatalogProvider(List<string> tags) : ICatalogTagProvider
     {
         public int CallCount { get; private set; }
 

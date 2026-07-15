@@ -152,6 +152,12 @@ public class FakeBookmarkService : IBookmarkService
     public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) 
         => OnBulkSaveTags != null ? OnBulkSaveTags(request) : Task.FromResult(false);
 
+    public Task<AiAutoTagSummaryDto> RerunTagsAsync(RerunBookmarksRequestDto request, CancellationToken cancellationToken = default)
+        => Task.FromResult(new AiAutoTagSummaryDto());
+
+    public Task<List<TagProvenanceDto>> GetTagProvenanceAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
+        => Task.FromResult(new List<TagProvenanceDto>());
+
     public Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default) 
         => OnGetAnimeMatchCandidates != null ? OnGetAnimeMatchCandidates(bookmarkId) : Task.FromResult(new List<AnimeMatchCandidateDto>());
 

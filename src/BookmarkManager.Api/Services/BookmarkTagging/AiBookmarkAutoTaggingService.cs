@@ -18,6 +18,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
     private readonly IMangaUpdatesTagProvider _mangaUpdates;
     private readonly IKitsuTagProvider _kitsu;
     private readonly INovelFullTagProvider _novelFull;
+    private readonly ICatalogTagProvider _catalog;
     private readonly ILogger<AiBookmarkAutoTaggingService> _logger;
 
     public AiBookmarkAutoTaggingService(
@@ -27,6 +28,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
         IMangaUpdatesTagProvider mangaUpdates,
         IKitsuTagProvider kitsu,
         INovelFullTagProvider novelFull,
+        ICatalogTagProvider catalog,
         ILogger<AiBookmarkAutoTaggingService> logger)
     {
         _db = db;
@@ -35,6 +37,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
         _mangaUpdates = mangaUpdates;
         _kitsu = kitsu;
         _novelFull = novelFull;
+        _catalog = catalog;
         _logger = logger;
     }
 
@@ -88,6 +91,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
             summary.Messages.Add("Run canceled; saved tagged bookmarks completed before cancel.");
         }
         telemetryScope.AppendSummaryTo(summary.Messages);
+        PopulateProviderTimings(summary, telemetryScope);
         return summary;
     }
 
@@ -113,7 +117,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
         if (prepared is null || prepared.IsEmpty)
             return summary;
 
-        var sourceTagCache = new ConcurrentDictionary<SourceTagLookupKey, List<string>>();
+        var sourceTagCache = new ConcurrentDictionary<SourceTagLookupKey, List<ProvenanceTagEntry>>();
         var providerFailedKeys = new ConcurrentDictionary<SourceTagLookupKey, byte>();
 
         await ProcessDeterministicPassAsync(
@@ -170,5 +174,32 @@ internal sealed partial class AiBookmarkAutoTaggingService
         await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         summary.Messages.Add($"Saved {tagsPendingSave} tagged bookmark(s) to database.");
         return 0;
+    }
+
+    private static void PopulateProviderTimings(AiAutoTagSummaryDto summary, AutoTagRunTelemetry telemetry)
+    {
+        var records = telemetry.SnapshotRecords();
+        if (records.Count == 0)
+            return;
+
+        summary.ProviderTimings = records
+            .GroupBy(r => (r.Provider, r.Operation))
+            .OrderBy(g => g.Key.Provider, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(g => g.Key.Operation, StringComparer.OrdinalIgnoreCase)
+            .Select(g =>
+            {
+                var calls = g.ToList();
+                var cacheHits = calls.Count(c => c.CacheHit);
+                return new ProviderTimingDto
+                {
+                    Provider = g.Key.Provider,
+                    Operation = g.Key.Operation,
+                    NetworkCalls = calls.Count - cacheHits,
+                    CacheHits = cacheHits,
+                    LimiterMs = calls.Sum(c => c.LimiterWaitMs),
+                    HttpMs = calls.Sum(c => c.HttpMs)
+                };
+            })
+            .ToList();
     }
 }

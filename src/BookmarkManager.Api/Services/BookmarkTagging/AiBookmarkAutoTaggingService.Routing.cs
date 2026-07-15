@@ -72,18 +72,18 @@ internal sealed partial class AiBookmarkAutoTaggingService
         };
     }
 
-    private static List<string> MergeTags(string mediaTypeTag, IEnumerable<string> sourceTags)
+    private static List<ProvenanceTagEntry> MergeTags(string mediaTypeTag, IEnumerable<ProvenanceTagEntry> sourceTags)
     {
-        var merged = new List<string>();
+        var merged = new List<ProvenanceTagEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        Add(mediaTypeTag);
-        foreach (var tag in sourceTags)
-            Add(tag);
+        Add(mediaTypeTag, "DomainRoute");
+        foreach (var entry in sourceTags)
+            Add(entry.Tag, entry.Provider);
 
         return merged.Take(MaxTags).ToList();
 
-        void Add(string? tag)
+        void Add(string? tag, string provider)
         {
             var trimmed = tag?.Trim();
             if (string.IsNullOrWhiteSpace(trimmed))
@@ -93,7 +93,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
                 return;
 
             if (seen.Add(trimmed))
-                merged.Add(trimmed);
+                merged.Add(new ProvenanceTagEntry(trimmed, provider));
         }
     }
 

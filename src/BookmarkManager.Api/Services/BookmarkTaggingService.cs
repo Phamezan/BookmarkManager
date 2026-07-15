@@ -9,6 +9,7 @@ public sealed class BookmarkTaggingService
     private readonly IMangaUpdatesTagProvider _mangaUpdates;
     private readonly IKitsuTagProvider _kitsu;
     private readonly INovelFullTagProvider _novelFull;
+    private readonly ICatalogTagProvider _catalog;
     private readonly TagExtractorService _localTagExtractor;
     private readonly ILogger<BookmarkTaggingService> _logger;
 
@@ -17,6 +18,7 @@ public sealed class BookmarkTaggingService
         IMangaUpdatesTagProvider mangaUpdates,
         IKitsuTagProvider kitsu,
         INovelFullTagProvider novelFull,
+        ICatalogTagProvider catalog,
         TagExtractorService localTagExtractor,
         ILogger<BookmarkTaggingService> logger)
     {
@@ -24,6 +26,7 @@ public sealed class BookmarkTaggingService
         _mangaUpdates = mangaUpdates;
         _kitsu = kitsu;
         _novelFull = novelFull;
+        _catalog = catalog;
         _localTagExtractor = localTagExtractor;
         _logger = logger;
     }
@@ -150,6 +153,7 @@ public sealed class BookmarkTaggingService
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.MangaUpdates, await _mangaUpdates.GetTagsForTitleAsync(lookupContext, cancellationToken))));
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.Kitsu, await _kitsu.GetTagsForTitleAsync(lookupContext, cancellationToken))));
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.NovelFull, await _novelFull.GetTagsForTitleAsync(lookupContext, cancellationToken))));
+                tasks.Add(Task.Run(async () => (BookmarkTagSource.Catalog, await _catalog.GetTagsForTitleAsync(lookupContext, cancellationToken))));
             }
             else
             {
@@ -172,6 +176,7 @@ public sealed class BookmarkTaggingService
             tasks.Add(Task.Run(async () => (BookmarkTagSource.MangaUpdates, await _mangaUpdates.GetTagsForTitleAsync(novelContext, cancellationToken))));
             tasks.Add(Task.Run(async () => (BookmarkTagSource.Kitsu, await _kitsu.GetTagsForTitleAsync(novelContext, cancellationToken))));
             tasks.Add(Task.Run(async () => (BookmarkTagSource.NovelFull, await _novelFull.GetTagsForTitleAsync(novelContext, cancellationToken))));
+            tasks.Add(Task.Run(async () => (BookmarkTagSource.Catalog, await _catalog.GetTagsForTitleAsync(novelContext, cancellationToken))));
         }
 
         if (tasks.Count == 0)
@@ -214,6 +219,7 @@ public sealed class BookmarkTaggingService
                 BookmarkTagSource.MangaUpdates => 0,
                 BookmarkTagSource.AniList => 0,
                 BookmarkTagSource.Kitsu => 1,
+                BookmarkTagSource.Catalog => 1,
                 BookmarkTagSource.NovelFull => 2,
                 _ => 3
             };

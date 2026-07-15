@@ -18,5 +18,6 @@ public sealed class AiAutoTagSummaryDto
     public bool StopForRateLimit { get; set; }
     public int? RetryAfterSeconds { get; set; }
     public int RemainingCandidates { get; set; }
+    public List<ProviderTimingDto> ProviderTimings { get; set; } = [];
 }
 

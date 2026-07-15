@@ -51,7 +51,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
 
         var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
         var now = DateTimeOffset.UtcNow;
-        if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+        if (!context.BypassCache && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
             ProviderAutoTagTelemetry.RecordCacheHit("AniList");
             return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason);

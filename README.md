@@ -87,6 +87,8 @@ sequenceDiagram
   - Columns: `Id`, `Provider`, `ProviderId` (unique together), `Title`, `AlternateTitles`, `Authors`, `MediaType`, `CoverImageUrl`, `Synopsis`, `Genres`, `Rating`, `Status`, `LatestChapter`, `LatestVolume`, `LastReleaseAt`, `SourceUrl`, `PopularityRank`, `FirstImportedAt`, `LastRefreshedAt`.
 - **`LibraryCatalogSyncQueueItem`**: Durable work queue (Queue-Based Load Leveling) — one row is one "fetch the next page" step of a provider crawl sequence, so a restart mid-crawl resumes instead of losing progress.
   - Columns: `Id`, `Provider`, `MediaTypeQuery`, `ContinuationToken`, `RemainingPages`, `Status` (Pending/Processing/Done/Failed), `Attempts`, `LastError`, `CreatedAt`, `NextAttemptAt`.
+- **`TagProvenance`**: Records which source supplied each tag on a bookmark (cross-provider attribution for the tag tooltip and reruns panel). All rows for a bookmark are replaced as a unit on every tag write (auto-tag run, rerun, manual save) via `TagProvenanceWriter`.
+  - Columns: `Id`, `BookmarkId` (indexed; composite index with `Tag`), `Tag`, `Provider` (AniList/Kitsu/MangaUpdates/NovelFull/Catalog/DomainRoute/Manual), `Confidence` (AI series-identification confidence for the run, null for deterministic/manual), `CreatedAt`.
 
 ---
 

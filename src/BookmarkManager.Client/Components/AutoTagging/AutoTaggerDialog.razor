@@ -152,6 +152,133 @@
                     </div>
                 </MudStack>
             }
+            else if (_currentState == TaggerState.Reruns)
+            {
+                <!-- Reruns Screen -->
+                <MudStack Spacing="2">
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">RESULTS & RERUNS</MudText>
+                        <MudSelect T="string" Label="Filter" Variant="Variant.Outlined" Dense="true"
+                                   @bind-Value="_rerunStatusFilter" Style="min-width: 160px;">
+                            @foreach (var opt in RerunStatusOptions)
+                            {
+                                <MudSelectItem Value="@opt">@opt</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </div>
+
+                    @if (_rerunsLoading)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                    }
+
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @FilteredRunResults.Count of @_runResults.Count bookmark(s) shown.
+                        Selected: @_selectedResultIds.Count
+                    </MudText>
+
+                    <div class="d-flex gap-2 flex-wrap mb-1">
+                        <MudCheckBox T="bool" Label="Select All (filtered)"
+                                     Value="FilteredRunResults.Count > 0 && FilteredRunResults.All(r => _selectedResultIds.Contains(r.BookmarkId))"
+                                     ValueChanged="@(val => ToggleSelectAllFiltered(val))"
+                                     Color="Color.Primary" Dense="true" />
+                    </div>
+
+                    <div style="max-height: 58vh; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px;">
+                        <MudTable Dense="true" Hover="true" Items="FilteredRunResults" T="AiAutoTagBookmarkStatusDto">
+                            <HeaderContent>
+                                <MudTh></MudTh>
+                                <MudTh Style="min-width: 260px;">Title</MudTh>
+                                <MudTh>Status</MudTh>
+                                <MudTh>Tags</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                @{
+                                    var item = context;
+                                    var isSelected = _selectedResultIds.Contains(item.BookmarkId);
+                                    var statusColor = GetStatusColor(item.Status);
+                                    var itemTags = (item.Tags ?? string.Empty)
+                                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                                }
+                                <MudTd>
+                                    <MudCheckBox T="bool" Value="isSelected"
+                                                 ValueChanged="@(val => ToggleResultSelection(item.BookmarkId, val))"
+                                                 Color="Color.Primary" Dense="true" />
+                                </MudTd>
+                                <MudTd Style="min-width: 260px;">
+                                    @item.Title
+                                </MudTd>
+                                <MudTd>
+                                    <MudChip T="string" Color="statusColor" Size="Size.Small" Variant="Variant.Text">@item.Status</MudChip>
+                                </MudTd>
+                                <MudTd>
+                                    @if (_isEditingTags && _editTagsBuffer.ContainsKey(item.BookmarkId))
+                                    {
+                                        <MudTextField T="string" Value="_editTagsBuffer[item.BookmarkId]"
+                                                      ValueChanged="@(val => _editTagsBuffer[item.BookmarkId] = val)"
+                                                      Variant="Variant.Text" Adornment="Adornment.Start"
+                                                      AdornmentText="#" Style="min-width: 200px;" />
+                                    }
+                                    else if (itemTags.Length > 0)
+                                    {
+                                        <div class="d-flex flex-wrap gap-1">
+                                            @foreach (var tag in itemTags)
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@tag</MudChip>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="mud-text-secondary" style="font-size: 0.8rem;">—</span>
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </div>
+
+                    @if (_isEditingTags)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="SaveEditedTagsAsync" Disabled="@(_editTagsBuffer.Count == 0)">
+                            Save Edited Tags
+                        </MudButton>
+                    }
+
+                    @if (_providerTimings.Count > 0)
+                    {
+                        <MudExpansionPanels Elevation="0" Dense="true">
+                            <MudExpansionPanel Text="Provider timings (this run)">
+                                <MudSimpleTable Dense="true">
+                                    <thead>
+                                        <tr>
+                                            <th>Provider</th>
+                                            <th>Operation</th>
+                                            <th>Network calls</th>
+                                            <th>Cache hits</th>
+                                            <th>Limiter (ms)</th>
+                                            <th>HTTP (ms)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var timing in _providerTimings)
+                                        {
+                                            <tr>
+                                                <td>@timing.Provider</td>
+                                                <td>@timing.Operation</td>
+                                                <td>@timing.NetworkCalls</td>
+                                                <td>@timing.CacheHits</td>
+                                                <td>@timing.LimiterMs</td>
+                                                <td>@timing.HttpMs</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </MudSimpleTable>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
+                </MudStack>
+            }
         </MudStack>
     </DialogContent>
 
@@ -177,6 +304,13 @@
                             <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
                             @if (_useAiSeriesAutoTagging)
                             {
+                                @if (_runResults.Count > 0)
+                                {
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.ChecklistRtl" OnClick="GoToReruns">
+                                        Results &amp; Reruns
+                                    </MudButton>
+                                }
                                 <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
                                            StartIcon="@Icons.Material.Filled.Check" OnClick="Cancel">
                                     Close
@@ -199,6 +333,32 @@
                             Apply & Save
                         </MudButton>
                     }
+                    else if (_currentState == TaggerState.Reruns)
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="Cancel">Close</MudButton>
+                        @if (_isEditingTags)
+                        {
+                            <MudButton Variant="Variant.Text" OnClick="CancelEditTags">Cancel Edit</MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Save" OnClick="SaveEditedTagsAsync"
+                                       Disabled="@(_editTagsBuffer.Count == 0)">
+                                Save Tags
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Edit" OnClick="StartEditTags"
+                                       Disabled="@(_selectedResultIds.Count == 0)">
+                                Edit Tags
+                            </MudButton>
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Refresh" OnClick="RerunSelectedAsync"
+                                       Disabled="@(_selectedResultIds.Count == 0 || _rerunsLoading)">
+                                Rerun Selected
+                            </MudButton>
+                        }
+                    }
                 </DialogActions>
             </MudDialog>
 
@@ -207,7 +367,8 @@
     {
         Selection,
         Tagging,
-        Review
+        Review,
+        Reruns
     }
 
     private bool _loading = true;
@@ -326,6 +487,7 @@
         _totalCount = _selectedFolderIds.Sum(id => _untaggedCounts.GetValueOrDefault(id, 0));
         _logs.Clear();
         _reviewItems.Clear();
+        ResetRerunsState();
         _cts = new CancellationTokenSource();
         _rateLimitStopped = false;
         _remainingCount = 0;

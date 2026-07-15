@@ -6,6 +6,8 @@ internal sealed partial class AiBookmarkAutoTaggingService
 {
     private sealed record SourceTagLookupKey(BookmarkTagDomain Domain, string CanonicalTitle);
 
+    internal sealed record ProvenanceTagEntry(string Tag, string Provider);
+
     private sealed record SourceTagLookupRequest(
         SourceTagLookupKey Key,
         string CanonicalTitle,
@@ -16,6 +18,12 @@ internal sealed partial class AiBookmarkAutoTaggingService
     {
         public int TagsPendingSave { get; set; }
         public int TotalEligibleCount { get; set; }
+
+        /// <summary>
+        /// When true, provider lookups skip their TTL caches so a rerun of
+        /// skipped/failed bookmarks gets fresh provider results.
+        /// </summary>
+        public bool BypassProviderCache { get; init; }
     }
 
     private sealed record BookmarkCandidate(BookmarkNode Bookmark, string FolderPath);
@@ -43,5 +51,6 @@ internal sealed partial class AiBookmarkAutoTaggingService
         string CanonicalTitle,
         string SuccessStatus,
         string SuccessReason,
-        string NoTagsLogTitle);
+        string NoTagsLogTitle,
+        double? Confidence);
 }
