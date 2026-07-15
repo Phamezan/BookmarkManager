@@ -104,7 +104,7 @@ public partial class Bookmarks
 
     private async Task OpenAutoTaggerDialog()
     {
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium, CloseButton = true };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraLarge, CloseButton = true };
         var parameters = new DialogParameters<AutoTaggerDialog>
         {
             { dialog => dialog.CurrentFolderId, _selectedFolderId }

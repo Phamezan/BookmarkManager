@@ -88,7 +88,8 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 
         var now = DateTimeOffset.UtcNow;
         var seriesCacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
-        if (_seriesCache.TryGetValue(seriesCacheKey, out var cachedSeries) && cachedSeries.ExpiresAt > now)
+        SeriesCacheEntry? cachedSeries = null;
+        if (!context.BypassCache && _seriesCache.TryGetValue(seriesCacheKey, out cachedSeries) && cachedSeries.ExpiresAt > now)
         {
             if (cachedSeries.SeriesId is null)
             {
@@ -114,7 +115,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             if (seriesId is null)
                 return new([], false, null);
 
-            if (_tagsCache.TryGetValue((context.Domain, seriesId.Value), out var freshTags) && freshTags.ExpiresAt > now)
+            if (!context.BypassCache && _tagsCache.TryGetValue((context.Domain, seriesId.Value), out var freshTags) && freshTags.ExpiresAt > now)
                 return new(freshTags.Tags.ToList(), freshTags.WasRejected, freshTags.RejectionReason);
 
             MangaUpdatesTagResult result;

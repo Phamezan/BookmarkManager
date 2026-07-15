@@ -66,4 +66,9 @@ public interface INovelFullTagProvider
     Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
 }
 
+public interface ICatalogTagProvider
+{
+    Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken);
+}
+
 

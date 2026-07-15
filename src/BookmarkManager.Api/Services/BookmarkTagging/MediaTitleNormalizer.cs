@@ -33,7 +33,8 @@ public sealed record MediaTagLookupContext(
     string? Url,
     BookmarkTagDomain Domain,
     string? FolderPath,
-    MediaTitleNormalizeResult NormalizedTitle);
+    MediaTitleNormalizeResult NormalizedTitle,
+    bool BypassCache = false);
 
 public static partial class MediaTitleNormalizer
 {

@@ -16,9 +16,16 @@
             <div class="mb-4">
                 <MudText Typo="Typo.body2" Class="mb-1">Tags</MudText>
                 <div class="d-flex flex-wrap gap-1 mb-2">
+                    @if (_loadingProvenance)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    }
                     @foreach (var tag in _tags)
                     {
-                        <MudChip T="string" Color="Color.Primary" OnClose="@(() => RemoveTag(tag))">@tag</MudChip>
+                        var provenanceText = GetProvenanceText(tag);
+                        <MudTooltip Text="@(provenanceText ?? "")" Placement="Placement.Top" Disabled="@(string.IsNullOrEmpty(provenanceText))">
+                            <MudChip T="string" Color="Color.Primary" OnClose="@(() => RemoveTag(tag))">@tag</MudChip>
+                        </MudTooltip>
                     }
                     @if (_tags.Count == 0)
                     {
@@ -67,6 +74,7 @@
 
 @code {
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Parameter] public BookmarkNodeDto? Node { get; set; }
     [Parameter] public EventCallback<BookmarkEditResult> OnSave { get; set; }
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
@@ -78,17 +86,50 @@
     private List<string> _tags = [];
     private string _newTag = "";
     private List<string> _suggestedTags = [];
+    private List<TagProvenanceDto> _provenance = [];
+    private bool _loadingProvenance;
 
     private bool _aiBusy;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (Node != null)
         {
             _title = Node.Title;
             _url = Node.Url;
             _tags = Node.Metadata?.Tags != null ? new List<string>(Node.Metadata.Tags) : [];
+
+            if (Node.Id != Guid.Empty && _tags.Count > 0)
+            {
+                _loadingProvenance = true;
+                try
+                {
+                    _provenance = await BookmarkService.GetTagProvenanceAsync(Node.Id);
+                }
+                catch (Exception ex)
+                {
+                    _provenance = [];
+                    Snackbar.Add($"Could not load tag provenance: {ex.Message}", Severity.Warning);
+                }
+                finally
+                {
+                    _loadingProvenance = false;
+                }
+            }
         }
+    }
+
+    private string? GetProvenanceText(string tag)
+    {
+        var match = _provenance.FirstOrDefault(p =>
+            p.Tag.Equals(tag, StringComparison.OrdinalIgnoreCase));
+        if (match is null)
+            return null;
+        // Confidence is the AI series-identification confidence for the tagging
+        // run, not a per-provider score — label it as such.
+        return match.Confidence.HasValue
+            ? $"{match.Provider} · AI match {match.Confidence.Value:0.00}"
+            : match.Provider;
     }
 
     private async Task GenerateSuggestions()

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using BookmarkManager.Api.Data;
 using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
@@ -7,7 +8,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
 {
     private async Task ProcessDeterministicPassAsync(
         IReadOnlyList<BookmarkCandidate> deterministicCandidates,
-        ConcurrentDictionary<SourceTagLookupKey, List<string>> sourceTagCache,
+        ConcurrentDictionary<SourceTagLookupKey, List<ProvenanceTagEntry>> sourceTagCache,
         ConcurrentDictionary<SourceTagLookupKey, byte> providerFailedKeys,
         AiAutoTagSummaryDto summary,
         TagFolderRunState runState,
@@ -43,6 +44,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
                 sourceTagCache,
                 providerFailedKeys,
                 summary,
+                runState.BypassProviderCache,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -55,7 +57,8 @@ internal sealed partial class AiBookmarkAutoTaggingService
                         item.Classification.CanonicalTitle,
                         "DeterministicClassified",
                         $"Classified deterministically as {item.Classification.Domain}.",
-                        item.Classification.CanonicalTitle),
+                        item.Classification.CanonicalTitle,
+                        Confidence: null),
                     item.Route.DomainTag!,
                     sourceTagCache,
                     providerFailedKeys,
@@ -71,7 +74,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
 
     private async Task ProcessAiPassAsync(
         IReadOnlyList<BookmarkCandidate> ambiguousCandidates,
-        ConcurrentDictionary<SourceTagLookupKey, List<string>> sourceTagCache,
+        ConcurrentDictionary<SourceTagLookupKey, List<ProvenanceTagEntry>> sourceTagCache,
         ConcurrentDictionary<SourceTagLookupKey, byte> providerFailedKeys,
         AiAutoTagSummaryDto summary,
         TagFolderRunState runState,
@@ -103,6 +106,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
                     sourceTagCache,
                     providerFailedKeys,
                     summary,
+                    runState.BypassProviderCache,
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -120,7 +124,8 @@ internal sealed partial class AiBookmarkAutoTaggingService
                         applyItem.Identification.CanonicalTitle,
                         "AiIdentified",
                         $"Identified by AI as {applyItem.Identification.CanonicalTitle}.",
-                        applyItem.Identification.CanonicalTitle),
+                        applyItem.Identification.CanonicalTitle,
+                        Confidence: applyItem.Identification.Confidence),
                     applyItem.Route.DomainTag!,
                     sourceTagCache,
                     providerFailedKeys,
@@ -137,7 +142,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
     private async Task ApplyCachedTagsAsync(
         TagApplyRequest request,
         string domainTag,
-        ConcurrentDictionary<SourceTagLookupKey, List<string>> sourceTagCache,
+        ConcurrentDictionary<SourceTagLookupKey, List<ProvenanceTagEntry>> sourceTagCache,
         ConcurrentDictionary<SourceTagLookupKey, byte> providerFailedKeys,
         AiAutoTagSummaryDto summary,
         TagFolderRunState runState,
@@ -152,7 +157,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
             return;
         }
 
-        if (!sourceTags.Any(tag => !string.IsNullOrWhiteSpace(tag)))
+        if (!sourceTags.Any(tag => !string.IsNullOrWhiteSpace(tag.Tag)))
         {
             summary.SkippedNoSourceTags++;
             AddBookmarkStatus(request, summary, "NoSourceTags", "No source tags found on providers.");
@@ -168,8 +173,15 @@ internal sealed partial class AiBookmarkAutoTaggingService
             return;
         }
 
-        request.Candidate.Bookmark.Tags = string.Join(',', finalTags);
+        request.Candidate.Bookmark.Tags = string.Join(',', finalTags.Select(t => t.Tag));
         request.Candidate.Bookmark.UpdatedAt = DateTime.UtcNow;
+
+        TagProvenanceWriter.Replace(
+            _db,
+            request.Candidate.Bookmark.Id,
+            finalTags.Select(entry => (entry.Tag, entry.Provider)),
+            request.Confidence);
+
         summary.Tagged++;
         runState.TagsPendingSave++;
         summary.ProcessedBookmarkIds.Add(request.Candidate.Bookmark.Id);
@@ -178,9 +190,10 @@ internal sealed partial class AiBookmarkAutoTaggingService
             BookmarkId = request.Candidate.Bookmark.Id,
             Title = request.Candidate.Bookmark.Title,
             Status = request.SuccessStatus,
-            Reason = request.SuccessReason
+            Reason = request.SuccessReason,
+            Tags = request.Candidate.Bookmark.Tags
         });
-        summary.Messages.Add($"  ✓ '{request.CanonicalTitle}' tagged: [{string.Join(", ", finalTags)}]");
+        summary.Messages.Add($"  ✓ '{request.CanonicalTitle}' tagged: [{string.Join(", ", finalTags.Select(t => t.Tag))}]");
         runState.TagsPendingSave = await SaveTaggedBookmarksIfNeededAsync(summary, runState.TagsPendingSave, cancellationToken).ConfigureAwait(false);
     }
 

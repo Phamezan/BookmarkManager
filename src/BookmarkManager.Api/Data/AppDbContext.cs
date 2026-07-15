@@ -22,6 +22,7 @@ public class AppDbContext : DbContext
     public DbSet<UrlMigrationProposal> UrlMigrationProposals => Set<UrlMigrationProposal>();
     public DbSet<LibraryCatalogEntry> LibraryCatalogEntries => Set<LibraryCatalogEntry>();
     public DbSet<LibraryCatalogSyncQueueItem> LibraryCatalogSyncQueue => Set<LibraryCatalogSyncQueueItem>();
+    public DbSet<TagProvenance> TagProvenances => Set<TagProvenance>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -189,6 +190,16 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => new { e.Provider, e.Status });
             entity.HasIndex(e => e.NextAttemptAt);
+        });
+
+        modelBuilder.Entity<TagProvenance>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Tag).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Provider).HasMaxLength(100).IsRequired();
+
+            entity.HasIndex(e => e.BookmarkId);
+            entity.HasIndex(e => new { e.BookmarkId, e.Tag });
         });
     }
 }

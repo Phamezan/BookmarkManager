@@ -56,6 +56,8 @@ builder.Services.AddSingleton<KitsuTaggingService>();
 builder.Services.AddSingleton<IKitsuTagProvider>(provider => provider.GetRequiredService<KitsuTaggingService>());
 builder.Services.AddSingleton<NovelFullTaggingService>();
 builder.Services.AddSingleton<INovelFullTagProvider>(provider => provider.GetRequiredService<NovelFullTaggingService>());
+builder.Services.AddSingleton<CatalogTaggingService>();
+builder.Services.AddSingleton<ICatalogTagProvider>(provider => provider.GetRequiredService<CatalogTaggingService>());
 builder.Services.AddSingleton<IDuckDuckGoSearchService, DuckDuckGoSearchService>();
 builder.Services.AddScoped<AiSeriesIdentifierService>();
 builder.Services.AddScoped<AiBookmarkAutoTaggingService>();

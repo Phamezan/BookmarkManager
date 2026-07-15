@@ -181,6 +181,13 @@ public sealed class HttpBookmarkService : IBookmarkService
         }
     }
 
+    public async Task<AiAutoTagSummaryDto> RerunTagsAsync(RerunBookmarksRequestDto request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<AiAutoTagSummaryDto>(HttpMethod.Post, "api/bookmarks/rerun-tags", request, cancellationToken)
+           ?? new AiAutoTagSummaryDto();
+
+    public async Task<List<TagProvenanceDto>> GetTagProvenanceAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<TagProvenanceDto>>($"api/bookmarks/{bookmarkId}/tag-provenance", cancellationToken) ?? [];
+
     public async Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<AnimeMatchCandidateDto>>($"api/anime-calendar/candidates/{bookmarkId}", cancellationToken) ?? [];
 

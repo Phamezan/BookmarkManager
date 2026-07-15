@@ -168,4 +168,72 @@ public sealed class KitsuTaggingServiceTests
         Assert.Contains(requestedUris, uri => uri.StartsWith("https://kitsu.io/api/edge/anime/999/categories", StringComparison.Ordinal));
         Assert.DoesNotContain(requestedUris, uri => uri.Contains("/api/edge/manga", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public async Task GetTagsForTitleAsync_BypassCache_SkipsTtlCacheAndQueriesProviderAgain()
+    {
+        var searchJson = """
+        {
+          "data": [
+            {
+              "id": "12345",
+              "attributes": {
+                "canonicalTitle": "God of Fishing",
+                "subtype": "novel"
+              }
+            }
+          ]
+        }
+        """;
+
+        var categoriesJson = """
+        {
+          "data": [
+            {
+              "attributes": {
+                "title": "Action"
+              }
+            }
+          ]
+        }
+        """;
+
+        var searchRequestCount = 0;
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            var isCategories = req.RequestUri!.ToString().Contains("categories", StringComparison.Ordinal);
+            if (!isCategories)
+                searchRequestCount++;
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(isCategories ? categoriesJson : searchJson) { Headers = { ContentType = new MediaTypeHeaderValue("application/vnd.api+json") } }
+            };
+        });
+
+        var client = new HttpClient(handler);
+        var factory = new FakeHttpClientFactory(client);
+        var service = new KitsuTaggingService(factory, NullLogger<KitsuTaggingService>.Instance);
+
+        MediaTagLookupContext BuildContext(bool bypassCache) => new(
+            "God of Fishing",
+            null,
+            BookmarkTagDomain.Novel,
+            null,
+            MediaTitleNormalizer.Normalize("God of Fishing", null, BookmarkTagDomain.Novel),
+            bypassCache);
+
+        // Arrange: first call populates the TTL cache; second call must hit it.
+        await service.GetTagsForTitleAsync(BuildContext(bypassCache: false), CancellationToken.None);
+        await service.GetTagsForTitleAsync(BuildContext(bypassCache: false), CancellationToken.None);
+        Assert.Equal(1, searchRequestCount);
+
+        // Act: bypassing the cache queries the provider again.
+        var bypassResult = await service.GetTagsForTitleAsync(BuildContext(bypassCache: true), CancellationToken.None);
+
+        // Assert
+        Assert.Equal(2, searchRequestCount);
+        Assert.False(bypassResult.WasRejected);
+        Assert.Contains("Novel", bypassResult.Tags);
+    }
 }

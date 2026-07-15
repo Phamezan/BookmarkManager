@@ -7,7 +7,8 @@ public enum BookmarkTagSource
     AniList = 2,
     MangaUpdates = 3,
     Kitsu = 4,
-    NovelFull = 5
+    NovelFull = 5,
+    Catalog = 6
 }
 
 public enum BookmarkTagConfidence

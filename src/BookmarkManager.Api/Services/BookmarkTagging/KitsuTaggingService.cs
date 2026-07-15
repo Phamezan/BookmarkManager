@@ -44,7 +44,7 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
 
         var now = DateTimeOffset.UtcNow;
         var cacheKey = $"{context.Domain}:{candidate}:{cleanQuery}";
-        if (_cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
+        if (!context.BypassCache && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
             ProviderAutoTagTelemetry.RecordCacheHit("Kitsu");
             return cached.Result;

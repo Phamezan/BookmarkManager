@@ -51,6 +51,7 @@ public partial class BookmarksController
             {
                 node.Tags = string.Join(",", tags);
                 node.UpdatedAt = DateTime.UtcNow;
+                TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, "Manual")), confidence: null);
             }
         }
         await _db.SaveChangesAsync(ct);
@@ -167,6 +168,52 @@ public partial class BookmarksController
     {
         return Problem(title: "AI auto-tagging failed", statusCode: 400, detail: ex.Message);
     }
+    }
+
+    [HttpPost("rerun-tags")]
+    public async Task<ActionResult<AiAutoTagSummaryDto>> RerunTagsAsync(
+    [FromBody] RerunBookmarksRequestDto request,
+    CancellationToken ct = default)
+    {
+    if (request.BookmarkIds.Count == 0)
+        return Problem(title: "Invalid rerun request", statusCode: 400, detail: "No bookmark IDs provided.");
+
+    var aiAutoTagging = HttpContext.RequestServices.GetRequiredService<AiBookmarkAutoTaggingService>();
+    try
+    {
+        var summary = await aiAutoTagging.RerunBookmarksAsync(request.BookmarkIds, ct);
+        return Ok(summary);
+    }
+    catch (HttpRequestException ex) when (ex.StatusCode is not null)
+    {
+        return Problem(
+            title: "OpenRouter API error",
+            statusCode: (int)ex.StatusCode,
+            detail: $"OpenRouter returned {ex.StatusCode}.");
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Problem(title: "AI rerun failed", statusCode: 400, detail: ex.Message);
+    }
+    }
+
+    [HttpGet("{id:guid}/tag-provenance")]
+    public async Task<ActionResult<List<TagProvenanceDto>>> GetTagProvenanceAsync(
+    Guid id,
+    CancellationToken ct = default)
+    {
+    var rows = await _db.TagProvenances
+        .Where(p => p.BookmarkId == id)
+        .OrderByDescending(p => p.CreatedAt)
+        .ToListAsync(ct);
+
+    return Ok(rows.Select(p => new TagProvenanceDto
+    {
+        Tag = p.Tag,
+        Provider = p.Provider,
+        Confidence = p.Confidence,
+        CreatedAt = p.CreatedAt
+    }).ToList());
     }
 
     /// <summary>
