@@ -34,6 +34,8 @@ public class MappingProfile : Profile
             .ForMember(d => d.CoverImageUrl, o => o.MapFrom(s => s.Metadata != null ? s.Metadata.CoverImageUrl : null));
 
         CreateMap<ActivityLogEntry, ActivityEntryDto>();
-        CreateMap<BackupManifest, BackupManifestDto>();
+        CreateMap<BackupManifest, BackupManifestDto>()
+            .ForMember(d => d.Status, o => o.MapFrom(s => s.Status))
+            .ForMember(d => d.Trigger, o => o.MapFrom(s => s.Trigger));
     }
 }

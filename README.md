@@ -12,7 +12,8 @@ This document provides a comprehensive technical overview of the Bookmark Manage
 - **Stale Bookmarks Review**: A `/stale` page to browse, Keep (refresh timestamp), Archive (move to dynamic Archive folder), or Delete untouched/old links.
 - **Broken Link Checker**: Background worker querying active URLs for DNS failures, timeouts, and 404s, moving them to a `"Broken Links"` folder with sync creation safeguards.
 - **AI Auto-Tagging**: Offline TF-IDF keywords and rule-based site categorization suggesting tags inside the bookmark editor.
-- **Safety Database Purging**: Scheduled daily purging of Recycle Bin items older than 30 days, backed by a safety JSON backup system.
+- **Database Backups**: Server-side SQLite snapshots via `VACUUM INTO` to `/data/backups/db`; create, download, delete, and restore from the `/backups` dashboard page (restore applies on next API restart).
+- **Safety Database Purging**: Scheduled daily purging of Recycle Bin items older than 30 days, backed by a separate safety JSON archive under `/data/backups/purged/` (not the same as DB snapshots).
 - **Library Discovery**: Browse and search a locally-cached catalog of anime, manga, and novels sourced from AniList, MangaDex, Kitsu, RanobeDB, Novelfire, RoyalRoad, and NovelUpdates, with a details popup per title (cover, synopsis, tags, source link).
 
 ---
@@ -117,4 +118,11 @@ sequenceDiagram
 
 ### 5. Safety Purge Backup (PurgeBackgroundJob)
 - Database purge operations run daily, deleting nodes that have been in the Recycle Bin for more than 30 days.
-- Before removing records from the DB, the background job serializes the target records into a safety backup JSON file in `/data/backups/purged/` so that mistakes can be manually recovered if necessary.
+- Before removing records from the DB, the background job serializes the target records into a safety backup JSON file in `/data/backups/purged/` so that mistakes can be manually recovered if necessary. This is separate from full-database snapshots (see §6).
+
+### 6. Database Backup (BackupService / BackupBackgroundJob)
+- **Snapshots:** `BackupService` creates compact standalone `.db` files with SQLite `VACUUM INTO` under `/data/backups/db` (Docker volume `/data`, local-dev fallback under the app base directory). Never file-copy a live WAL database.
+- **Manifests:** Each run inserts a `BackupManifests` row (`Status`, `Trigger`, content stats, duration, error). `FilePath` is server-only and never returned to the client.
+- **Schedule:** `BackupBackgroundJob` runs nightly at `03:00` Europe/Berlin by default (override via `Backup:ScheduleTime` / `Backup:TimeZoneId` in `appsettings.json`). Manual **Back up now** from `/backups` uses the same pipeline. Retention defaults: 30 files / 60 days.
+- **Restore (restore-on-restart):** UI restore requires typing `RESTORE`. The API takes a pre-restore safety snapshot (`Trigger=PreRestore`), verifies the chosen snapshot, then stages `restore-pending.db` beside the live DB. On the next process start, `BackupPendingRestore.ApplyPendingRestoreIfAny` swaps the file **before** EF Core opens a connection. Startup bumps `ConfigVersion` and sets a repair marker so the extension uploads a full Repair snapshot and re-baselines sync.
+- **Extension HTML export:** `BookmarkExtension/src/backup/backup-manager.ts` still exports Netscape HTML to Downloads for browser import/interop. It is not the primary durability story — use the server `/backups` page for full SQLite recovery.

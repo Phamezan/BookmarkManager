@@ -20,6 +20,7 @@ builder.Services.AddScoped<IBookmarkManagerApiClient, BookmarkManagerApiClient>(
 builder.Services.AddScoped<IExtensionConnectionService, ExtensionConnectionService>();
 builder.Services.AddScoped<IBookmarkService, HttpBookmarkService>();
 builder.Services.AddScoped<ILibraryService, HttpLibraryService>();
+builder.Services.AddScoped<IBackupService, HttpBackupService>();
 builder.Services.AddScoped<UndoService>();
 builder.Services.AddScoped<ICommandPaletteService, CommandPaletteService>();
 builder.Services.AddTransient<SyncSocketListener>();

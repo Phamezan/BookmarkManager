@@ -1,0 +1,256 @@
+@page "/backups"
+@using BookmarkManager.Contracts
+
+<PageTitle>Backups</PageTitle>
+
+<div class="backups-page page-surface">
+    <div class="backups-eyebrow mono">Database · Snapshots</div>
+    <h1 class="backups-title">Backups</h1>
+    <p class="backups-lede">
+        Nightly SQLite snapshots of the full database — bookmarks, tags, library catalog, and settings.
+    </p>
+
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate="true" Class="backups-progress" />
+    }
+    else if (_stats is not null)
+    {
+        var heroFailed = _stats.LastBackup?.Status == "Failed";
+
+        <section class="backups-hero @(heroFailed ? "fail" : string.Empty)">
+            <div>
+                <div class="backups-hero-k">Last backup</div>
+                <div class="backups-hero-v">
+                    <span class="dot" aria-hidden="true"></span>
+                    @FormatRelative(_stats.LastBackup?.CreatedAt)
+                </div>
+                <div class="backups-hero-sub">
+                    @if (_stats.LastBackup is { } last)
+                    {
+                        <span class="mono">@last.Name</span>
+                        <span class="sep">·</span>
+                        <span>@FormatBytes(last.SizeBytes)</span>
+                    }
+                    else
+                    {
+                        <span>No successful backup yet</span>
+                    }
+                </div>
+                <div class="backups-hero-contents">@ContentsLine(_stats)</div>
+            </div>
+            <button type="button" class="backups-cta" disabled="@_creating" @onclick="CreateBackupAsync">
+                @(_creating ? "Backing up…" : "Back up now")
+            </button>
+        </section>
+
+        <section class="backups-ribbon" aria-label="Backup summary">
+            <div class="cell">
+                <div class="k">Next run</div>
+                <div class="v">@(_stats.NextScheduledRunUtc is { } next ? next.ToLocalTime().ToString("MMM d · HH:mm") : "Disabled")</div>
+            </div>
+            <div class="cell">
+                <div class="k">Files</div>
+                <div class="v num">@_stats.FileCount</div>
+            </div>
+            <div class="cell">
+                <div class="k">Disk used</div>
+                <div class="v num">@FormatBytes(_stats.DiskUsedBytes)</div>
+            </div>
+            <div class="cell">
+                <div class="k">Live DB size</div>
+                <div class="v num">@FormatBytes(_stats.LiveDatabaseSizeBytes)</div>
+            </div>
+        </section>
+
+        <section class="backups-activity" aria-label="Backup activity">
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-k">Backup activity</div>
+                    <div class="legend">
+                        <span class="li"><span class="sw ok" aria-hidden="true"></span>Success</span>
+                        <span class="li"><span class="sw bad" aria-hidden="true"></span>Failed</span>
+                    </div>
+                </div>
+                <div class="panel-sub">14-day snapshot size (max @FormatBytes(ChartMaxBytes) scale)</div>
+
+                <div class="cols-wrap">
+                    <div class="grid-y" aria-hidden="true">
+                        <div class="gl" style="bottom:75%"><span>4M</span></div>
+                        <div class="gl" style="bottom:37.5%"><span>2M</span></div>
+                    </div>
+                    <div class="cols">
+                        @foreach (var day in _stats.Activity)
+                        {
+                            var height = BarHeightPx(day);
+                            var css = day.Status == "Failed" ? "col fail" : "col";
+                            <div class="@css"
+                                 @onmouseenter="@(() => _hoveredDay = day)"
+                                 @onmouseleave="@(() => _hoveredDay = null)">
+                                @if (_hoveredDay == day && day.Status is not null)
+                                {
+                                    <span class="tip-label mono">@FormatBytes(day.SizeBytes)</span>
+                                }
+                                <div class="bar" style="height:@($"{height:0.##}px")"></div>
+                            </div>
+                        }
+                    </div>
+                    <div class="x-labels mono" aria-hidden="true">
+                        @foreach (var day in _stats.Activity)
+                        {
+                            <span>@day.Date.ToString("dd")</span>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-k">Success rate</div>
+                <div class="panel-sub">Last 30 runs</div>
+                <div class="ring-wrap">
+                    <div class="ring" role="img" aria-label="@($"{_stats.SuccessRate30d:0}% success rate")">
+                        <svg width="124" height="124" viewBox="0 0 124 124" aria-hidden="true">
+                            <circle cx="62" cy="62" r="52" fill="none" stroke="var(--bm-success-soft)" stroke-width="10" />
+                            <circle cx="62" cy="62" r="52" fill="none" stroke="var(--bm-success)" stroke-width="10"
+                                    stroke-dasharray="@(2 * Math.PI * 52)"
+                                    stroke-dashoffset="@RingOffset(_stats.SuccessRate30d)"
+                                    stroke-linecap="round" />
+                        </svg>
+                        <div class="center">
+                            <div class="pct num">@($"{_stats.SuccessRate30d:0}%")</div>
+                        </div>
+                    </div>
+                    <div class="ring-meta">
+                        <div class="big"><span class="n num">@_stats.SuccessCount30d</span> of <span class="n num">@_stats.TotalRuns30d</span> succeeded</div>
+                        @if (LatestFailedDay() is { } failed)
+                        {
+                            <div class="fail-note mono">
+                                Last failure <span class="bad">@failed.Date.ToString("MMM d")</span> · @failed.Error
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="backups-history">
+            <div class="sec-head">
+                <h2>History</h2>
+                <span class="meta mono">@_history.Count snapshots</span>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Snapshot</th>
+                        <th>Date</th>
+                        <th>Size</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var item in _history)
+                    {
+                        <tr class="@(_restoreTarget?.Id == item.Id ? "active" : string.Empty)">
+                            <td class="snapshot">
+                                <span class="fname mono">@item.Name</span>
+                                <span class="contents">@ContentsLine(item)</span>
+                            </td>
+                            <td class="mono">@item.CreatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="size">@FormatBytes(item.SizeBytes)</td>
+                            <td class="dur">@FormatDuration(item.DurationMs)</td>
+                            <td class="status">
+                                <span class="label @(item.Status == "Succeeded" ? "ok" : item.Status == "Failed" ? "bad" : string.Empty)">@item.Status</span>
+                                @if (!string.IsNullOrWhiteSpace(item.Error))
+                                {
+                                    <span class="err">@item.Error</span>
+                                }
+                            </td>
+                            <td class="actions">
+                                @if (item.Status == "Succeeded")
+                                {
+                                    <a href="@BackupService.GetDownloadUrl(item.Id)" download="@item.Name">Download</a>
+                                    <button type="button" class="linkish" @onclick="@(() => OpenRestoreDialog(item))">Restore</button>
+                                }
+                                <button type="button" class="linkish danger" @onclick="@(() => DeleteBackupAsync(item))">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+
+        <section class="backups-settings">
+            <h2>Settings</h2>
+            <dl>
+                <div>
+                    <dt>Schedule</dt>
+                    <dd class="mono">@_stats.ScheduleTime @_stats.TimeZoneId daily</dd>
+                </div>
+                <div>
+                    <dt>Retention</dt>
+                    <dd>@_stats.RetentionMaxCount files · @_stats.RetentionMaxAgeDays days</dd>
+                </div>
+                <div>
+                    <dt>Directory</dt>
+                    <dd class="mono">@_stats.BackupDirectory</dd>
+                </div>
+                <div>
+                    <dt>Enabled</dt>
+                    <dd>@(_stats.Enabled ? "Yes" : "No")</dd>
+                </div>
+            </dl>
+        </section>
+    }
+
+    @if (_restoreRestartPending)
+    {
+        <div class="backups-modal-backdrop">
+            <div class="backups-modal">
+                <header>
+                    <div class="t">Restoring…</div>
+                </header>
+                <div class="body">
+                    <p>
+                        Snapshot staged. The API is restarting to apply it. Wait a few seconds, then reload this page.
+                        The extension will re-baseline after reconnect.
+                    </p>
+                </div>
+            </div>
+        </div>
+    }
+    else if (_restoreTarget is not null)
+    {
+        <div class="backups-modal-backdrop" @onclick="CloseRestoreDialog">
+            <div class="backups-modal" @onclick:stopPropagation="true">
+                <header>
+                    <div class="t">Restore snapshot</div>
+                    <button type="button" class="x linkish" @onclick="CloseRestoreDialog" disabled="@_restoring">esc</button>
+                </header>
+                <div class="body">
+                    <p>
+                        Restore <span class="mono">@_restoreTarget.Name</span> over the live database.
+                        A pre-restore safety snapshot is taken automatically. The API then restarts to apply the file swap.
+                    </p>
+                    <p class="mono warn">
+                        Type RESTORE to confirm. This cannot be undone except by restoring another snapshot.
+                    </p>
+                    <label class="mono" for="restore-confirm">Type RESTORE</label>
+                    <input id="restore-confirm" class="mono" @bind="_restoreConfirm" @bind:event="oninput" disabled="@_restoring" />
+                </div>
+                <footer>
+                    <button type="button" class="linkish" @onclick="CloseRestoreDialog" disabled="@_restoring">Cancel</button>
+                    <a class="backups-cta secondary" href="@BackupService.GetDownloadUrl(_restoreTarget.Id)" download="@_restoreTarget.Name">Download snapshot</a>
+                    <button type="button"
+                            class="backups-cta"
+                            disabled="@(_restoreConfirm != "RESTORE" || _restoring)"
+                            @onclick="ConfirmRestoreAsync">
+                        @(_restoring ? "Restoring…" : "Restore")
+                    </button>
+                </footer>
+            </div>
+        </div>
+    }
+</div>
