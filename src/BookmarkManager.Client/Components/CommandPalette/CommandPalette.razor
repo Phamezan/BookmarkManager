@@ -169,7 +169,7 @@
         position: relative;
         z-index: 10;
         width: 100%;
-        max-width: 640px;
+        max-width: 760px;
         margin: 0 16px;
         background: rgba(21, 18, 27, 0.75);
         backdrop-filter: blur(32px);
@@ -190,7 +190,7 @@
     }
     
     .palette-search-container {
-        padding: 20px 24px;
+        padding: 14px 20px;
         display: flex;
         align-items: center;
         gap: 16px;
@@ -207,7 +207,7 @@
         outline: none !important;
         box-shadow: none !important;
         padding: 0;
-        font-size: 20px;
+        font-size: 17px;
         font-weight: 500;
         color: #fff;
         caret-color: #d0bcff;
@@ -238,7 +238,7 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
-        max-height: 360px;
+        max-height: 420px;
         overflow-y: auto;
     }
     
@@ -277,11 +277,14 @@
     .palette-item-left {
         display: flex;
         align-items: center;
-        gap: 16px;
+        gap: 12px;
+        min-width: 0;
+        flex: 1;
     }
     .palette-item-icon-wrap {
-        width: 40px;
-        height: 40px;
+        width: 32px;
+        height: 32px;
+        flex-shrink: 0;
         border-radius: 8px;
         background: rgba(255, 255, 255, 0.05);
         display: flex;
@@ -303,18 +306,25 @@
         display: flex;
         flex-direction: column;
         align-items: flex-start;
+        min-width: 0;
+        flex: 1;
     }
     .palette-item-title-row {
         display: flex;
         align-items: center;
         gap: 8px;
-        flex-wrap: wrap;
+        max-width: 100%;
+        min-width: 0;
     }
     .palette-item-title {
         font-size: 14px;
         font-weight: 500;
         color: #e7e0ed;
         transition: color 0.15s ease;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
     }
     .palette-item.is-active .palette-item-title {
         color: #fff;
@@ -327,6 +337,11 @@
         border: 1px solid rgba(255, 255, 255, 0.1);
         background: rgba(255, 255, 255, 0.05);
         color: rgba(203, 195, 215, 0.8);
+        flex-shrink: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 120px;
     }
     
     .badge-anime {
@@ -357,7 +372,7 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         overflow: hidden;
-        max-width: 460px;
+        max-width: 100%;
         display: block;
     }
     
@@ -369,7 +384,7 @@
     }
     
     .palette-footer {
-        padding: 16px 24px;
+        padding: 10px 20px;
         background: rgba(15, 13, 21, 0.4);
         border-top: 1px solid rgba(255, 255, 255, 0.05);
         display: flex;
