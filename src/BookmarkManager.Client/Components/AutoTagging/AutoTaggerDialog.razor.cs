@@ -24,6 +24,15 @@ public partial class AutoTaggerDialog
     private Dictionary<Guid, string> _editTagsBuffer = new();
     private List<ProviderTimingDto> _providerTimings = [];
 
+    /// <summary>
+    /// Accepted-but-not-yet-saved suggested titles from the Results &amp; Reruns table
+    /// (per-row "Accept"). Applied together via "Apply title changes" through the same
+    /// <see cref="BulkSaveTagsRequest.Titles"/> path the Review screen uses — never
+    /// written server-side automatically (see <see cref="AiAutoTagBookmarkStatusDto.SuggestedTitle"/>).
+    /// </summary>
+    private Dictionary<Guid, string> _pendingTitleEdits = new();
+    private Dictionary<Guid, string> _suggestionDrafts = new();
+
     private IReadOnlyList<string> RerunStatusOptions =>
         new[] { "All" }
             .Concat(_runResults.Select(r => r.Status).Distinct().OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
@@ -33,6 +42,16 @@ public partial class AutoTaggerDialog
         _rerunStatusFilter == "All"
             ? _runResults
             : _runResults.Where(r => r.Status == _rerunStatusFilter).ToList();
+
+    private string GetSuggestionDraft(AiAutoTagBookmarkStatusDto item)
+    {
+        if (_suggestionDrafts.TryGetValue(item.BookmarkId, out var draft))
+            return draft;
+        return item.SuggestedTitle ?? string.Empty;
+    }
+
+    private void SetSuggestionDraft(Guid bookmarkId, string? value)
+        => _suggestionDrafts[bookmarkId] = value ?? string.Empty;
 
     private static Color GetStatusColor(string status) => status switch
     {
@@ -54,8 +73,66 @@ public partial class AutoTaggerDialog
         _selectedResultIds.Clear();
         _editTagsBuffer.Clear();
         _providerTimings.Clear();
+        _pendingTitleEdits.Clear();
+        _suggestionDrafts.Clear();
         _isEditingTags = false;
         _rerunStatusFilter = "All";
+    }
+
+    /// <summary>Per-row "Accept" on a suggested title — queues it for the "Apply title changes" button.</summary>
+    private void AcceptSuggestedTitle(AiAutoTagBookmarkStatusDto item)
+    {
+        var draft = GetSuggestionDraft(item).Trim();
+        if (draft.Length == 0) return;
+        _pendingTitleEdits[item.BookmarkId] = draft;
+        _suggestionDrafts.Remove(item.BookmarkId);
+    }
+
+    private void RevertPendingTitle(Guid bookmarkId)
+    {
+        _pendingTitleEdits.Remove(bookmarkId);
+    }
+
+    private async Task ApplyPendingTitleChangesAsync()
+    {
+        if (_pendingTitleEdits.Count == 0) return;
+
+        _rerunsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var request = new BulkSaveTagsRequest { Titles = new Dictionary<Guid, string>(_pendingTitleEdits) };
+            var success = await BookmarkService.BulkSaveTagsAsync(request);
+
+            if (success)
+            {
+                foreach (var (bookmarkId, newTitle) in _pendingTitleEdits)
+                {
+                    var index = _runResults.FindIndex(r => r.BookmarkId == bookmarkId);
+                    if (index >= 0)
+                    {
+                        _runResults[index].Title = newTitle;
+                    }
+                }
+
+                Snackbar.Add($"Applied {_pendingTitleEdits.Count} title change(s).", Severity.Success);
+                _pendingTitleEdits.Clear();
+            }
+            else
+            {
+                Snackbar.Add("Failed to apply title changes.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error applying title changes: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _rerunsLoading = false;
+            StateHasChanged();
+        }
     }
 
     private void MergeRunResults(IEnumerable<AiAutoTagBookmarkStatusDto> statuses)

@@ -137,7 +137,19 @@
             {
                 <!-- Review Screen -->
                 <MudStack Spacing="2">
-                    <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
+                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
+                        @if (_reviewItems.Any(i => i.HasSuggestion))
+                        {
+                            <MudButton Variant="Variant.Outlined"
+                                       Size="Size.Small"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.DoneAll"
+                                       OnClick="AcceptAllSuggestions">
+                                Accept all suggestions
+                            </MudButton>
+                        }
+                    </div>
                     <MudText Typo="Typo.body2" Class="mud-text-secondary">Review the generated suggestions. Click 'x' to
                         delete, or add tags manually before saving.</MudText>
 
@@ -206,7 +218,39 @@
                                                  Color="Color.Primary" Dense="true" />
                                 </MudTd>
                                 <MudTd Style="min-width: 260px;">
-                                    @item.Title
+                                    <div>@item.Title</div>
+                                    @if (_pendingTitleEdits.TryGetValue(item.BookmarkId, out var pendingTitle))
+                                    {
+                                        <div class="suggested-title-chip suggested-title-chip--pending">
+                                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="flex-shrink-0" />
+                                            <span class="suggested-title-chip-label">Pending apply: @pendingTitle</span>
+                                            <MudButton Variant="Variant.Text" Size="Size.Small"
+                                                       aria-label="@($"Undo pending title change for {item.Title}")"
+                                                       OnClick="@(() => RevertPendingTitle(item.BookmarkId))">
+                                                Undo
+                                            </MudButton>
+                                        </div>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(item.SuggestedTitle)
+                                         && !string.Equals(item.SuggestedTitle.Trim(), item.Title.Trim(), StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <div class="suggested-title-chip">
+                                            <span class="suggested-title-chip-prefix">Suggested:</span>
+                                            <MudTextField T="string"
+                                                          Value="@GetSuggestionDraft(item)"
+                                                          ValueChanged="@(v => SetSuggestionDraft(item.BookmarkId, v))"
+                                                          Variant="Variant.Text"
+                                                          Margin="Margin.Dense"
+                                                          Immediate="true"
+                                                          Class="suggested-title-chip-input"
+                                                          aria-label="@($"Edit suggested title for {item.Title}")" />
+                                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                                       aria-label="@($"Accept suggested title for {item.Title}")"
+                                                       OnClick="@(() => AcceptSuggestedTitle(item))">
+                                                Accept
+                                            </MudButton>
+                                        </div>
+                                    }
                                 </MudTd>
                                 <MudTd>
                                     <MudChip T="string" Color="statusColor" Size="Size.Small" Variant="Variant.Text">@item.Status</MudChip>
@@ -242,6 +286,14 @@
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
                                    OnClick="SaveEditedTagsAsync" Disabled="@(_editTagsBuffer.Count == 0)">
                             Save Edited Tags
+                        </MudButton>
+                    }
+
+                    @if (_pendingTitleEdits.Count > 0)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check"
+                                   OnClick="ApplyPendingTitleChangesAsync" Disabled="@_rerunsLoading">
+                            Apply @_pendingTitleEdits.Count title@(_pendingTitleEdits.Count == 1 ? "" : "s")
                         </MudButton>
                     }
 
@@ -554,6 +606,8 @@
                         foreach (var item in chunk)
                         {
                             var tags = response.Tags.TryGetValue(item.Id, out var t) ? t : new List<string>();
+                            string? suggestedTitle = null;
+                            response.SuggestedTitles?.TryGetValue(item.Id, out suggestedTitle);
                             if (tags.Count > 0)
                             {
                                 AddLog($"✓ '{item.Title}' tagged: [{string.Join(", ", tags)}]", LogType.Success);
@@ -567,8 +621,11 @@
                             {
                                 Id = item.Id,
                                 Title = item.Title,
+                                OriginalTitle = item.Title,
                                 Url = item.Url ?? string.Empty,
-                                Tags = tags
+                                Tags = tags,
+                                OriginalTags = tags.ToList(),
+                                SuggestedTitle = suggestedTitle
                             });
                         }
                     }
@@ -582,8 +639,10 @@
                             {
                                 Id = item.Id,
                                 Title = item.Title,
+                                OriginalTitle = item.Title,
                                 Url = item.Url ?? string.Empty,
-                                Tags = new List<string>()
+                                Tags = new List<string>(),
+                                OriginalTags = []
                             });
                         }
                     }
@@ -624,8 +683,25 @@
         _currentState = TaggerState.Review;
     }
 
+    private void AcceptAllSuggestions()
+    {
+        foreach (var item in _reviewItems)
+        {
+            if (!item.HasSuggestion || string.IsNullOrWhiteSpace(item.SuggestedTitle))
+                continue;
+            item.Title = item.SuggestedTitle;
+        }
+    }
+
     private async Task ConfirmAndSaveAsync()
     {
+        var changedTitles = _reviewItems.Where(i => i.TitleChanged).ToList();
+        if (changedTitles.Any(i => string.IsNullOrWhiteSpace(i.Title)))
+        {
+            Snackbar.Add("One or more edited titles are blank. Fix or revert them before saving.", Severity.Error);
+            return;
+        }
+
         _loading = true;
         StateHasChanged();
 
@@ -633,7 +709,9 @@
         {
             var saveReq = new BulkSaveTagsRequest
             {
-                Tags = _reviewItems.ToDictionary(i => i.Id, i => i.Tags)
+                Tags = _reviewItems.ToDictionary(i => i.Id, i => i.Tags),
+                Titles = changedTitles.ToDictionary(i => i.Id, i => i.Title.Trim()),
+                ManuallyEditedTagIds = _reviewItems.Where(i => i.TagsChanged).Select(i => i.Id).ToHashSet()
             };
 
             var success = await BookmarkService.BulkSaveTagsAsync(saveReq);
