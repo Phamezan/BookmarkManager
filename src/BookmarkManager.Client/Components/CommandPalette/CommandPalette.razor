@@ -112,27 +112,17 @@
             </div>
         </div>
 
-        <!-- Footer actions and keyboard bindings -->
+        <!-- Footer: same chrome everywhere. Left nav hints removed so dashboard
+             Ctrl+P matches the extension overlay. ↑ Recent sits with actions. -->
         <div class="palette-footer">
-            <div class="palette-footer-left">
-                <div class="palette-footer-hint">
-                    <span class="palette-key">Shift</span> + <span class="palette-key">J</span> / <span class="palette-key">K</span>
-                    <span>Move</span>
-                </div>
-                <div class="palette-footer-hint">
-                    <span class="palette-key">&gt;</span>
-                    <span>Folder Navigation</span>
-                </div>
+            <div class="palette-footer-actions">
                 @if (string.IsNullOrEmpty(_searchQuery) && _hasSearchHistory)
                 {
                     <div class="palette-footer-hint">
-                        <span class="palette-key">↑</span>
+                        <kbd class="palette-key">↑</kbd>
                         <span>Recent searches</span>
                     </div>
                 }
-            </div>
-
-            <div class="palette-footer-right">
                 <div class="palette-footer-hint">
                     <kbd class="palette-key">Enter</kbd>
                     <span>@_primaryHint</span>
@@ -141,13 +131,10 @@
                     <kbd class="palette-key">Shift</kbd> + <kbd class="palette-key">Enter</kbd>
                     <span>@_secondaryHint</span>
                 </div>
-                @if (Embedded)
-                {
-                    <div class="palette-footer-hint">
-                        <kbd class="palette-key">Ctrl</kbd> + <kbd class="palette-key">Enter</kbd>
-                        <span>Open in Manager</span>
-                    </div>
-                }
+                <div class="palette-footer-hint">
+                    <kbd class="palette-key">Ctrl</kbd> + <kbd class="palette-key">Enter</kbd>
+                    <span>@_tertiaryHint</span>
+                </div>
             </div>
         </div>
     </div>
@@ -433,22 +420,16 @@
         border-top: 1px solid rgba(255, 255, 255, 0.05);
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-end;
         font-size: 12px;
         color: rgba(203, 195, 215, 0.7);
     }
-    .palette-footer-left {
+    .palette-footer-actions {
         display: flex;
         align-items: center;
         gap: 16px;
-        min-width: 0;
-        flex-shrink: 1;
-    }
-    .palette-footer-right {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-        flex-shrink: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
     }
     .palette-key {
         font-family: 'JetBrains Mono', monospace;
@@ -463,6 +444,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        white-space: nowrap;
     }
     .palette-no-results {
         padding: 32px;
@@ -495,10 +477,9 @@
         opacity: 0.6;
     }
 
-    /* Embedded (extension iframe) mode: the iframe itself is already sized and
-       positioned around the modal, so drop the dim backdrop and the viewport
-       offset, and let the modal fill the iframe width. The transparent
-       backdrop still catches clicks inside the iframe for close-on-click-out. */
+    /* Embedded (extension iframe): only shell/backdrop differs — the modal and
+       footer chrome match the dashboard Ctrl+P palette. Transparent backdrop +
+       no top offset so the iframe can hug the modal over the host page. */
     .palette-wrapper.embedded {
         padding-top: 0;
     }
@@ -510,22 +491,6 @@
     .palette-wrapper.embedded .palette-modal {
         margin: 0;
         max-width: none;
-    }
-    /* Embedded footer carries an extra Ctrl+Enter hint; drop the navigation
-       hints and keep each hint on one line so nothing wraps or clips.
-       Important: do not put display:flex on .palette-footer-left via inline
-       style — that overrides this rule and re-shows the left hints. */
-    .palette-wrapper.embedded .palette-footer-left {
-        display: none !important;
-    }
-    .palette-wrapper.embedded .palette-footer {
-        justify-content: flex-end;
-    }
-    .palette-wrapper.embedded .palette-footer-right {
-        gap: 16px;
-    }
-    .palette-wrapper.embedded .palette-footer-hint {
-        white-space: nowrap;
     }
 
     @@keyframes fadeInUp {

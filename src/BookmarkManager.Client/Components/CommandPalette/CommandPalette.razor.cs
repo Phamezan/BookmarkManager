@@ -60,6 +60,7 @@ public partial class CommandPalette : IDisposable
     private bool _triggerStagger = false;
     private string _primaryHint = "Go to Bookmark";
     private string _secondaryHint = "Open in New Tab";
+    private string _tertiaryHint = "Go to Bookmark";
     private Dictionary<Guid, string> _folderPathById = new();
 
     private DotNetObjectReference<CommandPalette>? _dotNetRef;
@@ -168,6 +169,7 @@ public partial class CommandPalette : IDisposable
         {
             _primaryHint = IsContextOnManager ? "Go to Bookmark" : "Open Here";
             _secondaryHint = "Open in New Tab";
+            _tertiaryHint = "Open in Manager";
             return;
         }
 
@@ -184,6 +186,9 @@ public partial class CommandPalette : IDisposable
             _primaryHint = "Go to Bookmark";
             _secondaryHint = "Open in New Tab";
         }
+
+        // Same key chord as the extension overlay — tertiary is already GoToBookmark.
+        _tertiaryHint = "Go to Bookmark";
     }
 
     private async Task LoadDefaultResultsAsync(CancellationToken cancellationToken = default)
