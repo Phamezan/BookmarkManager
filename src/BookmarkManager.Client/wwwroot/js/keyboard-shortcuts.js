@@ -97,4 +97,18 @@
             el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
     };
+
+    // Deep-link from command palette / library: scroll the card into view and
+    // briefly flash it. Id is a GUID string — never interpolated into eval.
+    window.scrollAndFlashBookmark = function (bookmarkId) {
+        if (!bookmarkId) return;
+        blurBookmarkListFocus();
+        var el = document.getElementById('bookmark-card-' + bookmarkId);
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('highlight-flash');
+        setTimeout(function () {
+            el.classList.remove('highlight-flash');
+        }, 3000);
+    };
 })();
