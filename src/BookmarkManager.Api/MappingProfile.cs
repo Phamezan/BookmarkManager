@@ -9,6 +9,7 @@ public class MappingProfile : Profile
     public MappingProfile()
     {
         CreateMap<BookmarkNode, BookmarkNodeDto>()
+            .ForMember(d => d.CoverImageUrl, o => o.MapFrom(s => s.CoverImageUrl))
             .ForMember(d => d.Metadata, o => o.MapFrom(s => new BookmarkMetadataDto
             {
                 Category = s.Category,
