@@ -33,13 +33,14 @@ window.repositionNavIndicator = function() {
 
     if (isVertical) {
         const top = linkRect.top - navRect.top - nav.clientTop + nav.scrollTop;
+        const instant = document.documentElement.classList.contains('bm-display-repair') || !wasReady;
         if (window.gsap) {
             gsap.to(indicator, {
                 y: top,
                 height: linkRect.height,
                 x: 0,
                 width: 'auto',
-                duration: wasReady ? 0.48 : 0,
+                duration: instant ? 0 : 0.48,
                 ease: 'back.out(1.7)',
                 overwrite: 'auto'
             });
@@ -50,13 +51,16 @@ window.repositionNavIndicator = function() {
         }
     } else {
         const left = linkRect.left - navRect.left - nav.clientLeft + nav.scrollLeft;
+        // Instant reposition during display repair — animating width/x across a
+        // DPI change leaves the indicator (and sometimes the shell) stuck.
+        const instant = document.documentElement.classList.contains('bm-display-repair') || !wasReady;
         if (window.gsap) {
             gsap.to(indicator, {
                 x: left,
                 width: linkRect.width,
                 y: 0,
                 height: 'auto',
-                duration: wasReady ? 0.48 : 0,
+                duration: instant ? 0 : 0.48,
                 ease: 'back.out(1.7)',
                 overwrite: 'auto'
             });
@@ -136,7 +140,19 @@ window.initNavIndicator = function() {
     window.navIndicatorInitialized = true;
 
     window.repositionNavIndicator();
-    window.addEventListener('resize', () => window.repositionNavIndicator());
+    // No per-resize reposition here — display-repair.js owns monitor moves and
+    // a GSAP tween mid-resize contributed to main-thread hangs. Reposition on
+    // next animation frame only after the storm flag clears.
+    var navResizeTimer = null;
+    window.addEventListener('resize', () => {
+        if (window.__bmSuppressLayoutInterop) return;
+        if (navResizeTimer !== null) clearTimeout(navResizeTimer);
+        navResizeTimer = setTimeout(() => {
+            navResizeTimer = null;
+            if (window.__bmSuppressLayoutInterop) return;
+            window.repositionNavIndicator();
+        }, 300);
+    });
 
     // Blazor's NavLink toggles its own ".active" class in response to the same
     // LocationChanged event we listen to from .NET, and subscriber order isn't

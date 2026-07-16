@@ -1,12 +1,14 @@
 // Bookmark card entrance stagger + cursor-tracked hover bloom (GSAP).
-// Cards are `display: contents` wrapped (see .bookmark-grid), and Blazor
-// re-renders the grid on every filter/search/sort change — so we key each
-// pass by a signature of the visible card ids and skip re-running the
-// entrance timeline when nothing actually changed under the hood.
+// BookmarkList uses Blazor Virtualize, which renders MULTIPLE `.bookmark-grid`
+// row containers. Always query under `.bookmark-list` so every visible card
+// gets entrance + bloom — querySelector('.bookmark-grid') alone only hit the
+// first row and left the rest without colorful hover bloom.
 window.animateBookmarkGrid = function (gridSelector) {
-    const grid = document.querySelector(gridSelector || '.bookmark-grid');
-    if (!grid) return;
-    const cards = Array.from(grid.querySelectorAll('.bookmark-card'));
+    if (document.documentElement.classList.contains('bm-display-repair')) return;
+    const root = document.querySelector('.bookmark-list') || document.querySelector(gridSelector || '.bookmark-grid');
+    if (!root) return;
+
+    const cards = Array.from(root.querySelectorAll('.bookmark-card'));
     if (!cards.length) return;
 
     if (!window.gsap) {
@@ -14,11 +16,15 @@ window.animateBookmarkGrid = function (gridSelector) {
         return;
     }
 
-    const signature = cards.map(c => c.dataset.dragId || '').join('|');
-    if (grid.dataset.lastAnimatedSignature === signature) return;
-    grid.dataset.lastAnimatedSignature = signature;
+    const signature = cards.map(c => c.dataset.dragId || c.id || '').join('|');
+    if (root.dataset.lastAnimatedSignature === signature) return;
+    root.dataset.lastAnimatedSignature = signature;
 
+    // Clear any stuck opacity from a prior interrupted tween (folder navigate
+    // mid-animation used to leave cards invisible until the next interaction).
     gsap.killTweensOf(cards);
+    gsap.set(cards, { clearProps: 'opacity,transform' });
+
     gsap.fromTo(cards,
         { opacity: 0, y: 10, scale: 0.98 },
         {
@@ -33,17 +39,16 @@ window.animateBookmarkGrid = function (gridSelector) {
     );
 };
 
-// Delegate one mousemove listener at the grid level instead of one per card
-// — cheaper for large grids, and new cards picked up automatically since we
-// resolve the target from event.target.closest() on every move.
+// Delegate one mousemove listener on the list container so every virtualized
+// row picks up the cursor bloom, not just the first `.bookmark-grid`.
 window.initBookmarkGridBloom = function (gridSelector) {
-    const grid = document.querySelector(gridSelector || '.bookmark-grid');
-    if (!grid || grid.dataset.bloomDelegated) return;
-    grid.dataset.bloomDelegated = 'true';
+    const root = document.querySelector('.bookmark-list') || document.querySelector(gridSelector || '.bookmark-grid');
+    if (!root || root.dataset.bloomDelegated) return;
+    root.dataset.bloomDelegated = 'true';
 
     let raf = null;
     let pendingEvent = null;
-    grid.addEventListener('mousemove', (e) => {
+    root.addEventListener('mousemove', (e) => {
         pendingEvent = e;
         if (raf) return;
         raf = requestAnimationFrame(() => {
