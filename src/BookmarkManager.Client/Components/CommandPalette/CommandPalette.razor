@@ -18,7 +18,7 @@
                 id="paletteSearchInput"
                 type="text" 
                 class="palette-input" 
-                placeholder="Search bookmarks (type > for folders)..." 
+                placeholder="Search bookmarks or pick a folder..." 
                 value="@_searchQuery"
                 @oninput="HandleSearchInput"
                 autocomplete="off"
@@ -29,7 +29,7 @@
         <!-- Scrollable content -->
         <div class="palette-content">
             <div class="palette-header">
-                <span class="palette-header-title">Bookmarks</span>
+                <span class="palette-header-title">@_listHeaderTitle</span>
                 <span class="palette-header-count">@_results.Count matches</span>
             </div>
 
@@ -39,7 +39,7 @@
                     <div class="palette-no-results">
                         @if (string.IsNullOrWhiteSpace(_searchQuery))
                         {
-                            <span>Type to search bookmarks...</span>
+                            <span>No folders found</span>
                         }
                         else
                         {

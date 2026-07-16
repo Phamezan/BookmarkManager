@@ -3,6 +3,19 @@
 
     window.initializeCommandPalette = function (dotNetRef) {
         dotNetHelper = dotNetRef;
+        window.ensurePaletteInfiniteScroll(dotNetRef);
+    };
+
+    window.ensurePaletteInfiniteScroll = function (dotNetRef) {
+        const el = document.getElementById('paletteList');
+        if (!el || el.dataset.bmInfiniteScroll === '1') return;
+        el.dataset.bmInfiniteScroll = '1';
+        el.addEventListener('scroll', function () {
+            if (el.scrollTop + el.clientHeight < el.scrollHeight - 72) return;
+            if (dotNetRef) {
+                dotNetRef.invokeMethodAsync('LoadMoreFromScroll');
+            }
+        }, { passive: true });
     };
 
     // Ctrl+P / Cmd+P global trigger moved to keyboard-shortcuts.js: CommandPalette

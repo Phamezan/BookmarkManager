@@ -83,6 +83,7 @@ public partial class CommandPalette : IDisposable
     private int? _historyIndex;
     private IReadOnlyList<string> _searchHistory = [];
     private bool _hasSearchHistory;
+    private string _listHeaderTitle = "Folders";
 
     private bool HasMoreResults => !_isLoadingMore && _loadedBookmarkCount < _totalResultCount;
 
@@ -112,6 +113,12 @@ public partial class CommandPalette : IDisposable
                     PaletteService.Toggle();
                     return Task.FromResult(true);
                 });
+        }
+
+        if (PaletteService.IsOpen && _dotNetRef is not null)
+        {
+            // Re-bind if the list element was recreated after open/search.
+            await JSRuntime.InvokeVoidAsync("ensurePaletteInfiniteScroll", _dotNetRef);
         }
     }
 
@@ -199,66 +206,22 @@ public partial class CommandPalette : IDisposable
             if (cancellationToken.IsCancellationRequested) return;
             RebuildFolderPathMap(folderTree);
 
-            var candidates = await FrecencyService.GetTopAsync(PaletteFrecencyService.RecentSectionSize * 2);
-            if (cancellationToken.IsCancellationRequested) return;
-
-            var recent = new List<(Guid Id, PaletteFrecencyService.Entry Snapshot)>();
-            foreach (var (id, snap) in candidates)
-            {
-                if (cancellationToken.IsCancellationRequested) return;
-                var live = await BookmarkService.GetBookmarkAsync(id, cancellationToken);
-                if (live is null || live.IsDeleted)
-                {
-                    await FrecencyService.RemoveAsync(id);
-                    continue;
-                }
-
-                // Refresh snapshot fields from live node so the section stays accurate.
-                snap.Title = live.Title;
-                snap.Url = live.Url ?? snap.Url;
-                snap.Category = live.Metadata?.Category ?? snap.Category;
-                recent.Add((id, snap));
-                if (recent.Count >= PaletteFrecencyService.RecentSectionSize)
-                    break;
-            }
-
-            var recentIds = recent.Select(r => r.Id).ToHashSet();
-
-            var request = new SearchRequest
-            {
-                Query = string.Empty,
-                Page = 1,
-                PageSize = DefaultPageSize
-            };
-            var pagedResult = await BookmarkService.SearchBookmarksAsync(request, cancellationToken);
-            if (cancellationToken.IsCancellationRequested) return;
-
-            var allBookmarks = pagedResult.Items?.ToList() ?? [];
-            var sectionB = allBookmarks.Where(b => !recentIds.Contains(b.Id)).Select(MapBookmarkToItem).ToList();
+            // Empty open = folder browser (same list as typing ">" with no filter).
+            var folderMatches = new List<FolderSearchResult>();
+            FindFoldersRecursive(folderTree, query: string.Empty, string.Empty, folderMatches);
 
             _highlightQuery = string.Empty;
-            var items = new List<PaletteItem>();
-
-            if (recent.Count > 0)
-            {
-                items.Add(CreateSectionHeader("Recently opened"));
-                foreach (var (id, snap) in recent)
-                {
-                    items.Add(MapFrecencySnapshotToItem(id, snap));
-                }
-
-                items.Add(CreateSectionHeader("All bookmarks"));
-            }
-
-            items.AddRange(sectionB);
-
-            if (cancellationToken.IsCancellationRequested) return;
-
-            _results = items;
+            _filterFolderId = null;
+            _results = folderMatches.Select(MapFolderToItem).ToList();
             AssignResultIndices();
             _selectedIndex = FirstSelectableIndex();
-            _loadedBookmarkCount = allBookmarks.Count;
-            RememberLoadedPage(request, pagedResult.TotalCount);
+            _totalResultCount = _results.Count;
+            _loadedBookmarkCount = _results.Count;
+            _loadedPage = 1;
+            _loadedPageSize = DefaultPageSize;
+            _loadedQuery = string.Empty;
+            _loadedFolderId = null;
+            _listHeaderTitle = "Folders";
             StateHasChanged();
         }
         catch (OperationCanceledException)
@@ -268,31 +231,6 @@ public partial class CommandPalette : IDisposable
         {
             // Fail silently
         }
-    }
-
-    private static PaletteItem CreateSectionHeader(string title) => new()
-    {
-        IsSectionHeader = true,
-        SectionTitle = title,
-        Title = title,
-        TitleHtml = new MarkupString(System.Net.WebUtility.HtmlEncode(title))
-    };
-
-    private PaletteItem MapFrecencySnapshotToItem(Guid id, PaletteFrecencyService.Entry snap)
-    {
-        string? folderPath = null;
-        // Snapshots may lack ParentId — subtitle is host-only from stored URL.
-        return new PaletteItem
-        {
-            Id = id,
-            Title = snap.Title,
-            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(snap.Title, string.Empty),
-            Subtitle = FormatBookmarkSubtitle(folderPath, snap.Url),
-            Category = snap.Category,
-            Url = string.IsNullOrWhiteSpace(snap.Url) ? null : snap.Url,
-            IsFolder = false,
-            Tooltip = BuildItemTooltip(snap.Title, null)
-        };
     }
 
     /// <summary>Records the request shape + total count for a just-loaded first page so "Load more" can continue it.</summary>
@@ -307,9 +245,7 @@ public partial class CommandPalette : IDisposable
 
     /// <summary>
     /// Fetches the next page (same query/folder filter as the currently-loaded results) and
-    /// appends it. The palette caps each request at <see cref="SearchPageSize"/>/<see
-    /// cref="DefaultPageSize"/> results, so without this, results beyond that page were
-    /// silently unreachable — this is what "Load more" in the palette footer calls.
+    /// appends it. Triggered by the Load more button and by scrolling near the list bottom.
     /// </summary>
     private async Task LoadMoreResultsAsync()
     {
@@ -344,7 +280,7 @@ public partial class CommandPalette : IDisposable
         }
         catch
         {
-            // Fail silently — the footer row simply stays clickable to retry.
+            // Fail silently — scroll/button can retry.
         }
         finally
         {
@@ -352,6 +288,10 @@ public partial class CommandPalette : IDisposable
             StateHasChanged();
         }
     }
+
+    /// <summary>Called from command-palette.js when the list is scrolled near the bottom.</summary>
+    [JSInvokable]
+    public Task LoadMoreFromScroll() => LoadMoreResultsAsync();
 
     private async Task HandleSearchInput(ChangeEventArgs e)
     {
@@ -394,6 +334,7 @@ public partial class CommandPalette : IDisposable
             AssignResultIndices();
             _totalResultCount = _results.Count;
             _loadedBookmarkCount = _results.Count;
+            _listHeaderTitle = "Folders";
             StateHasChanged();
             return;
         }
@@ -477,6 +418,7 @@ public partial class CommandPalette : IDisposable
                 _selectedIndex = FirstSelectableIndex();
                 RememberLoadedPage(request, pagedResult.TotalCount);
                 _loadedBookmarkCount = _results.Count;
+                _listHeaderTitle = "Bookmarks";
                 StateHasChanged();
             }
         }
@@ -828,6 +770,7 @@ public partial class CommandPalette : IDisposable
                 _selectedIndex = FirstSelectableIndex();
                 RememberLoadedPage(request, pagedResult.TotalCount);
                 _loadedBookmarkCount = _results.Count;
+                _listHeaderTitle = "Bookmarks";
                 StateHasChanged();
             }
         }
