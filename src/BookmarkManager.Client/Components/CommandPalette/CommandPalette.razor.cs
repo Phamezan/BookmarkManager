@@ -22,6 +22,7 @@ public partial class CommandPalette : IDisposable
 
     private sealed class PaletteItem
     {
+        public int Index { get; set; }
         public Guid Id { get; set; }
         public string Title { get; set; } = string.Empty;
         public MarkupString TitleHtml { get; set; }
@@ -45,6 +46,8 @@ public partial class CommandPalette : IDisposable
 
     private const int DefaultPageSize = 10;
     private const int SearchPageSize = 20;
+    /// <summary>Fixed row height for Virtualize (icon 32 + padding 16 + margin-bottom 4).</summary>
+    private const int ItemSizePx = 52;
 
     private string _searchQuery = string.Empty;
     private List<PaletteItem> _results = [];
@@ -170,6 +173,7 @@ public partial class CommandPalette : IDisposable
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
             _highlightQuery = string.Empty;
             _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+            AssignResultIndices();
             _selectedIndex = 0;
             RememberLoadedPage(request, pagedResult.TotalCount);
             StateHasChanged();
@@ -215,6 +219,7 @@ public partial class CommandPalette : IDisposable
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
             var newItems = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
             _results.AddRange(newItems);
+            AssignResultIndices();
             _loadedPage = request.Page;
             _totalResultCount = pagedResult.TotalCount;
             StateHasChanged();
@@ -255,6 +260,7 @@ public partial class CommandPalette : IDisposable
             _results = folderMatches.Select(MapFolderToItem).ToList();
             // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
             _highlightQuery = string.Empty;
+            AssignResultIndices();
             _totalResultCount = _results.Count;
             StateHasChanged();
             return;
@@ -334,6 +340,7 @@ public partial class CommandPalette : IDisposable
             {
                 _highlightQuery = bookmarkQuery.Trim();
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+                AssignResultIndices();
                 RememberLoadedPage(request, pagedResult.TotalCount);
                 StateHasChanged();
             }
@@ -346,6 +353,12 @@ public partial class CommandPalette : IDisposable
             _results.Clear();
             StateHasChanged();
         }
+    }
+
+    private void AssignResultIndices()
+    {
+        for (var i = 0; i < _results.Count; i++)
+            _results[i].Index = i;
     }
 
     private void RebuildFolderPathMap(List<FolderTreeNodeDto>? nodes)
@@ -462,16 +475,8 @@ public partial class CommandPalette : IDisposable
 
         _selectedIndex = (_selectedIndex + direction + _results.Count) % _results.Count;
         StateHasChanged();
-        
-        _ = JSRuntime.InvokeVoidAsync("eval", $@"
-            var container = document.getElementById('paletteList');
-            if (container) {{
-                var active = container.children[{_selectedIndex} + (container.querySelector('.palette-no-results') ? 1 : 0)];
-                if (active) {{
-                    active.scrollIntoView({{ block: 'nearest', behavior: 'smooth' }});
-                }}
-            }}
-        ");
+
+        _ = JSRuntime.InvokeVoidAsync("scrollPaletteToIndex", _selectedIndex, ItemSizePx);
     }
 
     [JSInvokable]
@@ -572,14 +577,8 @@ public partial class CommandPalette : IDisposable
         _selectedIndex = 0;
         _results.Clear();
         StateHasChanged();
-        
-        _ = JSRuntime.InvokeVoidAsync("eval", $@"
-            var input = document.getElementById('paletteSearchInput');
-            if (input) {{
-                input.value = '>{selected.Title} ';
-                input.focus();
-            }}
-        ");
+
+        _ = JSRuntime.InvokeVoidAsync("setPaletteInput", _searchQuery);
 
         await SearchFolderBookmarksAsync(_filterFolderId.Value);
     }
@@ -605,6 +604,7 @@ public partial class CommandPalette : IDisposable
             {
                 _highlightQuery = string.Empty;
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+                AssignResultIndices();
                 RememberLoadedPage(request, pagedResult.TotalCount);
                 StateHasChanged();
             }

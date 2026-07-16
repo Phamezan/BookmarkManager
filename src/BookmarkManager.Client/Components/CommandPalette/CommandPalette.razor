@@ -1,5 +1,6 @@
 @using BookmarkManager.Contracts
 @using BookmarkManager.Client.Services
+@using Microsoft.AspNetCore.Components.Web.Virtualization
 @inject ICommandPaletteService PaletteService
 @inject IBookmarkService BookmarkService
 @inject NavigationManager NavigationManager
@@ -46,20 +47,19 @@
                 }
                 else
                 {
-                    @for (int i = 0; i < _results.Count; i++)
-                    {
-                        var index = i;
-                        var item = _results[index];
-                        var isActive = index == _selectedIndex;
-                        var badgeClass = GetBadgeClass(item.Category);
-                        var delayStyle = _triggerStagger ? $"animation-delay: {index * 30}ms;" : "";
-
-                        <div class="palette-item @(isActive ? "is-active" : "") @(_triggerStagger ? "stagger-item" : "")" 
+                    <Virtualize Items="_results" ItemSize="ItemSizePx" Context="item">
+                        @{
+                            var isActive = item.Index == _selectedIndex;
+                            var badgeClass = GetBadgeClass(item.Category);
+                            var useStagger = _triggerStagger && item.Index < 10;
+                            var delayStyle = useStagger ? $"animation-delay: {item.Index * 30}ms;" : "";
+                        }
+                        <div class="palette-item @(isActive ? "is-active" : "") @(useStagger ? "stagger-item" : "")"
                              style="@delayStyle"
                              title="@(item.Tooltip ?? "")"
-                             @onclick="() => HandleItemClick(index)"
-                             @onmouseover="() => _selectedIndex = index">
-                            
+                             @onclick="() => HandleItemClick(item.Index)"
+                             @onmouseover="() => _selectedIndex = item.Index">
+
                             <div class="palette-item-left">
                                 <div class="palette-item-icon-wrap">
                                     @if (item.IsFolder)
@@ -92,7 +92,7 @@
                                 <span class="palette-item-indicator">Selected</span>
                             }
                         </div>
-                    }
+                    </Virtualize>
                     @if (HasMoreResults)
                     {
                         <button type="button" class="palette-load-more" @onclick="LoadMoreResultsAsync" disabled="@_isLoadingMore">
@@ -236,9 +236,7 @@
         color: rgba(203, 195, 215, 0.4);
     }
     .palette-list {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
+        display: block;
         max-height: 420px;
         overflow-y: auto;
     }
@@ -260,6 +258,9 @@
         align-items: center;
         justify-content: space-between;
         padding: 8px 12px;
+        margin-bottom: 4px;
+        box-sizing: border-box;
+        height: 48px;
         border: 1px solid transparent;
         border-radius: 12px;
         cursor: pointer;

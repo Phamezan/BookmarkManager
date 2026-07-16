@@ -55,6 +55,25 @@
         }, 100);
     };
 
+    window.setPaletteInput = function (value) {
+        const input = document.getElementById('paletteSearchInput');
+        if (!input) return;
+        input.value = value ?? '';
+        input.focus();
+    };
+
+    window.scrollPaletteToIndex = function (index, itemSize) {
+        const container = document.getElementById('paletteList');
+        if (!container || !Number.isFinite(index) || !Number.isFinite(itemSize) || itemSize <= 0) return;
+        const top = index * itemSize;
+        const bottom = top + itemSize;
+        if (top < container.scrollTop) {
+            container.scrollTop = top;
+        } else if (bottom > container.scrollTop + container.clientHeight) {
+            container.scrollTop = bottom - container.clientHeight;
+        }
+    };
+
     window.openInNewTab = function (url) {
         if (url) {
             window.open(url, '_blank');
