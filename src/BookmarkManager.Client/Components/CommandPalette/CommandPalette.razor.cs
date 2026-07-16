@@ -41,16 +41,33 @@ public partial class CommandPalette : IDisposable
     /// <summary>URL of the tab the embedded palette overlays.</summary>
     [Parameter] public string? ContextUrl { get; set; }
 
+    private const int DefaultPageSize = 10;
+    private const int SearchPageSize = 20;
+
     private string _searchQuery = string.Empty;
     private List<PaletteItem> _results = [];
     private int _selectedIndex = 0;
     private bool _triggerStagger = false;
     private string _primaryHint = "Go to Bookmark";
     private string _secondaryHint = "Open in New Tab";
-    
+
     private DotNetObjectReference<CommandPalette>? _dotNetRef;
     private CancellationTokenSource? _searchCts;
     private Guid? _filterFolderId;
+    private IDisposable? _ctrlPRegistration;
+
+    // Load-more paging state: tracks the request shape of the currently-loaded page so
+    // "Load more" can fetch the next page with the same query/folder filter and append.
+    private int _loadedPage = 1;
+    private int _loadedPageSize = DefaultPageSize;
+    private int _totalResultCount;
+    private string _loadedQuery = string.Empty;
+    private Guid? _loadedFolderId;
+    private bool _isLoadingMore;
+
+    private bool HasMoreResults => !_isLoadingMore && _results.Count < _totalResultCount;
+
+    [Inject] private KeyboardShortcutService KeyboardShortcutService { get; set; } = default!;
 
     protected override void OnInitialized()
     {
@@ -65,6 +82,17 @@ public partial class CommandPalette : IDisposable
         {
             _dotNetRef = DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("initializeCommandPalette", _dotNetRef);
+
+            // Ctrl+P moved off the ad-hoc listener in command-palette.js and onto the
+            // shared KeyboardShortcutService registry (context "global" — always eligible).
+            await KeyboardShortcutService.EnsureInitializedAsync(JSRuntime);
+            _ctrlPRegistration = KeyboardShortcutService.Register(
+                "p", ctrl: true, shift: false, alt: false, KeyboardShortcutService.GlobalContext,
+                () =>
+                {
+                    PaletteService.Toggle();
+                    return Task.FromResult(true);
+                });
         }
     }
 
@@ -76,6 +104,7 @@ public partial class CommandPalette : IDisposable
             _selectedIndex = 0;
             _filterFolderId = null;
             _results.Clear();
+            _totalResultCount = 0;
             _triggerStagger = true;
             UpdateHints();
             _ = LoadDefaultResultsAsync();
@@ -128,16 +157,67 @@ public partial class CommandPalette : IDisposable
             {
                 Query = string.Empty,
                 Page = 1,
-                PageSize = 10
+                PageSize = DefaultPageSize
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
             _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
             _selectedIndex = 0;
+            RememberLoadedPage(request, pagedResult.TotalCount);
             StateHasChanged();
         }
         catch
         {
             // Fail silently
+        }
+    }
+
+    /// <summary>Records the request shape + total count for a just-loaded first page so "Load more" can continue it.</summary>
+    private void RememberLoadedPage(SearchRequest request, int totalCount)
+    {
+        _loadedPage = request.Page;
+        _loadedPageSize = request.PageSize;
+        _loadedQuery = request.Query;
+        _loadedFolderId = request.FolderId;
+        _totalResultCount = totalCount;
+    }
+
+    /// <summary>
+    /// Fetches the next page (same query/folder filter as the currently-loaded results) and
+    /// appends it. The palette caps each request at <see cref="SearchPageSize"/>/<see
+    /// cref="DefaultPageSize"/> results, so without this, results beyond that page were
+    /// silently unreachable — this is what "Load more" in the palette footer calls.
+    /// </summary>
+    private async Task LoadMoreResultsAsync()
+    {
+        if (_isLoadingMore || _results.Count >= _totalResultCount) return;
+
+        _isLoadingMore = true;
+        StateHasChanged();
+
+        try
+        {
+            var request = new SearchRequest
+            {
+                Query = _loadedQuery,
+                Page = _loadedPage + 1,
+                PageSize = _loadedPageSize,
+                FolderId = _loadedFolderId
+            };
+            var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
+            var newItems = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+            _results.AddRange(newItems);
+            _loadedPage = request.Page;
+            _totalResultCount = pagedResult.TotalCount;
+            StateHasChanged();
+        }
+        catch
+        {
+            // Fail silently — the footer row simply stays clickable to retry.
+        }
+        finally
+        {
+            _isLoadingMore = false;
+            StateHasChanged();
         }
     }
 
@@ -163,6 +243,8 @@ public partial class CommandPalette : IDisposable
             FindFoldersRecursive(folderTree, folderQuery, string.Empty, folderMatches);
             
             _results = folderMatches.Select(MapFolderToItem).ToList();
+            // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
+            _totalResultCount = _results.Count;
             StateHasChanged();
             return;
         }
@@ -232,7 +314,7 @@ public partial class CommandPalette : IDisposable
             {
                 Query = bookmarkQuery.Trim(),
                 Page = 1,
-                PageSize = 20,
+                PageSize = SearchPageSize,
                 FolderId = activeFolderId
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request, token);
@@ -240,6 +322,7 @@ public partial class CommandPalette : IDisposable
             if (!token.IsCancellationRequested)
             {
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+                RememberLoadedPage(request, pagedResult.TotalCount);
                 StateHasChanged();
             }
         }
@@ -481,7 +564,7 @@ public partial class CommandPalette : IDisposable
             {
                 Query = string.Empty,
                 Page = 1,
-                PageSize = 20,
+                PageSize = SearchPageSize,
                 FolderId = folderId
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request, token);
@@ -489,6 +572,7 @@ public partial class CommandPalette : IDisposable
             if (!token.IsCancellationRequested)
             {
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+                RememberLoadedPage(request, pagedResult.TotalCount);
                 StateHasChanged();
             }
         }
@@ -640,6 +724,7 @@ public partial class CommandPalette : IDisposable
     {
         PaletteService.OnToggle -= OnToggle;
         NavigationManager.LocationChanged -= OnLocationChanged;
+        _ctrlPRegistration?.Dispose();
         _dotNetRef?.Dispose();
         _searchCts?.Dispose();
     }

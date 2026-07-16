@@ -22,6 +22,7 @@ builder.Services.AddScoped<IBookmarkService, HttpBookmarkService>();
 builder.Services.AddScoped<ILibraryService, HttpLibraryService>();
 builder.Services.AddScoped<IBackupService, HttpBackupService>();
 builder.Services.AddScoped<UndoService>();
+builder.Services.AddScoped<KeyboardShortcutService>();
 builder.Services.AddScoped<ICommandPaletteService, CommandPaletteService>();
 builder.Services.AddTransient<SyncSocketListener>();
 builder.Services.AddTransient<FolderSelectionPersistence>();
