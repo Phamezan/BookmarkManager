@@ -114,24 +114,24 @@
 
         <!-- Footer actions and keyboard bindings -->
         <div class="palette-footer">
-            <div class="palette-footer-left" style="display: flex; gap: 16px;">
-                <div style="display: flex; align-items: center; gap: 4px;">
+            <div class="palette-footer-left">
+                <div class="palette-footer-hint">
                     <span class="palette-key">Shift</span> + <span class="palette-key">J</span> / <span class="palette-key">K</span>
-                    <span style="margin-left: 4px;">Move</span>
+                    <span>Move</span>
                 </div>
-                <div style="display: flex; align-items: center; gap: 4px;">
+                <div class="palette-footer-hint">
                     <span class="palette-key">&gt;</span>
-                    <span style="margin-left: 4px;">Folder Navigation</span>
+                    <span>Folder Navigation</span>
                 </div>
                 @if (string.IsNullOrEmpty(_searchQuery) && _hasSearchHistory)
                 {
-                    <div style="display: flex; align-items: center; gap: 4px;">
+                    <div class="palette-footer-hint">
                         <span class="palette-key">↑</span>
-                        <span style="margin-left: 4px;">Recent searches</span>
+                        <span>Recent searches</span>
                     </div>
                 }
             </div>
-            
+
             <div class="palette-footer-right">
                 <div class="palette-footer-hint">
                     <kbd class="palette-key">Enter</kbd>
@@ -440,12 +440,15 @@
     .palette-footer-left {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 16px;
+        min-width: 0;
+        flex-shrink: 1;
     }
     .palette-footer-right {
         display: flex;
         align-items: center;
         gap: 24px;
+        flex-shrink: 0;
     }
     .palette-key {
         font-family: 'JetBrains Mono', monospace;
@@ -509,9 +512,11 @@
         max-width: none;
     }
     /* Embedded footer carries an extra Ctrl+Enter hint; drop the navigation
-       hints and keep each hint on one line so nothing wraps or clips. */
+       hints and keep each hint on one line so nothing wraps or clips.
+       Important: do not put display:flex on .palette-footer-left via inline
+       style — that overrides this rule and re-shows the left hints. */
     .palette-wrapper.embedded .palette-footer-left {
-        display: none;
+        display: none !important;
     }
     .palette-wrapper.embedded .palette-footer {
         justify-content: flex-end;
