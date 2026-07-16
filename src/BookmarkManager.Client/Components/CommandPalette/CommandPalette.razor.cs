@@ -24,6 +24,7 @@ public partial class CommandPalette : IDisposable
     {
         public Guid Id { get; set; }
         public string Title { get; set; } = string.Empty;
+        public MarkupString TitleHtml { get; set; }
         public string Subtitle { get; set; } = string.Empty;
         public string? Category { get; set; }
         public string? Url { get; set; }
@@ -66,6 +67,8 @@ public partial class CommandPalette : IDisposable
     private string _loadedQuery = string.Empty;
     private Guid? _loadedFolderId;
     private bool _isLoadingMore;
+    /// <summary>Effective bookmark query used for title highlighting (empty for default results / folder autocomplete).</summary>
+    private string _highlightQuery = string.Empty;
 
     private bool HasMoreResults => !_isLoadingMore && _results.Count < _totalResultCount;
 
@@ -165,6 +168,7 @@ public partial class CommandPalette : IDisposable
                 PageSize = DefaultPageSize
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
+            _highlightQuery = string.Empty;
             _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
             _selectedIndex = 0;
             RememberLoadedPage(request, pagedResult.TotalCount);
@@ -250,6 +254,7 @@ public partial class CommandPalette : IDisposable
             
             _results = folderMatches.Select(MapFolderToItem).ToList();
             // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
+            _highlightQuery = string.Empty;
             _totalResultCount = _results.Count;
             StateHasChanged();
             return;
@@ -327,6 +332,7 @@ public partial class CommandPalette : IDisposable
             
             if (!token.IsCancellationRequested)
             {
+                _highlightQuery = bookmarkQuery.Trim();
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
                 RememberLoadedPage(request, pagedResult.TotalCount);
                 StateHasChanged();
@@ -597,6 +603,7 @@ public partial class CommandPalette : IDisposable
             
             if (!token.IsCancellationRequested)
             {
+                _highlightQuery = string.Empty;
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
                 RememberLoadedPage(request, pagedResult.TotalCount);
                 StateHasChanged();
@@ -699,6 +706,7 @@ public partial class CommandPalette : IDisposable
         {
             Id = bookmark.Id,
             Title = bookmark.Title,
+            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(bookmark.Title, _highlightQuery),
             Subtitle = FormatBookmarkSubtitle(folderPath, bookmark.Url),
             Category = bookmark.Metadata?.Category,
             Url = bookmark.Url,
@@ -714,6 +722,7 @@ public partial class CommandPalette : IDisposable
         {
             Id = folder.Id,
             Title = folder.Title,
+            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(folder.Title, string.Empty),
             Subtitle = folder.Path,
             Category = "Folder",
             IsFolder = true

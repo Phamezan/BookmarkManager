@@ -77,7 +77,7 @@
                                 </div>
                                 <div class="palette-item-info">
                                     <div class="palette-item-title-row">
-                                        <span class="palette-item-title">@item.Title</span>
+                                        <span class="palette-item-title">@item.TitleHtml</span>
                                         @if (!string.IsNullOrWhiteSpace(item.Category))
                                         {
                                             <span class="palette-item-badge @badgeClass">@item.Category</span>
@@ -326,6 +326,12 @@
         text-overflow: ellipsis;
         white-space: nowrap;
         min-width: 0;
+    }
+    .palette-highlight {
+        background: rgba(208, 188, 255, 0.25);
+        color: #fff;
+        border-radius: 3px;
+        padding: 0 1px;
     }
     .palette-item.is-active .palette-item-title {
         color: #fff;
