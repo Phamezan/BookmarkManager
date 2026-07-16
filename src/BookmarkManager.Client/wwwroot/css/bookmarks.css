@@ -4,13 +4,15 @@
 .bookmarks-workspace {
     display: grid;
     grid-template-columns: minmax(280px, 18vw) minmax(0, 1fr);
-    gap: var(--bm-gap);
-    height: calc(100vh - 56px - 40px);
+    gap: var(--bm-space-4);
+    height: calc(100dvh - 56px - 40px);
+    max-width: 100%;
+    min-width: 0;
 }
 
 .bookmarks-workspace.anime-cal-workspace {
     height: auto;
-    min-height: calc(100vh - 56px - 40px);
+    min-height: calc(100dvh - 56px - 40px);
 }
 
 /* Folder sidebar */
@@ -195,6 +197,14 @@
     flex-direction: column;
     gap: var(--bm-space-3);
     flex-shrink: 0;
+    /* Defensive sticky: pin toolbar/filters; keep backdrop translucent so
+       accent/glow under the header still reads (solid --bm-bg looked washed-out). */
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: color-mix(in srgb, var(--bm-bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
 }
 
 .header-select-row,
@@ -420,12 +430,33 @@ a.root-card:hover {
    10. Bookmark List & Grid
 ---------------------------------------------------------------------------- */
 .bookmark-list {
+    position: relative;
     overflow: auto;
     min-height: 0;
     padding-top: 16px;
     padding-bottom: 16px;
-    padding-right: 2px;
+    padding-left: var(--bm-space-3);
+    padding-right: var(--bm-space-3);
     flex: 1 1 0%;
+}
+
+/* Marquee (drag-rectangle) multi-select overlay — positioned in .bookmark-list
+   local coords by wwwroot/js/marquee-select.js. Never intercepts pointer
+   events so the drag gesture stays owned by the container's listeners. */
+.bookmark-marquee-rect {
+    position: absolute;
+    pointer-events: none;
+    z-index: 20;
+    border: 1px solid var(--bm-accent);
+    background: var(--bm-accent-soft);
+    border-radius: 2px;
+}
+
+/* Live marquee hit preview — distinct from .is-selected (final selection) and
+   .is-focused (keyboard nav) so all three stay visually separable. */
+.bookmark-card.is-marquee-hit {
+    outline: 1.5px dashed var(--bm-accent);
+    outline-offset: 1px;
 }
 
 /* Dynamic grid: cards reflow to fill available container width.
@@ -503,7 +534,8 @@ a.root-card:hover {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 255, 255, 0.06), transparent 70%);
+    background: radial-gradient(180px circle at var(--mx, 50%) var(--my, 0%),
+        color-mix(in srgb, var(--bm-accent) 22%, transparent), transparent 70%);
     opacity: 0;
     transition: opacity var(--bm-med) var(--bm-ease);
     pointer-events: none;
@@ -524,6 +556,14 @@ a.root-card:hover {
     border-color: var(--bm-accent);
     background: var(--bm-accent-soft);
     box-shadow: var(--bm-shadow-glow), inset 0 0 0 1px var(--bm-border-accent);
+}
+
+/* Keyboard-nav focus ring (Pages/Bookmarks.Keyboard.cs) — distinct from
+   .is-selected so "focused row" and "checked row" stay visually separable
+   (a focused row is not necessarily selected, and vice versa). */
+.bookmark-card.is-focused {
+    outline: 2px solid var(--bm-text);
+    outline-offset: 2px;
 }
 
 /* Select checkbox — appears on hover/select */
@@ -800,6 +840,88 @@ a.root-card:hover {
 .bookmark-card:focus-within .bookmark-card-actions {
     opacity: 1;
     transform: translateY(0);
+}
+
+/* Hover preview popover — cheap-info card shown ~400ms after hover starts
+   (Phase 7). Read-only, pointer-events disabled (see BookmarkCard.razor)
+   so it never fights the anchor's own mouseleave. */
+.bookmark-preview-popover {
+    max-width: 320px;
+    z-index: 20;
+}
+
+.bookmark-preview-content {
+    display: flex;
+    flex-direction: column;
+    gap: var(--bm-space-1);
+    padding: var(--bm-space-3);
+    background: var(--bm-surface-raised);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--bm-border-accent);
+    border-radius: var(--bm-radius-md);
+    box-shadow: var(--bm-shadow), 0 12px 28px -8px var(--bm-accent-glow);
+    color: var(--bm-text);
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.bookmark-preview-cover {
+    display: block;
+    width: calc(100% + 2 * var(--bm-space-3));
+    margin: calc(-1 * var(--bm-space-3)) calc(-1 * var(--bm-space-3)) 0;
+    max-height: 220px;
+    height: 220px;
+    object-fit: contain;
+    object-position: center top;
+    background: var(--bm-surface);
+    border-radius: var(--bm-radius-md) var(--bm-radius-md) 0 0;
+}
+
+.bookmark-preview-cover--favicon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 72px;
+    max-height: 72px;
+}
+
+.bookmark-preview-cover--favicon img {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+}
+
+.bookmark-preview-title {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--bm-text);
+    word-break: break-word;
+}
+
+.bookmark-preview-url {
+    color: var(--bm-text-secondary);
+    word-break: break-all;
+    overflow-wrap: anywhere;
+}
+
+.bookmark-preview-tags {
+    display: flex;
+    gap: var(--bm-space-1);
+    flex-wrap: wrap;
+    margin-top: 2px;
+}
+
+.bookmark-preview-meta {
+    color: var(--bm-text-muted);
+    font-size: 0.7rem;
+    margin-top: 2px;
+}
+
+.bookmark-preview-folder {
+    color: var(--bm-text-muted);
+    font-size: 0.7rem;
+    word-break: break-word;
 }
 
 /* Protected badge */

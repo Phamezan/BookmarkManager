@@ -1,11 +1,14 @@
 @using BookmarkManager.Contracts
+@using BookmarkManager.Client.Features.Bookmarks
 @using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
 
 <div @oncontextmenu="@((MouseEventArgs e) => ContextMenuOpened(e, Item))" @oncontextmenu:preventDefault="true"
      @oncontextmenu:stopPropagation="true" style="display: contents;">
-    <div id="bookmark-card-@Item.Id" class="@($"bookmark-card {(IsSelected ? "is-selected" : "")}")" role="listitem"
+    <div id="bookmark-card-@Item.Id" class="@($"bookmark-card {(IsSelected ? "is-selected" : "")} {(IsFocused ? "is-focused" : "")}")" role="listitem"
          draggable="true" data-drag-type="bookmark" data-drag-id="@Item.Id"
-         @ondragstart="@(() => DragStarted(Item.Id))" @onclick="@((MouseEventArgs e) => RowClicked(e, Item))">
+         @ondragstart="@(() => DragStarted(Item.Id))" @onclick="@((MouseEventArgs e) => RowClicked(e, Item))"
+         @onmouseenter="OnCardMouseEnter" @onmouseleave="OnCardMouseLeave">
         <div class="bookmark-select" @onclick:stopPropagation>
             <input type="checkbox" checked="@IsSelected"
                    @onclick="@((MouseEventArgs e) => CheckboxClicked(e, Item.Id))" class="bm-checkbox"
@@ -39,7 +42,7 @@
                 <h3 class="bookmark-card-title" title="@Item.Title">
                     @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
                     {
-                        <a href="@Item.Url" target="_blank" rel="noopener noreferrer" @onclick:stopPropagation>@Item.Title</a>
+                        <a href="@Item.Url" target="_blank" rel="noopener noreferrer" tabindex="-1" @onclick:stopPropagation>@Item.Title</a>
                     }
                     else
                     {
@@ -55,7 +58,7 @@
 
         @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
         {
-            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" @onclick:stopPropagation>@GetDisplayUrl(Item.Url)</a>
+            <a href="@Item.Url" target="_blank" class="bookmark-card-url" title="@Item.Url" tabindex="-1" @onclick:stopPropagation>@GetDisplayUrl(Item.Url)</a>
         }
 
         <div class="bookmark-card-footer">
@@ -123,12 +126,65 @@
                 </button>
             }
         </div>
+
+        <MudPopover Open="_previewOpen" Fixed="true" AnchorOrigin="Origin.TopCenter" TransformOrigin="Origin.BottomCenter"
+                    OverflowBehavior="OverflowBehavior.FlipOnOpen" Class="bookmark-preview-popover" Style="pointer-events: none;">
+            <div class="bookmark-preview-content">
+                @{
+                    var previewCoverUrl = Item.CoverImageUrl ?? Item.Metadata?.CoverImageUrl;
+                    var previewFaviconUrl = string.IsNullOrEmpty(previewCoverUrl) && !string.IsNullOrEmpty(Item.Url)
+                        ? GetFaviconUrl(Item.Url)
+                        : null;
+                }
+                @if (!string.IsNullOrEmpty(previewCoverUrl))
+                {
+                    <img src="@previewCoverUrl" alt="" class="bookmark-preview-cover" onerror="this.style.display='none'" />
+                }
+                else if (!string.IsNullOrEmpty(previewFaviconUrl))
+                {
+                    <div class="bookmark-preview-cover bookmark-preview-cover--favicon">
+                        <img src="@previewFaviconUrl" alt="" onerror="this.parentElement.style.display='none'" />
+                    </div>
+                }
+                <div class="bookmark-preview-title">@Item.Title</div>
+                @if (Item.Type != NodeType.Folder && !string.IsNullOrEmpty(Item.Url))
+                {
+                    <div class="bookmark-preview-url">@Item.Url</div>
+                }
+                @{
+                    var previewTags = GetPreviewTags(Item);
+                }
+                @if (previewTags.Count > 0)
+                {
+                    <div class="bookmark-preview-tags">
+                        @foreach (var tag in previewTags)
+                        {
+                            <span class="tag-badge">@tag</span>
+                        }
+                    </div>
+                }
+                <div class="bookmark-preview-meta">Updated @FormatUpdatedAt(Item.UpdatedAt) (@Item.UpdatedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm"))</div>
+                @{
+                    var previewFolderPath = GetFolderPath(Item.ParentId);
+                }
+                @if (!string.IsNullOrEmpty(previewFolderPath))
+                {
+                    <div class="bookmark-preview-folder">@previewFolderPath</div>
+                }
+            </div>
+        </MudPopover>
     </div>
 </div>
 
 @code {
+    private const int PreviewHoverDelayMs = 400;
+
+    private CancellationTokenSource? _previewCts;
+    private bool _previewOpen;
+
     [Parameter, EditorRequired] public BookmarkNodeDto Item { get; set; } = default!;
     [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public bool IsFocused { get; set; }
     [Parameter] public Func<string, string?> GetFaviconUrl { get; set; } = _ => null;
     [Parameter] public Func<Guid?, string> GetParentFolderName { get; set; } = _ => string.Empty;
     [Parameter] public Func<Guid?, string> GetFolderPath { get; set; } = _ => string.Empty;
@@ -189,5 +245,116 @@
             "NOT_YET_RELEASED" or "UPCOMING" => "Upcoming",
             _ => status
         };
+    }
+
+    private static List<string> GetPreviewTags(BookmarkNodeDto item)
+    {
+        var tags = new List<string>();
+        if (!string.IsNullOrEmpty(item.Metadata?.Category))
+        {
+            tags.Add(item.Metadata.Category);
+        }
+        if (item.Metadata?.Tags != null)
+        {
+            tags.AddRange(item.Metadata.Tags);
+        }
+        return tags;
+    }
+
+    protected override void OnInitialized()
+    {
+        BookmarkPreviewCoordinator.DismissRequested += OnDismissPreview;
+        BookmarkPreviewCoordinator.ToggleRequested += OnTogglePreview;
+    }
+
+    /// <summary>Handles the "i" keyboard shortcut (<c>Bookmarks.Keyboard.cs</c>) — only the
+    /// focused card's id matches, every other subscribed card ignores the request.</summary>
+    private void OnTogglePreview(Guid id)
+    {
+        if (id != Item.Id) return;
+
+        if (_previewOpen)
+        {
+            ClosePreview();
+        }
+        else
+        {
+            CancelPendingPreview();
+            _previewOpen = true;
+            BookmarkPreviewCoordinator.NotifyOpened();
+            _ = InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void OnCardMouseEnter()
+    {
+        CancelPendingPreview();
+        var cts = new CancellationTokenSource();
+        _previewCts = cts;
+        _ = OpenPreviewAfterDelayAsync(cts);
+    }
+
+    private void OnCardMouseLeave()
+    {
+        CancelPendingPreview();
+        ClosePreview();
+    }
+
+    private async Task OpenPreviewAfterDelayAsync(CancellationTokenSource cts)
+    {
+        try
+        {
+            await Task.Delay(PreviewHoverDelayMs, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (cts.IsCancellationRequested) return;
+        _previewOpen = true;
+        BookmarkPreviewCoordinator.NotifyOpened();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelPendingPreview()
+    {
+        _previewCts?.Cancel();
+        _previewCts?.Dispose();
+        _previewCts = null;
+    }
+
+    private void ClosePreview()
+    {
+        if (!_previewOpen) return;
+        _previewOpen = false;
+        BookmarkPreviewCoordinator.NotifyClosed();
+        StateHasChanged();
+    }
+
+    private void OnDismissPreview()
+    {
+        var hadPendingOrOpen = _previewCts != null || _previewOpen;
+        if (!hadPendingOrOpen) return;
+
+        CancelPendingPreview();
+        if (_previewOpen)
+        {
+            _previewOpen = false;
+            BookmarkPreviewCoordinator.NotifyClosed();
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        BookmarkPreviewCoordinator.DismissRequested -= OnDismissPreview;
+        BookmarkPreviewCoordinator.ToggleRequested -= OnTogglePreview;
+        CancelPendingPreview();
+        if (_previewOpen)
+        {
+            _previewOpen = false;
+            BookmarkPreviewCoordinator.NotifyClosed();
+        }
     }
 }

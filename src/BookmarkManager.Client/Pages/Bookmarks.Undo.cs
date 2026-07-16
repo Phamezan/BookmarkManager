@@ -22,9 +22,7 @@ public partial class Bookmarks
                     var undone = await UndoService.UndoAsync(action.Id);
                     if (undone)
                     {
-                        if (_selectedFolderId.HasValue)
-                            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
-                        await RefreshFolderTreeAsync();
+                        await RefreshAfterUndoAsync();
                         Snackbar.Add("Action reverted", Severity.Success);
                     }
                     else
@@ -40,4 +38,46 @@ public partial class Bookmarks
         });
     }
 
+    /// <summary>
+    /// Shared refresh after any successful undo — snackbar UNDO click and the
+    /// global Ctrl+Z path (<see cref="HandleUndoShortcutAsync"/>) both call this
+    /// so the two paths cannot drift.
+    /// </summary>
+    private async Task RefreshAfterUndoAsync()
+    {
+        if (_selectedFolderId.HasValue)
+        {
+            _items = await BookmarkService.GetBookmarksAsync(_selectedFolderId.Value);
+            await LoadTagsAsync();
+        }
+        await RefreshFolderTreeAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Global Ctrl+Z path (Phase 3) — registered under <c>BookmarksListContext</c>
+    /// in <c>Bookmarks.Keyboard.cs</c> so it's only eligible while the Bookmarks
+    /// page is mounted. Pops the newest action off <see cref="UndoService"/>
+    /// regardless of which snackbar (if any) is currently showing.
+    /// </summary>
+    private async Task<bool> HandleUndoShortcutAsync()
+    {
+        try
+        {
+            var undone = await UndoService.UndoLatestAsync();
+            if (!undone)
+            {
+                Snackbar.Add("Nothing to undo", Severity.Info);
+                return true;
+            }
+
+            await RefreshAfterUndoAsync();
+            Snackbar.Add("Action reverted", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to undo: {ex.Message}", Severity.Error);
+        }
+        return true;
+    }
 }

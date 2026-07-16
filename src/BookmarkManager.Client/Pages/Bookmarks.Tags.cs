@@ -1,4 +1,5 @@
 using BookmarkManager.Client.Components;
+using BookmarkManager.Client.Features.Bookmarks;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
@@ -19,6 +20,7 @@ public partial class Bookmarks
         if (!ShouldShowTagBar || _items == null)
         {
             _availableTags = [];
+            _availableHosts = [];
             return;
         }
 
@@ -48,6 +50,12 @@ public partial class Bookmarks
             );
         }
 
+        if (_activeHostFilters.Count > 0)
+        {
+            query = query.Where(i =>
+                BookmarkHostFilter.NormalizeHost(i.Url) is string host && _activeHostFilters.Contains(host));
+        }
+
         var matching = query.ToList();
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -73,6 +81,8 @@ public partial class Bookmarks
             .OrderByDescending(t => t.Count)
             .ThenBy(t => t.Tag)
             .ToList();
+
+        _availableHosts = BookmarkHostFilter.CountHosts(matching);
     }
 
     private bool IsTopLevelFolder(Guid folderId) => _folderTree.Any(folder => folder.Id == folderId);
@@ -97,14 +107,25 @@ public partial class Bookmarks
         }
     }
 
-    private void ClearTagFilters()
+    private void ToggleHostFilter(string host)
+    {
+        if (!_activeHostFilters.Remove(host))
+        {
+            _activeHostFilters.Add(host);
+        }
+    }
+
+    /// <summary>Clears both tag and host filters — background click, folder change, search
+    /// clear, and the tag bar's "Clear All" button all need both cleared together.</summary>
+    private void ClearAllFilters()
     {
         _activeTagFilters.Clear();
+        _activeHostFilters.Clear();
     }
 
     private async Task OpenAutoTaggerDialog()
     {
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraLarge, CloseButton = true };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraLarge, CloseButton = true, CloseOnEscapeKey = true };
         var parameters = new DialogParameters<AutoTaggerDialog>
         {
             { dialog => dialog.CurrentFolderId, _selectedFolderId }
@@ -121,10 +142,15 @@ public partial class Bookmarks
         StateHasChanged();
     }
 
-    private List<TagGroup> GroupTags(List<TagCountDto> tags)
+    private List<TagGroup> GroupTags(List<TagCountDto> tags, List<TagCountDto> hosts)
     {
         var groups = new List<TagGroup>();
-    
+
+        // URL host chips render first — a distinct axis from tag/genre facets, never
+        // sharing a namespace with them (see _activeHostFilters comment in Bookmarks.razor.cs).
+        if (hosts.Count > 0)
+            groups.Add(new TagGroup("URL", hosts, IsHostGroup: true));
+
         var mediumTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Medium").ToList();
         var originTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Origin").ToList();
         var genreTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Genre").ToList();
@@ -153,7 +179,7 @@ public partial class Bookmarks
         };
     }
 
-    public sealed record TagGroup(string CategoryName, List<TagCountDto> Tags);
+    public sealed record TagGroup(string CategoryName, List<TagCountDto> Tags, bool IsHostGroup = false);
 
     public static class TagCategorizer
     {

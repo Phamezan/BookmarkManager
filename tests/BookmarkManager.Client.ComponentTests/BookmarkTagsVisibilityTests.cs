@@ -42,6 +42,7 @@ public sealed class BookmarkTagsVisibilityTests
         context.Services.AddSingleton<IBookmarkService>(bookmarkService);
         context.Services.AddSingleton<IExtensionConnectionService>(new ConnectedExtensionService());
         context.Services.AddSingleton<UndoService>();
+        context.Services.AddSingleton<KeyboardShortcutService>();
 
         var page = context.Render(builder =>
         {

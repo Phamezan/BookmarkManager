@@ -1,4 +1,5 @@
 using BookmarkManager.Client.Components;
+using BookmarkManager.Client.Features.Bookmarks;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
@@ -23,6 +24,18 @@ public partial class Bookmarks
                 ids.Add(id);
         }
         return ids;
+    }
+
+    private void ExpandAllFolders()
+    {
+        _expandedFolderIds = FolderExpansionHelper.CollectAllFolderIds(_folderTree);
+        StateHasChanged();
+    }
+
+    private void CollapseAllFolders()
+    {
+        _expandedFolderIds = [];
+        StateHasChanged();
     }
 
     private async Task RefreshFolderTreeAsync()
