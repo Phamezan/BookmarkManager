@@ -33,7 +33,7 @@
                 <span class="palette-header-count">@_results.Count matches</span>
             </div>
 
-            <div class="palette-list" id="paletteList">
+            <div class="palette-list" id="paletteList" style="--palette-item-stride: @(ItemSizePx)px">
                 @if (_results.Count == 0)
                 {
                     <div class="palette-no-results">
@@ -276,7 +276,8 @@
         padding: 8px 12px;
         margin-bottom: 4px;
         box-sizing: border-box;
-        height: 48px;
+        /* Stride = ItemSizePx; height = stride - margin-bottom so Virtualize math stays honest. */
+        height: calc(var(--palette-item-stride, 52px) - 4px);
         border: 1px solid transparent;
         border-radius: 12px;
         cursor: pointer;

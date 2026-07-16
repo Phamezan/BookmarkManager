@@ -69,7 +69,8 @@ public class FakeBookmarkService : IBookmarkService
         return Task.FromResult(Bookmarks);
     }
     public Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new PagedResult<BookmarkNodeDto> { Items = Bookmarks });
-    public Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult<BookmarkNodeDto?>(null);
+    public Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
+        => Task.FromResult(Bookmarks.FirstOrDefault(b => b.Id == id) ?? DeletedBookmarks.FirstOrDefault(b => b.Id == id));
     
     public Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default) 
         => OnCreateBookmark != null ? OnCreateBookmark(parentId, title, url) : Task.FromResult(new BookmarkNodeDto { Id = Guid.NewGuid(), Title = title, Url = url, ParentId = parentId, Type = NodeType.Bookmark });

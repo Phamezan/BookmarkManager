@@ -27,7 +27,7 @@ public sealed class PaletteSearchHistoryService
     public static List<string> PushFront(IList<string> existing, string query, int maxEntries = MaxEntries)
     {
         var result = existing
-            .Where(q => !string.Equals(q, query, StringComparison.Ordinal))
+            .Where(q => !string.Equals(q, query, StringComparison.OrdinalIgnoreCase))
             .ToList();
         result.Insert(0, query);
         if (result.Count > maxEntries)

@@ -80,6 +80,37 @@ public sealed class PaletteFrecencyServiceTests
         Assert.Equal("Alpha", top[0].Snapshot.Title);
     }
 
+    [Fact]
+    public async Task GetTopAsync_SkipsCorruptKeys_DoesNotThrowAwayStore()
+    {
+        var js = new FakeLocalStorageJs();
+        var goodId = Guid.NewGuid();
+        var json =
+            "{\"not-a-guid\":{\"opens\":99,\"last\":\"2026-07-16T09:00:00Z\",\"title\":\"Bad\",\"url\":\"https://x\"}," +
+            "\"" + goodId.ToString("D") + "\":{\"opens\":2,\"last\":\"2026-07-16T09:00:00Z\",\"title\":\"Good\",\"url\":\"https://y\"}}";
+        await js.InvokeAsync<object>("localStorage.setItem", PaletteFrecencyService.StorageKey, json);
+
+        var service = new PaletteFrecencyService(js);
+        var top = await service.GetTopAsync(8);
+
+        Assert.Single(top);
+        Assert.Equal(goodId, top[0].Id);
+        Assert.Equal("Good", top[0].Snapshot.Title);
+    }
+
+    [Fact]
+    public async Task RemoveAsync_DropsEntryFromStore()
+    {
+        var js = new FakeLocalStorageJs();
+        var service = new PaletteFrecencyService(js);
+        var id = Guid.NewGuid();
+        await service.RecordOpenAsync(id, "Gone", "https://example.com", null);
+        await service.RemoveAsync(id);
+
+        var top = await service.GetTopAsync(8);
+        Assert.Empty(top);
+    }
+
     private sealed class FakeLocalStorageJs : IJSRuntime
     {
         private readonly Dictionary<string, string> _store = new(StringComparer.Ordinal);
@@ -89,8 +120,8 @@ public sealed class PaletteFrecencyServiceTests
             if (identifier == "localStorage.getItem")
             {
                 var key = args![0]?.ToString() ?? "";
-                _store.TryGetValue(key, out var value);
-                return ValueTask.FromResult((TValue)(object?)value!);
+                object? value = _store.TryGetValue(key, out var v) ? v : null;
+                return ValueTask.FromResult((TValue)value!);
             }
 
             if (identifier == "localStorage.setItem")

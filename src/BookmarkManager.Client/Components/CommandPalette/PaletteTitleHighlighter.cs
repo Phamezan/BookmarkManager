@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Components;
@@ -9,9 +10,14 @@ namespace BookmarkManager.Client.Components.CommandPalette;
 /// <summary>
 /// Builds HTML for command-palette title match highlighting.
 /// Every segment is HTML-encoded; match ranges wrap in &lt;mark class="palette-highlight"&gt;.
+/// Matching uses IgnoreCase + IgnoreNonSpace so accent-insensitive server hits still highlight.
 /// </summary>
 public static class PaletteTitleHighlighter
 {
+    private static readonly CompareInfo CompareInfo = CultureInfo.InvariantCulture.CompareInfo;
+    private const CompareOptions MatchOptions =
+        CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+
     public static MarkupString BuildTitleHtml(string title, string? query)
     {
         if (string.IsNullOrEmpty(title))
@@ -58,13 +64,27 @@ public static class PaletteTitleHighlighter
             var index = 0;
             while (index < title.Length)
             {
-                var found = title.IndexOf(token, index, StringComparison.OrdinalIgnoreCase);
+                var found = CompareInfo.IndexOf(title, token, index, MatchOptions);
                 if (found < 0) break;
-                ranges.Add((found, found + token.Length));
+                // Match length in the title may differ from token length under IgnoreNonSpace
+                // (e.g. "é" vs "e"). Measure by comparing successive prefixes.
+                var matchLen = MeasureMatchLength(title, found, token);
+                if (matchLen <= 0) break;
+                ranges.Add((found, found + matchLen));
                 index = found + 1;
             }
         }
         return ranges;
+    }
+
+    private static int MeasureMatchLength(string title, int start, string token)
+    {
+        for (var len = 1; start + len <= title.Length; len++)
+        {
+            if (CompareInfo.Compare(title, start, len, token, 0, token.Length, MatchOptions) == 0)
+                return len;
+        }
+        return token.Length;
     }
 
     private static List<(int Start, int End)> MergeRanges(List<(int Start, int End)> ranges)

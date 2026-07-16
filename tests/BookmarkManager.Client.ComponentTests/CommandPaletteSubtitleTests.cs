@@ -91,7 +91,7 @@ public sealed class CommandPaletteSubtitleTests
             Assert.Equal("A / B · example.com", subtitle.TextContent.Trim());
         }, TimeSpan.FromSeconds(3));
 
-        var row = cut.Find(".palette-item");
-        Assert.Equal("Tags: action, fantasy", row.GetAttribute("title"));
+        var row = cut.Find(".palette-item:not(.palette-section-header)");
+        Assert.Equal("Series Ch 1\nTags: action, fantasy", row.GetAttribute("title"));
     }
 }

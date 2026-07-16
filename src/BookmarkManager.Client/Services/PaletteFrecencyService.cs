@@ -96,8 +96,15 @@ public sealed class PaletteFrecencyService
         {
             var store = await LoadStoreAsync();
             var clock = now ?? DateTimeOffset.UtcNow;
-            return store
-                .Select(kv => (Id: Guid.Parse(kv.Key), Entry: kv.Value, Score: Score(kv.Value.Opens, kv.Value.Last, clock)))
+            var scored = new List<(Guid Id, Entry Entry, double Score)>();
+            foreach (var kv in store)
+            {
+                if (!Guid.TryParse(kv.Key, out var id))
+                    continue;
+                scored.Add((id, kv.Value, Score(kv.Value.Opens, kv.Value.Last, clock)));
+            }
+
+            return scored
                 .OrderByDescending(x => x.Score)
                 .ThenByDescending(x => x.Entry.Last)
                 .Take(count)
@@ -107,6 +114,21 @@ public sealed class PaletteFrecencyService
         catch
         {
             return [];
+        }
+    }
+
+    public async Task RemoveAsync(Guid bookmarkId)
+    {
+        try
+        {
+            var store = await LoadStoreAsync();
+            if (!store.Remove(bookmarkId.ToString("D")))
+                return;
+            await SaveStoreAsync(store);
+        }
+        catch
+        {
+            // Never break the palette.
         }
     }
 

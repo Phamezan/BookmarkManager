@@ -52,4 +52,13 @@ public sealed class PaletteTitleHighlighterTests
         var html = PaletteTitleHighlighter.BuildTitleHtml("Hello & World", "").Value;
         Assert.Equal("Hello &amp; World", html);
     }
+
+    [Fact]
+    public void BuildTitleHtml_AccentInsensitive_MatchesPokemon()
+    {
+        var html = PaletteTitleHighlighter.BuildTitleHtml("Pokémon Adventures", "pokemon").Value;
+        Assert.Contains("palette-highlight", html);
+        Assert.DoesNotContain("Adventures</mark>", html); // only the pokemon part marked
+        Assert.StartsWith("<mark class=\"palette-highlight\">", html);
+    }
 }

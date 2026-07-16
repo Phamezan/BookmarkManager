@@ -48,7 +48,10 @@ public partial class CommandPalette : IDisposable
 
     private const int DefaultPageSize = 10;
     private const int SearchPageSize = 20;
-    /// <summary>Fixed row height for Virtualize (icon 32 + padding 16 + margin-bottom 4).</summary>
+    /// <summary>
+    /// Fixed row stride for Virtualize + scrollPaletteToIndex.
+    /// Must stay in sync with --palette-item-stride on #paletteList (height + margin-bottom).
+    /// </summary>
     private const int ItemSizePx = 52;
 
     private string _searchQuery = string.Empty;
@@ -124,7 +127,9 @@ public partial class CommandPalette : IDisposable
             _historyIndex = null;
             UpdateHints();
             _ = RefreshSearchHistoryAsync();
-            _ = LoadDefaultResultsAsync();
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            _ = LoadDefaultResultsAsync(_searchCts.Token);
             _ = JSRuntime.InvokeVoidAsync("focusPaletteInput");
         }
         else if (Embedded)
@@ -181,14 +186,37 @@ public partial class CommandPalette : IDisposable
         }
     }
 
-    private async Task LoadDefaultResultsAsync()
+    private async Task LoadDefaultResultsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var folderTree = await BookmarkService.GetFolderTreeAsync();
+            var folderTree = await BookmarkService.GetFolderTreeAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested) return;
             RebuildFolderPathMap(folderTree);
 
-            var recent = await FrecencyService.GetTopAsync(PaletteFrecencyService.RecentSectionSize);
+            var candidates = await FrecencyService.GetTopAsync(PaletteFrecencyService.RecentSectionSize * 2);
+            if (cancellationToken.IsCancellationRequested) return;
+
+            var recent = new List<(Guid Id, PaletteFrecencyService.Entry Snapshot)>();
+            foreach (var (id, snap) in candidates)
+            {
+                if (cancellationToken.IsCancellationRequested) return;
+                var live = await BookmarkService.GetBookmarkAsync(id, cancellationToken);
+                if (live is null || live.IsDeleted)
+                {
+                    await FrecencyService.RemoveAsync(id);
+                    continue;
+                }
+
+                // Refresh snapshot fields from live node so the section stays accurate.
+                snap.Title = live.Title;
+                snap.Url = live.Url ?? snap.Url;
+                snap.Category = live.Metadata?.Category ?? snap.Category;
+                recent.Add((id, snap));
+                if (recent.Count >= PaletteFrecencyService.RecentSectionSize)
+                    break;
+            }
+
             var recentIds = recent.Select(r => r.Id).ToHashSet();
 
             var request = new SearchRequest
@@ -197,7 +225,9 @@ public partial class CommandPalette : IDisposable
                 Page = 1,
                 PageSize = DefaultPageSize
             };
-            var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
+            var pagedResult = await BookmarkService.SearchBookmarksAsync(request, cancellationToken);
+            if (cancellationToken.IsCancellationRequested) return;
+
             var allBookmarks = pagedResult.Items?.ToList() ?? [];
             var sectionB = allBookmarks.Where(b => !recentIds.Contains(b.Id)).Select(MapBookmarkToItem).ToList();
 
@@ -217,12 +247,17 @@ public partial class CommandPalette : IDisposable
 
             items.AddRange(sectionB);
 
+            if (cancellationToken.IsCancellationRequested) return;
+
             _results = items;
             AssignResultIndices();
             _selectedIndex = FirstSelectableIndex();
             _loadedBookmarkCount = allBookmarks.Count;
             RememberLoadedPage(request, pagedResult.TotalCount);
             StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch
         {
@@ -250,7 +285,8 @@ public partial class CommandPalette : IDisposable
             Subtitle = FormatBookmarkSubtitle(folderPath, snap.Url),
             Category = snap.Category,
             Url = string.IsNullOrWhiteSpace(snap.Url) ? null : snap.Url,
-            IsFolder = false
+            IsFolder = false,
+            Tooltip = BuildItemTooltip(snap.Title, null)
         };
     }
 
@@ -331,7 +367,7 @@ public partial class CommandPalette : IDisposable
         if (string.IsNullOrEmpty(_searchQuery))
         {
             _filterFolderId = null;
-            await LoadDefaultResultsAsync();
+            await LoadDefaultResultsAsync(token);
             return;
         }
 
@@ -591,6 +627,8 @@ public partial class CommandPalette : IDisposable
             if (direction == -1)
             {
                 var next = Math.Min(histIdx + 1, _searchHistory.Count - 1);
+                if (next == histIdx)
+                    return; // Already at oldest — avoid re-firing the same search.
                 _historyIndex = next;
                 await ApplyHistoryEntryAsync(_searchHistory[next]);
                 return;
@@ -598,19 +636,11 @@ public partial class CommandPalette : IDisposable
 
             if (direction == 1)
             {
-                if (histIdx <= 0)
-                {
-                    _historyIndex = null;
-                    _searchQuery = string.Empty;
-                    await JSRuntime.InvokeVoidAsync("setPaletteInput", string.Empty);
-                    await LoadDefaultResultsAsync();
-                    StateHasChanged();
-                    return;
-                }
-
-                var next = histIdx - 1;
-                _historyIndex = next;
-                await ApplyHistoryEntryAsync(_searchHistory[next]);
+                // Exit history mode; keep the recalled query and current results.
+                // Selection already sits on a result row — do not advance on this keypress.
+                _historyIndex = null;
+                StateHasChanged();
+                _ = JSRuntime.InvokeVoidAsync("scrollPaletteToIndex", _selectedIndex, ItemSizePx);
                 return;
             }
         }
@@ -887,9 +917,7 @@ public partial class CommandPalette : IDisposable
         }
 
         var tags = bookmark.Metadata?.Tags;
-        string? tooltip = tags is { Count: > 0 }
-            ? $"Tags: {string.Join(", ", tags)}"
-            : null;
+        var tooltip = BuildItemTooltip(bookmark.Title, tags);
 
         return new PaletteItem
         {
@@ -914,8 +942,16 @@ public partial class CommandPalette : IDisposable
             TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(folder.Title, string.Empty),
             Subtitle = folder.Path,
             Category = "Folder",
-            IsFolder = true
+            IsFolder = true,
+            Tooltip = folder.Title
         };
+    }
+
+    private static string BuildItemTooltip(string title, IReadOnlyList<string>? tags)
+    {
+        if (tags is { Count: > 0 })
+            return $"{title}\nTags: {string.Join(", ", tags)}";
+        return title;
     }
 
     /// <summary>

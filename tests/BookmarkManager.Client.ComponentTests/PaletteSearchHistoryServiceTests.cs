@@ -19,6 +19,13 @@ public sealed class PaletteSearchHistoryServiceTests
     }
 
     [Fact]
+    public void PushFront_DuplicateIgnoreCase_MovesToFront()
+    {
+        var result = PaletteSearchHistoryService.PushFront(["Naruto", "bleach"], "naruto");
+        Assert.Equal(["naruto", "bleach"], result);
+    }
+
+    [Fact]
     public void PushFront_OverMax_TrimsOldest()
     {
         var existing = Enumerable.Range(0, 20).Select(i => $"q{i}").ToList();
