@@ -4,6 +4,7 @@
 @inject ICommandPaletteService PaletteService
 @inject IBookmarkService BookmarkService
 @inject PaletteFrecencyService FrecencyService
+@inject PaletteSearchHistoryService SearchHistoryService
 @inject NavigationManager NavigationManager
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
@@ -122,6 +123,13 @@
                     <span class="palette-key">&gt;</span>
                     <span style="margin-left: 4px;">Folder Navigation</span>
                 </div>
+                @if (string.IsNullOrEmpty(_searchQuery) && _hasSearchHistory)
+                {
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span class="palette-key">↑</span>
+                        <span style="margin-left: 4px;">Recent searches</span>
+                    </div>
+                }
             </div>
             
             <div class="palette-footer-right">

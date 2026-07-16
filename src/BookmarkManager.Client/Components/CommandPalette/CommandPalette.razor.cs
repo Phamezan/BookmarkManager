@@ -76,6 +76,9 @@ public partial class CommandPalette : IDisposable
     private string _highlightQuery = string.Empty;
     /// <summary>Bookmark rows loaded for the current page sequence (excludes section headers / recent section).</summary>
     private int _loadedBookmarkCount;
+    private int? _historyIndex;
+    private IReadOnlyList<string> _searchHistory = [];
+    private bool _hasSearchHistory;
 
     private bool HasMoreResults => !_isLoadingMore && _loadedBookmarkCount < _totalResultCount;
 
@@ -118,7 +121,9 @@ public partial class CommandPalette : IDisposable
             _results.Clear();
             _totalResultCount = 0;
             _triggerStagger = true;
+            _historyIndex = null;
             UpdateHints();
+            _ = RefreshSearchHistoryAsync();
             _ = LoadDefaultResultsAsync();
             _ = JSRuntime.InvokeVoidAsync("focusPaletteInput");
         }
@@ -128,6 +133,21 @@ public partial class CommandPalette : IDisposable
             _ = JSRuntime.InvokeVoidAsync("paletteEmbedded.close");
         }
         StateHasChanged();
+    }
+
+    private async Task RefreshSearchHistoryAsync()
+    {
+        try
+        {
+            _searchHistory = await SearchHistoryService.GetAsync();
+            _hasSearchHistory = _searchHistory.Count > 0;
+            StateHasChanged();
+        }
+        catch
+        {
+            _searchHistory = [];
+            _hasSearchHistory = false;
+        }
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -294,13 +314,26 @@ public partial class CommandPalette : IDisposable
 
     private async Task HandleSearchInput(ChangeEventArgs e)
     {
-        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        _historyIndex = null;
+        await RunSearchAsync(e.Value?.ToString() ?? string.Empty, debounce: true);
+    }
+
+    private async Task RunSearchAsync(string query, bool debounce)
+    {
+        _searchQuery = query;
         _selectedIndex = 0;
         _triggerStagger = false;
 
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
         var token = _searchCts.Token;
+
+        if (string.IsNullOrEmpty(_searchQuery))
+        {
+            _filterFolderId = null;
+            await LoadDefaultResultsAsync();
+            return;
+        }
 
         var folderTree = await BookmarkService.GetFolderTreeAsync(token);
         RebuildFolderPathMap(folderTree);
@@ -310,10 +343,10 @@ public partial class CommandPalette : IDisposable
         {
             _filterFolderId = null;
             var folderQuery = _searchQuery.Substring(1).Trim();
-            
+
             var folderMatches = new List<FolderSearchResult>();
             FindFoldersRecursive(folderTree, folderQuery, string.Empty, folderMatches);
-            
+
             _results = folderMatches.Select(MapFolderToItem).ToList();
             // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
             _highlightQuery = string.Empty;
@@ -383,8 +416,9 @@ public partial class CommandPalette : IDisposable
 
         try
         {
-            await Task.Delay(200, token); // Debounce
-            
+            if (debounce)
+                await Task.Delay(200, token); // Debounce
+
             var request = new SearchRequest
             {
                 Query = bookmarkQuery.Trim(),
@@ -393,7 +427,7 @@ public partial class CommandPalette : IDisposable
                 FolderId = activeFolderId
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request, token);
-            
+
             if (!token.IsCancellationRequested)
             {
                 _highlightQuery = bookmarkQuery.Trim();
@@ -539,8 +573,48 @@ public partial class CommandPalette : IDisposable
     }
 
     [JSInvokable]
-    public void NavigateList(int direction)
+    public async Task NavigateList(int direction)
     {
+        // History recall: ArrowUp on empty input walks recent searches (C#-only state machine).
+        if (_historyIndex is null
+            && string.IsNullOrEmpty(_searchQuery)
+            && direction == -1
+            && _searchHistory.Count > 0)
+        {
+            _historyIndex = 0;
+            await ApplyHistoryEntryAsync(_searchHistory[0]);
+            return;
+        }
+
+        if (_historyIndex is int histIdx)
+        {
+            if (direction == -1)
+            {
+                var next = Math.Min(histIdx + 1, _searchHistory.Count - 1);
+                _historyIndex = next;
+                await ApplyHistoryEntryAsync(_searchHistory[next]);
+                return;
+            }
+
+            if (direction == 1)
+            {
+                if (histIdx <= 0)
+                {
+                    _historyIndex = null;
+                    _searchQuery = string.Empty;
+                    await JSRuntime.InvokeVoidAsync("setPaletteInput", string.Empty);
+                    await LoadDefaultResultsAsync();
+                    StateHasChanged();
+                    return;
+                }
+
+                var next = histIdx - 1;
+                _historyIndex = next;
+                await ApplyHistoryEntryAsync(_searchHistory[next]);
+                return;
+            }
+        }
+
         if (_results.Count == 0) return;
         if (_results.All(r => r.IsSectionHeader)) return;
 
@@ -558,6 +632,15 @@ public partial class CommandPalette : IDisposable
         _ = JSRuntime.InvokeVoidAsync("scrollPaletteToIndex", _selectedIndex, ItemSizePx);
     }
 
+    private async Task ApplyHistoryEntryAsync(string query)
+    {
+        _searchQuery = query;
+        await JSRuntime.InvokeVoidAsync("setPaletteInput", query);
+        await RunSearchAsync(query, debounce: false);
+        // Keep history mode active — RunSearchAsync must not clear _historyIndex.
+        StateHasChanged();
+    }
+
     [JSInvokable]
     public async Task ExecutePrimary()
     {
@@ -572,6 +655,7 @@ public partial class CommandPalette : IDisposable
         }
 
         _ = RecordFrecencyOpenAsync(selected);
+        _ = RecordSearchHistoryIfNeededAsync();
 
         if (Embedded)
         {
@@ -609,6 +693,7 @@ public partial class CommandPalette : IDisposable
         }
 
         _ = RecordFrecencyOpenAsync(selected);
+        _ = RecordSearchHistoryIfNeededAsync();
 
         if (Embedded)
         {
@@ -647,6 +732,7 @@ public partial class CommandPalette : IDisposable
         }
 
         _ = RecordFrecencyOpenAsync(selected);
+        _ = RecordSearchHistoryIfNeededAsync();
 
         if (Embedded)
         {
@@ -660,6 +746,14 @@ public partial class CommandPalette : IDisposable
 
     private Task RecordFrecencyOpenAsync(PaletteItem item) =>
         FrecencyService.RecordOpenAsync(item.Id, item.Title, item.Url, item.Category);
+
+    private async Task RecordSearchHistoryIfNeededAsync()
+    {
+        if (string.IsNullOrEmpty(_loadedQuery) || string.IsNullOrWhiteSpace(_searchQuery))
+            return;
+        await SearchHistoryService.RecordAsync(_searchQuery);
+        await RefreshSearchHistoryAsync();
+    }
 
     private async Task AutocompleteFolder(PaletteItem selected)
     {
