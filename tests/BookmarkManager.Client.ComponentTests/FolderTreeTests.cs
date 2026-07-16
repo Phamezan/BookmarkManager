@@ -43,4 +43,39 @@ public sealed class FolderTreeTests
         // Verify that selection callback was called with correct folderId
         Assert.Equal(folderId, selectedId);
     }
+
+    [Fact]
+    public async Task FolderWithBookmarks_RendersCountBadge()
+    {
+        await using var context = new BunitContext();
+        context.Services.AddMudServices();
+
+        var folders = new List<FolderTreeNodeDto>
+        {
+            new FolderTreeNodeDto { Id = Guid.NewGuid(), Title = "Manga", BookmarkCount = 3, Children = [] }
+        };
+
+        var component = context.Render<FolderTree>(parameters => parameters
+            .Add(p => p.Folders, folders));
+
+        var badge = component.Find(".folder-count-badge");
+        Assert.Equal("3", badge.TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task FolderWithNoBookmarks_DoesNotRenderCountBadge()
+    {
+        await using var context = new BunitContext();
+        context.Services.AddMudServices();
+
+        var folders = new List<FolderTreeNodeDto>
+        {
+            new FolderTreeNodeDto { Id = Guid.NewGuid(), Title = "Empty Folder", BookmarkCount = 0, Children = [] }
+        };
+
+        var component = context.Render<FolderTree>(parameters => parameters
+            .Add(p => p.Folders, folders));
+
+        Assert.Empty(component.FindAll(".folder-count-badge"));
+    }
 }
