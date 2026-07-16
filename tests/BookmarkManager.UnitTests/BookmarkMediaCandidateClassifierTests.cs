@@ -6,18 +6,20 @@ namespace BookmarkManager.UnitTests;
 public sealed class BookmarkMediaCandidateClassifierTests
 {
     [Theory]
-    [InlineData("http://novelfull.com/my-novel.html", "Novel Full")]
+    // NovelFull series pages encode the title in the path slug; CleanTitle prefers that
+    // over the bookmark title (same as NovelFire — see MediaTitleNormalizer.Normalize).
+    [InlineData("https://novelfull.com/a-monster-who-levels-up.html", "Novel Full")]
     public void Classify_NovelUrls_ReturnNovelDomainAndBypassAi(string url, string description)
     {
         _ = description;
         var classification = BookmarkMediaCandidateClassifier.Classify(
-            "A Monster Who Levels Up Chapter 5", 
-            url, 
+            "A Monster Who Levels Up Chapter 5",
+            url,
             "General Folder");
 
         Assert.False(classification.RequiresAi);
         Assert.Equal(BookmarkTagDomain.Novel, classification.Domain);
-        Assert.Equal("A Monster Who Levels Up", classification.CanonicalTitle);
+        Assert.Equal("a monster who levels up", classification.CanonicalTitle);
         Assert.Contains("Matched Novel host", classification.Reason);
     }
 
