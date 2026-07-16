@@ -3,6 +3,7 @@
 @using Microsoft.AspNetCore.Components.Web.Virtualization
 @inject ICommandPaletteService PaletteService
 @inject IBookmarkService BookmarkService
+@inject PaletteFrecencyService FrecencyService
 @inject NavigationManager NavigationManager
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
@@ -48,55 +49,62 @@
                 else
                 {
                     <Virtualize Items="_results" ItemSize="ItemSizePx" Context="item">
-                        @{
+                        @if (item.IsSectionHeader)
+                        {
+                            <div class="palette-item palette-section-header" aria-hidden="true">
+                                <span class="palette-section-title">@item.SectionTitle</span>
+                            </div>
+                        }
+                        else
+                        {
                             var isActive = item.Index == _selectedIndex;
                             var badgeClass = GetBadgeClass(item.Category);
                             var useStagger = _triggerStagger && item.Index < 10;
                             var delayStyle = useStagger ? $"animation-delay: {item.Index * 30}ms;" : "";
-                        }
-                        <div class="palette-item @(isActive ? "is-active" : "") @(useStagger ? "stagger-item" : "")"
-                             style="@delayStyle"
-                             title="@(item.Tooltip ?? "")"
-                             @onclick="() => HandleItemClick(item.Index)"
-                             @onmouseover="() => _selectedIndex = item.Index">
+                            <div class="palette-item @(isActive ? "is-active" : "") @(useStagger ? "stagger-item" : "")"
+                                 style="@delayStyle"
+                                 title="@(item.Tooltip ?? "")"
+                                 @onclick="() => HandleItemClick(item.Index)"
+                                 @onmouseover="() => _selectedIndex = item.Index">
 
-                            <div class="palette-item-left">
-                                <div class="palette-item-icon-wrap">
-                                    @if (item.IsFolder)
-                                    {
-                                        <MudIcon Icon="@Icons.Material.Filled.Folder" />
-                                    }
-                                    else if (GetFaviconUrl(item.Url) is { } favicon)
-                                    {
-                                        <img src="@favicon" alt="" width="16" height="16" style="border-radius: 2px; object-fit: contain;" onerror="this.style.display='none'" />
-                                    }
-                                    else
-                                    {
-                                        <MudIcon Icon="@Icons.Material.Filled.Bookmark" />
-                                    }
-                                </div>
-                                <div class="palette-item-info">
-                                    <div class="palette-item-title-row">
-                                        <span class="palette-item-title">@item.TitleHtml</span>
-                                        @if (!string.IsNullOrWhiteSpace(item.Category))
+                                <div class="palette-item-left">
+                                    <div class="palette-item-icon-wrap">
+                                        @if (item.IsFolder)
                                         {
-                                            <span class="palette-item-badge @badgeClass">@item.Category</span>
+                                            <MudIcon Icon="@Icons.Material.Filled.Folder" />
+                                        }
+                                        else if (GetFaviconUrl(item.Url) is { } favicon)
+                                        {
+                                            <img src="@favicon" alt="" width="16" height="16" style="border-radius: 2px; object-fit: contain;" onerror="this.style.display='none'" />
+                                        }
+                                        else
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Bookmark" />
                                         }
                                     </div>
-                                    <span class="palette-item-subtitle">@item.Subtitle</span>
+                                    <div class="palette-item-info">
+                                        <div class="palette-item-title-row">
+                                            <span class="palette-item-title">@item.TitleHtml</span>
+                                            @if (!string.IsNullOrWhiteSpace(item.Category))
+                                            {
+                                                <span class="palette-item-badge @badgeClass">@item.Category</span>
+                                            }
+                                        </div>
+                                        <span class="palette-item-subtitle">@item.Subtitle</span>
+                                    </div>
                                 </div>
-                            </div>
 
-                            @if (isActive)
-                            {
-                                <span class="palette-item-indicator">Selected</span>
-                            }
-                        </div>
+                                @if (isActive)
+                                {
+                                    <span class="palette-item-indicator">Selected</span>
+                                }
+                            </div>
+                        }
                     </Virtualize>
                     @if (HasMoreResults)
                     {
                         <button type="button" class="palette-load-more" @onclick="LoadMoreResultsAsync" disabled="@_isLoadingMore">
-                            @(_isLoadingMore ? "Loading..." : $"Load more ({_totalResultCount - _results.Count} remaining)")
+                            @(_isLoadingMore ? "Loading..." : $"Load more ({_totalResultCount - _loadedBookmarkCount} remaining)")
                         </button>
                     }
                 }
@@ -266,6 +274,25 @@
         cursor: pointer;
         transition: all 0.15s ease-out;
         text-decoration: none !important;
+    }
+    .palette-section-header {
+        cursor: default;
+        pointer-events: none;
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+        opacity: 0.9;
+    }
+    .palette-section-header:hover {
+        background: transparent;
+    }
+    .palette-section-title {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: rgba(203, 195, 215, 0.5);
+        padding-left: 4px;
     }
     .palette-item:hover {
         background: rgba(255, 255, 255, 0.05);

@@ -30,6 +30,8 @@ public partial class CommandPalette : IDisposable
         public string? Category { get; set; }
         public string? Url { get; set; }
         public bool IsFolder { get; set; }
+        public bool IsSectionHeader { get; set; }
+        public string? SectionTitle { get; set; }
         public string? Tooltip { get; set; }
         public BookmarkNodeDto? BookmarkNode { get; set; }
     }
@@ -72,8 +74,10 @@ public partial class CommandPalette : IDisposable
     private bool _isLoadingMore;
     /// <summary>Effective bookmark query used for title highlighting (empty for default results / folder autocomplete).</summary>
     private string _highlightQuery = string.Empty;
+    /// <summary>Bookmark rows loaded for the current page sequence (excludes section headers / recent section).</summary>
+    private int _loadedBookmarkCount;
 
-    private bool HasMoreResults => !_isLoadingMore && _results.Count < _totalResultCount;
+    private bool HasMoreResults => !_isLoadingMore && _loadedBookmarkCount < _totalResultCount;
 
     [Inject] private KeyboardShortcutService KeyboardShortcutService { get; set; } = default!;
 
@@ -164,6 +168,9 @@ public partial class CommandPalette : IDisposable
             var folderTree = await BookmarkService.GetFolderTreeAsync();
             RebuildFolderPathMap(folderTree);
 
+            var recent = await FrecencyService.GetTopAsync(PaletteFrecencyService.RecentSectionSize);
+            var recentIds = recent.Select(r => r.Id).ToHashSet();
+
             var request = new SearchRequest
             {
                 Query = string.Empty,
@@ -171,10 +178,29 @@ public partial class CommandPalette : IDisposable
                 PageSize = DefaultPageSize
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
+            var allBookmarks = pagedResult.Items?.ToList() ?? [];
+            var sectionB = allBookmarks.Where(b => !recentIds.Contains(b.Id)).Select(MapBookmarkToItem).ToList();
+
             _highlightQuery = string.Empty;
-            _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+            var items = new List<PaletteItem>();
+
+            if (recent.Count > 0)
+            {
+                items.Add(CreateSectionHeader("Recently opened"));
+                foreach (var (id, snap) in recent)
+                {
+                    items.Add(MapFrecencySnapshotToItem(id, snap));
+                }
+
+                items.Add(CreateSectionHeader("All bookmarks"));
+            }
+
+            items.AddRange(sectionB);
+
+            _results = items;
             AssignResultIndices();
-            _selectedIndex = 0;
+            _selectedIndex = FirstSelectableIndex();
+            _loadedBookmarkCount = allBookmarks.Count;
             RememberLoadedPage(request, pagedResult.TotalCount);
             StateHasChanged();
         }
@@ -182,6 +208,30 @@ public partial class CommandPalette : IDisposable
         {
             // Fail silently
         }
+    }
+
+    private static PaletteItem CreateSectionHeader(string title) => new()
+    {
+        IsSectionHeader = true,
+        SectionTitle = title,
+        Title = title,
+        TitleHtml = new MarkupString(System.Net.WebUtility.HtmlEncode(title))
+    };
+
+    private PaletteItem MapFrecencySnapshotToItem(Guid id, PaletteFrecencyService.Entry snap)
+    {
+        string? folderPath = null;
+        // Snapshots may lack ParentId — subtitle is host-only from stored URL.
+        return new PaletteItem
+        {
+            Id = id,
+            Title = snap.Title,
+            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(snap.Title, string.Empty),
+            Subtitle = FormatBookmarkSubtitle(folderPath, snap.Url),
+            Category = snap.Category,
+            Url = string.IsNullOrWhiteSpace(snap.Url) ? null : snap.Url,
+            IsFolder = false
+        };
     }
 
     /// <summary>Records the request shape + total count for a just-loaded first page so "Load more" can continue it.</summary>
@@ -202,7 +252,7 @@ public partial class CommandPalette : IDisposable
     /// </summary>
     private async Task LoadMoreResultsAsync()
     {
-        if (_isLoadingMore || _results.Count >= _totalResultCount) return;
+        if (_isLoadingMore || _loadedBookmarkCount >= _totalResultCount) return;
 
         _isLoadingMore = true;
         StateHasChanged();
@@ -217,10 +267,17 @@ public partial class CommandPalette : IDisposable
                 FolderId = _loadedFolderId
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
-            var newItems = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+            // Prefer ids already present so load-more doesn't duplicate recent or prior pages.
+            var existingIds = _results.Where(r => !r.IsSectionHeader).Select(r => r.Id).ToHashSet();
+
+            var newItems = pagedResult.Items?
+                .Where(b => !existingIds.Contains(b.Id))
+                .Select(MapBookmarkToItem)
+                .ToList() ?? [];
             _results.AddRange(newItems);
             AssignResultIndices();
             _loadedPage = request.Page;
+            _loadedBookmarkCount += pagedResult.Items?.Count ?? 0;
             _totalResultCount = pagedResult.TotalCount;
             StateHasChanged();
         }
@@ -262,6 +319,7 @@ public partial class CommandPalette : IDisposable
             _highlightQuery = string.Empty;
             AssignResultIndices();
             _totalResultCount = _results.Count;
+            _loadedBookmarkCount = _results.Count;
             StateHasChanged();
             return;
         }
@@ -341,7 +399,9 @@ public partial class CommandPalette : IDisposable
                 _highlightQuery = bookmarkQuery.Trim();
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
                 AssignResultIndices();
+                _selectedIndex = FirstSelectableIndex();
                 RememberLoadedPage(request, pagedResult.TotalCount);
+                _loadedBookmarkCount = _results.Count;
                 StateHasChanged();
             }
         }
@@ -359,6 +419,16 @@ public partial class CommandPalette : IDisposable
     {
         for (var i = 0; i < _results.Count; i++)
             _results[i].Index = i;
+    }
+
+    private int FirstSelectableIndex()
+    {
+        for (var i = 0; i < _results.Count; i++)
+        {
+            if (!_results[i].IsSectionHeader)
+                return i;
+        }
+        return 0;
     }
 
     private void RebuildFolderPathMap(List<FolderTreeNodeDto>? nodes)
@@ -472,10 +542,19 @@ public partial class CommandPalette : IDisposable
     public void NavigateList(int direction)
     {
         if (_results.Count == 0) return;
+        if (_results.All(r => r.IsSectionHeader)) return;
 
-        _selectedIndex = (_selectedIndex + direction + _results.Count) % _results.Count;
+        var start = _selectedIndex;
+        do
+        {
+            _selectedIndex = (_selectedIndex + direction + _results.Count) % _results.Count;
+        }
+        while (_results[_selectedIndex].IsSectionHeader && _selectedIndex != start);
+
+        if (_results[_selectedIndex].IsSectionHeader)
+            return;
+
         StateHasChanged();
-
         _ = JSRuntime.InvokeVoidAsync("scrollPaletteToIndex", _selectedIndex, ItemSizePx);
     }
 
@@ -485,11 +564,14 @@ public partial class CommandPalette : IDisposable
         if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
 
         var selected = _results[_selectedIndex];
+        if (selected.IsSectionHeader) return;
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
             return;
         }
+
+        _ = RecordFrecencyOpenAsync(selected);
 
         if (Embedded)
         {
@@ -519,11 +601,14 @@ public partial class CommandPalette : IDisposable
         if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
 
         var selected = _results[_selectedIndex];
+        if (selected.IsSectionHeader) return;
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
             return;
         }
+
+        _ = RecordFrecencyOpenAsync(selected);
 
         if (Embedded)
         {
@@ -554,11 +639,14 @@ public partial class CommandPalette : IDisposable
         if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
 
         var selected = _results[_selectedIndex];
+        if (selected.IsSectionHeader) return;
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
             return;
         }
+
+        _ = RecordFrecencyOpenAsync(selected);
 
         if (Embedded)
         {
@@ -569,6 +657,9 @@ public partial class CommandPalette : IDisposable
 
         GoToBookmark(selected);
     }
+
+    private Task RecordFrecencyOpenAsync(PaletteItem item) =>
+        FrecencyService.RecordOpenAsync(item.Id, item.Title, item.Url, item.Category);
 
     private async Task AutocompleteFolder(PaletteItem selected)
     {
@@ -605,7 +696,9 @@ public partial class CommandPalette : IDisposable
                 _highlightQuery = string.Empty;
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
                 AssignResultIndices();
+                _selectedIndex = FirstSelectableIndex();
                 RememberLoadedPage(request, pagedResult.TotalCount);
+                _loadedBookmarkCount = _results.Count;
                 StateHasChanged();
             }
         }
@@ -621,6 +714,8 @@ public partial class CommandPalette : IDisposable
 
     private async Task HandleItemClick(int index)
     {
+        if (index < 0 || index >= _results.Count || _results[index].IsSectionHeader)
+            return;
         _selectedIndex = index;
         await ExecutePrimary();
     }

@@ -80,6 +80,7 @@ public sealed class CommandPaletteSubtitleTests
         context.Services.AddSingleton<IBookmarkService>(fakeBookmarks);
         context.Services.AddSingleton<ICommandPaletteService>(paletteService);
         context.Services.AddSingleton(new KeyboardShortcutService());
+        context.Services.AddSingleton(new PaletteFrecencyService(context.JSInterop.JSRuntime));
 
         var cut = context.Render<CommandPalette>();
         await cut.InvokeAsync(() => paletteService.Open());

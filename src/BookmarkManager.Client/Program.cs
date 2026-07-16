@@ -24,6 +24,7 @@ builder.Services.AddScoped<IBackupService, HttpBackupService>();
 builder.Services.AddScoped<UndoService>();
 builder.Services.AddScoped<KeyboardShortcutService>();
 builder.Services.AddScoped<ICommandPaletteService, CommandPaletteService>();
+builder.Services.AddScoped<PaletteFrecencyService>();
 builder.Services.AddTransient<SyncSocketListener>();
 builder.Services.AddTransient<FolderSelectionPersistence>();
 await builder.Build().RunAsync();
