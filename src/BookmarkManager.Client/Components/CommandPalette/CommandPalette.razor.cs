@@ -28,6 +28,7 @@ public partial class CommandPalette : IDisposable
         public string? Category { get; set; }
         public string? Url { get; set; }
         public bool IsFolder { get; set; }
+        public string? Tooltip { get; set; }
         public BookmarkNodeDto? BookmarkNode { get; set; }
     }
 
@@ -50,6 +51,7 @@ public partial class CommandPalette : IDisposable
     private bool _triggerStagger = false;
     private string _primaryHint = "Go to Bookmark";
     private string _secondaryHint = "Open in New Tab";
+    private Dictionary<Guid, string> _folderPathById = new();
 
     private DotNetObjectReference<CommandPalette>? _dotNetRef;
     private CancellationTokenSource? _searchCts;
@@ -153,6 +155,9 @@ public partial class CommandPalette : IDisposable
     {
         try
         {
+            var folderTree = await BookmarkService.GetFolderTreeAsync();
+            RebuildFolderPathMap(folderTree);
+
             var request = new SearchRequest
             {
                 Query = string.Empty,
@@ -232,6 +237,7 @@ public partial class CommandPalette : IDisposable
         var token = _searchCts.Token;
 
         var folderTree = await BookmarkService.GetFolderTreeAsync(token);
+        RebuildFolderPathMap(folderTree);
 
         // 1. Folder Autocomplete Mode: starts with ">" and doesn't contain a space
         if (_searchQuery.StartsWith(">") && !_searchQuery.Contains(" "))
@@ -333,6 +339,26 @@ public partial class CommandPalette : IDisposable
         {
             _results.Clear();
             StateHasChanged();
+        }
+    }
+
+    private void RebuildFolderPathMap(List<FolderTreeNodeDto>? nodes)
+    {
+        _folderPathById = new Dictionary<Guid, string>();
+        BuildFolderPathMapRecursive(nodes, string.Empty);
+    }
+
+    private void BuildFolderPathMapRecursive(List<FolderTreeNodeDto>? nodes, string currentPath)
+    {
+        if (nodes == null) return;
+        foreach (var node in nodes)
+        {
+            var newPath = string.IsNullOrEmpty(currentPath) ? node.Title : $"{currentPath} / {node.Title}";
+            _folderPathById[node.Id] = newPath;
+            if (node.Children is { Count: > 0 })
+            {
+                BuildFolderPathMapRecursive(node.Children, newPath);
+            }
         }
     }
 
@@ -657,14 +683,27 @@ public partial class CommandPalette : IDisposable
 
     private PaletteItem MapBookmarkToItem(BookmarkNodeDto bookmark)
     {
+        string? folderPath = null;
+        if (bookmark.ParentId is { } parentId
+            && _folderPathById.TryGetValue(parentId, out var path))
+        {
+            folderPath = path;
+        }
+
+        var tags = bookmark.Metadata?.Tags;
+        string? tooltip = tags is { Count: > 0 }
+            ? $"Tags: {string.Join(", ", tags)}"
+            : null;
+
         return new PaletteItem
         {
             Id = bookmark.Id,
             Title = bookmark.Title,
-            Subtitle = GetDisplaySubtitle(bookmark),
+            Subtitle = FormatBookmarkSubtitle(folderPath, bookmark.Url),
             Category = bookmark.Metadata?.Category,
             Url = bookmark.Url,
             IsFolder = false,
+            Tooltip = tooltip,
             BookmarkNode = bookmark
         };
     }
@@ -681,26 +720,36 @@ public partial class CommandPalette : IDisposable
         };
     }
 
-    private string GetDisplaySubtitle(BookmarkNodeDto bookmark)
+    /// <summary>
+    /// Location-first subtitle: folder breadcrumb and/or URL host.
+    /// Extracted for unit testing.
+    /// </summary>
+    public static string FormatBookmarkSubtitle(string? folderPath, string? url)
     {
-        if (bookmark.Metadata != null && bookmark.Metadata.Tags != null && bookmark.Metadata.Tags.Count > 0)
-        {
-            return $"Tags: {string.Join(", ", bookmark.Metadata.Tags)}";
-        }
-        
-        if (!string.IsNullOrWhiteSpace(bookmark.Url))
+        string? host = null;
+        if (!string.IsNullOrWhiteSpace(url))
         {
             try
             {
-                var uri = new Uri(bookmark.Url);
-                return uri.Host + uri.AbsolutePath;
+                host = new Uri(url).Host;
+                if (string.IsNullOrEmpty(host))
+                    host = null;
             }
             catch
             {
-                return bookmark.Url;
+                host = null;
             }
         }
-        
+
+        var hasPath = !string.IsNullOrWhiteSpace(folderPath);
+        var hasHost = !string.IsNullOrWhiteSpace(host);
+
+        if (hasPath && hasHost)
+            return $"{folderPath} · {host}";
+        if (hasPath)
+            return folderPath!;
+        if (hasHost)
+            return host!;
         return "Bookmark";
     }
 

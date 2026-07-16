@@ -56,6 +56,7 @@
 
                         <div class="palette-item @(isActive ? "is-active" : "") @(_triggerStagger ? "stagger-item" : "")" 
                              style="@delayStyle"
+                             title="@(item.Tooltip ?? "")"
                              @onclick="() => HandleItemClick(index)"
                              @onmouseover="() => _selectedIndex = index">
                             
