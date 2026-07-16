@@ -67,7 +67,7 @@ public sealed class BookmarkTaggingServiceTests
 
         Assert.Equal(0, anilist.CallCount);
         Assert.Equal(1, mangaUpdates.CallCount);
-        Assert.Equal(2, result.Count);
+        Assert.Equal(2, result.Tags.Count);
     }
 
     [Fact]
@@ -136,7 +136,36 @@ public sealed class BookmarkTaggingServiceTests
         Assert.Equal(new[] { "Novel", "Fantasy", "System", "Action", "Magic" }, tags);
     }
 
-    private sealed class FakeAnilistProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null) : IAnilistTagProvider
+    [Fact]
+    public async Task GetTagsForBatchAsync_RejectsMisleadingCanonicalTitleFromEarlierProvider()
+    {
+        var mangaUpdates = new FakeMangaUpdatesProvider(["Novel", "Space", "Sci-Fi"], canonicalTitle: "Galaxy");
+        var catalog = new FakeCatalogProvider(["Novel", "Space", "VR", "Sci-Fi"], canonicalTitle: "Transcendence Due To A System Error");
+        var service = new BookmarkTaggingService(
+            new FakeAnilistProvider([]),
+            mangaUpdates,
+            new FakeKitsuProvider([]),
+            new FakeNovelFullProvider([]),
+            catalog,
+            new TagExtractorService(),
+            NullLogger<BookmarkTaggingService>.Instance);
+
+        var request = new[]
+        {
+            new BookmarkTagCandidateDto
+            {
+                Id = Guid.NewGuid(),
+                Title = "Transcendence Due To A System Error - Chapter 110 - Galaxy Translations",
+                Url = "https://example.com/x"
+            }
+        };
+
+        var result = await service.GetTagsForBatchAsync(request, "Novel", BookmarkTagDomainDto.Auto, CancellationToken.None);
+
+        Assert.Equal("Transcendence Due To A System Error — Chapter 110", result.SuggestedTitles[request[0].Id]);
+    }
+
+    private sealed class FakeAnilistProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null, string? canonicalTitle = null) : IAnilistTagProvider
     {
         public int CallCount { get; private set; }
         public BookmarkTagDomain? LastDomain { get; private set; }
@@ -145,11 +174,11 @@ public sealed class BookmarkTaggingServiceTests
         {
             CallCount++;
             LastDomain = context.Domain;
-            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason));
+            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason, canonicalTitle));
         }
     }
 
-    private sealed class FakeMangaUpdatesProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null) : IMangaUpdatesTagProvider
+    private sealed class FakeMangaUpdatesProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null, string? canonicalTitle = null) : IMangaUpdatesTagProvider
     {
         public int CallCount { get; private set; }
         public BookmarkTagDomain? LastDomain { get; private set; }
@@ -158,11 +187,11 @@ public sealed class BookmarkTaggingServiceTests
         {
             CallCount++;
             LastDomain = context.Domain;
-            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason));
+            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason, canonicalTitle));
         }
     }
 
-    private sealed class FakeKitsuProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null) : IKitsuTagProvider
+    private sealed class FakeKitsuProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null, string? canonicalTitle = null) : IKitsuTagProvider
     {
         public int CallCount { get; private set; }
         public BookmarkTagDomain? LastDomain { get; private set; }
@@ -171,11 +200,11 @@ public sealed class BookmarkTaggingServiceTests
         {
             CallCount++;
             LastDomain = context.Domain;
-            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason));
+            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason, canonicalTitle));
         }
     }
 
-    private sealed class FakeNovelFullProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null) : INovelFullTagProvider
+    private sealed class FakeNovelFullProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null, string? canonicalTitle = null) : INovelFullTagProvider
     {
         public int CallCount { get; private set; }
         public BookmarkTagDomain? LastDomain { get; private set; }
@@ -184,11 +213,11 @@ public sealed class BookmarkTaggingServiceTests
         {
             CallCount++;
             LastDomain = context.Domain;
-            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason));
+            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason, canonicalTitle));
         }
     }
 
-    private sealed class FakeCatalogProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null) : ICatalogTagProvider
+    private sealed class FakeCatalogProvider(List<string> tags, bool wasRejected = false, string? rejectionReason = null, string? canonicalTitle = null) : ICatalogTagProvider
     {
         public int CallCount { get; private set; }
         public BookmarkTagDomain? LastDomain { get; private set; }
@@ -197,7 +226,7 @@ public sealed class BookmarkTaggingServiceTests
         {
             CallCount++;
             LastDomain = context.Domain;
-            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason));
+            return Task.FromResult(new ProviderTagResult(tags, wasRejected, rejectionReason, canonicalTitle));
         }
     }
 }

@@ -2,7 +2,11 @@ using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
-public record ProviderTagResult(List<string> Tags, bool WasRejected, string? RejectionReason);
+public record ProviderTagResult(
+    List<string> Tags,
+    bool WasRejected,
+    string? RejectionReason,
+    string? CanonicalTitle = null);
 
 public record AnimeScheduleEpisode(int EpisodeNumber, DateTimeOffset AiringAtUtc);
 

@@ -54,7 +54,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         if (!context.BypassCache && _cache.TryGetValue(cacheKey, out var cached) && cached.ExpiresAt > now)
         {
             ProviderAutoTagTelemetry.RecordCacheHit("AniList");
-            return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason);
+            return new ProviderTagResult(cached.Tags.ToList(), cached.WasRejected, cached.RejectionReason, cached.CanonicalTitle);
         }
 
         try
@@ -80,7 +80,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
             {
                 var error = await resp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
                 _logger.LogWarning("AniList API returned non-success code: {Status}. Response: {Error}", resp.StatusCode, error);
-                _cache[cacheKey] = new CacheEntry([], false, $"HTTP error {resp.StatusCode}", now.Add(EmptyCacheDuration));
+                _cache[cacheKey] = new CacheEntry([], false, $"HTTP error {resp.StatusCode}", null, now.Add(EmptyCacheDuration));
                 return new ProviderTagResult([], false, $"HTTP error {resp.StatusCode}");
             }
 
@@ -88,7 +88,7 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
             if (doc == null)
             {
                 var emptyResult = new ProviderTagResult([], false, "Response was not valid JSON");
-                _cache[cacheKey] = new CacheEntry([], false, emptyResult.RejectionReason, now.Add(EmptyCacheDuration));
+                _cache[cacheKey] = new CacheEntry([], false, emptyResult.RejectionReason, null, now.Add(EmptyCacheDuration));
                 return emptyResult;
             }
 
@@ -97,14 +97,15 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
                 processed.Tags,
                 processed.WasRejected,
                 processed.RejectionReason,
+                processed.CanonicalTitle,
                 now.Add((processed.Tags.Count == 0 && !processed.WasRejected) ? EmptyCacheDuration : SuccessCacheDuration));
-            return new ProviderTagResult(processed.Tags, processed.WasRejected, processed.RejectionReason);
+            return new ProviderTagResult(processed.Tags, processed.WasRejected, processed.RejectionReason, processed.CanonicalTitle);
         }
         catch (Exception ex)
         {
             ProviderAutoTagTelemetry.RecordFailure("AniList", "lookup");
             _logger.LogWarning(ex, "Failed to query AniList for tags of '{Title}'", context.OriginalTitle);
-            _cache[cacheKey] = new CacheEntry([], false, ex.Message, now.Add(EmptyCacheDuration));
+            _cache[cacheKey] = new CacheEntry([], false, ex.Message, null, now.Add(EmptyCacheDuration));
             return new ProviderTagResult([], false, ex.Message);
         }
     }
@@ -139,20 +140,20 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         };
     }
 
-    public static (List<string> Tags, bool WasRejected, string? RejectionReason) ProcessCandidates(JsonElement root, string cleanQuery)
+    public static (List<string> Tags, bool WasRejected, string? RejectionReason, string? CanonicalTitle) ProcessCandidates(JsonElement root, string cleanQuery)
     {
         if (!root.TryGetProperty("data", out var dataEl) ||
             !dataEl.TryGetProperty("Page", out var pageEl) ||
             !pageEl.TryGetProperty("media", out var mediaEl) ||
             mediaEl.ValueKind != JsonValueKind.Array)
         {
-            return ([], false, "Invalid JSON structure from AniList.");
+            return ([], false, "Invalid JSON structure from AniList.", null);
         }
 
         var arrayLength = mediaEl.GetArrayLength();
         if (arrayLength == 0)
         {
-            return ([], false, "No candidates returned by AniList.");
+            return ([], false, "No candidates returned by AniList.", null);
         }
 
         var bestScore = -1.0;
@@ -172,11 +173,28 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
 
         if (!hasBest || bestScore < 0.55)
         {
-            return ([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold 0.55.");
+            return ([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold 0.55.", null);
         }
 
         var tags = ExtractTagsFromMedia(bestCandidate);
-        return (tags, false, null);
+        return (tags, false, null, ExtractCanonicalTitle(bestCandidate));
+    }
+
+    public static string? ExtractCanonicalTitle(JsonElement mediaItem)
+    {
+        if (!mediaItem.TryGetProperty("title", out var titleProp) || titleProp.ValueKind != JsonValueKind.Object)
+            return null;
+
+        foreach (var key in new[] { "english", "romaji", "native" })
+        {
+            if (!titleProp.TryGetProperty(key, out var el) || el.ValueKind != JsonValueKind.String)
+                continue;
+            var value = el.GetString()?.Trim();
+            if (!string.IsNullOrEmpty(value))
+                return value;
+        }
+
+        return null;
     }
 
     private static List<string> ExtractTagsFromMedia(JsonElement mediaItem)
@@ -227,5 +245,10 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         return TitleMatching.ScoreCandidates(cleanQuery, candidates);
     }
 
-    private sealed record CacheEntry(List<string> Tags, bool WasRejected, string? RejectionReason, DateTimeOffset ExpiresAt);
+    private sealed record CacheEntry(
+        List<string> Tags,
+        bool WasRejected,
+        string? RejectionReason,
+        string? CanonicalTitle,
+        DateTimeOffset ExpiresAt);
 }

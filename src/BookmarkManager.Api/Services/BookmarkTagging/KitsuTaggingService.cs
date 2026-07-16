@@ -96,6 +96,7 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
         var bestScore = -1.0;
         string? bestId = null;
         string? bestSubtype = null;
+        string? bestCanonicalTitle = null;
 
         foreach (var item in dataArray.EnumerateArray())
         {
@@ -110,6 +111,15 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
                 bestSubtype = item.TryGetProperty("attributes", out var attrs) && attrs.TryGetProperty("subtype", out var subtypeProp)
                     ? subtypeProp.GetString()
                     : null;
+                bestCanonicalTitle = null;
+                if (item.TryGetProperty("attributes", out var winAttrs)
+                    && winAttrs.TryGetProperty("canonicalTitle", out var canonicalProp)
+                    && canonicalProp.ValueKind == JsonValueKind.String)
+                {
+                    var title = canonicalProp.GetString()?.Trim();
+                    if (!string.IsNullOrEmpty(title))
+                        bestCanonicalTitle = title;
+                }
             }
         }
 
@@ -167,7 +177,7 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
             }
         }
 
-        return new(tags, false, null);
+        return new(tags, false, null, bestCanonicalTitle);
     }
 
     private double ScoreKitsuCandidate(JsonElement item, string cleanQuery)

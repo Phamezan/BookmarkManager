@@ -13,6 +13,12 @@ public sealed class BookmarkTaggingService
     private readonly TagExtractorService _localTagExtractor;
     private readonly ILogger<BookmarkTaggingService> _logger;
 
+    public sealed record BatchTagLookupResult(
+        Dictionary<Guid, List<string>> Tags,
+        Dictionary<Guid, string?> SuggestedTitles);
+
+    private sealed record TagLookupResult(List<string> Tags, string? CanonicalTitle);
+
     public BookmarkTaggingService(
         IAnilistTagProvider anilist,
         IMangaUpdatesTagProvider mangaUpdates,
@@ -38,6 +44,65 @@ public sealed class BookmarkTaggingService
         BookmarkTagDomainDto requestedDomain,
         CancellationToken cancellationToken)
     {
+        var result = await GetTagsWithCanonicalAsync(title, url, folderPath, requestedDomain, cancellationToken)
+            .ConfigureAwait(false);
+        return result.Tags;
+    }
+
+    public async Task<BatchTagLookupResult> GetTagsForBatchAsync(
+        IReadOnlyCollection<BookmarkTagCandidateDto> items,
+        string? folderPath,
+        BookmarkTagDomainDto requestedDomain,
+        CancellationToken cancellationToken)
+    {
+        var tagsById = new Dictionary<Guid, List<string>>();
+        var suggestedById = new Dictionary<Guid, string?>();
+        var lookupCache = new Dictionary<(BookmarkTagDomain Domain, string CleanTitle), TagLookupResult>();
+
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var classification = BookmarkTagClassifier.Classify(item.Title, item.Url, folderPath, requestedDomain);
+            var normalizedTitle = MediaTitleNormalizer.Normalize(item.Title, item.Url, classification.Domain);
+            var key = (classification.Domain, normalizedTitle.Candidates.FirstOrDefault()?.Query ?? classification.CleanTitle);
+
+            if (!lookupCache.TryGetValue(key, out var lookup))
+            {
+                try
+                {
+                    lookup = await GetTagsWithCanonicalAsync(item.Title, item.Url, folderPath, requestedDomain, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogWarning(ex, "Per-item tag lookup failed for '{Title}', falling back to local extractor.", item.Title);
+                    lookup = new TagLookupResult([], null);
+                }
+                lookupCache[key] = lookup;
+            }
+
+            tagsById[item.Id] = lookup.Tags.ToList();
+            suggestedById[item.Id] = BookmarkTitleSuggestionBuilder.Build(
+                lookup.CanonicalTitle,
+                item.Title,
+                item.Url);
+        }
+
+        _logger.LogInformation(
+            "Tagged batch of {Total} bookmarks with {Unique} unique provider/local lookups after dedupe.",
+            items.Count,
+            lookupCache.Count);
+
+        return new BatchTagLookupResult(tagsById, suggestedById);
+    }
+
+    private async Task<TagLookupResult> GetTagsWithCanonicalAsync(
+        string title,
+        string? url,
+        string? folderPath,
+        BookmarkTagDomainDto requestedDomain,
+        CancellationToken cancellationToken)
+    {
         var classification = BookmarkTagClassifier.Classify(title, url, folderPath, requestedDomain);
         var normalizedTitle = MediaTitleNormalizer.Normalize(title, url, classification.Domain);
         var lookupContext = new MediaTagLookupContext(title, url, classification.Domain, folderPath, normalizedTitle);
@@ -48,7 +113,7 @@ public sealed class BookmarkTaggingService
             classification.Reason,
             string.Join(" | ", normalizedTitle.Candidates.Select(candidate => candidate.Query)));
 
-        var (provider, tags, wasRejected, rejectionReason) = await QueryProvidersAsync(
+        var (provider, tags, wasRejected, rejectionReason, canonicalTitle) = await QueryProvidersAsync(
             title,
             url,
             folderPath,
@@ -75,6 +140,7 @@ public sealed class BookmarkTaggingService
             confidence = tags.Count > 0 ? BookmarkTagConfidence.Low : BookmarkTagConfidence.None;
             state = BookmarkTagResultState.ProviderNoMatch;
             reason = $"Provider rejected query. {rejectionReason}";
+            canonicalTitle = null;
         }
         else if (tags.Count == 0)
         {
@@ -83,55 +149,15 @@ public sealed class BookmarkTaggingService
             confidence = tags.Count == 0 ? BookmarkTagConfidence.None : BookmarkTagConfidence.Low;
             state = tags.Count == 0 ? BookmarkTagResultState.ProviderNoMatch : BookmarkTagResultState.Fallback;
             reason = tags.Count == 0 ? "No provider or local tags found." : "Provider returned no tags; used low-confidence local fallback.";
+            canonicalTitle = null;
         }
 
         LogTagDecision(title, url, folderPath, requestedDomain, classification, provider, source, confidence, state, tags, reason);
 
-        return tags;
+        return new TagLookupResult(tags, canonicalTitle);
     }
 
-    public async Task<Dictionary<Guid, List<string>>> GetTagsForBatchAsync(
-        IReadOnlyCollection<BookmarkTagCandidateDto> items,
-        string? folderPath,
-        BookmarkTagDomainDto requestedDomain,
-        CancellationToken cancellationToken)
-    {
-        var results = new Dictionary<Guid, List<string>>();
-        var lookupCache = new Dictionary<(BookmarkTagDomain Domain, string CleanTitle), List<string>>();
-
-        foreach (var item in items)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var classification = BookmarkTagClassifier.Classify(item.Title, item.Url, folderPath, requestedDomain);
-            var normalizedTitle = MediaTitleNormalizer.Normalize(item.Title, item.Url, classification.Domain);
-            var key = (classification.Domain, normalizedTitle.Candidates.FirstOrDefault()?.Query ?? classification.CleanTitle);
-
-            if (!lookupCache.TryGetValue(key, out var tags))
-            {
-                try
-                {
-                    tags = await GetTagsAsync(item.Title, item.Url, folderPath, requestedDomain, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.LogWarning(ex, "Per-item tag lookup failed for '{Title}', falling back to local extractor.", item.Title);
-                    tags = [];
-                }
-                lookupCache[key] = tags;
-            }
-
-            results[item.Id] = tags.ToList();
-        }
-
-        _logger.LogInformation(
-            "Tagged batch of {Total} bookmarks with {Unique} unique provider/local lookups after dedupe.",
-            items.Count,
-            lookupCache.Count);
-
-        return results;
-    }
-
-    private async Task<(BookmarkTagSource Source, List<string> Tags, bool WasRejected, string? RejectionReason)> QueryProvidersAsync(
+    private async Task<(BookmarkTagSource Source, List<string> Tags, bool WasRejected, string? RejectionReason, string? CanonicalTitle)> QueryProvidersAsync(
         string title,
         string? url,
         string? folderPath,
@@ -181,7 +207,7 @@ public sealed class BookmarkTaggingService
 
         if (tasks.Count == 0)
         {
-            return (BookmarkTagSource.None, [], false, null);
+            return (BookmarkTagSource.None, [], false, null, null);
         }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -201,9 +227,9 @@ public sealed class BookmarkTaggingService
             var rejected = tasks.Select(t => t.Result).FirstOrDefault(r => r.Result != null && r.Result.WasRejected);
             if (rejected.Result != null)
             {
-                return (rejected.Source, [], true, rejected.Result.RejectionReason);
+                return (rejected.Source, [], true, rejected.Result.RejectionReason, null);
             }
-            return (BookmarkTagSource.None, [], false, null);
+            return (BookmarkTagSource.None, [], false, null, null);
         }
 
         var sortedResults = validResults.OrderBy(r =>
@@ -241,6 +267,8 @@ public sealed class BookmarkTaggingService
             }
         }
 
+        var canonicalTitle = SelectCanonicalTitle(sortedResults, lookupContext, classification);
+
         string? domainTag = classification.Domain switch
         {
             BookmarkTagDomain.Anime => "Anime",
@@ -271,7 +299,75 @@ public sealed class BookmarkTaggingService
             }
         }
 
-        return (primarySource, combinedTags, false, null);
+        return (primarySource, combinedTags, false, null, canonicalTitle);
+    }
+
+    private const double MinCanonicalTitleSimilarity = 0.40;
+
+    private static string? SelectCanonicalTitle(
+        IReadOnlyList<(BookmarkTagSource Source, ProviderTagResult Result)> sortedResults,
+        MediaTagLookupContext lookupContext,
+        BookmarkTagClassification classification)
+    {
+        var referenceTitles = BuildCanonicalReferenceTitles(lookupContext, classification);
+        foreach (var res in sortedResults)
+        {
+            var candidate = res.Result.CanonicalTitle?.Trim();
+            if (string.IsNullOrEmpty(candidate))
+                continue;
+
+            if (IsAcceptableCanonicalTitle(candidate, referenceTitles))
+                return candidate;
+        }
+
+        return null;
+    }
+
+    private static List<string> BuildCanonicalReferenceTitles(
+        MediaTagLookupContext lookupContext,
+        BookmarkTagClassification classification)
+    {
+        var references = new List<string>();
+        if (!string.IsNullOrWhiteSpace(classification.CleanTitle))
+            references.Add(classification.CleanTitle.Trim());
+
+        foreach (var candidate in lookupContext.NormalizedTitle.Candidates.Take(MediaTitleNormalizer.MaxProviderCandidates))
+        {
+            if (!string.IsNullOrWhiteSpace(candidate.Query))
+                references.Add(candidate.Query.Trim());
+        }
+
+        var wholeTitle = MediaTitleNormalizer.NormalizeForSearch(lookupContext.OriginalTitle);
+        if (wholeTitle.Length >= 2)
+            references.Add(wholeTitle);
+
+        return references
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static bool IsAcceptableCanonicalTitle(string canonicalTitle, IReadOnlyList<string> referenceTitles)
+    {
+        if (referenceTitles.Count == 0)
+            return true;
+
+        var canonicalTokens = MediaTitleNormalizer.NormalizeForSearch(canonicalTitle)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var bestReferenceWordCount = referenceTitles
+            .Select(title => title.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length)
+            .DefaultIfEmpty(0)
+            .Max();
+
+        if (canonicalTokens.Length == 1 && bestReferenceWordCount >= 3)
+            return false;
+
+        foreach (var reference in referenceTitles)
+        {
+            if (MediaTitleNormalizer.ScoreTitleSimilarity(reference, [canonicalTitle]) >= MinCanonicalTitleSimilarity)
+                return true;
+        }
+
+        return false;
     }
 
     private void LogTagDecision(

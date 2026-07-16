@@ -24,7 +24,11 @@ public partial class BookmarksController
 
         var resultMapping = await _bookmarkTagging.GetTagsForBatchAsync(request.Items, folderPath, request.Domain, ct);
 
-        return Ok(new BookmarkManager.Contracts.BatchTagResponse { Tags = resultMapping });
+        return Ok(new BookmarkManager.Contracts.BatchTagResponse
+        {
+            Tags = resultMapping.Tags,
+            SuggestedTitles = resultMapping.SuggestedTitles
+        });
     }
     catch (Exception ex)
     {
@@ -36,26 +40,78 @@ public partial class BookmarksController
     }
     }
 
+    /// <summary>
+    /// Saves tag edits and (optionally) title edits from the auto-tagger review page in
+    /// one request. Tag-only saves stay manager-only metadata (no sync command, no
+    /// broadcast). Title changes MUST go through <see cref="ApplyBookmarkProjectionUpdate"/>
+    /// so they never diverge from Brave (see .cursor/commands/review-sync-change.md) —
+    /// one SaveChanges + one broadcast for the whole batch either way.
+    /// </summary>
     [HttpPost("tags/bulk-save")]
     public async Task<ActionResult> BulkSaveTagsAsync(
     [FromBody] BookmarkManager.Contracts.BulkSaveTagsRequest request,
     CancellationToken ct)
     {
-    if (request.Tags.Count > 0)
+    var nodeIds = new HashSet<Guid>(request.Tags.Keys);
+    if (request.Titles is not null)
     {
-        var ids = request.Tags.Keys.ToList();
-        var nodes = await _db.BookmarkNodes.Where(n => ids.Contains(n.Id)).ToListAsync(ct);
-        foreach (var node in nodes)
-        {
-            if (request.Tags.TryGetValue(node.Id, out var tags))
-            {
-                node.Tags = string.Join(",", tags);
-                node.UpdatedAt = DateTime.UtcNow;
-                TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, "Manual")), confidence: null);
-            }
-        }
-        await _db.SaveChangesAsync(ct);
+        foreach (var id in request.Titles.Keys)
+            nodeIds.Add(id);
     }
+
+    if (nodeIds.Count == 0)
+        return Ok();
+
+    var nodes = await _db.BookmarkNodes
+        .Where(n => nodeIds.Contains(n.Id) && !n.IsDeleted)
+        .ToListAsync(ct);
+    var nodesById = nodes.ToDictionary(n => n.Id);
+
+    var anyChange = false;
+    var anyTitleChange = false;
+
+    foreach (var (bookmarkId, tags) in request.Tags)
+    {
+        if (!nodesById.TryGetValue(bookmarkId, out var node))
+            continue;
+
+        node.Tags = string.Join(",", tags);
+        node.UpdatedAt = DateTime.UtcNow;
+
+        // Rows the user actually touched are "Manual" provenance; untouched rows keep
+        // the AI-suggested source. A null ManuallyEditedTagIds (older client / rerun
+        // quick-edit path) means treat everything as Manual, preserving prior behavior.
+        var source = request.ManuallyEditedTagIds is null || request.ManuallyEditedTagIds.Contains(bookmarkId)
+            ? "Manual"
+            : "Suggested";
+        TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, source)), confidence: null);
+        anyChange = true;
+    }
+
+    if (request.Titles is not null)
+    {
+        foreach (var (bookmarkId, newTitle) in request.Titles)
+        {
+            if (!nodesById.TryGetValue(bookmarkId, out var node))
+                continue;
+
+            var trimmed = newTitle?.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) || string.Equals(trimmed, node.Title, StringComparison.Ordinal))
+                continue;
+
+            ApplyBookmarkProjectionUpdate(node, trimmed, url: null);
+            anyChange = true;
+            anyTitleChange = true;
+        }
+    }
+
+    if (anyChange)
+    {
+        await _db.SaveChangesAsync(ct);
+        if (anyTitleChange)
+            await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+    }
+
     return Ok();
     }
 

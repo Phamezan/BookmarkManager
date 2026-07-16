@@ -144,7 +144,8 @@ public sealed class CatalogTaggingService : ICatalogTagProvider
 
         var tags = new List<string> { "Novel" };
         tags.AddRange(genres);
-        return new(tags, false, null);
+        var canonical = string.IsNullOrWhiteSpace(best.Title) ? null : best.Title.Trim();
+        return new(tags, false, null, canonical);
     }
 
     /// <summary>Returns the cached in-memory title index, rebuilding it when missing or past its TTL.

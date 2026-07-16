@@ -47,10 +47,12 @@ public static partial class MediaTitleNormalizer
     {
         "lightnovels", "lightnovels me", "read light novels", "novelfull", "novel full", "novelcool", "novel cool",
         "novelusb", "scribblehub", "scribble hub", "wuxiaworld",
+        "novelfire", "novel fire", "novelfire.net", "novel fire net",
         "asura", "asura scans", "asurascans", "asura comics", "asuracomic", "reaper scans", "reaperscans",
         "mangadex", "manga dex", "mangakakalot", "manga kakalot", "comick", "webtoon", "webtoons",
         "animepahe", "anime pahe", "crunchyroll", "miruro", "gogoanime", "9anime", "aniwatch", "aniwave", "hianime",
-        "kickassanime", "allanime", "zoro", "zorox"
+        "kickassanime", "allanime", "zoro", "zorox",
+        "galaxy translations", "galaxy translation", "galaxytranslations"
     };
 
     private static readonly HashSet<string> GenericNoiseTokens = new(StringComparer.OrdinalIgnoreCase)
@@ -73,6 +75,23 @@ public static partial class MediaTitleNormalizer
         var host = ExtractHost(url);
         var segments = BuildSegments(originalTitle, host).ToList();
         var candidates = BuildCandidates(originalTitle, segments, domain).ToList();
+
+        // Novel-site (NovelFire/NovelFull) page titles are noisy ("Series - Chapter N: chapter
+        // title - Novel Fire") but the series slug in the URL is clean - prefer it over whatever
+        // BuildCandidates scraped from the title when one is available.
+        var novelSiteSlug = TryTitleFromNovelSiteUrl(url);
+        if (!string.IsNullOrWhiteSpace(novelSiteSlug))
+        {
+            candidates.Insert(0, new MediaTitleCandidate(novelSiteSlug, 0.99, "novel-site URL slug"));
+            candidates = candidates
+                .GroupBy(candidate => NormalizeForSearch(candidate.Query), StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Key.Length > 0)
+                .Select(group => group.OrderByDescending(candidate => candidate.Confidence).First())
+                .OrderByDescending(candidate => candidate.Confidence)
+                .ThenBy(candidate => candidate.Query.Length)
+                .Take(5)
+                .ToList();
+        }
 
         return new MediaTitleNormalizeResult(originalTitle, url, host, segments, candidates);
     }
@@ -124,14 +143,70 @@ public static partial class MediaTitleNormalizer
         return query.Length >= 2 ? query : null;
     }
 
+    // NovelFire/NovelFull encode the series slug in the URL path
+    // ("novelfire.net/book/{slug}/chapter-27", "novelfull.com/{slug}.html") - same idea as
+    // TryTitleFromStreamingUrl above: prefer the de-slugged path over the noisy, chapter-number-
+    // and brand-laden page <title> ("Series - Chapter N: chapter title - Novel Fire").
+    private static readonly string[] NovelSiteHostStems = { "novelfire", "novelfull" };
+
+    private static readonly HashSet<string> NonTitlePathSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "search", "genre", "genres", "category", "categories", "tag", "tags", "list",
+        "top", "hot", "completed", "latest", "ranking", "rankings", "author", "authors"
+    };
+
+    public static string? TryTitleFromNovelSiteUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return null;
+
+        var host = uri.Host.ToLowerInvariant();
+        if (!NovelSiteHostStems.Any(stem => host.Contains(stem, StringComparison.Ordinal)))
+            return null;
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        // NovelFire layout: "/book/{slug}/chapter-N" or "/book/{slug}" - the slug is the
+        // segment right after the "book" marker.
+        var bookIndex = Array.FindIndex(segments, s => s.Equals("book", StringComparison.OrdinalIgnoreCase));
+        var slug = bookIndex >= 0 && bookIndex + 1 < segments.Length ? segments[bookIndex + 1] : null;
+
+        // NovelFull layout: "/{slug}.html" - a single non-chapter path segment. Skip obvious
+        // non-title paths ("/search", "/genre/...") rather than treating them as a slug.
+        if (slug is null)
+        {
+            var nonChapterSegments = segments
+                .Where(segment => !segment.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            if (nonChapterSegments.Count == 1 && nonChapterSegments[0].EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+            {
+                var candidateSlug = nonChapterSegments[0][..^".html".Length];
+                if (!NonTitlePathSegments.Contains(candidateSlug))
+                    slug = candidateSlug;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(slug)
+            || slug.StartsWith("chapter", StringComparison.OrdinalIgnoreCase)
+            || NonTitlePathSegments.Contains(slug))
+            return null;
+
+        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries)
+            .Where(token => !token.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        var query = string.Join(' ', tokens).Trim();
+        return query.Length >= 2 ? query : null;
+    }
+
     public static IReadOnlyList<MediaTitleCandidate> GetProviderCandidates(MediaTagLookupContext context)
         => context.NormalizedTitle.Candidates.Take(MaxProviderCandidates).ToList();
 
-    public static string BuildLooseQuery(string candidate)
+    public static string BuildLooseQuery(string candidate, int maxTokens = 4)
     {
         var tokens = TokenizeForSearch(candidate)
             .Where(token => !GenericNoiseTokens.Contains(token))
-            .Take(4)
+            .Take(maxTokens)
             .ToList();
 
         return tokens.Count == 0
@@ -307,7 +382,9 @@ public static partial class MediaTitleNormalizer
             return false;
         if (KnownBrandAliases.Contains(normalizedSegment))
             return true;
-        if (DomainSuffixRegex().IsMatch(normalizedSegment))
+        if (DomainLikeSegmentRegex().IsMatch(normalizedSegment))
+            return true;
+        if (IsScanGroupBrand(normalizedSegment))
             return true;
 
         if (!string.IsNullOrWhiteSpace(host))
@@ -324,6 +401,20 @@ public static partial class MediaTitleNormalizer
         }
 
         return false;
+    }
+
+    // Trailing scan-group suffixes ("Galaxy Translations", "Foo Scans") are release groups, not series titles.
+    private static bool IsScanGroupBrand(string normalizedSegment)
+    {
+        var tokens = normalizedSegment.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length < 2)
+            return false;
+
+        var suffix = tokens[^1];
+        if (suffix is not ("translations" or "translation" or "scans" or "scan" or "comics" or "comic"))
+            return false;
+
+        return tokens[..^1].Any(token => token.Length >= 2);
     }
 
     private static bool IsNoisePhrase(string normalizedSegment, IReadOnlyCollection<string> tokens)
@@ -429,8 +520,8 @@ public static partial class MediaTitleNormalizer
     [GeneratedRegex(@"(?i)^(?<title>.*?)\s+(?<marker>(?:chapter|ch\.?|episode|ep\.?)\s*\d+(?:\.\d+)?)(?<suffix>.*)$")]
     private static partial Regex EmbeddedChapterMarkerRegex();
 
-    [GeneratedRegex(@"\b(?:com|org|net|me|info|xyz|to|tv|co|ru)\b")]
-    private static partial Regex DomainSuffixRegex();
+    [GeneratedRegex(@"\b[\w][\w-]*\.(?:com|org|net|me|info|xyz|tv|co|ru|to)\b")]
+    private static partial Regex DomainLikeSegmentRegex();
 
     // A trailing slug id/hash: pure digits ("15516") or a short mixed alphanumeric token
     // that has both a letter and a digit ("yqqv0", "540q", "kn86"). Pure-letter tokens

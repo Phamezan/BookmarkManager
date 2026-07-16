@@ -173,6 +173,13 @@ internal sealed partial class AiBookmarkAutoTaggingService
             return;
         }
 
+        // Suggestion-not-mutation: never rename during AI tagging. Surface SuggestedTitle for
+        // client review UIs; Results & Reruns is tag-edit only so Accept is not wired there.
+        var suggestedTitle = BookmarkTitleSuggestionBuilder.Build(
+            request.CanonicalTitle,
+            request.Candidate.Bookmark.Title,
+            request.Candidate.Bookmark.Url);
+
         request.Candidate.Bookmark.Tags = string.Join(',', finalTags.Select(t => t.Tag));
         request.Candidate.Bookmark.UpdatedAt = DateTime.UtcNow;
 
@@ -191,7 +198,8 @@ internal sealed partial class AiBookmarkAutoTaggingService
             Title = request.Candidate.Bookmark.Title,
             Status = request.SuccessStatus,
             Reason = request.SuccessReason,
-            Tags = request.Candidate.Bookmark.Tags
+            Tags = request.Candidate.Bookmark.Tags,
+            SuggestedTitle = suggestedTitle
         });
         summary.Messages.Add($"  ✓ '{request.CanonicalTitle}' tagged: [{string.Join(", ", finalTags.Select(t => t.Tag))}]");
         runState.TagsPendingSave = await SaveTaggedBookmarksIfNeededAsync(summary, runState.TagsPendingSave, cancellationToken).ConfigureAwait(false);
