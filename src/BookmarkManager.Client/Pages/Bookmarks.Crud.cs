@@ -13,7 +13,7 @@ public partial class Bookmarks
     {
         var parentId = _selectedFolderId ?? Guid.Empty;
 
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small, CloseOnEscapeKey = true };
         var dialog = await DialogService.ShowAsync<FolderCreateDialog>("Create Folder", options);
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not string folderName) return;
@@ -58,7 +58,7 @@ public partial class Bookmarks
             return;
         }
 
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium, CloseOnEscapeKey = true };
         var dialog = await DialogService.ShowAsync<BookmarkEditDialog>("Create Bookmark", options);
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
@@ -86,10 +86,14 @@ public partial class Bookmarks
 
     private async Task EditBookmark(BookmarkNodeDto item)
     {
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium, CloseOnEscapeKey = true };
         var dialog = await DialogService.ShowAsync<BookmarkEditDialog>("Edit Bookmark", new DialogParameters { ["Node"] = item }, options);
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;
+
+        var originalTitle = item.Title;
+        var originalUrl = item.Url;
+        var titleOrUrlChanged = originalTitle != data.Title || originalUrl != data.Url;
 
         try
         {
@@ -106,7 +110,17 @@ public partial class Bookmarks
 
             await RefreshFolderTreeAsync();
             StateHasChanged();
-            Snackbar.Add("Bookmark updated", Severity.Success);
+
+            // Title/URL revert only — tag edits go through the auto-tagger's own
+            // provenance path (Phase 5) and aren't covered by this undo entry.
+            if (titleOrUrlChanged)
+            {
+                ShowUndoSnackbar("Bookmark updated", () => BookmarkService.UpdateBookmarkAsync(item.Id, originalTitle, originalUrl));
+            }
+            else
+            {
+                Snackbar.Add("Bookmark updated", Severity.Success);
+            }
         }
         catch (Exception ex)
         {
@@ -176,7 +190,7 @@ public partial class Bookmarks
 
     private async Task MoveBookmark(BookmarkNodeDto item)
     {
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small, CloseOnEscapeKey = true };
         var parameters = new DialogParameters 
         { 
             ["Folders"] = _folderTree,
@@ -221,7 +235,7 @@ public partial class Bookmarks
     {
         var originalParentId = FindParentFolderId(_folderTree, folderId);
 
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small, CloseOnEscapeKey = true };
         var parameters = new DialogParameters 
         { 
             ["Folders"] = _folderTree,
@@ -268,7 +282,7 @@ public partial class Bookmarks
 
     private async Task CreateBookmarkUnderFolder(Guid folderId)
     {
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium, CloseOnEscapeKey = true };
         var dialog = await DialogService.ShowAsync<BookmarkEditDialog>("Create Bookmark", options);
         var result = await dialog.Result;
         if (result?.Canceled != false || result.Data is not BookmarkEditDialog.BookmarkEditResult data) return;

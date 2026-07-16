@@ -123,6 +123,10 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryCatalo
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>());
 builder.Services.AddSingleton(BookmarkManager.Api.Services.Library.ProviderBudgetTracker.Instance);
 builder.Services.AddHostedService<PurgeBackgroundJob>();
+builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
+    builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Backup.IBackupService, BookmarkManager.Api.Services.Backup.BackupService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Backup.BackupBackgroundJob>();
 builder.Services.AddAutoMapper(cfg => { }, typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>
     options.CustomizeProblemDetails = ctx =>

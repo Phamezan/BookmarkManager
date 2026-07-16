@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using BookmarkManager.Api.Data;
@@ -11,12 +12,52 @@ namespace BookmarkManager.Api.IntegrationTests;
 
 public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory<Program>
 {
-    private readonly string _connectionString = $"Data Source={Path.Combine(Path.GetTempPath(), $"bm-tests-{Guid.NewGuid():N}.db")}";
+    // The live db lives in its own per-factory directory (not directly in the shared OS temp
+    // folder) because restore-on-restart stages/reads files "next to" the live db
+    // (restore-pending.db, force-repair-snapshot); a directory shared across factories would let
+    // those marker files leak between unrelated tests.
+    private readonly string _dbDir = Path.Combine(Path.GetTempPath(), $"bm-db-{Guid.NewGuid():N}");
+    private readonly string _connectionString;
     private readonly string _tempDataDir = Path.Combine(Path.GetTempPath(), $"bm-data-{Guid.NewGuid():N}");
+    private readonly string _backupDir = Path.Combine(Path.GetTempPath(), $"bm-backups-{Guid.NewGuid():N}");
+
+    /// <summary>
+    /// When set before the first <see cref="WebApplicationFactory{TEntryPoint}.CreateClient"/> call,
+    /// overrides <c>Backup:MinFreeDiskBytes</c> (used to force preflight Failed manifests).
+    /// </summary>
+    public long? MinFreeDiskBytesOverride { get; set; }
+
+    public IntegrationTestWebApplicationFactory()
+    {
+        Directory.CreateDirectory(_dbDir);
+        _connectionString = $"Data Source={Path.Combine(_dbDir, "bookmarks.db")}";
+    }
+
+    public string ConnectionString => _connectionString;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
+
+        builder.ConfigureAppConfiguration((_, config) =>
+        {
+            var values = new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:Default"] = _connectionString,
+                ["Backup:Directory"] = _backupDir,
+                ["Backup:Enabled"] = "false",
+                // The test host process is not restarted after a POST /restore like Docker/dotnet
+                // run would be, so auto-stopping it here would just kill the host mid-test-suite.
+                ["Backup:StopHostAfterRestore"] = "false"
+            };
+
+            if (MinFreeDiskBytesOverride is { } minFree)
+            {
+                values["Backup:MinFreeDiskBytes"] = minFree.ToString();
+            }
+
+            config.AddInMemoryCollection(values);
+        });
 
         builder.ConfigureServices(services =>
         {

@@ -111,4 +111,99 @@ public sealed class MediaTitleNormalizerTests
 
         Assert.Equal("a monster who levels", query);
     }
+
+    [Fact]
+    public void BuildLooseQuery_HonorsMaxTokensOverride()
+    {
+        var query = MediaTitleNormalizer.BuildLooseQuery("A B C D E F G H I J", maxTokens: 8);
+
+        Assert.Equal("a b c d e f g h", query);
+    }
+
+    [Theory]
+    // NovelFire encodes the clean series slug in the URL path even when the page <title> is
+    // long and noisy ("Series - Chapter N: chapter title - Novel Fire").
+    [InlineData("https://novelfire.net/book/young-masters-pov-woke-up-as-a-villain-in-a-game-one-day/chapter-27", "young masters pov woke up as a villain in a game one day")]
+    [InlineData("https://novelfire.net/book/death-game-starting-as-a-trickster-pretending-to-be-a-god/chapter-132", "death game starting as a trickster pretending to be a god")]
+    [InlineData("https://novelfire.net/book/sleeping-to-immortality-getting-stronger-one-nap-at-a-time/chapter-80", "sleeping to immortality getting stronger one nap at a time")]
+    [InlineData("https://novelfire.net/book/starting-as-a-son-in-law-to-establish-an-immortal-family", "starting as a son in law to establish an immortal family")]
+    [InlineData("https://novelfull.com/martial-god-asura.html", "martial god asura")]
+    public void TryTitleFromNovelSiteUrl_ExtractsSlug(string url, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.TryTitleFromNovelSiteUrl(url));
+    }
+
+    [Theory]
+    [InlineData("https://example.com/not-a-novel/book/foo")]
+    [InlineData("https://novelfire.net/search?keyword=foo")]
+    [InlineData("https://novelfull.com/search.html")]
+    [InlineData("https://novelfire.net/book/")]
+    [InlineData("not-a-url")]
+    public void TryTitleFromNovelSiteUrl_ReturnsNullForNonSeriesUrls(string url)
+    {
+        Assert.Null(MediaTitleNormalizer.TryTitleFromNovelSiteUrl(url));
+    }
+
+    [Theory]
+    [InlineData(
+        "Death Game: Starting as a Trickster, Pretending to Be a God - Chapter 132: The Psychological Society, Fluoxetine - Novel Fire",
+        "https://novelfire.net/book/death-game-starting-as-a-trickster-pretending-to-be-a-god/chapter-132",
+        BookmarkTagDomain.Novel,
+        "death game starting as a trickster pretending to be a god")]
+    [InlineData(
+        "Sleeping to Immortality: Getting Stronger One Nap at a Time! - Chapter 80 \u2013 Something - Novel Fire",
+        "https://novelfire.net/book/sleeping-to-immortality-getting-stronger-one-nap-at-a-time/chapter-80",
+        BookmarkTagDomain.Novel,
+        "sleeping to immortality getting stronger one nap at a time")]
+    [InlineData(
+        "Investing in the Reborn Empress, She Actually Calls Me 'Husband' - Chapter 100: Something - Novel Fire",
+        "https://novelfire.net/book/investing-in-the-reborn-empress-she-actually-calls-me-husband/chapter-100",
+        BookmarkTagDomain.Novel,
+        "investing in the reborn empress she actually calls me husband")]
+    public void Normalize_PrefersNovelFireUrlSlug(string title, string url, BookmarkTagDomain domain, string expectedQuery)
+    {
+        var result = MediaTitleNormalizer.Normalize(title, url, domain);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.Equal(expectedQuery, result.Candidates[0].Query);
+        Assert.Equal("novel-site URL slug", result.Candidates[0].Reason);
+    }
+
+    [Fact]
+    public void Normalize_ClassifiesNovelFireBrandSegment()
+    {
+        var result = MediaTitleNormalizer.Normalize(
+            "Death Game - Chapter 132 - Novel Fire",
+            "https://novelfire.net/book/death-game/chapter-132",
+            BookmarkTagDomain.Novel);
+
+        var brand = Assert.Single(result.Segments, segment => segment.Text == "Novel Fire");
+        Assert.True(brand.Features.IsBrand);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("https://galaxytranslations97.com/transcendence-due-to-a-system-error/chapter-110")]
+    [InlineData("https://lightnovels.me/transcendence-due-to-a-system-error/chapter-110")]
+    [InlineData("https://example.com/x")]
+    public void Normalize_TranscendenceGalaxyTranslations_RanksSeriesTitleFirst(string? url)
+    {
+        const string title = "Transcendence Due To A System Error - Chapter 110 - Galaxy Translations";
+        var result = MediaTitleNormalizer.Normalize(title, url, BookmarkTagDomain.Novel);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.Equal("Transcendence Due To A System Error", result.Candidates[0].Query);
+
+        var brand = Assert.Single(result.Segments, segment => segment.Text == "Galaxy Translations");
+        Assert.True(brand.Features.IsBrand);
+    }
+
+    [Fact]
+    public void ClassifySegment_DueToInTitle_IsNotBrand()
+    {
+        var features = MediaTitleNormalizer.ClassifySegment("Transcendence Due To A System Error", 0, null);
+
+        Assert.False(features.IsBrand);
+        Assert.True(features.LooksLikeTitle);
+    }
 }

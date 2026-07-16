@@ -81,12 +81,38 @@ public sealed class AnilistTaggingTests
         """;
         using var doc = JsonDocument.Parse(json);
 
-        var (tags, wasRejected, rejectionReason) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
+        var (tags, wasRejected, rejectionReason, canonicalTitle) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
 
         Assert.False(wasRejected);
         Assert.Null(rejectionReason);
         Assert.Contains("Adventure", tags);
         Assert.Contains("Pirates", tags);
+        Assert.Equal("One Piece", canonicalTitle);
+    }
+
+    [Fact]
+    public void ProcessCandidates_PrefersEnglishOverRomajiForCanonicalTitle()
+    {
+        const string json = """
+        {
+          "data": {
+            "Page": {
+              "media": [
+                {
+                  "title": { "romaji": "Shingeki no Kyojin", "english": "Attack on Titan", "native": "進撃の巨人" },
+                  "genres": ["Action"],
+                  "tags": []
+                }
+              ]
+            }
+          }
+        }
+        """;
+        using var doc = JsonDocument.Parse(json);
+
+        var (_, _, _, canonicalTitle) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "Attack on Titan");
+
+        Assert.Equal("Attack on Titan", canonicalTitle);
     }
 
     [Fact]
@@ -109,10 +135,11 @@ public sealed class AnilistTaggingTests
         """;
         using var doc = JsonDocument.Parse(json);
 
-        var (tags, wasRejected, rejectionReason) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
+        var (tags, wasRejected, rejectionReason, canonicalTitle) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
 
         Assert.False(wasRejected);
         Assert.NotNull(rejectionReason);
         Assert.Empty(tags);
+        Assert.Null(canonicalTitle);
     }
 }

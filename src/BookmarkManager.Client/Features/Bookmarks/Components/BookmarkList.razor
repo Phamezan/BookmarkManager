@@ -3,7 +3,8 @@
 @implements IAsyncDisposable
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
-<div class="bookmark-list" @ref="_gridContainerRef">
+<div class="bookmark-list" @ref="_gridContainerRef"
+     @oncontextmenu="@((MouseEventArgs e) => BackgroundContextMenuOpened(e))" @oncontextmenu:preventDefault="true">
     @if (Loading)
     {
         <div class="bookmark-grid" aria-label="Loading bookmarks...">
@@ -47,6 +48,7 @@
                     <BookmarkCard @key="item.Id"
                                   Item="item"
                                   IsSelected="IsSelected(item.Id)"
+                                  IsFocused="@(FocusedId == item.Id)"
                                   GetFaviconUrl="GetFaviconUrl"
                                   GetParentFolderName="GetParentFolderName"
                                   GetFolderPath="GetFolderPath"
@@ -73,6 +75,7 @@
 
     private ElementReference _gridContainerRef;
     private Microsoft.JSInterop.IJSObjectReference? _resizeObserver;
+    private Microsoft.JSInterop.IJSObjectReference? _marqueeHandle;
     private Microsoft.JSInterop.DotNetObjectReference<BookmarkList>? _dotNetRef;
     private int _columns = 3;
 
@@ -81,6 +84,7 @@
     [Parameter] public string SearchQuery { get; set; } = string.Empty;
     [Parameter] public EventCallback CreateBookmark { get; set; }
     [Parameter] public Func<Guid, bool> IsSelected { get; set; } = _ => false;
+    [Parameter] public Guid? FocusedId { get; set; }
     [Parameter] public Func<string, string?> GetFaviconUrl { get; set; } = _ => null;
     [Parameter] public Func<Guid?, string> GetParentFolderName { get; set; } = _ => string.Empty;
     [Parameter] public Func<Guid?, string> GetFolderPath { get; set; } = _ => string.Empty;
@@ -88,6 +92,7 @@
     [Parameter] public Func<MouseEventArgs, BookmarkNodeDto, Task> RowClicked { get; set; } = (_, _) => Task.CompletedTask;
     [Parameter] public Action<MouseEventArgs, Guid> CheckboxClicked { get; set; } = (_, _) => { };
     [Parameter] public Action<MouseEventArgs, BookmarkNodeDto> ContextMenuOpened { get; set; } = (_, _) => { };
+    [Parameter] public Action<MouseEventArgs> BackgroundContextMenuOpened { get; set; } = _ => { };
     [Parameter] public Action<Guid> DragStarted { get; set; } = _ => { };
     [Parameter] public Func<BookmarkNodeDto, Task> ToggleFavoriteAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<BookmarkNodeDto, Task> EditBookmarkAsync { get; set; } = _ => Task.CompletedTask;
@@ -95,6 +100,9 @@
     [Parameter] public Func<BookmarkNodeDto, Task> DeleteBookmarkAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> MoveFolderAsync { get; set; } = _ => Task.CompletedTask;
     [Parameter] public Func<Guid, Task> DeleteFolderAsync { get; set; } = _ => Task.CompletedTask;
+    [Parameter] public Action<IReadOnlyList<Guid>, bool>? MarqueeSelectCompleted { get; set; }
+    [Parameter] public Action? MarqueeBackgroundClick { get; set; }
+    [Parameter] public EventCallback<int> ColumnsChanged { get; set; }
 
     private List<BookmarkNodeDto[]> _rows = [];
     private List<BookmarkNodeDto>? _lastItems;
@@ -112,9 +120,10 @@
 
         _lastItems = Items;
         _lastColumns = _columns;
-        _rows = Items.OrderBy(i => i.Type == NodeType.Folder ? 0 : 1)
-                     .Chunk(Math.Max(1, _columns))
-                     .ToList();
+        // Items already arrives in display order (folders-first, then sort mode) from
+        // Bookmarks.VisibleItems — do not re-sort here, or shift-click range selection
+        // (computed against VisibleItems) will disagree with what's rendered.
+        _rows = Items.Chunk(Math.Max(1, _columns)).ToList();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -126,8 +135,11 @@
                 _dotNetRef = Microsoft.JSInterop.DotNetObjectReference.Create(this);
                 var rawCols = await JSRuntime.InvokeAsync<int>("BookmarkGridInterop.getColumnCount", _gridContainerRef, MinCardWidthPx, GapPx);
                 _columns = Math.Clamp(rawCols, 1, 4);
+                await ColumnsChanged.InvokeAsync(_columns);
                 _resizeObserver = await JSRuntime.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
                     "BookmarkGridInterop.observeResize", _gridContainerRef, _dotNetRef, MinCardWidthPx, GapPx);
+                _marqueeHandle = await JSRuntime.InvokeAsync<Microsoft.JSInterop.IJSObjectReference>(
+                    "BookmarkMarqueeSelect.attach", _gridContainerRef, _dotNetRef);
                 UpdateRows();
                 StateHasChanged();
                 await JSRuntime.InvokeVoidAsync("initBookmarkGridBloom", ".bookmark-grid");
@@ -151,13 +163,26 @@
     }
 
     [Microsoft.JSInterop.JSInvokable]
-    public void OnColumnsChanged(int columns)
+    public async void OnColumnsChanged(int columns)
     {
         try
         {
+            // Monitor-move guard — ignore late notifications that slipped past JS debounce.
+            var busy = false;
+            try
+            {
+                busy = await JSRuntime.InvokeAsync<bool>("bmIsLayoutBusy");
+            }
+            catch
+            {
+                // Older cached JS without the helper — treat as not busy.
+            }
+            if (busy) return;
+
             columns = Math.Clamp(columns, 1, 4);
             if (columns == _columns) return;
             _columns = columns;
+            await ColumnsChanged.InvokeAsync(_columns);
             UpdateRows();
             StateHasChanged();
         }
@@ -167,8 +192,48 @@
         }
     }
 
+    [Microsoft.JSInterop.JSInvokable]
+    public Task OnMarqueeSelectCompleted(string[] hitIdStrings, bool additive)
+    {
+        var hitIds = ParseGuids(hitIdStrings);
+        MarqueeSelectCompleted?.Invoke(hitIds, additive);
+        return Task.CompletedTask;
+    }
+
+    [Microsoft.JSInterop.JSInvokable]
+    public Task OnMarqueeBackgroundClick()
+    {
+        MarqueeBackgroundClick?.Invoke();
+        return Task.CompletedTask;
+    }
+
+    private static List<Guid> ParseGuids(string[] rawIds)
+    {
+        var parsed = new List<Guid>(rawIds.Length);
+        foreach (var raw in rawIds)
+        {
+            if (Guid.TryParse(raw, out var id))
+            {
+                parsed.Add(id);
+            }
+        }
+        return parsed;
+    }
+
     public async ValueTask DisposeAsync()
     {
+        if (_marqueeHandle is not null)
+        {
+            try
+            {
+                await _marqueeHandle.InvokeVoidAsync("disconnect");
+                await _marqueeHandle.DisposeAsync();
+            }
+            catch
+            {
+                // Safe fallback during dispose
+            }
+        }
         if (_resizeObserver is not null)
         {
             try

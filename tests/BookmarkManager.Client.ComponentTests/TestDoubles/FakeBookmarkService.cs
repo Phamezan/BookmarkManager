@@ -131,7 +131,11 @@ public class FakeBookmarkService : IBookmarkService
         LastTagsFolderId = folderId;
         return Task.FromResult(Tags);
     }
-    public Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new BatchTagResponse());
+    public Func<BatchTagRequest, Task<BatchTagResponse>>? OnTagBatch { get; set; }
+    public BatchTagResponse TagBatchResponse { get; set; } = new();
+
+    public Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default)
+        => OnTagBatch != null ? OnTagBatch(request) : Task.FromResult(TagBatchResponse);
     
     public Task<AiAutoTagSummaryDto> AiAutoTagFolderAsync(Guid folderId, bool forceRefresh = false, CancellationToken cancellationToken = default) 
         => OnAiAutoTagFolder != null ? OnAiAutoTagFolder(folderId, forceRefresh) : Task.FromResult(new AiAutoTagSummaryDto());
@@ -147,7 +151,9 @@ public class FakeBookmarkService : IBookmarkService
     public Task<TestAiKeyResponse> TestAiTaggingKeyAsync(TestAiKeyRequest request, CancellationToken cancellationToken = default) 
         => OnTestAiTaggingKey != null ? OnTestAiTaggingKey(request) : Task.FromResult(new TestAiKeyResponse { Success = true, Message = "fake" });
 
-    public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new Dictionary<Guid, int>());
+    public Dictionary<Guid, int> UntaggedCounts { get; set; } = new();
+
+    public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(UntaggedCounts);
     
     public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) 
         => OnBulkSaveTags != null ? OnBulkSaveTags(request) : Task.FromResult(false);

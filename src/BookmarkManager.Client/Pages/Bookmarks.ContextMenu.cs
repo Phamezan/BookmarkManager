@@ -24,6 +24,45 @@ public partial class Bookmarks
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Right-click on list background (not a card — <c>BookmarkCard</c> stops
+    /// propagation on its own <c>@oncontextmenu</c>). Phase 4 empty-area menu.
+    /// </summary>
+    private void OnListBackgroundContextMenu(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
+    {
+        _contextMenuOpen = true;
+        _contextMenuX = e.ClientX;
+        _contextMenuY = e.ClientY;
+        _contextMenuType = "empty";
+        _contextMenuBookmark = null;
+        _contextMenuFolderId = Guid.Empty;
+        _contextSiblingFolders = [];
+        StateHasChanged();
+    }
+
+    private async Task CreateBookmarkAtEmptyContext()
+    {
+        CloseContextMenu();
+        if (_selectedFolderId is not Guid folderId)
+        {
+            Snackbar.Add("Select a folder first", Severity.Warning);
+            return;
+        }
+        await CreateBookmarkUnderFolder(folderId);
+    }
+
+    private async Task CreateFolderAtEmptyContext()
+    {
+        CloseContextMenu();
+        await CreateFolder();
+    }
+
+    private async Task PasteUrlAtEmptyContext()
+    {
+        CloseContextMenu();
+        await PasteUrlAsBookmarkAsync();
+    }
+
     private void OnFolderContextMenu((Microsoft.AspNetCore.Components.Web.MouseEventArgs MouseEvent, Guid FolderId) args)
     {
         _contextMenuOpen = true;

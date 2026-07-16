@@ -87,8 +87,26 @@ public sealed partial class ExtensionService(
     public async Task<ExtensionConfigDto> GetConfigAsync(CancellationToken ct)
     {
         var config = await GetOrCreateAppConfigAsync(ct);
+
+        var connectionString = db.Database.GetConnectionString() ?? string.Empty;
+        var forceRepairMarkerPath = BookmarkManager.Api.Services.Backup.BackupPendingRestore.GetForceRepairMarkerPath(connectionString);
+        if (File.Exists(forceRepairMarkerPath))
+        {
+            TryDeleteForceRepairMarker(forceRepairMarkerPath);
+            return new ExtensionConfigDto
+            {
+                ConfigVersion = config.ConfigVersion,
+                PollIntervalSeconds = config.PollIntervalSeconds,
+                SnapshotRequest = new SnapshotRequestDto
+                {
+                    RequestId = Guid.NewGuid(),
+                    Reason = SnapshotReason.Repair
+                }
+            };
+        }
+
         var requiresSnapshot = false;
-        
+
         // Simple heuristic: if we have zero bookmarks, request a snapshot.
         if (!await db.BookmarkNodes.AnyAsync(n => !n.IsDeleted, ct))
         {
@@ -105,6 +123,18 @@ public sealed partial class ExtensionService(
                 Reason = SnapshotReason.InitialImport
             } : null
         };
+    }
+
+    private static void TryDeleteForceRepairMarker(string markerPath)
+    {
+        try
+        {
+            File.Delete(markerPath);
+        }
+        catch (IOException)
+        {
+            // Best-effort; a stale marker will simply trigger another repair snapshot next poll.
+        }
     }
 
 }

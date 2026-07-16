@@ -5,7 +5,9 @@
 <MudSnackbarProvider />
 <MudPopoverProvider />
 
-<canvas id="bg-canvas"></canvas>
+@* WebGL #bg-canvas removed — monitor/DPI switches (1440p ↔ 1080p) corrupted
+   the compositor and left the shell painted into a corner of the window.
+   Ambient depth now comes from CSS on .app-shell / body. *@
 
 <MudLayout Class="app-shell">
     <MudAppBar Elevation="0" Class="app-topbar">
@@ -64,28 +66,10 @@
     [Inject]
     private IExtensionConnectionService _extensionService { get; set; } = null!;
 
-    [Inject]
-    private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = null!;
-
     protected override void OnInitialized()
     {
         _extensionService.ConnectionStateChanged += OnConnectionStateChanged;
         _extensionService.PollAsync();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            try
-            {
-                await JSRuntime.InvokeVoidAsync("initBgShader");
-            }
-            catch
-            {
-                // Fallback
-            }
-        }
     }
 
     private void OnConnectionStateChanged() => InvokeAsync(StateHasChanged);

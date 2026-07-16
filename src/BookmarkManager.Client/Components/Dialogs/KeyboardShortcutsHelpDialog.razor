@@ -1,0 +1,87 @@
+@namespace BookmarkManager.Client.Components
+@using MudBlazor
+
+<MudDialog Class="keyboard-help-dialog">
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Keyboard" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Keyboard Shortcuts</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudSimpleTable Dense="true" Style="width: 100%;">
+            <tbody>
+                @foreach (var row in Shortcuts)
+                {
+                    <tr>
+                        <td style="white-space: nowrap; width: 1%;">
+                            @for (var chordIndex = 0; chordIndex < row.Chords.Length; chordIndex++)
+                            {
+                                @if (chordIndex > 0)
+                                {
+                                    <span class="mud-text-secondary" style="margin: 0 4px;">/</span>
+                                }
+                                @for (var keyIndex = 0; keyIndex < row.Chords[chordIndex].Length; keyIndex++)
+                                {
+                                    @if (keyIndex > 0)
+                                    {
+                                        <span class="mud-text-secondary" style="margin: 0 2px;">+</span>
+                                    }
+                                    <kbd class="keyboard-help-key">@row.Chords[chordIndex][keyIndex]</kbd>
+                                }
+                            }
+                        </td>
+                        <td>@row.Description</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .keyboard-help-key {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 22px;
+        padding: 2px 6px;
+        font-family: "JetBrains Mono", ui-monospace, monospace;
+        font-size: 0.72rem;
+        border-radius: 4px;
+        border: 1px solid var(--mud-palette-divider, rgba(255, 255, 255, 0.12));
+        background: rgba(255, 255, 255, 0.05);
+    }
+</style>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private sealed record ShortcutRow(string[][] Chords, string Description);
+
+    private static string[][] Chord(params string[] keys) => [keys];
+    private static string[][] Chords(string[] a, string[] b) => [a, b];
+
+    private static readonly ShortcutRow[] Shortcuts =
+    [
+        new(Chords(["Shift", "J"], ["Shift", "K"]), "Move focus left / right"),
+        new(Chords(["Shift", "H"], ["Shift", "L"]), "Move focus up / down (a full row)"),
+        new(Chord("Enter"), "Open folder / open bookmark URL"),
+        new(Chord("e"), "Edit focused bookmark"),
+        new(Chord("i"), "Toggle hover preview for focused bookmark"),
+        new(Chord("Space"), "Toggle selection of focused row"),
+        new(Chord("Shift", "Space"), "Range-select from anchor to focused row"),
+        new(Chord("Delete"), "Delete focused (or selected) item(s)"),
+        new(Chord("Esc"), "Close dialog, clear selection, or go to parent folder"),
+        new(Chord("Ctrl", "Z"), "Undo last change"),
+        new(Chord("Ctrl", "V"), "Paste URL as new bookmark"),
+        new(Chord("Shift", "drag"), "Marquee-select cards (Ctrl/Meta+drag adds to selection)"),
+        new(Chord("Ctrl", "P"), "Open command palette"),
+        new(Chord("?"), "Show this help"),
+    ];
+
+    private void Close() => MudDialog.Close();
+}

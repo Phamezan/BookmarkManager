@@ -33,6 +33,7 @@ public sealed class CatalogTaggingServiceTests
 
         Assert.False(result.WasRejected);
         Assert.Equal(new[] { "Novel", "Fantasy", "Action" }, result.Tags);
+        Assert.Equal("God of Fishing", result.CanonicalTitle);
     }
 
     [Fact]
@@ -59,6 +60,7 @@ public sealed class CatalogTaggingServiceTests
 
         Assert.False(result.WasRejected);
         Assert.Equal(new[] { "Novel", "Fantasy", "Action" }, result.Tags);
+        Assert.Equal("Max-Level Learning Ability: Facing The Cliff And Repenting For 80 Years", result.CanonicalTitle);
     }
 
     [Fact]

@@ -92,6 +92,12 @@
                             }
                         </div>
                     }
+                    @if (HasMoreResults)
+                    {
+                        <button type="button" class="palette-load-more" @onclick="LoadMoreResultsAsync" disabled="@_isLoadingMore">
+                            @(_isLoadingMore ? "Loading..." : $"Load more ({_totalResultCount - _results.Count} remaining)")
+                        </button>
+                    }
                 }
             </div>
         </div>
@@ -402,6 +408,29 @@
         font-size: 14px;
         color: rgba(203, 195, 215, 0.4);
         width: 100%;
+    }
+
+    .palette-load-more {
+        width: 100%;
+        padding: 10px 12px;
+        margin-top: 4px;
+        border: 1px dashed rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        background: transparent;
+        color: rgba(203, 195, 215, 0.7);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease-out;
+    }
+    .palette-load-more:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.05);
+        color: #fff;
+        border-color: rgba(208, 188, 255, 0.3);
+    }
+    .palette-load-more:disabled {
+        cursor: default;
+        opacity: 0.6;
     }
 
     /* Embedded (extension iframe) mode: the iframe itself is already sized and

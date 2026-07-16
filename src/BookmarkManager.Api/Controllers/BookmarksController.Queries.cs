@@ -213,9 +213,15 @@ public partial class BookmarksController
     {
         foreach (var dto in dtos)
         {
-            if (matchesByBookmarkId.TryGetValue(dto.Id, out var coverUrl))
+            // Prefer a catalog-match cover when present, but never wipe a stored
+            // node/metadata cover with a null match value (that blanked hover previews).
+            if (matchesByBookmarkId.TryGetValue(dto.Id, out var coverUrl) && !string.IsNullOrWhiteSpace(coverUrl))
             {
                 dto.CoverImageUrl = coverUrl;
+            }
+            else
+            {
+                dto.CoverImageUrl ??= dto.Metadata?.CoverImageUrl;
             }
             if (dto.Children != null && dto.Children.Count > 0)
             {

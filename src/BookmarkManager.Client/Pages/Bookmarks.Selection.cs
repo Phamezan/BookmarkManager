@@ -1,4 +1,5 @@
 using BookmarkManager.Client.Components;
+using BookmarkManager.Client.Features.Bookmarks;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
@@ -9,6 +10,15 @@ namespace BookmarkManager.Client.Pages;
 public partial class Bookmarks
 {
     private bool IsSelected(Guid id) => _selectedBookmarkIds.Contains(id);
+
+    /// <summary>Explicit "clear selection" action (toolbar button) — also clears the
+    /// keyboard range-select anchor (<c>Bookmarks.Keyboard.cs</c>) since it would otherwise
+    /// point at an item no longer meant to anchor anything.</summary>
+    private void ClearSelectionAndAnchor()
+    {
+        _selectedBookmarkIds.Clear();
+        _rangeSelectAnchorId = null;
+    }
 
     private void ToggleSelection(Guid id)
     {
@@ -70,20 +80,9 @@ public partial class Bookmarks
 
     private void OnCheckboxClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e, Guid id)
     {
-        if (e.ShiftKey && _lastSelectedId.HasValue)
+        if (e.ShiftKey)
         {
-            var items = VisibleItems;
-            var idx1 = items.FindIndex(i => i.Id == _lastSelectedId.Value);
-            var idx2 = items.FindIndex(i => i.Id == id);
-            if (idx1 != -1 && idx2 != -1)
-            {
-                var start = Math.Min(idx1, idx2);
-                var end = Math.Max(idx1, idx2);
-                for (int i = start; i <= end; i++)
-                {
-                    _selectedBookmarkIds.Add(items[i].Id);
-                }
-            }
+            BookmarkSelectionHelper.ApplyShiftClick(VisibleItems, _selectedBookmarkIds, _lastSelectedId, id);
         }
         else
         {
@@ -100,24 +99,17 @@ public partial class Bookmarks
             ToggleSelection(item.Id);
             _lastSelectedId = item.Id;
         }
-        else if (e.ShiftKey && _lastSelectedId.HasValue)
+        else if (e.ShiftKey)
         {
-            var items = VisibleItems;
-            var idx1 = items.FindIndex(i => i.Id == _lastSelectedId.Value);
-            var idx2 = items.FindIndex(i => i.Id == item.Id);
-            if (idx1 != -1 && idx2 != -1)
-            {
-                var start = Math.Min(idx1, idx2);
-                var end = Math.Max(idx1, idx2);
-                for (int i = start; i <= end; i++)
-                {
-                    _selectedBookmarkIds.Add(items[i].Id);
-                }
-            }
+            // No anchor (or anchor no longer visible) toggles the target instead of
+            // falling through to OnItemClick — shift-click must never open the edit dialog.
+            BookmarkSelectionHelper.ApplyShiftClick(VisibleItems, _selectedBookmarkIds, _lastSelectedId, item.Id);
             _lastSelectedId = item.Id;
         }
         else
         {
+            // Set the anchor before opening so a later shift-click has something to range from.
+            _lastSelectedId = item.Id;
             await OnItemClick(item);
         }
         StateHasChanged();

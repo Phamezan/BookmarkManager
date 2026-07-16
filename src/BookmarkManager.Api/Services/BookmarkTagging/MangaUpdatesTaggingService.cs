@@ -100,7 +100,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             if (_tagsCache.TryGetValue((context.Domain, cachedSeries.SeriesId.Value), out var cachedTags) && cachedTags.ExpiresAt > now)
             {
                 ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "lookup");
-                return new(cachedTags.Tags.ToList(), cachedTags.WasRejected, cachedTags.RejectionReason);
+                return new(cachedTags.Tags.ToList(), cachedTags.WasRejected, cachedTags.RejectionReason, cachedTags.CanonicalTitle);
             }
         }
 
@@ -116,9 +116,10 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                 return new([], false, null);
 
             if (!context.BypassCache && _tagsCache.TryGetValue((context.Domain, seriesId.Value), out var freshTags) && freshTags.ExpiresAt > now)
-                return new(freshTags.Tags.ToList(), freshTags.WasRejected, freshTags.RejectionReason);
+                return new(freshTags.Tags.ToList(), freshTags.WasRejected, freshTags.RejectionReason, freshTags.CanonicalTitle);
 
             MangaUpdatesTagResult result;
+            string? canonicalTitle = ExtractSeriesTitle(searchMatch?.SearchRecord);
             if (context.Domain == BookmarkTagDomain.Manga
                 && searchMatch?.SearchRecord is { } searchRecord
                 && searchRecord.ValueKind == JsonValueKind.Object
@@ -126,19 +127,24 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             {
                 ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "search-inline");
                 result = inlineResult;
+                canonicalTitle ??= ExtractSeriesTitle(searchRecord);
             }
             else
             {
                 result = await FetchSeriesTagsAsync(seriesId.Value, context.Domain, cancellationToken).ConfigureAwait(false);
+                canonicalTitle ??= result.SeriesTitle;
             }
             
             var wasRejected = !result.MatchesRequestedDomain && !result.Reason.StartsWith("Series lookup returned");
             var rejectionReason = wasRejected ? result.Reason : null;
+            if (wasRejected)
+                canonicalTitle = null;
 
             _tagsCache[(context.Domain, seriesId.Value)] = new TagsCacheEntry(
                 result.Tags,
                 wasRejected,
                 rejectionReason,
+                canonicalTitle,
                 now.Add(result.Tags.Count == 0 ? EmptyCacheDuration : SuccessCacheDuration));
 
             if (wasRejected)
@@ -151,7 +157,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                     result.Reason);
             }
 
-            return new(result.Tags.ToList(), wasRejected, rejectionReason);
+            return new(result.Tags.ToList(), wasRejected, rejectionReason, canonicalTitle);
         }
         catch (Exception ex)
         {
@@ -194,18 +200,19 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         if (!response.IsSuccessStatusCode)
         {
             _logger.LogWarning("MangaUpdates series lookup returned non-success code: {Status}", response.StatusCode);
-            return new([], null, MatchesRequestedDomain: false, $"Series lookup returned {response.StatusCode}.");
+            return new([], null, MatchesRequestedDomain: false, $"Series lookup returned {response.StatusCode}.", null);
         }
 
         using var doc = await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
         if (doc is null)
-            return new([], null, MatchesRequestedDomain: false, "Series lookup returned no JSON.");
+            return new([], null, MatchesRequestedDomain: false, "Series lookup returned no JSON.", null);
 
         var tags = ExtractTags(doc.RootElement);
         var medium = ExtractMediumType(doc.RootElement);
+        var seriesTitle = ExtractSeriesTitle(doc.RootElement);
         var compatibility = GetMediumCompatibility(requestedDomain, medium, doc.RootElement);
         if (!compatibility.Matches)
-            return new([], medium, MatchesRequestedDomain: false, compatibility.Reason);
+            return new([], medium, MatchesRequestedDomain: false, compatibility.Reason, null);
 
         if (medium is "Manga" or "Manhwa" or "Manhua" or "OEL")
         {
@@ -221,7 +228,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                 tags.Insert(0, origin);
         }
 
-        return new(tags, medium, MatchesRequestedDomain: true, compatibility.Reason);
+        return new(tags, medium, MatchesRequestedDomain: true, compatibility.Reason, seriesTitle);
     }
 
     private HttpClient CreateClient()
@@ -325,7 +332,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         BookmarkTagDomain requestedDomain,
         out MangaUpdatesTagResult result)
     {
-        result = new([], null, MatchesRequestedDomain: false, "Search record did not contain inline tags.");
+        result = new([], null, MatchesRequestedDomain: false, "Search record did not contain inline tags.", null);
         if (requestedDomain != BookmarkTagDomain.Manga || !SearchRecordHasInlineTags(record))
             return false;
 
@@ -334,7 +341,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         var compatibility = GetMediumCompatibility(requestedDomain, medium, record);
         if (!compatibility.Matches)
         {
-            result = new([], medium, MatchesRequestedDomain: false, compatibility.Reason);
+            result = new([], medium, MatchesRequestedDomain: false, compatibility.Reason, null);
             return true;
         }
 
@@ -344,8 +351,25 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             tags.Insert(0, tagToInsert);
         }
 
-        result = new(tags, medium, MatchesRequestedDomain: true, compatibility.Reason);
+        result = new(tags, medium, MatchesRequestedDomain: true, compatibility.Reason, ExtractSeriesTitle(record));
         return true;
+    }
+
+    public static string? ExtractSeriesTitle(JsonElement? element)
+    {
+        if (element is not { } root || root.ValueKind != JsonValueKind.Object)
+            return null;
+
+        foreach (var prop in new[] { "title", "series_name", "name" })
+        {
+            if (!root.TryGetProperty(prop, out var el) || el.ValueKind != JsonValueKind.String)
+                continue;
+            var value = el.GetString()?.Trim();
+            if (!string.IsNullOrEmpty(value))
+                return value;
+        }
+
+        return null;
     }
 
     private static double ScoreSearchRecord(JsonElement record, string cleanQuery)
@@ -553,10 +577,16 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         List<string> Tags,
         string? Medium,
         bool MatchesRequestedDomain,
-        string Reason);
+        string Reason,
+        string? SeriesTitle = null);
 
     private sealed record SearchMatch(long SeriesId, JsonElement? SearchRecord);
 
     private sealed record SeriesCacheEntry(long? SeriesId, DateTimeOffset ExpiresAt);
-    private sealed record TagsCacheEntry(List<string> Tags, bool WasRejected, string? RejectionReason, DateTimeOffset ExpiresAt);
+    private sealed record TagsCacheEntry(
+        List<string> Tags,
+        bool WasRejected,
+        string? RejectionReason,
+        string? CanonicalTitle,
+        DateTimeOffset ExpiresAt);
 }

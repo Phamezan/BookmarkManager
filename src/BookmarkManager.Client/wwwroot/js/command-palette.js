@@ -5,17 +5,12 @@
         dotNetHelper = dotNetRef;
     };
 
+    // Ctrl+P / Cmd+P global trigger moved to keyboard-shortcuts.js: CommandPalette
+    // registers it via KeyboardShortcutService (context "global") so there's one
+    // shared shortcut registry instead of a second ad-hoc keydown listener. This
+    // listener now only handles navigation keys while the palette is already open.
     document.addEventListener('keydown', function (e) {
-        // 1. Check for Ctrl+P / Cmd+P global trigger
-        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
-            e.preventDefault();
-            if (dotNetHelper) {
-                dotNetHelper.invokeMethodAsync('TogglePalette');
-            }
-            return;
-        }
-
-        // 2. If command palette overlay wrapper is open
+        // If command palette overlay wrapper is open
         const wrapper = document.getElementById('paletteWrapper');
         if (wrapper && wrapper.classList.contains('is-open')) {
             const input = document.getElementById('paletteSearchInput');
@@ -69,6 +64,13 @@
     window.copyToClipboard = function (text) {
         if (!text) return Promise.resolve();
         return navigator.clipboard.writeText(text);
+    };
+
+    // Used by the Bookmarks page paste-URL-to-add feature (empty-area context
+    // menu + Ctrl+V, Bookmarks.Paste.cs). Rejects (permission prompt denied,
+    // insecure context, etc.) propagate to the caller's catch block.
+    window.readClipboardText = function () {
+        return navigator.clipboard.readText();
     };
 
     // Embedded mode: the /palette page runs inside the extension's palette-host

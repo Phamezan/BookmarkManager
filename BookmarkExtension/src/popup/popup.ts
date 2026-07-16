@@ -659,11 +659,11 @@ if (isBrowser) {
     const btn = els.backupBtn;
     if (!btn) return;
     btn.disabled = true;
-    setBackupMsg("Backing up…", "info");
+    setBackupMsg("Exporting…", "info");
     const result = await controller.manualBackup();
     btn.disabled = false;
     setBackupMsg(
-      result.success ? `Backup saved: ${result.filename}` : (result.error ?? "Backup failed"),
+      result.success ? `Export saved: ${result.filename}` : (result.error ?? "Export failed"),
       result.success ? "success" : "error",
     );
   });

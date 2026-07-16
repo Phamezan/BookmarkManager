@@ -9,6 +9,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace BookmarkManager.Api.IntegrationTests;
@@ -178,6 +179,16 @@ public sealed class LibraryReadingProgressEndpointTests : IDisposable
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Development");
+            builder.ConfigureAppConfiguration((_, configBuilder) =>
+            {
+                configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:Default"] = $"Data Source={_dbPath}",
+                    ["Backup:Directory"] = Path.Combine(Path.GetTempPath(), $"bm-backups-{Guid.NewGuid():N}"),
+                    ["Backup:Enabled"] = "false",
+                    ["Backup:StopHostAfterRestore"] = "false"
+                });
+            });
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<DbContextOptions<AppDbContext>>();

@@ -1,7 +1,9 @@
 using BookmarkManager.Client.Components;
+using BookmarkManager.Client.Features.Bookmarks;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using MudBlazor;
 
 namespace BookmarkManager.Client.Pages;
@@ -26,6 +28,8 @@ public partial class Bookmarks : IDisposable
     private bool _treeLoading = true;
     private bool _loading;
     private Guid? _selectedFolderId;
+    /// <summary>Live card-grid column count reported by <c>BookmarkList</c> — drives Shift+H/L row-jump math (<c>Bookmarks.Keyboard.cs</c>).</summary>
+    private int _gridColumns = 3;
     private Guid? _preSearchFolderId;
     private string _searchQuery = "";
     private readonly HashSet<Guid> _selectedBookmarkIds = [];
@@ -49,6 +53,10 @@ public partial class Bookmarks : IDisposable
 
     private HashSet<string> _activeTagFilters = [];
     private List<TagCountDto> _availableTags = [];
+    /// <summary>Active URL-host filters — kept separate from <see cref="_activeTagFilters"/> so a
+    /// host name (e.g. "action") never collides with a same-named genre tag (<c>Bookmarks.Tags.cs</c>).</summary>
+    private HashSet<string> _activeHostFilters = [];
+    private List<TagCountDto> _availableHosts = [];
     private bool ShouldShowTagBar => (_selectedFolderId.HasValue && !IsTopLevelFolder(_selectedFolderId.Value)) || !string.IsNullOrWhiteSpace(_searchQuery);
     private bool _tagsCollapsed = true;
     private readonly HashSet<string> _expandedCategories = [];
@@ -74,6 +82,8 @@ public partial class Bookmarks : IDisposable
     private string? _lastVisibleSortMode;
     private int _lastVisibleActiveTagFiltersCount;
     private readonly HashSet<string> _lastVisibleActiveTagFilters = [];
+    private int _lastVisibleActiveHostFiltersCount;
+    private readonly HashSet<string> _lastVisibleActiveHostFilters = [];
 
     protected List<BookmarkNodeDto> VisibleItems
     {
@@ -85,7 +95,9 @@ public partial class Bookmarks : IDisposable
                            || _typeFilter != _lastVisibleTypeFilter 
                            || _sortMode != _lastVisibleSortMode
                            || _activeTagFilters.Count != _lastVisibleActiveTagFiltersCount
-                           || !_activeTagFilters.SetEquals(_lastVisibleActiveTagFilters);
+                           || !_activeTagFilters.SetEquals(_lastVisibleActiveTagFilters)
+                           || _activeHostFilters.Count != _lastVisibleActiveHostFiltersCount
+                           || !_activeHostFilters.SetEquals(_lastVisibleActiveHostFilters);
 
             if (isDirty)
             {
@@ -112,19 +124,16 @@ public partial class Bookmarks : IDisposable
                     );
                 }
 
-                var sorted = _sortMode switch
+                if (_activeHostFilters.Count > 0)
                 {
-                    "TitleDesc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
-                                       .ThenByDescending(item => item.Title),
-                    "UpdatedAsc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
-                                        .ThenBy(item => item.UpdatedAt),
-                    "UpdatedDesc" => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
-                                         .ThenByDescending(item => item.UpdatedAt),
-                    _ => items.OrderByDescending(item => item.Metadata?.IsFavorite == true)
-                              .ThenBy(item => item.Title)
-                };
+                    // Host filter is bookmark-only — folders are excluded from the result entirely.
+                    items = items.Where(i =>
+                        i.Type == NodeType.Bookmark
+                        && BookmarkHostFilter.NormalizeHost(i.Url) is string host
+                        && _activeHostFilters.Contains(host));
+                }
 
-                _cachedVisibleItems = sorted.ToList();
+                _cachedVisibleItems = BookmarkListOrdering.ApplySort(items, _sortMode).ToList();
                 RecalculateAvailableTags(); // Recalculate dynamic tag counts
 
                 _lastVisibleSourceItems = _items;
@@ -138,6 +147,14 @@ public partial class Bookmarks : IDisposable
                 {
                     _lastVisibleActiveTagFilters.Add(tag);
                 }
+
+                _lastVisibleActiveHostFiltersCount = _activeHostFilters.Count;
+
+                _lastVisibleActiveHostFilters.Clear();
+                foreach (var host in _activeHostFilters)
+                {
+                    _lastVisibleActiveHostFilters.Add(host);
+                }
             }
 
             return _cachedVisibleItems!;
@@ -150,11 +167,26 @@ public partial class Bookmarks : IDisposable
         _preSearchFolderId = folderId;
         _searchQuery = "";
         _loading = true;
-        ClearTagFilters();
+        // Keyboard Enter navigates via JS interop — no automatic Blazor re-render
+        // after the handler, so show loading immediately.
+        await InvokeAsync(StateHasChanged);
+        ClearAllFilters();
         try
         {
             _items = await BookmarkService.GetBookmarksAsync(folderId);
             await LoadTagsAsync();
+            _focusedIndex = _items.Count > 0 ? 0 : -1;
+            _selectedBookmarkIds.Clear();
+            _lastSelectedId = null;
+            _rangeSelectAnchorId = null;
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("bmPersistBookmarksFolder", folderId.ToString());
+            }
+            catch
+            {
+                // Older cached JS — ignore.
+            }
         }
         catch (ApiException ex)
         {
@@ -163,6 +195,7 @@ public partial class Bookmarks : IDisposable
         finally
         {
             _loading = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -180,7 +213,7 @@ public partial class Bookmarks : IDisposable
         if (string.IsNullOrWhiteSpace(_searchQuery))
         {
             _selectedFolderId = _preSearchFolderId;
-            ClearTagFilters();
+            ClearAllFilters();
             StateHasChanged();
 
             try
@@ -208,7 +241,7 @@ public partial class Bookmarks : IDisposable
         }
 
         _selectedFolderId = null;
-        ClearTagFilters();
+        ClearAllFilters();
         StateHasChanged();
 
         try
@@ -237,6 +270,11 @@ public partial class Bookmarks : IDisposable
     {
         _typeFilter = typeFilter;
         StateHasChanged();
+    }
+
+    private void OnGridColumnsChanged(int columns)
+    {
+        _gridColumns = Math.Clamp(columns, 1, 4);
     }
 
 }

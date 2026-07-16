@@ -44,7 +44,12 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
             return new([], false, null);
 
         var candidate = context.NormalizedTitle.Candidates.FirstOrDefault()?.Query ?? string.Empty;
-        var cleanQuery = MediaTitleNormalizer.BuildLooseQuery(candidate);
+        // Long NovelFire/NovelFull series names get truncated below the real title by the
+        // default 4-token cap ("Death Game Starting As A" misses "Trickster...God"); widen
+        // the search query for longer candidates while keeping the default tight for the rest.
+        var candidateWordCount = candidate.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        var maxTokens = candidateWordCount >= 6 ? 8 : 4;
+        var cleanQuery = MediaTitleNormalizer.BuildLooseQuery(candidate, maxTokens);
         if (string.IsNullOrWhiteSpace(cleanQuery) || cleanQuery.Length < 2)
             return new([], false, null);
 
@@ -97,6 +102,7 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
 
         var bestScore = -1.0;
         string? bestHref = null;
+        string? bestTitle = null;
 
         foreach (Match match in matches)
         {
@@ -108,6 +114,7 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
             {
                 bestScore = score;
                 bestHref = href;
+                bestTitle = string.IsNullOrWhiteSpace(title) ? null : WebUtility.HtmlDecode(title).Trim();
             }
         }
 
@@ -144,7 +151,7 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
             }
         }
 
-        return new(tags, false, null);
+        return new(tags, false, null, bestTitle);
     }
 
     private double ScoreNovelFullCandidate(string candidateTitle, string cleanQuery)

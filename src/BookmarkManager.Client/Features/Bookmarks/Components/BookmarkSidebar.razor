@@ -6,10 +6,20 @@
         <div>
             <MudText Typo="Typo.subtitle1">Folder Tree</MudText>
         </div>
-        <MudTooltip Text="Create folder">
-            <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Size="Size.Small" OnClick="CreateFolder"
-                           aria-label="Create folder" />
-        </MudTooltip>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+            <MudTooltip Text="Expand all">
+                <MudIconButton Icon="@Icons.Material.Filled.UnfoldMore" Size="Size.Small" OnClick="ExpandAllFolders"
+                               aria-label="Expand all folders" />
+            </MudTooltip>
+            <MudTooltip Text="Collapse all">
+                <MudIconButton Icon="@Icons.Material.Filled.UnfoldLess" Size="Size.Small" OnClick="CollapseAllFolders"
+                               aria-label="Collapse all folders" />
+            </MudTooltip>
+            <MudTooltip Text="Create folder">
+                <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" Size="Size.Small" OnClick="CreateFolder"
+                               aria-label="Create folder" />
+            </MudTooltip>
+        </MudStack>
     </MudStack>
 
     <div class="overflow-auto flex-grow-1 pa-2">
@@ -43,6 +53,8 @@
     [Parameter] public HashSet<Guid> ExpandedItems { get; set; } = [];
     [Parameter] public EventCallback<HashSet<Guid>> ExpandedItemsChanged { get; set; }
     [Parameter] public EventCallback CreateFolder { get; set; }
+    [Parameter] public EventCallback ExpandAllFolders { get; set; }
+    [Parameter] public EventCallback CollapseAllFolders { get; set; }
     [Parameter] public EventCallback<Guid> FolderSelected { get; set; }
     [Parameter] public EventCallback<Guid> FolderDrop { get; set; }
     [Parameter] public EventCallback<Guid> FolderDragStart { get; set; }

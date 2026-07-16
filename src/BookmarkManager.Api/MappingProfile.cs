@@ -9,6 +9,7 @@ public class MappingProfile : Profile
     public MappingProfile()
     {
         CreateMap<BookmarkNode, BookmarkNodeDto>()
+            .ForMember(d => d.CoverImageUrl, o => o.MapFrom(s => s.CoverImageUrl))
             .ForMember(d => d.Metadata, o => o.MapFrom(s => new BookmarkMetadataDto
             {
                 Category = s.Category,
@@ -34,6 +35,8 @@ public class MappingProfile : Profile
             .ForMember(d => d.CoverImageUrl, o => o.MapFrom(s => s.Metadata != null ? s.Metadata.CoverImageUrl : null));
 
         CreateMap<ActivityLogEntry, ActivityEntryDto>();
-        CreateMap<BackupManifest, BackupManifestDto>();
+        CreateMap<BackupManifest, BackupManifestDto>()
+            .ForMember(d => d.Status, o => o.MapFrom(s => s.Status))
+            .ForMember(d => d.Trigger, o => o.MapFrom(s => s.Trigger));
     }
 }

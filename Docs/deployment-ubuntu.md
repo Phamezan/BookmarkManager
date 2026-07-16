@@ -136,10 +136,32 @@ docker compose up -d --build
 
 ## Data and Backups
 
-- SQLite, ASP.NET Core data-protection keys, and backup files are all stored under `/data` in the container.
-- With the default compose file, that maps to `./data` in the repo checkout on the Ubuntu host.
-- Run only one API container against a given `./data` directory at a time.
-- For safe backups, stop the container before copying `./data`, or create a backup from the app UI and copy the generated file.
+All persistent state lives under `/data` in the container. With the default compose file, that maps to `./data` on the Ubuntu host (`BOOKMARK_MANAGER_DATA_DIR` in `.env`).
+
+| Path | Purpose |
+|------|---------|
+| `/data/bookmarks.db` | Live SQLite database (+ `-wal` / `-shm` sidecars in WAL mode) |
+| `/data/backups/db/` | Full-database snapshots (`.db` files from `VACUUM INTO`) |
+| `/data/backups/purged/` | Purge safety JSON archives (Recycle Bin hard-delete only — not DB snapshots) |
+
+Run only one API container against a given `./data` directory at a time.
+
+### Database snapshots (primary backup)
+
+- Create, download, delete, and restore from the **Backups** page in the dashboard (`/backups`).
+- Nightly automatic backups run at **03:00 Europe/Berlin** by default (`Backup:ScheduleTime`, `Backup:TimeZoneId` in `appsettings.json` or environment overrides).
+- Retention defaults: **30 files** and **60 days** (`Backup:RetentionMaxCount`, `Backup:RetentionMaxAgeDays`).
+- The `./data` volume must persist across container rebuilds so snapshots survive `docker compose up -d --build`.
+
+### Restore from the UI
+
+Restore stages `restore-pending.db` and **restarts the API process** (`Backup:StopHostAfterRestore`, default `true`) so the pending swap applies before EF Core opens the live database. That restart only comes back automatically if the process supervisor allows it — the default `docker-compose.yml` uses `restart: unless-stopped`. Without a restart policy (or when running `dotnet run` locally), start the API again manually after restore. Wait for `/health/ready` before using the dashboard or extension again.
+
+### Manual host copy
+
+If the container is **stopped**, copying the entire `./data` directory (or individual files under `./data/backups/db/`) is a safe offline backup. Do not copy `bookmarks.db` while the container is running — use the Backups page or stop the container first.
+
+The Brave extension can still export Netscape HTML bookmarks to Downloads for browser import; that export is separate from server-side SQLite snapshots.
 
 ## Firewall
 

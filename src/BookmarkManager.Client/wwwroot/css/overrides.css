@@ -402,3 +402,51 @@ code {
     transform: translateY(0) scale(0.96);
 }
 
+/* ----------------------------------------------------------------------------
+   18. Auto Tagger — suggested-title chip (Results & Reruns table, review rows)
+   Was a near-invisible mud-text-secondary caption; now an accent-tinted chip
+   with an inline Accept action so suggestions actually get noticed.
+---------------------------------------------------------------------------- */
+.suggested-title-chip {
+    display: flex;
+    align-items: center;
+    gap: var(--bm-space-2);
+    flex-wrap: wrap;
+    padding: 4px 8px;
+    border-radius: var(--bm-radius-sm);
+    background: var(--bm-accent-soft);
+    border: 1px solid var(--bm-border-accent);
+}
+
+.suggested-title-chip-label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--bm-text);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.suggested-title-chip-prefix {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--bm-text-secondary);
+    flex: 0 0 auto;
+}
+
+.suggested-title-chip-input {
+    flex: 1 1 auto;
+    min-width: 140px;
+}
+
+.suggested-title-chip-input .mud-input-control,
+.suggested-title-chip-input .mud-input {
+    margin-top: 0 !important;
+    font-size: 0.78rem;
+    font-weight: 500;
+}
+
+.suggested-title-chip--pending {
+    background: var(--bm-success-soft);
+    border-color: color-mix(in srgb, var(--bm-success) 35%, transparent);
+}
+

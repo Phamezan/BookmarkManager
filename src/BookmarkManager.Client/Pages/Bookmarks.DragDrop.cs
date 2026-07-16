@@ -38,7 +38,7 @@ public partial class Bookmarks
     {
         if (_selectedBookmarkIds.Count == 0) return;
 
-        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small };
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Small, CloseOnEscapeKey = true };
         var parameters = new DialogParameters
         {
             ["Folders"] = _folderTree,

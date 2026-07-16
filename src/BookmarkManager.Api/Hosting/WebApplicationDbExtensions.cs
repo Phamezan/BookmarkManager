@@ -1,4 +1,5 @@
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.Backup;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,14 +9,40 @@ public static class WebApplicationDbExtensions
 {
     public static async Task InitializeDatabaseAsync(this WebApplication app, CancellationToken ct = default)
     {
+        // Must run before any DbContext is created/opened: a pending restore replaces the live
+        // .db file wholesale, so EF Core must not hold a connection or run migrations against the
+        // pre-restore file first.
+        var connectionString = app.Configuration.GetConnectionString("Default") ?? "Data Source=bookmarks.db";
+        var restoreApplied = BackupPendingRestore.ApplyPendingRestoreIfAny(connectionString);
+
         await using var scope = app.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var connectionString = db.Database.GetConnectionString() ?? string.Empty;
 
         EnsureDirectoryForConnectionString(connectionString);
         await db.Database.MigrateAsync(ct);
         await EnableWalAsync(connectionString);
         await EnsureAppConfigAsync(db, ct);
+
+        if (restoreApplied || File.Exists(BackupPendingRestore.GetForceRepairMarkerPath(connectionString)))
+        {
+            await BumpConfigVersionAsync(db, ct);
+        }
+
+        var backupService = scope.ServiceProvider.GetRequiredService<BookmarkManager.Api.Services.Backup.IBackupService>();
+        await backupService.RecoverInterruptedBackupsAsync(ct);
+    }
+
+    private static async Task BumpConfigVersionAsync(AppDbContext db, CancellationToken ct)
+    {
+        var config = await db.AppConfig.FirstOrDefaultAsync(c => c.Id == AppConfigConstants.SingletonId, ct);
+        if (config is null)
+        {
+            return;
+        }
+
+        config.ConfigVersion += 1;
+        config.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
     }
 
     private static void EnsureDirectoryForConnectionString(string connectionString)

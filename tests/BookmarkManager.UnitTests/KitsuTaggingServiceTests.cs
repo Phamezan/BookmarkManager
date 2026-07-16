@@ -79,6 +79,62 @@ public sealed class KitsuTaggingServiceTests
 
         Assert.False(result.WasRejected);
         Assert.Equal(new[] { "Novel", "Action", "Fantasy" }, result.Tags);
+        Assert.Equal("God of Fishing", result.CanonicalTitle);
+    }
+
+    [Fact]
+    public async Task GetTagsForTitleAsync_PunctuatedCanonicalTitle_SurfacesOnMatch()
+    {
+        var searchJson = """
+        {
+          "data": [
+            {
+              "id": "99",
+              "attributes": {
+                "canonicalTitle": "Max-Level Learning Ability: Facing The Cliff",
+                "subtype": "novel"
+              }
+            }
+          ]
+        }
+        """;
+
+        var categoriesJson = """
+        {
+          "data": [
+            { "attributes": { "title": "Fantasy" } }
+          ]
+        }
+        """;
+
+        var handler = new MockHttpMessageHandler(req =>
+        {
+            if (req.RequestUri!.ToString().Contains("categories"))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(categoriesJson) { Headers = { ContentType = new MediaTypeHeaderValue("application/vnd.api+json") } }
+                };
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(searchJson) { Headers = { ContentType = new MediaTypeHeaderValue("application/vnd.api+json") } }
+            };
+        });
+
+        var client = new HttpClient(handler);
+        var factory = new FakeHttpClientFactory(client);
+        var service = new KitsuTaggingService(factory, NullLogger<KitsuTaggingService>.Instance);
+
+        var result = await service.GetTagsForTitleAsync(
+            "Max-Level Learning Ability: Facing The Cliff",
+            null,
+            BookmarkTagDomain.Novel,
+            null,
+            CancellationToken.None);
+
+        Assert.False(result.WasRejected);
+        Assert.Equal("Max-Level Learning Ability: Facing The Cliff", result.CanonicalTitle);
     }
 
     [Fact]

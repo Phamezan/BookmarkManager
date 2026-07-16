@@ -54,6 +54,10 @@ public partial class Bookmarks
             {
                 await ProcessDeepLinkAsync();
             }
+            else if (await TryRestorePersistedFolderAsync())
+            {
+                // Restored folder after a display-repair reload (or last-visited).
+            }
             else
             {
                 var rootFolder = _folderTree.FirstOrDefault(f => f.Title.Equals("Bookmarks Bar", StringComparison.OrdinalIgnoreCase))
@@ -167,6 +171,33 @@ public partial class Bookmarks
         }
     }
 
+    private async Task<bool> TryRestorePersistedFolderAsync()
+    {
+        string? rawId = null;
+        try
+        {
+            rawId = await JSRuntime.InvokeAsync<string?>("bmConsumeBookmarksFolder");
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(rawId) || !Guid.TryParse(rawId, out var folderId) || folderId == Guid.Empty)
+            return false;
+
+        var path = new List<Guid>();
+        if (!FindFolderPath(_folderTree, folderId, path))
+            return false;
+
+        foreach (var parentId in path)
+            _expandedFolderIds.Add(parentId);
+        _expandedFolderIds.Add(folderId);
+
+        await OnFolderSelected(folderId);
+        return true;
+    }
+
     private bool FindFolderPath(List<FolderTreeNodeDto> nodes, Guid targetId, List<Guid> path)
     {
         foreach (var node in nodes)
@@ -211,5 +242,6 @@ public partial class Bookmarks
         ExtensionConnectionService.ConnectionStateChanged -= OnConnectionStateChanged;
         _wsCts?.Cancel();
         _wsCts?.Dispose();
+        DisposeKeyboardNav();
     }
 }

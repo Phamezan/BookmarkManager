@@ -18,6 +18,8 @@ else
                          SelectedFolderId="@_selectedFolderId"
                          @bind-ExpandedItems="@_expandedFolderIds"
                          CreateFolder="@CreateFolder"
+                         ExpandAllFolders="@ExpandAllFolders"
+                         CollapseAllFolders="@CollapseAllFolders"
                          FolderSelected="@OnFolderSelected"
                          FolderDrop="@OnFolderDrop"
                          FolderDragStart="@OnFolderDragStart"
@@ -31,7 +33,7 @@ else
                                   SearchQuery="@_searchQuery"
                                   SearchChanged="OnSearchChanged"
                                   ToggleSelectAll="ToggleSelectAllButton"
-                                  ClearSelection="@(() => _selectedBookmarkIds.Clear())"
+                                  ClearSelection="@ClearSelectionAndAnchor"
                                   MoveSelected="MoveSelected"
                                   DeleteSelected="DeleteSelected"
                                   CreateBookmark="CreateBookmark"
@@ -55,16 +57,23 @@ else
                                             <span class="active-chip-close">×</span>
                                         </button>
                                     }
-                                    @if (_activeTagFilters.Count == 0)
+                                    @foreach (var host in _activeHostFilters)
+                                    {
+                                        <button class="active-chip" @onclick="@(() => ToggleHostFilter(host))" type="button">
+                                            @host
+                                            <span class="active-chip-close">×</span>
+                                        </button>
+                                    }
+                                    @if (_activeTagFilters.Count == 0 && _activeHostFilters.Count == 0)
                                     {
                                         <span class="no-filters-placeholder">Select tags below to filter</span>
                                     }
                                 </div>
                             </div>
                             <div class="tag-bar-actions">
-                                @if (_activeTagFilters.Count > 0)
+                                @if (_activeTagFilters.Count > 0 || _activeHostFilters.Count > 0)
                                 {
-                                    <button class="clear-all-filters-btn" @onclick="ClearTagFilters" type="button">
+                                    <button class="clear-all-filters-btn" @onclick="ClearAllFilters" type="button">
                                         Clear All
                                     </button>
                                 }
@@ -76,10 +85,10 @@ else
 
                         @if (!_tagsCollapsed)
                         {
-                            @if (_availableTags.Count > 0)
+                            @if (_availableTags.Count > 0 || _availableHosts.Count > 0)
                             {
                                 <div class="tag-categories-grid">
-                                    @foreach (var group in GroupTags(_availableTags))
+                                    @foreach (var group in GroupTags(_availableTags, _availableHosts))
                                     {
                                         <div class="category-row">
                                             <span class="category-label">@group.CategoryName</span>
@@ -91,9 +100,11 @@ else
                                                 }
                                                 @foreach (var tag in visibleTags)
                                                 {
-                                                    var active = _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
-                                                    <button class="category-tag-btn @(active ? "active" : "")" 
-                                                            @onclick="@(() => ToggleTagFilter(tag.Tag))" type="button">
+                                                    var active = group.IsHostGroup
+                                                        ? _activeHostFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase)
+                                                        : _activeTagFilters.Contains(tag.Tag, StringComparer.OrdinalIgnoreCase);
+                                                    <button class="category-tag-btn @(active ? "active" : "")"
+                                                            @onclick="@(() => { if (group.IsHostGroup) ToggleHostFilter(tag.Tag); else ToggleTagFilter(tag.Tag); })" type="button">
                                                         @tag.Tag <span class="tag-btn-count">@tag.Count</span>
                                                     </button>
                                                 }
@@ -171,6 +182,7 @@ else
                           SearchQuery="@_searchQuery"
                           CreateBookmark="CreateBookmark"
                           IsSelected="IsSelected"
+                          FocusedId="@FocusedId"
                           GetFaviconUrl="GetFaviconUrl"
                           GetParentFolderName="GetParentFolderName"
                           GetFolderPath="GetFolderPath"
@@ -178,7 +190,11 @@ else
                           RowClicked="OnRowClick"
                           CheckboxClicked="OnCheckboxClick"
                           ContextMenuOpened="OnBookmarkContextMenu"
+                          BackgroundContextMenuOpened="OnListBackgroundContextMenu"
                           DragStarted="OnDragStart"
+                          MarqueeSelectCompleted="OnMarqueeSelectCompleted"
+                          MarqueeBackgroundClick="OnMarqueeBackgroundClick"
+                          ColumnsChanged="OnGridColumnsChanged"
                           ToggleFavoriteAsync="ToggleFavorite"
                           EditBookmarkAsync="EditBookmark"
                           MoveBookmarkAsync="MoveBookmark"
@@ -292,6 +308,23 @@ else
             <button class="custom-context-menu-item danger" @onclick="DeleteContextFolder">
                 <MudIcon Icon="@Icons.Material.Filled.Delete" Size="Size.Small" />
                 <span>Delete Folder</span>
+            </button>
+        }
+        else if (_contextMenuType == "empty")
+        {
+            <div class="custom-context-menu-header">Bookmarks</div>
+            <button class="custom-context-menu-item" @onclick="CreateBookmarkAtEmptyContext">
+                <MudIcon Icon="@Icons.Material.Filled.AddLink" Size="Size.Small" />
+                <span>New Bookmark Here</span>
+            </button>
+            <button class="custom-context-menu-item" @onclick="CreateFolderAtEmptyContext">
+                <MudIcon Icon="@Icons.Material.Filled.CreateNewFolder" Size="Size.Small" />
+                <span>New Folder Here</span>
+            </button>
+            <div class="custom-context-menu-divider" />
+            <button class="custom-context-menu-item" @onclick="PasteUrlAtEmptyContext">
+                <MudIcon Icon="@Icons.Material.Filled.ContentPaste" Size="Size.Small" />
+                <span>Paste URL</span>
             </button>
         }
     </div>

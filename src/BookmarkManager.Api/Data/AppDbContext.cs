@@ -68,6 +68,10 @@ public class AppDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Name).HasMaxLength(500).IsRequired();
             entity.Property(e => e.FilePath).HasMaxLength(2048);
+            entity.Property(e => e.Status).HasMaxLength(32).IsRequired();
+            entity.Property(e => e.Trigger).HasMaxLength(32).IsRequired();
+            entity.Property(e => e.Error).HasMaxLength(500);
+            entity.HasIndex(e => e.CreatedAt);
         });
 
         modelBuilder.Entity<AdminAccount>(entity =>

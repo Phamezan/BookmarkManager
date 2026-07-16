@@ -79,7 +79,7 @@ public sealed class AutoTaggerService
                     })
                     .ToList();
 
-                var generatedTags = await _bookmarkTagging
+                var generated = await _bookmarkTagging
                     .GetTagsForBatchAsync(requestItems, folderPath, requestedDomain, ct)
                     .ConfigureAwait(false);
 
@@ -91,7 +91,7 @@ public sealed class AutoTaggerService
                         continue;
                     }
 
-                    if (!generatedTags.TryGetValue(item.Id, out var tags) || tags.Count == 0)
+                    if (!generated.Tags.TryGetValue(item.Id, out var tags) || tags.Count == 0)
                     {
                         result.Skipped++;
                         continue;

@@ -39,7 +39,7 @@ public partial class BookmarksController
         Id = Guid.NewGuid(),
         ParentId = parentId == Guid.Empty ? null : parentId,
         Type = request.Type,
-        Title = request.Title,
+        Title = ClampBookmarkTitle(request.Title),
         Url = request.Url,
         Position = maxPos + 1,
         SyncState = SyncState.Pending,
@@ -94,8 +94,43 @@ public partial class BookmarksController
     var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
     if (node is null) return NotFound();
 
-    node.Title = request.Title;
-    node.Url = request.Url;
+    ApplyBookmarkProjectionUpdate(node, request.Title, request.Url);
+
+    await _db.SaveChangesAsync(ct);
+    await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+    return _mapper.Map<BookmarkNodeDto>(node);
+    }
+
+    /// <summary>Matches <c>BookmarkNode.Title</c> EF max length in AppDbContext.</summary>
+    private const int MaxBookmarkTitleLength = 500;
+
+    private static string ClampBookmarkTitle(string title)
+    {
+        var trimmed = title.Trim();
+        return trimmed.Length <= MaxBookmarkTitleLength
+            ? trimmed
+            : trimmed[..MaxBookmarkTitleLength];
+    }
+
+    /// <summary>
+    /// Single write path for title/url projection changes: bumps Version, marks the
+    /// node Pending, and enqueues the matching "Update" ExtensionCommandEntry in the
+    /// SAME unit of work. Callers must SaveChanges + BroadcastSyncAsync afterward.
+    /// Used by both the single-bookmark edit dialog (UpdateAsync) and the auto-tagger
+    /// review page's bulk title save so the two paths cannot drift (see
+    /// .cursor/commands/review-sync-change.md).
+    /// </summary>
+    /// <param name="url">Pass null to leave the node's Url untouched (bulk title-only saves).</param>
+    private void ApplyBookmarkProjectionUpdate(BookmarkNode node, string title, string? url)
+    {
+    title = ClampBookmarkTitle(title);
+
+    if (node.PreviousTitle is null && !string.Equals(node.Title, title, StringComparison.Ordinal))
+        node.PreviousTitle = node.Title;
+
+    node.Title = title;
+    if (url is not null)
+        node.Url = url;
     node.Version++;
     node.UpdatedAt = DateTime.UtcNow;
     node.SyncState = SyncState.Pending;
@@ -118,10 +153,6 @@ public partial class BookmarksController
         CreatedAt = DateTime.UtcNow,
         Status = "Pending"
     });
-
-    await _db.SaveChangesAsync(ct);
-    await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
-    return _mapper.Map<BookmarkNodeDto>(node);
     }
 
     [HttpPut("{id:guid}/metadata")]

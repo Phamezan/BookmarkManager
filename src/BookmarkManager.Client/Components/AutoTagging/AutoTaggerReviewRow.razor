@@ -4,12 +4,56 @@
 <MudPaper Outlined="true" Class="pa-3" Style="background: transparent;">
     <MudStack Spacing="2">
         <div class="d-flex align-center justify-space-between text-truncate">
-            <div class="d-flex align-center gap-2 text-truncate">
-                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Size="Size.Small" />
-                <span style="font-weight: 500;" class="text-truncate">@Item.Title</span>
+            <div class="d-flex align-center gap-1" style="flex: 1 1 auto; min-width: 0;">
+                <MudIcon Icon="@Icons.Material.Filled.Bookmark" Color="Color.Primary" Size="Size.Small" Class="flex-shrink-0" />
+                <div style="flex: 1 1 auto; min-width: 0;">
+                    <MudTextField @bind-Value="_localTitle"
+                                  Variant="Variant.Text"
+                                  Margin="Margin.Dense"
+                                  FullWidth="true"
+                                  Immediate="true"
+                                  Style="font-weight: 500;"
+                                  OnBlur="@(() => CommitTitle())"
+                                  OnKeyDown="@((e) => HandleTitleKeyDown(e))" />
+                </div>
+                @if (Item.TitleChanged)
+                {
+                    <MudTooltip Text="Title edited from original">
+                        <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" Color="Color.Info" Class="flex-shrink-0" />
+                    </MudTooltip>
+                    <MudTooltip Text="Revert to original title">
+                        <MudIconButton Icon="@Icons.Material.Filled.Undo"
+                                       Size="Size.Small"
+                                       Class="flex-shrink-0"
+                                       aria-label="Revert title"
+                                       OnClick="@RevertTitle" />
+                    </MudTooltip>
+                }
             </div>
-            <span class="mud-text-secondary" style="font-size: 0.75rem;">@Item.Url</span>
+            <span class="mud-text-secondary text-truncate" style="font-size: 0.75rem; max-width: 240px; flex-shrink: 0;">@Item.Url</span>
         </div>
+        @if (Item.HasSuggestion)
+        {
+            <div class="suggested-title-chip">
+                <span class="suggested-title-chip-prefix">Suggested:</span>
+                <MudTextField @bind-Value="_localSuggested"
+                              Variant="Variant.Text"
+                              Margin="Margin.Dense"
+                              FullWidth="true"
+                              Immediate="true"
+                              Class="suggested-title-chip-input"
+                              aria-label="Edit title suggestion"
+                              OnBlur="@CommitSuggested"
+                              OnKeyDown="@HandleSuggestedKeyDown" />
+                <MudButton Variant="Variant.Text"
+                           Size="Size.Small"
+                           Color="Color.Primary"
+                           aria-label="Accept title suggestion"
+                           OnClick="@AcceptSuggestion">
+                    Accept
+                </MudButton>
+            </div>
+        }
         <div class="d-flex flex-wrap align-center gap-1">
             @foreach (var tag in Item.Tags)
             {
@@ -38,9 +82,38 @@
 @code {
     [Parameter, EditorRequired] public ReviewItem Item { get; set; } = default!;
 
-    // Local field bound to the text box. Because this component owns the
-    // value, typing only re-renders THIS row — not every row in the list.
+    // Local fields bound to the text boxes. Because this component owns the
+    // values, typing only re-renders THIS row — not every row in the list.
     private string _localTagText = string.Empty;
+    private string _localTitle = string.Empty;
+    private string _syncedTitle = string.Empty;
+    private string _localSuggested = string.Empty;
+    private string _syncedSuggested = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        _localTitle = Item.Title;
+        _syncedTitle = Item.Title;
+        _localSuggested = Item.SuggestedTitle ?? string.Empty;
+        _syncedSuggested = _localSuggested;
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Parent "Accept all" updates Item.Title without remounting this row.
+        if (!string.Equals(_syncedTitle, Item.Title, StringComparison.Ordinal))
+        {
+            _localTitle = Item.Title;
+            _syncedTitle = Item.Title;
+        }
+
+        var incomingSuggested = Item.SuggestedTitle ?? string.Empty;
+        if (!string.Equals(_syncedSuggested, incomingSuggested, StringComparison.Ordinal))
+        {
+            _localSuggested = incomingSuggested;
+            _syncedSuggested = incomingSuggested;
+        }
+    }
 
     private void AddTag()
     {
@@ -66,5 +139,66 @@
         {
             AddTag();
         }
+    }
+
+    private void CommitTitle()
+    {
+        var trimmed = _localTitle?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0)
+        {
+            // Never let the local box save a blank title; snap back to last-good value.
+            _localTitle = Item.Title;
+            return;
+        }
+
+        Item.Title = trimmed;
+        _localTitle = trimmed;
+        _syncedTitle = trimmed;
+    }
+
+    private void HandleTitleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            CommitTitle();
+        }
+    }
+
+    private void RevertTitle()
+    {
+        Item.Title = Item.OriginalTitle;
+        _localTitle = Item.OriginalTitle;
+        _syncedTitle = Item.OriginalTitle;
+    }
+
+    private void CommitSuggested()
+    {
+        var trimmed = _localSuggested?.Trim() ?? string.Empty;
+        if (trimmed.Length == 0)
+        {
+            _localSuggested = Item.SuggestedTitle ?? string.Empty;
+            return;
+        }
+
+        Item.SuggestedTitle = trimmed;
+        _localSuggested = trimmed;
+        _syncedSuggested = trimmed;
+    }
+
+    private void HandleSuggestedKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            CommitSuggested();
+    }
+
+    private void AcceptSuggestion()
+    {
+        CommitSuggested();
+        if (!Item.HasSuggestion || string.IsNullOrWhiteSpace(Item.SuggestedTitle))
+            return;
+
+        Item.Title = Item.SuggestedTitle;
+        _localTitle = Item.Title;
+        _syncedTitle = Item.Title;
     }
 }

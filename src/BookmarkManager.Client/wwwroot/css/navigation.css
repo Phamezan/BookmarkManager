@@ -13,11 +13,15 @@
     height: 56px;
     min-height: 56px;
     border-bottom: 1px solid var(--bm-border);
-    background: rgba(8, 9, 13, 0.7) !important;
+    /* Solid-enough fill — full backdrop-filter survives poorly across monitor/DPI
+       switches in Chromium and was shredding topbar text. Light blur only. */
+    background: color-mix(in srgb, var(--bm-bg) 88%, transparent) !important;
     color: var(--bm-text);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     position: relative;
+    width: 100%;
+    max-width: 100%;
 }
 
 .app-title {
@@ -372,17 +376,19 @@
 .app-main {
     background: transparent;
     min-width: 0;
-    width: auto;
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 auto;
 }
 
 .app-content {
-    height: calc(100vh - 56px);
+    height: 100%;
+    min-height: 0;
     padding: var(--bm-space-5);
     box-sizing: border-box;
     max-width: 100%;
-    /* Scroll vertically when a page is taller than the viewport (e.g. Settings). Pages that
-       fill the height and manage their own inner scroll (Bookmarks) fit exactly, so they
-       don't produce a second scrollbar. Horizontal stays clipped. */
+    min-width: 0;
+    width: 100%;
     overflow-y: auto;
     overflow-x: hidden;
 }

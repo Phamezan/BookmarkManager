@@ -243,7 +243,11 @@ public sealed class LibrarySearchEndpointTests : IDisposable
             {
                 configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["Library:SearchTimeoutSeconds"] = "1"
+                    ["Library:SearchTimeoutSeconds"] = "1",
+                    ["ConnectionStrings:Default"] = $"Data Source={_dbPath}",
+                    ["Backup:Directory"] = Path.Combine(Path.GetTempPath(), $"bm-backups-{Guid.NewGuid():N}"),
+                    ["Backup:Enabled"] = "false",
+                    ["Backup:StopHostAfterRestore"] = "false"
                 });
             });
             builder.ConfigureServices(services =>
