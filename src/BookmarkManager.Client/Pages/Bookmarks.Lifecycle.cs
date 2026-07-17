@@ -144,6 +144,21 @@ public partial class Bookmarks
                 }
 
                 await OnFolderSelected(folderId);
+
+                // OnFolderSelected clears selection/focus — put the deep-linked
+                // target back as the selected + keyboard-focused card.
+                if (bookmark.Type != NodeType.Folder)
+                {
+                    _selectedBookmarkIds.Clear();
+                    _selectedBookmarkIds.Add(bookmarkId);
+                    _lastSelectedId = bookmarkId;
+                    _rangeSelectAnchorId = bookmarkId;
+
+                    var visible = VisibleItems;
+                    var focusIdx = visible.FindIndex(i => i.Id == bookmarkId);
+                    _focusedIndex = focusIdx >= 0 ? focusIdx : (_items.Count > 0 ? 0 : -1);
+                }
+
                 StateHasChanged();
 
                 _ = Task.Run(async () =>
@@ -151,16 +166,7 @@ public partial class Bookmarks
                     await Task.Delay(300);
                     await InvokeAsync(async () =>
                     {
-                        await JSRuntime.InvokeVoidAsync("eval", $@"
-                            var el = document.getElementById('bookmark-card-{bookmarkId}');
-                            if (el) {{
-                                el.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                                el.classList.add('highlight-flash');
-                                setTimeout(function() {{
-                                    el.classList.remove('highlight-flash');
-                                }}, 3000);
-                            }}
-                        ");
+                        await JSRuntime.InvokeVoidAsync("scrollAndFlashBookmark", bookmarkId.ToString("D"));
                     });
                 });
             }

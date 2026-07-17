@@ -3,6 +3,19 @@
 
     window.initializeCommandPalette = function (dotNetRef) {
         dotNetHelper = dotNetRef;
+        window.ensurePaletteInfiniteScroll(dotNetRef);
+    };
+
+    window.ensurePaletteInfiniteScroll = function (dotNetRef) {
+        const el = document.getElementById('paletteList');
+        if (!el || el.dataset.bmInfiniteScroll === '1') return;
+        el.dataset.bmInfiniteScroll = '1';
+        el.addEventListener('scroll', function () {
+            if (el.scrollTop + el.clientHeight < el.scrollHeight - 72) return;
+            if (dotNetRef) {
+                dotNetRef.invokeMethodAsync('LoadMoreFromScroll');
+            }
+        }, { passive: true });
     };
 
     // Ctrl+P / Cmd+P global trigger moved to keyboard-shortcuts.js: CommandPalette
@@ -53,6 +66,25 @@
                 input.select();
             }
         }, 100);
+    };
+
+    window.setPaletteInput = function (value) {
+        const input = document.getElementById('paletteSearchInput');
+        if (!input) return;
+        input.value = value ?? '';
+        input.focus();
+    };
+
+    window.scrollPaletteToIndex = function (index, itemSize) {
+        const container = document.getElementById('paletteList');
+        if (!container || !Number.isFinite(index) || !Number.isFinite(itemSize) || itemSize <= 0) return;
+        const top = index * itemSize;
+        const bottom = top + itemSize;
+        if (top < container.scrollTop) {
+            container.scrollTop = top;
+        } else if (bottom > container.scrollTop + container.clientHeight) {
+            container.scrollTop = bottom - container.clientHeight;
+        }
     };
 
     window.openInNewTab = function (url) {

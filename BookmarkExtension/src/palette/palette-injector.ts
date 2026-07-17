@@ -41,7 +41,7 @@ declare global {
       top: "10vh",
       left: "50%",
       transform: "translateX(-50%)",
-      width: "min(680px, calc(100vw - 32px))",
+      width: "min(792px, calc(100vw - 32px))",
       // Placeholder until the palette reports its real modal height via the
       // resize relay; then the iframe hugs the modal exactly.
       height: "min(620px, 80vh)",

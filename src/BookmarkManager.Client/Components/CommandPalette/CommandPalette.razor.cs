@@ -22,12 +22,17 @@ public partial class CommandPalette : IDisposable
 
     private sealed class PaletteItem
     {
+        public int Index { get; set; }
         public Guid Id { get; set; }
         public string Title { get; set; } = string.Empty;
+        public MarkupString TitleHtml { get; set; }
         public string Subtitle { get; set; } = string.Empty;
         public string? Category { get; set; }
         public string? Url { get; set; }
         public bool IsFolder { get; set; }
+        public bool IsSectionHeader { get; set; }
+        public string? SectionTitle { get; set; }
+        public string? Tooltip { get; set; }
         public BookmarkNodeDto? BookmarkNode { get; set; }
     }
 
@@ -43,6 +48,11 @@ public partial class CommandPalette : IDisposable
 
     private const int DefaultPageSize = 10;
     private const int SearchPageSize = 20;
+    /// <summary>
+    /// Fixed row stride for Virtualize + scrollPaletteToIndex.
+    /// Must stay in sync with --palette-item-stride on #paletteList (height + margin-bottom).
+    /// </summary>
+    private const int ItemSizePx = 52;
 
     private string _searchQuery = string.Empty;
     private List<PaletteItem> _results = [];
@@ -50,6 +60,8 @@ public partial class CommandPalette : IDisposable
     private bool _triggerStagger = false;
     private string _primaryHint = "Go to Bookmark";
     private string _secondaryHint = "Open in New Tab";
+    private string _tertiaryHint = "Go to Bookmark";
+    private Dictionary<Guid, string> _folderPathById = new();
 
     private DotNetObjectReference<CommandPalette>? _dotNetRef;
     private CancellationTokenSource? _searchCts;
@@ -64,8 +76,16 @@ public partial class CommandPalette : IDisposable
     private string _loadedQuery = string.Empty;
     private Guid? _loadedFolderId;
     private bool _isLoadingMore;
+    /// <summary>Effective bookmark query used for title highlighting (empty for default results / folder autocomplete).</summary>
+    private string _highlightQuery = string.Empty;
+    /// <summary>Bookmark rows loaded for the current page sequence (excludes section headers / recent section).</summary>
+    private int _loadedBookmarkCount;
+    private int? _historyIndex;
+    private IReadOnlyList<string> _searchHistory = [];
+    private bool _hasSearchHistory;
+    private string _listHeaderTitle = "Folders";
 
-    private bool HasMoreResults => !_isLoadingMore && _results.Count < _totalResultCount;
+    private bool HasMoreResults => !_isLoadingMore && _loadedBookmarkCount < _totalResultCount;
 
     [Inject] private KeyboardShortcutService KeyboardShortcutService { get; set; } = default!;
 
@@ -94,6 +114,12 @@ public partial class CommandPalette : IDisposable
                     return Task.FromResult(true);
                 });
         }
+
+        if (PaletteService.IsOpen && _dotNetRef is not null)
+        {
+            // Re-bind if the list element was recreated after open/search.
+            await JSRuntime.InvokeVoidAsync("ensurePaletteInfiniteScroll", _dotNetRef);
+        }
     }
 
     private void OnToggle()
@@ -106,8 +132,12 @@ public partial class CommandPalette : IDisposable
             _results.Clear();
             _totalResultCount = 0;
             _triggerStagger = true;
+            _historyIndex = null;
             UpdateHints();
-            _ = LoadDefaultResultsAsync();
+            _ = RefreshSearchHistoryAsync();
+            _searchCts?.Cancel();
+            _searchCts = new CancellationTokenSource();
+            _ = LoadDefaultResultsAsync(_searchCts.Token);
             _ = JSRuntime.InvokeVoidAsync("focusPaletteInput");
         }
         else if (Embedded)
@@ -116,6 +146,21 @@ public partial class CommandPalette : IDisposable
             _ = JSRuntime.InvokeVoidAsync("paletteEmbedded.close");
         }
         StateHasChanged();
+    }
+
+    private async Task RefreshSearchHistoryAsync()
+    {
+        try
+        {
+            _searchHistory = await SearchHistoryService.GetAsync();
+            _hasSearchHistory = _searchHistory.Count > 0;
+            StateHasChanged();
+        }
+        catch
+        {
+            _searchHistory = [];
+            _hasSearchHistory = false;
+        }
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
@@ -131,6 +176,7 @@ public partial class CommandPalette : IDisposable
         {
             _primaryHint = IsContextOnManager ? "Go to Bookmark" : "Open Here";
             _secondaryHint = "Open in New Tab";
+            _tertiaryHint = "Open in Manager";
             return;
         }
 
@@ -147,23 +193,39 @@ public partial class CommandPalette : IDisposable
             _primaryHint = "Go to Bookmark";
             _secondaryHint = "Open in New Tab";
         }
+
+        // Same key chord as the extension overlay — tertiary is already GoToBookmark.
+        _tertiaryHint = "Go to Bookmark";
     }
 
-    private async Task LoadDefaultResultsAsync()
+    private async Task LoadDefaultResultsAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var request = new SearchRequest
-            {
-                Query = string.Empty,
-                Page = 1,
-                PageSize = DefaultPageSize
-            };
-            var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
-            _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
-            _selectedIndex = 0;
-            RememberLoadedPage(request, pagedResult.TotalCount);
+            var folderTree = await BookmarkService.GetFolderTreeAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested) return;
+            RebuildFolderPathMap(folderTree);
+
+            // Empty open = folder browser (same list as typing ">" with no filter).
+            var folderMatches = new List<FolderSearchResult>();
+            FindFoldersRecursive(folderTree, query: string.Empty, string.Empty, folderMatches);
+
+            _highlightQuery = string.Empty;
+            _filterFolderId = null;
+            _results = folderMatches.Select(MapFolderToItem).ToList();
+            AssignResultIndices();
+            _selectedIndex = FirstSelectableIndex();
+            _totalResultCount = _results.Count;
+            _loadedBookmarkCount = _results.Count;
+            _loadedPage = 1;
+            _loadedPageSize = DefaultPageSize;
+            _loadedQuery = string.Empty;
+            _loadedFolderId = null;
+            _listHeaderTitle = "Folders";
             StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch
         {
@@ -183,13 +245,11 @@ public partial class CommandPalette : IDisposable
 
     /// <summary>
     /// Fetches the next page (same query/folder filter as the currently-loaded results) and
-    /// appends it. The palette caps each request at <see cref="SearchPageSize"/>/<see
-    /// cref="DefaultPageSize"/> results, so without this, results beyond that page were
-    /// silently unreachable — this is what "Load more" in the palette footer calls.
+    /// appends it. Triggered by the Load more button and by scrolling near the list bottom.
     /// </summary>
     private async Task LoadMoreResultsAsync()
     {
-        if (_isLoadingMore || _results.Count >= _totalResultCount) return;
+        if (_isLoadingMore || _loadedBookmarkCount >= _totalResultCount) return;
 
         _isLoadingMore = true;
         StateHasChanged();
@@ -204,15 +264,23 @@ public partial class CommandPalette : IDisposable
                 FolderId = _loadedFolderId
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
-            var newItems = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+            // Prefer ids already present so load-more doesn't duplicate recent or prior pages.
+            var existingIds = _results.Where(r => !r.IsSectionHeader).Select(r => r.Id).ToHashSet();
+
+            var newItems = pagedResult.Items?
+                .Where(b => !existingIds.Contains(b.Id))
+                .Select(MapBookmarkToItem)
+                .ToList() ?? [];
             _results.AddRange(newItems);
+            AssignResultIndices();
             _loadedPage = request.Page;
+            _loadedBookmarkCount += pagedResult.Items?.Count ?? 0;
             _totalResultCount = pagedResult.TotalCount;
             StateHasChanged();
         }
         catch
         {
-            // Fail silently — the footer row simply stays clickable to retry.
+            // Fail silently — scroll/button can retry.
         }
         finally
         {
@@ -221,9 +289,19 @@ public partial class CommandPalette : IDisposable
         }
     }
 
+    /// <summary>Called from command-palette.js when the list is scrolled near the bottom.</summary>
+    [JSInvokable]
+    public Task LoadMoreFromScroll() => LoadMoreResultsAsync();
+
     private async Task HandleSearchInput(ChangeEventArgs e)
     {
-        _searchQuery = e.Value?.ToString() ?? string.Empty;
+        _historyIndex = null;
+        await RunSearchAsync(e.Value?.ToString() ?? string.Empty, debounce: true);
+    }
+
+    private async Task RunSearchAsync(string query, bool debounce)
+    {
+        _searchQuery = query;
         _selectedIndex = 0;
         _triggerStagger = false;
 
@@ -231,20 +309,32 @@ public partial class CommandPalette : IDisposable
         _searchCts = new CancellationTokenSource();
         var token = _searchCts.Token;
 
+        if (string.IsNullOrEmpty(_searchQuery))
+        {
+            _filterFolderId = null;
+            await LoadDefaultResultsAsync(token);
+            return;
+        }
+
         var folderTree = await BookmarkService.GetFolderTreeAsync(token);
+        RebuildFolderPathMap(folderTree);
 
         // 1. Folder Autocomplete Mode: starts with ">" and doesn't contain a space
         if (_searchQuery.StartsWith(">") && !_searchQuery.Contains(" "))
         {
             _filterFolderId = null;
             var folderQuery = _searchQuery.Substring(1).Trim();
-            
+
             var folderMatches = new List<FolderSearchResult>();
             FindFoldersRecursive(folderTree, folderQuery, string.Empty, folderMatches);
-            
+
             _results = folderMatches.Select(MapFolderToItem).ToList();
             // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
+            _highlightQuery = string.Empty;
+            AssignResultIndices();
             _totalResultCount = _results.Count;
+            _loadedBookmarkCount = _results.Count;
+            _listHeaderTitle = "Folders";
             StateHasChanged();
             return;
         }
@@ -308,8 +398,9 @@ public partial class CommandPalette : IDisposable
 
         try
         {
-            await Task.Delay(200, token); // Debounce
-            
+            if (debounce)
+                await Task.Delay(200, token); // Debounce
+
             var request = new SearchRequest
             {
                 Query = bookmarkQuery.Trim(),
@@ -318,11 +409,16 @@ public partial class CommandPalette : IDisposable
                 FolderId = activeFolderId
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request, token);
-            
+
             if (!token.IsCancellationRequested)
             {
+                _highlightQuery = bookmarkQuery.Trim();
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+                AssignResultIndices();
+                _selectedIndex = FirstSelectableIndex();
                 RememberLoadedPage(request, pagedResult.TotalCount);
+                _loadedBookmarkCount = _results.Count;
+                _listHeaderTitle = "Bookmarks";
                 StateHasChanged();
             }
         }
@@ -333,6 +429,42 @@ public partial class CommandPalette : IDisposable
         {
             _results.Clear();
             StateHasChanged();
+        }
+    }
+
+    private void AssignResultIndices()
+    {
+        for (var i = 0; i < _results.Count; i++)
+            _results[i].Index = i;
+    }
+
+    private int FirstSelectableIndex()
+    {
+        for (var i = 0; i < _results.Count; i++)
+        {
+            if (!_results[i].IsSectionHeader)
+                return i;
+        }
+        return 0;
+    }
+
+    private void RebuildFolderPathMap(List<FolderTreeNodeDto>? nodes)
+    {
+        _folderPathById = new Dictionary<Guid, string>();
+        BuildFolderPathMapRecursive(nodes, string.Empty);
+    }
+
+    private void BuildFolderPathMapRecursive(List<FolderTreeNodeDto>? nodes, string currentPath)
+    {
+        if (nodes == null) return;
+        foreach (var node in nodes)
+        {
+            var newPath = string.IsNullOrEmpty(currentPath) ? node.Title : $"{currentPath} / {node.Title}";
+            _folderPathById[node.Id] = newPath;
+            if (node.Children is { Count: > 0 })
+            {
+                BuildFolderPathMapRecursive(node.Children, newPath);
+            }
         }
     }
 
@@ -424,22 +556,66 @@ public partial class CommandPalette : IDisposable
     }
 
     [JSInvokable]
-    public void NavigateList(int direction)
+    public async Task NavigateList(int direction)
     {
-        if (_results.Count == 0) return;
+        // History recall: ArrowUp on empty input walks recent searches (C#-only state machine).
+        if (_historyIndex is null
+            && string.IsNullOrEmpty(_searchQuery)
+            && direction == -1
+            && _searchHistory.Count > 0)
+        {
+            _historyIndex = 0;
+            await ApplyHistoryEntryAsync(_searchHistory[0]);
+            return;
+        }
 
-        _selectedIndex = (_selectedIndex + direction + _results.Count) % _results.Count;
+        if (_historyIndex is int histIdx)
+        {
+            if (direction == -1)
+            {
+                var next = Math.Min(histIdx + 1, _searchHistory.Count - 1);
+                if (next == histIdx)
+                    return; // Already at oldest — avoid re-firing the same search.
+                _historyIndex = next;
+                await ApplyHistoryEntryAsync(_searchHistory[next]);
+                return;
+            }
+
+            if (direction == 1)
+            {
+                // Exit history mode; keep the recalled query and current results.
+                // Selection already sits on a result row — do not advance on this keypress.
+                _historyIndex = null;
+                StateHasChanged();
+                _ = JSRuntime.InvokeVoidAsync("scrollPaletteToIndex", _selectedIndex, ItemSizePx);
+                return;
+            }
+        }
+
+        if (_results.Count == 0) return;
+        if (_results.All(r => r.IsSectionHeader)) return;
+
+        var start = _selectedIndex;
+        do
+        {
+            _selectedIndex = (_selectedIndex + direction + _results.Count) % _results.Count;
+        }
+        while (_results[_selectedIndex].IsSectionHeader && _selectedIndex != start);
+
+        if (_results[_selectedIndex].IsSectionHeader)
+            return;
+
         StateHasChanged();
-        
-        _ = JSRuntime.InvokeVoidAsync("eval", $@"
-            var container = document.getElementById('paletteList');
-            if (container) {{
-                var active = container.children[{_selectedIndex} + (container.querySelector('.palette-no-results') ? 1 : 0)];
-                if (active) {{
-                    active.scrollIntoView({{ block: 'nearest', behavior: 'smooth' }});
-                }}
-            }}
-        ");
+        _ = JSRuntime.InvokeVoidAsync("scrollPaletteToIndex", _selectedIndex, ItemSizePx);
+    }
+
+    private async Task ApplyHistoryEntryAsync(string query)
+    {
+        _searchQuery = query;
+        await JSRuntime.InvokeVoidAsync("setPaletteInput", query);
+        await RunSearchAsync(query, debounce: false);
+        // Keep history mode active — RunSearchAsync must not clear _historyIndex.
+        StateHasChanged();
     }
 
     [JSInvokable]
@@ -448,11 +624,15 @@ public partial class CommandPalette : IDisposable
         if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
 
         var selected = _results[_selectedIndex];
+        if (selected.IsSectionHeader) return;
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
             return;
         }
+
+        _ = RecordFrecencyOpenAsync(selected);
+        _ = RecordSearchHistoryIfNeededAsync();
 
         if (Embedded)
         {
@@ -482,11 +662,15 @@ public partial class CommandPalette : IDisposable
         if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
 
         var selected = _results[_selectedIndex];
+        if (selected.IsSectionHeader) return;
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
             return;
         }
+
+        _ = RecordFrecencyOpenAsync(selected);
+        _ = RecordSearchHistoryIfNeededAsync();
 
         if (Embedded)
         {
@@ -517,11 +701,15 @@ public partial class CommandPalette : IDisposable
         if (_results.Count == 0 || _selectedIndex >= _results.Count) return;
 
         var selected = _results[_selectedIndex];
+        if (selected.IsSectionHeader) return;
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
             return;
         }
+
+        _ = RecordFrecencyOpenAsync(selected);
+        _ = RecordSearchHistoryIfNeededAsync();
 
         if (Embedded)
         {
@@ -533,6 +721,17 @@ public partial class CommandPalette : IDisposable
         GoToBookmark(selected);
     }
 
+    private Task RecordFrecencyOpenAsync(PaletteItem item) =>
+        FrecencyService.RecordOpenAsync(item.Id, item.Title, item.Url, item.Category);
+
+    private async Task RecordSearchHistoryIfNeededAsync()
+    {
+        if (string.IsNullOrEmpty(_loadedQuery) || string.IsNullOrWhiteSpace(_searchQuery))
+            return;
+        await SearchHistoryService.RecordAsync(_searchQuery);
+        await RefreshSearchHistoryAsync();
+    }
+
     private async Task AutocompleteFolder(PaletteItem selected)
     {
         _filterFolderId = selected.Id;
@@ -540,14 +739,8 @@ public partial class CommandPalette : IDisposable
         _selectedIndex = 0;
         _results.Clear();
         StateHasChanged();
-        
-        _ = JSRuntime.InvokeVoidAsync("eval", $@"
-            var input = document.getElementById('paletteSearchInput');
-            if (input) {{
-                input.value = '>{selected.Title} ';
-                input.focus();
-            }}
-        ");
+
+        _ = JSRuntime.InvokeVoidAsync("setPaletteInput", _searchQuery);
 
         await SearchFolderBookmarksAsync(_filterFolderId.Value);
     }
@@ -571,8 +764,13 @@ public partial class CommandPalette : IDisposable
             
             if (!token.IsCancellationRequested)
             {
+                _highlightQuery = string.Empty;
                 _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
+                AssignResultIndices();
+                _selectedIndex = FirstSelectableIndex();
                 RememberLoadedPage(request, pagedResult.TotalCount);
+                _loadedBookmarkCount = _results.Count;
+                _listHeaderTitle = "Bookmarks";
                 StateHasChanged();
             }
         }
@@ -588,6 +786,8 @@ public partial class CommandPalette : IDisposable
 
     private async Task HandleItemClick(int index)
     {
+        if (index < 0 || index >= _results.Count || _results[index].IsSectionHeader)
+            return;
         _selectedIndex = index;
         await ExecutePrimary();
     }
@@ -657,14 +857,26 @@ public partial class CommandPalette : IDisposable
 
     private PaletteItem MapBookmarkToItem(BookmarkNodeDto bookmark)
     {
+        string? folderPath = null;
+        if (bookmark.ParentId is { } parentId
+            && _folderPathById.TryGetValue(parentId, out var path))
+        {
+            folderPath = path;
+        }
+
+        var tags = bookmark.Metadata?.Tags;
+        var tooltip = BuildItemTooltip(bookmark.Title, tags);
+
         return new PaletteItem
         {
             Id = bookmark.Id,
             Title = bookmark.Title,
-            Subtitle = GetDisplaySubtitle(bookmark),
+            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(bookmark.Title, _highlightQuery),
+            Subtitle = FormatBookmarkSubtitle(folderPath, bookmark.Url),
             Category = bookmark.Metadata?.Category,
             Url = bookmark.Url,
             IsFolder = false,
+            Tooltip = tooltip,
             BookmarkNode = bookmark
         };
     }
@@ -675,32 +887,51 @@ public partial class CommandPalette : IDisposable
         {
             Id = folder.Id,
             Title = folder.Title,
+            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(folder.Title, string.Empty),
             Subtitle = folder.Path,
             Category = "Folder",
-            IsFolder = true
+            IsFolder = true,
+            Tooltip = folder.Title
         };
     }
 
-    private string GetDisplaySubtitle(BookmarkNodeDto bookmark)
+    private static string BuildItemTooltip(string title, IReadOnlyList<string>? tags)
     {
-        if (bookmark.Metadata != null && bookmark.Metadata.Tags != null && bookmark.Metadata.Tags.Count > 0)
-        {
-            return $"Tags: {string.Join(", ", bookmark.Metadata.Tags)}";
-        }
-        
-        if (!string.IsNullOrWhiteSpace(bookmark.Url))
+        if (tags is { Count: > 0 })
+            return $"{title}\nTags: {string.Join(", ", tags)}";
+        return title;
+    }
+
+    /// <summary>
+    /// Location-first subtitle: folder breadcrumb and/or URL host.
+    /// Extracted for unit testing.
+    /// </summary>
+    public static string FormatBookmarkSubtitle(string? folderPath, string? url)
+    {
+        string? host = null;
+        if (!string.IsNullOrWhiteSpace(url))
         {
             try
             {
-                var uri = new Uri(bookmark.Url);
-                return uri.Host + uri.AbsolutePath;
+                host = new Uri(url).Host;
+                if (string.IsNullOrEmpty(host))
+                    host = null;
             }
             catch
             {
-                return bookmark.Url;
+                host = null;
             }
         }
-        
+
+        var hasPath = !string.IsNullOrWhiteSpace(folderPath);
+        var hasHost = !string.IsNullOrWhiteSpace(host);
+
+        if (hasPath && hasHost)
+            return $"{folderPath} · {host}";
+        if (hasPath)
+            return folderPath!;
+        if (hasHost)
+            return host!;
         return "Bookmark";
     }
 
