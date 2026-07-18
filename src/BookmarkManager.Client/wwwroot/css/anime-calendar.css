@@ -1,0 +1,855 @@
+/* ============================================================================
+   Anime Worlds theme — page skin. ALL rules MUST be scoped under
+   [data-theme="anime"] so other themes stay untouched.
+   ============================================================================
+   Anime Calendar — "Shenron's Watch" v3 (mockup: Docs/ui-design.md
+   5-animecalendar-ink.html). DBZ night watch: gradient mixed from the
+   background art's blues, Goku-on-the-cliff portrait pinned right at ~124vh
+   with mask-melted edges, Shenron winding faintly behind the week grid, and
+   the seven dragon balls as a decorative gathering strip in the toolbar
+   (lit = airing series gathered, dim = still out there). Accent = gi orange.
+   Bebas Neue (display) / Zen Kaku Gothic New (UI) / JetBrains Mono.
+   Episode cards keep the REAL series cover art — dragon balls never act as
+   episode markers (gathering strip + button icon only). */
+
+/* --- Theme gate ------------------------------------------------------------
+   Decorative layers added by this skin render visibly ONLY under the anime
+   theme. These classes exist nowhere else in the app, so the unscoped
+   display:none below cannot touch any other theme or page — it is the
+   required "default off" half of the [data-theme="anime"] gate. */
+.anime-art,
+.acal-gather,
+.acal-match-ball {
+    display: none;
+}
+
+/* --- Palette ----------------------------------------------------------------
+   Base calendar.css drives most of its look from these --acal-* vars on
+   .anime-cal; re-pointing them at the night-watch palette re-skins every
+   shared component (incl. the Manga tab, which reuses the same classes). */
+[data-theme="anime"] .anime-cal-zone {
+    --acal-bg: transparent;
+    --acal-card: rgba(10, 14, 30, 0.66);
+    --acal-card-hi: rgba(20, 26, 48, 0.72);
+    --acal-border: rgba(233, 237, 246, 0.1);
+    --acal-border-hi: rgba(255, 154, 60, 0.45);
+    --acal-accent: #ff9a3c;
+    --acal-accent-bright: #ffc57d;
+    --acal-label: #ff9a3c;
+    --acal-today: #ff9a3c;
+    --acal-text: #e9edf6;
+    --acal-text-dim: rgba(233, 237, 246, 0.6);
+    --acal-text-mute: rgba(233, 237, 246, 0.34);
+
+    position: relative;
+    z-index: 1; /* page content paints above the fixed night-sky layer */
+    color: #e9edf6;
+    font-family: "Zen Kaku Gothic New", system-ui, sans-serif;
+}
+
+/* Base calendar.css pins its own var values directly on .anime-cal, which
+   would beat inheritance from the zone — restate them at the same level. */
+[data-theme="anime"] .anime-cal {
+    --acal-bg: transparent;
+    --acal-card: rgba(10, 14, 30, 0.66);
+    --acal-card-hi: rgba(20, 26, 48, 0.72);
+    --acal-border: rgba(233, 237, 246, 0.1);
+    --acal-border-hi: rgba(255, 154, 60, 0.45);
+    --acal-accent: #ff9a3c;
+    --acal-accent-bright: #ffc57d;
+    --acal-label: #ff9a3c;
+    --acal-today: #ff9a3c;
+    --acal-text: #e9edf6;
+    --acal-text-dim: rgba(233, 237, 246, 0.6);
+    --acal-text-mute: rgba(233, 237, 246, 0.34);
+
+    font-family: "Zen Kaku Gothic New", system-ui, sans-serif;
+}
+
+/* --- Night-sky art layers (fixed, inert, behind everything) ---------------- */
+[data-theme="anime"] .anime-art {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+[data-theme="anime"] .anime-art-sky {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, #05080f 0%, #0d1428 40%, #101a36 66%, #080c18 100%);
+}
+
+[data-theme="anime"] .anime-art-bg {
+    position: absolute;
+    right: 2vw;
+    top: -8vh;
+    height: 124vh;
+    width: auto;
+    -webkit-mask-image:
+        linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent),
+        linear-gradient(180deg, #000 80%, transparent 99%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+        linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent),
+        linear-gradient(180deg, #000 80%, transparent 99%);
+    mask-composite: intersect;
+}
+
+[data-theme="anime"] .anime-art-shenron {
+    position: absolute;
+    left: -7vw;
+    top: 5vh;
+    width: min(56vw, 900px);
+    height: auto;
+    opacity: 0.17;
+    filter: drop-shadow(0 0 40px rgba(120, 220, 140, 0.25));
+}
+
+/* CSS-only starfield (mockup used a canvas; no new JS allowed) — two tiled
+   dot layers that cross-fade for a slow twinkle. */
+[data-theme="anime"] .anime-art-stars {
+    position: absolute;
+    inset: 0;
+    background-repeat: repeat;
+}
+
+[data-theme="anime"] .anime-art-stars-a {
+    background-image:
+        radial-gradient(1.2px 1.2px at 24px 36px, rgba(233, 237, 246, 0.95), transparent),
+        radial-gradient(1px 1px at 130px 96px, rgba(233, 237, 246, 0.7), transparent),
+        radial-gradient(1.4px 1.4px at 214px 172px, rgba(233, 237, 246, 0.85), transparent),
+        radial-gradient(0.9px 0.9px at 322px 62px, rgba(233, 237, 246, 0.6), transparent),
+        radial-gradient(1px 1px at 384px 224px, rgba(255, 197, 125, 0.7), transparent),
+        radial-gradient(0.8px 0.8px at 72px 252px, rgba(233, 237, 246, 0.55), transparent);
+    background-size: 440px 300px;
+}
+
+[data-theme="anime"] .anime-art-stars-b {
+    background-image:
+        radial-gradient(1px 1px at 60px 140px, rgba(233, 237, 246, 0.8), transparent),
+        radial-gradient(0.8px 0.8px at 180px 40px, rgba(233, 237, 246, 0.55), transparent),
+        radial-gradient(1.3px 1.3px at 268px 210px, rgba(233, 237, 246, 0.9), transparent),
+        radial-gradient(0.9px 0.9px at 340px 120px, rgba(255, 197, 125, 0.5), transparent),
+        radial-gradient(1px 1px at 110px 230px, rgba(233, 237, 246, 0.65), transparent);
+    background-size: 380px 260px;
+}
+
+/* --- Media tabs (Anime / Manga) -------------------------------------------- */
+[data-theme="anime"] .anime-cal-zone .acal-media-tab {
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 1.02rem;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    padding: 7px 20px 5px;
+    color: rgba(233, 237, 246, 0.6);
+    background: rgba(10, 14, 30, 0.66);
+    border: 1px solid rgba(233, 237, 246, 0.14);
+    border-radius: 8px;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition: border-color 0.18s, color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-media-tab:hover {
+    border-color: rgba(233, 237, 246, 0.4);
+    color: #e9edf6;
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-media-tab.is-active {
+    background: #ff9a3c;
+    border-color: #d96f1a;
+    color: #241100;
+    box-shadow: 0 0 18px rgba(255, 154, 60, 0.35);
+}
+
+/* --- Folder chips + chip actions (Match N new / Clear all / Refresh) -------- */
+[data-theme="anime"] .anime-cal-zone .rec-folder-chip {
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 16px;
+    color: rgba(233, 237, 246, 0.6);
+    background: rgba(10, 14, 30, 0.66);
+    border: 1px solid rgba(233, 237, 246, 0.14);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transition: border-color 0.18s, color 0.18s, background 0.18s;
+}
+
+[data-theme="anime"] .anime-cal-zone .rec-folder-chip:hover {
+    border-color: rgba(233, 237, 246, 0.4);
+    color: #e9edf6;
+}
+
+[data-theme="anime"] .anime-cal-zone .rec-folder-chip.is-checked {
+    border-color: #ff9a3c;
+    color: #ffc57d;
+    background: rgba(255, 154, 60, 0.1);
+}
+
+[data-theme="anime"] .anime-cal-zone .rec-clear-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 16px;
+    background: rgba(10, 14, 30, 0.4);
+    border: 1px solid rgba(233, 237, 246, 0.16);
+    color: rgba(233, 237, 246, 0.6);
+    cursor: pointer;
+    transition: border-color 0.18s, color 0.18s, box-shadow 0.18s, transform 0.18s, background 0.18s;
+}
+
+[data-theme="anime"] .anime-cal-zone .rec-clear-btn:hover:not(:disabled) {
+    border-color: rgba(233, 237, 246, 0.6);
+    color: #e9edf6;
+}
+
+[data-theme="anime"] .anime-cal-zone .rec-clear-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* "Match N new" — the gi-lit summon button, with its four-star ball icon. */
+[data-theme="anime"] .anime-cal-zone .acal-match-btn {
+    background: rgba(255, 154, 60, 0.14);
+    border-color: #ff9a3c;
+    color: #ffc57d;
+    box-shadow: 0 0 14px rgba(255, 154, 60, 0.16);
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-match-btn:hover:not(:disabled) {
+    border-color: #ff9a3c;
+    color: #ffc57d;
+    box-shadow: 0 0 22px rgba(255, 154, 60, 0.3);
+    transform: translateY(-1px);
+}
+
+[data-theme="anime"] .acal-match-ball {
+    display: block;
+    width: 15px;
+    height: 15px;
+    filter: drop-shadow(0 0 4px rgba(255, 170, 60, 0.55));
+}
+
+/* --- Airing-count subtitle + divider --------------------------------------- */
+[data-theme="anime"] .anime-cal-zone .rec-subtitle {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: rgba(233, 237, 246, 0.34);
+}
+
+[data-theme="anime"] .anime-cal-zone .rec-divider {
+    background: linear-gradient(90deg, rgba(255, 154, 60, 0.18), rgba(233, 237, 246, 0.08) 45%, transparent);
+}
+
+/* --- Toolbar: eyebrow + title + segmented view switch + gather strip -------- */
+[data-theme="anime"] .anime-cal .acal-toolbar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+}
+
+[data-theme="anime"] .anime-cal .acal-toolbar-wrap .acal-toolbar {
+    flex: 1 1 320px;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
+[data-theme="anime"] .anime-cal .acal-eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.62rem;
+    font-weight: 400;
+    letter-spacing: 0.26em;
+    color: #ff9a3c;
+}
+
+[data-theme="anime"] .anime-cal .acal-title {
+    padding-left: 0;
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 1.9rem;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    line-height: 1.1;
+    color: #e9edf6;
+    text-shadow: 0 0 22px rgba(160, 180, 255, 0.3);
+}
+
+/* Base skin's accent bar left of the title — not part of the night-watch
+   look (decorative only). */
+[data-theme="anime"] .anime-cal .acal-title::before {
+    display: none;
+}
+
+/* Actions become one segmented glass control (prev | Month Week Day | next). */
+[data-theme="anime"] .anime-cal .acal-toolbar-actions {
+    gap: 4px;
+    padding: 3px;
+    border-radius: 10px;
+    background: rgba(10, 14, 30, 0.66);
+    border: 1px solid rgba(233, 237, 246, 0.12);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="anime"] .anime-cal .acal-view-btn {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.66rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: rgba(233, 237, 246, 0.34);
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s, box-shadow 0.18s;
+}
+
+[data-theme="anime"] .anime-cal .acal-view-btn:hover {
+    color: #e9edf6;
+    transform: none;
+}
+
+[data-theme="anime"] .anime-cal .acal-view-btn.is-active {
+    background: rgba(255, 154, 60, 0.16);
+    color: #ffc57d;
+    box-shadow: inset 0 0 0 1px rgba(255, 154, 60, 0.35);
+}
+
+[data-theme="anime"] .anime-cal .acal-nav-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: rgba(233, 237, 246, 0.6);
+    font-size: 14px;
+    cursor: pointer;
+    transition: color 0.18s, background 0.18s;
+}
+
+[data-theme="anime"] .anime-cal .acal-nav-btn:hover {
+    color: #ffc57d;
+    background: rgba(232, 238, 250, 0.06);
+    transform: none;
+}
+
+/* The seven dragon balls — decorative gathering strip beside the toolbar.
+   Balls below the gathered airing count burn bright; the rest stay dim. */
+[data-theme="anime"] .acal-gather {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex: none;
+    padding: 7px 12px;
+    border-radius: 12px;
+    background: rgba(10, 14, 30, 0.5);
+    border: 1px solid rgba(233, 237, 246, 0.08);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="anime"] .acal-gather img {
+    width: 23px;
+    height: 23px;
+    filter: drop-shadow(0 0 6px rgba(255, 170, 60, 0.55));
+    transition: transform 0.2s;
+}
+
+[data-theme="anime"] .acal-gather img:hover {
+    transform: translateY(-3px) scale(1.12);
+}
+
+[data-theme="anime"] .acal-gather img.is-dim {
+    filter: grayscale(0.85) brightness(0.5);
+    opacity: 0.55;
+}
+
+/* --- Week view: the vertical timeline re-dealt as fold-filling day columns --
+   The real WeekView renders only days that have episodes (grouped on a rail);
+   under this skin the rail/nodes retire and each group becomes a glass day
+   column. Grid tracks auto-fit, so the populated columns always fill the
+   row's width whether the week has 1 airing day or 7. */
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+    padding-left: 0;
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-rail,
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-node {
+    display: none; /* decorative rail hardware — the columns carry the look now */
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-group {
+    margin-bottom: 0;
+    padding: 12px 10px 14px;
+    border-radius: 12px;
+    min-height: calc(100vh - 280px);
+    min-height: calc(100dvh - 280px);
+    background: rgba(10, 14, 30, 0.66);
+    border: 1px solid rgba(233, 237, 246, 0.1);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-daylabel {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.6rem;
+    font-weight: 400;
+    letter-spacing: 0.22em;
+    color: rgba(233, 237, 246, 0.34);
+    margin-bottom: 10px;
+    padding: 0 4px 9px;
+    border-bottom: 1px solid rgba(233, 237, 246, 0.09);
+}
+
+/* Today = gi-orange glow + floating TODAY tag (decorative echo of the
+   day label's own "· TODAY" text). */
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-group:has(.acal-timeline-daylabel.is-today) {
+    background: rgba(255, 154, 60, 0.09);
+    border-color: rgba(255, 154, 60, 0.45);
+    box-shadow: 0 0 26px rgba(255, 154, 60, 0.14), 0 14px 34px rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-group:has(.acal-timeline-daylabel.is-today)::before {
+    content: "TODAY";
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.54rem;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    padding: 3px 10px;
+    border-radius: 9px;
+    background: #ff9a3c;
+    color: #241100;
+    box-shadow: 0 3px 10px rgba(255, 154, 60, 0.4);
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-daylabel.is-today {
+    color: #ff9a3c;
+    border-bottom-color: rgba(255, 154, 60, 0.25);
+}
+
+/* --- Day view: keep the vertical timeline, re-light it in night-watch tones - */
+[data-theme="anime"] .anime-cal .acal-timeline--day .acal-timeline-rail {
+    background: linear-gradient(#ff9a3c, rgba(233, 237, 246, 0.1));
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline--day .acal-timeline-node {
+    background: #ffc57d;
+    box-shadow: 0 0 0 3px #0d1428, 0 0 10px rgba(255, 154, 60, 0.5);
+}
+
+[data-theme="anime"] .anime-cal .acal-timeline--day .acal-timeline-time {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    color: #ffc57d;
+}
+
+[data-theme="anime"] .anime-cal .acal-day-footer,
+[data-theme="anime"] .anime-cal .acal-month-footer {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.64rem;
+    letter-spacing: 0.06em;
+    color: rgba(233, 237, 246, 0.34);
+    background: rgba(10, 14, 30, 0.5);
+    border: 1px solid rgba(233, 237, 246, 0.08);
+    border-radius: 8px;
+}
+
+[data-theme="anime"] .anime-cal .acal-month-footer {
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+}
+
+/* --- Episode cards (real series cover art stays front and center) ----------- */
+[data-theme="anime"] .anime-cal-zone .acal-ep-card {
+    background: rgba(232, 238, 250, 0.05);
+    border: 1px solid rgba(233, 237, 246, 0.09);
+    border-radius: 9px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-ep-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255, 154, 60, 0.4);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-ep-card.is-emphasized {
+    background: rgba(255, 154, 60, 0.08);
+    border-color: rgba(255, 154, 60, 0.45);
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-ep-title {
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    font-weight: 500;
+    line-height: 1.3;
+    color: #e9edf6;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-ep-meta {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    color: rgba(255, 197, 125, 0.85);
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-ep-countdown {
+    font-family: "JetBrains Mono", monospace;
+    color: #ff9a3c;
+    letter-spacing: 0.03em;
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-ep-source {
+    color: rgba(255, 197, 125, 0.55);
+}
+
+/* Poster thumb: spine gleam like the mockup's cover chip. */
+[data-theme="anime"] .anime-cal-zone .acal-pstr {
+    border: 1px solid rgba(233, 237, 246, 0.2);
+    border-radius: 4px;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-pstr::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 5px;
+    background: linear-gradient(90deg, rgba(0, 0, 0, 0.5), rgba(255, 255, 255, 0.12), rgba(0, 0, 0, 0.35));
+    pointer-events: none;
+}
+
+/* --- Month grid ------------------------------------------------------------- */
+[data-theme="anime"] .anime-cal .acal-month-head {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 0.6rem;
+    font-weight: 400;
+    letter-spacing: 0.22em;
+    color: rgba(233, 237, 246, 0.34);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-cell {
+    background: rgba(10, 14, 30, 0.5);
+    border-color: rgba(233, 237, 246, 0.09);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-cell.is-populated {
+    background: rgba(16, 22, 44, 0.62);
+    border-color: rgba(233, 237, 246, 0.14);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-cell.is-populated:hover {
+    background: rgba(20, 26, 48, 0.72);
+    border-color: rgba(255, 154, 60, 0.45);
+    box-shadow: 0 0 0 1px rgba(255, 154, 60, 0.25), 0 0 22px rgba(255, 154, 60, 0.12);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-cell.is-today {
+    border-color: rgba(255, 154, 60, 0.45);
+    box-shadow: inset 0 0 0 1px rgba(255, 154, 60, 0.4), 0 0 22px rgba(255, 154, 60, 0.12);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-cell.is-today .acal-month-daynum {
+    background: linear-gradient(135deg, #ff9a3c, #d96f1a);
+    color: #241100;
+    box-shadow: 0 0 12px rgba(255, 154, 60, 0.55);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-daynum {
+    font-family: "Bebas Neue", sans-serif;
+    font-size: 1.05rem;
+    font-weight: 400;
+    color: rgba(233, 237, 246, 0.6);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-empty {
+    color: rgba(233, 237, 246, 0.2);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-event {
+    background: linear-gradient(90deg, rgba(255, 154, 60, 0.14), rgba(16, 22, 44, 0.5));
+    border-color: rgba(255, 154, 60, 0.25);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-event:hover {
+    background: linear-gradient(90deg, rgba(255, 154, 60, 0.28), rgba(255, 154, 60, 0.12));
+    border-color: #ff9a3c;
+    box-shadow: 0 0 16px rgba(255, 154, 60, 0.2);
+}
+
+[data-theme="anime"] .anime-cal .acal-event-title-text {
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    font-weight: 500;
+}
+
+[data-theme="anime"] .anime-cal .acal-event-ep-text {
+    font-family: "JetBrains Mono", monospace;
+    color: rgba(255, 197, 125, 0.85);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-airing-tag {
+    background: #ff9a3c;
+    color: #241100;
+    box-shadow: 0 0 8px rgba(255, 154, 60, 0.5);
+}
+
+[data-theme="anime"] .anime-cal .acal-event-progress {
+    background: rgba(233, 237, 246, 0.08);
+}
+
+[data-theme="anime"] .anime-cal .acal-event-progress-fill {
+    background: linear-gradient(90deg, #d96f1a, #ffc57d);
+}
+
+[data-theme="anime"] .anime-cal .acal-month-headrow.is-scrollable:hover,
+[data-theme="anime"] .anime-cal .acal-scroll-zone:hover {
+    background: rgba(255, 154, 60, 0.12);
+}
+
+[data-theme="anime"] .anime-cal .acal-scroll-zone {
+    color: rgba(255, 154, 60, 0.8);
+}
+
+[data-theme="anime"] .anime-cal .acal-scroll-zone:hover {
+    color: #ffc57d;
+}
+
+/* Rich hover popover — frosted night glass, gi accents. */
+[data-theme="anime"] .anime-cal .rich-tip {
+    background: rgba(13, 18, 36, 0.94);
+    border-color: rgba(233, 237, 246, 0.16);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 154, 60, 0.15);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="anime"] .anime-cal .acal-tip-title {
+    font-family: "Zen Kaku Gothic New", sans-serif;
+    color: #e9edf6;
+}
+
+[data-theme="anime"] .anime-cal .acal-tip-ep {
+    color: #ff9a3c;
+}
+
+[data-theme="anime"] .anime-cal .acal-tip-time {
+    color: rgba(233, 237, 246, 0.6);
+}
+
+[data-theme="anime"] .anime-cal .acal-tip-countdown {
+    font-family: "JetBrains Mono", monospace;
+    color: #ffc57d;
+}
+
+/* --- Empty / build-your-calendar states ------------------------------------- */
+[data-theme="anime"] .anime-cal-zone .empty-state {
+    background: rgba(10, 14, 30, 0.66);
+    border: 1px solid rgba(233, 237, 246, 0.1);
+    border-radius: 12px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+}
+
+[data-theme="anime"] .anime-cal-zone .empty-state-icon-wrap {
+    color: #ff9a3c;
+    filter: drop-shadow(0 0 12px rgba(255, 154, 60, 0.45));
+}
+
+[data-theme="anime"] .anime-cal-zone .empty-state-title {
+    font-family: "Bebas Neue", sans-serif;
+    font-weight: 400;
+    letter-spacing: 0.05em;
+    color: #e9edf6;
+}
+
+[data-theme="anime"] .anime-cal-zone .empty-state-sub {
+    color: rgba(233, 237, 246, 0.6);
+}
+
+[data-theme="anime"] .anime-cal-zone .acal-empty {
+    font-style: italic;
+    color: rgba(233, 237, 246, 0.34);
+}
+
+/* "Go to autotagging" — gi-filled primary action. */
+[data-theme="anime"] .anime-cal-zone .mud-button-filled.mud-button-filled-primary {
+    background-color: #ff9a3c;
+    color: #241100;
+    box-shadow: 0 0 18px rgba(255, 154, 60, 0.3);
+}
+
+[data-theme="anime"] .anime-cal-zone .mud-button-filled.mud-button-filled-primary:hover {
+    background-color: #ffc57d;
+    box-shadow: 0 0 24px rgba(255, 154, 60, 0.45);
+}
+
+/* --- MudBlazor bits used on this page --------------------------------------- */
+[data-theme="anime"] .anime-cal-zone .mud-alert {
+    background: rgba(255, 154, 60, 0.08);
+    border: 1px solid rgba(255, 154, 60, 0.35);
+    border-radius: 10px;
+    color: #ffc57d;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+[data-theme="anime"] .anime-cal-zone .mud-alert .mud-alert-message {
+    color: #ffc57d;
+}
+
+[data-theme="anime"] .anime-cal-zone .mud-progress-linear {
+    background-color: rgba(233, 237, 246, 0.08);
+    border-radius: 99px;
+}
+
+[data-theme="anime"] .anime-cal-zone .mud-progress-linear .mud-progress-linear-bar {
+    background-color: #ff9a3c;
+}
+
+[data-theme="anime"] .anime-cal-zone .mud-progress-circular {
+    color: #ff9a3c;
+}
+
+[data-theme="anime"] .anime-cal-zone .mud-progress-circular circle {
+    stroke: #ff9a3c;
+}
+
+/* --- Narrow screens: day columns collapse to a comfortable fill ------------- */
+@media (max-width: 1100px) {
+    [data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    }
+
+    [data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-group {
+        min-height: 0;
+    }
+
+    [data-theme="anime"] .anime-art-shenron {
+        width: 88vw;
+        opacity: 0.12;
+    }
+}
+
+/* ══════════════ motion — night watch ══════════════
+   Entrance: tabs → chips → subtitle → toolbar rise; dragon balls pop in with
+   a stagger; Shenron coils in from the left then floats. Ambient: art drift,
+   star twinkle, today-column pulse (box-shadow only — the GSAP stagger owns
+   transform/opacity on the timeline groups, so no animation fights it). */
+@media (prefers-reduced-motion: no-preference) {
+    [data-theme="anime"] .anime-cal-zone .acal-media-tabs {
+        animation: acalNightRise 0.5s ease-out backwards;
+    }
+
+    [data-theme="anime"] .anime-cal-zone .rec-controls-row {
+        animation: acalNightRise 0.5s ease-out 0.06s backwards;
+    }
+
+    [data-theme="anime"] .anime-cal-zone .rec-subtitle {
+        animation: acalNightRise 0.45s ease-out 0.12s backwards;
+    }
+
+    [data-theme="anime"] .anime-cal .acal-toolbar-wrap {
+        animation: acalNightRise 0.5s ease-out 0.18s backwards;
+    }
+
+    [data-theme="anime"] .acal-gather img {
+        animation: acalBallPop 0.5s cubic-bezier(0.3, 1.4, 0.4, 1) backwards;
+    }
+
+    [data-theme="anime"] .acal-gather img:nth-child(1) { animation-delay: 0.95s; }
+    [data-theme="anime"] .acal-gather img:nth-child(2) { animation-delay: 1.03s; }
+    [data-theme="anime"] .acal-gather img:nth-child(3) { animation-delay: 1.11s; }
+    [data-theme="anime"] .acal-gather img:nth-child(4) { animation-delay: 1.19s; }
+    [data-theme="anime"] .acal-gather img:nth-child(5) { animation-delay: 1.27s; }
+    [data-theme="anime"] .acal-gather img:nth-child(6) { animation-delay: 1.35s; }
+    [data-theme="anime"] .acal-gather img:nth-child(7) { animation-delay: 1.43s; }
+
+    [data-theme="anime"] .anime-art-shenron {
+        animation: acalShenronIn 1.6s cubic-bezier(0.25, 0.8, 0.35, 1) 0.7s backwards,
+            acalShenronFloat 14s ease-in-out 2.6s infinite alternate;
+    }
+
+    [data-theme="anime"] .anime-art-bg {
+        animation: acalArtDrift 30s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .anime-art-stars-a {
+        animation: acalStarTwinkle 7s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .anime-art-stars-b {
+        animation: acalStarTwinkle 9s ease-in-out 1.4s infinite alternate-reverse;
+    }
+
+    [data-theme="anime"] .anime-cal .acal-timeline:not(.acal-timeline--day) .acal-timeline-group:has(.acal-timeline-daylabel.is-today) {
+        animation: acalTodayPulse 4s ease-in-out 1.8s infinite;
+    }
+}
+
+@keyframes acalNightRise {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes acalBallPop {
+    from { opacity: 0; transform: scale(0.3); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes acalShenronIn {
+    from { opacity: 0; transform: translateX(-120px); }
+    to { opacity: 0.17; transform: translateX(0); }
+}
+
+@keyframes acalShenronFloat {
+    from { transform: translateY(-12px); }
+    to { transform: translateY(14px); }
+}
+
+@keyframes acalArtDrift {
+    from { transform: translateY(-8px) scale(1); }
+    to { transform: translateY(10px) scale(1.03); }
+}
+
+@keyframes acalStarTwinkle {
+    from { opacity: 0.35; }
+    to { opacity: 1; }
+}
+
+@keyframes acalTodayPulse {
+    0%, 100% { box-shadow: 0 0 26px rgba(255, 154, 60, 0.14), 0 14px 34px rgba(0, 0, 0, 0.35); }
+    50% { box-shadow: 0 0 40px rgba(255, 154, 60, 0.28), 0 14px 34px rgba(0, 0, 0, 0.35); }
+}

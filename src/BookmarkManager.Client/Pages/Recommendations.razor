@@ -7,7 +7,18 @@
 
 <PageTitle>Recommendations</PageTitle>
 
-<div class="bookmarks-workspace">
+<div class="bookmarks-workspace rec-page">
+    <div class="anime-art" aria-hidden="true"></div>
+    <div class="anime-aura" aria-hidden="true"></div>
+    <div class="anime-embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <svg class="rec-svg-defs" width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute;overflow:hidden">
+        <defs>
+            <filter id="rec-deckle" x="-10%" y="-10%" width="120%" height="120%">
+                <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="7" result="n" />
+                <feDisplacementMap in="SourceGraphic" in2="n" scale="6" xChannelSelector="R" yChannelSelector="G" />
+            </filter>
+        </defs>
+    </svg>
     <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
         <div class="rec-controls-row">
             @if (_flatFolders.Count == 0)
@@ -84,55 +95,62 @@
                 @if (SpotlightItem is { } spotlight)
                 {
                     <section class="rec-featured" @key="spotlight.Id" @onmouseenter="PauseSpotlight" @onmouseleave="ResumeSpotlight">
-                        <div class="rec-featured-eyebrow">Featured pick</div>
-                        <h2 class="rec-featured-title">@spotlight.Title</h2>
-                        @if (!string.IsNullOrEmpty(spotlight.Url))
-                        {
-                            <div class="rec-featured-url">@spotlight.Url</div>
-                        }
-
-                        @if (spotlight.Metadata is { } meta && (!string.IsNullOrEmpty(meta.Category) || meta.Tags.Count > 0 || meta.IsFavorite))
-                        {
-                            <div class="rec-featured-tags">
-                                @if (meta.IsFavorite)
+                        <div class="rec-featured-watermark" aria-hidden="true"></div>
+                        <div class="rec-featured-frame">
+                            <div class="rec-featured-inner">
+                                <div class="rec-featured-eyebrow">Featured pick</div>
+                                <h2 class="rec-featured-title">@spotlight.Title</h2>
+                                @if (!string.IsNullOrEmpty(spotlight.Url))
                                 {
-                                    <span class="rec-featured-tag rec-featured-favorite">
-                                        <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" /> Favorite
-                                    </span>
+                                    <div class="rec-featured-url">@spotlight.Url</div>
                                 }
-                                @if (!string.IsNullOrEmpty(meta.Category))
-                                {
-                                    <span class="rec-featured-tag rec-featured-category">@meta.Category</span>
-                                }
-                                @foreach (var tag in meta.Tags.Take(10))
-                                {
-                                    <span class="rec-featured-tag">@tag</span>
-                                }
-                            </div>
-                        }
 
-                        <div class="rec-featured-actions">
-                            <a class="rec-visit-btn" href="@spotlight.Url" target="_blank" rel="noopener noreferrer">
-                                <MudIcon Icon="@Icons.Material.Filled.Launch" Size="Size.Small" /> Visit
-                            </a>
-                            <button type="button" class="@($"rec-reshuffle-btn{(_spinning ? " spinning" : "")}")" @onclick="ReshuffleAsync">
-                                <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
-                                Reshuffle
-                            </button>
+                                @if (spotlight.Metadata is { } meta && (!string.IsNullOrEmpty(meta.Category) || meta.Tags.Count > 0 || meta.IsFavorite))
+                                {
+                                    <div class="rec-featured-tags">
+                                        @if (meta.IsFavorite)
+                                        {
+                                            <span class="rec-featured-tag rec-featured-favorite">
+                                                <MudIcon Icon="@Icons.Material.Filled.Star" Size="Size.Small" /> Favorite
+                                            </span>
+                                        }
+                                        @if (!string.IsNullOrEmpty(meta.Category))
+                                        {
+                                            <span class="rec-featured-tag rec-featured-category">@meta.Category</span>
+                                        }
+                                        @foreach (var tag in meta.Tags.Take(10))
+                                        {
+                                            <span class="rec-featured-tag">@tag</span>
+                                        }
+                                    </div>
+                                }
 
-                            @if (_recommendations.Count > 1)
-                            {
-                                <div class="rec-featured-nav">
-                                    <button type="button" class="rec-featured-nav-arrow" @onclick="PrevSpotlight" aria-label="Previous pick">
-                                        <MudIcon Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small" />
+                                <div class="rec-featured-actions">
+                                    <a class="rec-visit-btn" href="@spotlight.Url" target="_blank" rel="noopener noreferrer">
+                                        <MudIcon Icon="@Icons.Material.Filled.Launch" Size="Size.Small" /> Visit
+                                    </a>
+                                    <button type="button" class="@($"rec-reshuffle-btn{(_spinning ? " spinning" : "")}")" @onclick="ReshuffleAsync">
+                                        <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
+                                        Reshuffle
                                     </button>
-                                    <span class="rec-featured-position">@((_recommendations.FindIndex(r => r.Id == spotlight.Id) + 1).ToString("00")) / @_recommendations.Count.ToString("00")</span>
-                                    <button type="button" class="rec-featured-nav-arrow" @onclick="NextSpotlight" aria-label="Next pick">
-                                        <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" />
-                                    </button>
+
+                                    @if (_recommendations.Count > 1)
+                                    {
+                                        <div class="rec-featured-nav">
+                                            <button type="button" class="rec-featured-nav-arrow" @onclick="PrevSpotlight" aria-label="Previous pick">
+                                                <MudIcon Icon="@Icons.Material.Filled.ChevronLeft" Size="Size.Small" />
+                                            </button>
+                                            <span class="rec-featured-position">@((_recommendations.FindIndex(r => r.Id == spotlight.Id) + 1).ToString("00")) / @_recommendations.Count.ToString("00")</span>
+                                            <button type="button" class="rec-featured-nav-arrow" @onclick="NextSpotlight" aria-label="Next pick">
+                                                <MudIcon Icon="@Icons.Material.Filled.ChevronRight" Size="Size.Small" />
+                                            </button>
+                                        </div>
+                                    }
                                 </div>
-                            }
+                            </div>
+                            <div class="rec-featured-seal" aria-hidden="true"><img src="assets/anime/recommendations/clover-bone.webp" alt="" /></div>
                         </div>
+                        <div class="rec-featured-sword" aria-hidden="true"><img src="assets/anime/recommendations/sword-destroyer.webp" alt="" /></div>
                     </section>
                 }
 

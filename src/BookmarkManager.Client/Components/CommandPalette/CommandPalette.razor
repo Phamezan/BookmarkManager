@@ -9,11 +9,40 @@
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 <div class="palette-wrapper @(PaletteService.IsOpen ? "is-open" : "") @(Embedded ? "embedded" : "")" id="paletteWrapper">
+    <!-- Arcane skin art layer (anime theme only; hidden by default in anime-palette.css) -->
+    <div class="anime-art palette-arcane-veil" aria-hidden="true"></div>
     <div class="palette-backdrop" @onclick="ClosePalette"></div>
     <div class="palette-modal">
+        <!-- Arcane skin: great summoning seal etched into the palette (decor only) -->
+        <div class="palette-seal" aria-hidden="true">
+            <svg viewBox="0 0 240 240" fill="none" stroke="#cdd3de">
+                <circle cx="120" cy="120" r="112" stroke-width="1.4" opacity=".8"/>
+                <circle cx="120" cy="120" r="104" stroke-width=".7" opacity=".45"/>
+                <circle cx="120" cy="120" r="97" stroke-width="2.4" opacity=".3" stroke-dasharray="2 7"/>
+                <circle cx="120" cy="120" r="76" stroke-width=".8" opacity=".4"/>
+                <path d="M120 8 L126 20 L120 32 L114 20 Z" fill="#cdd3de" stroke="none" opacity=".85"/>
+                <path d="M120 208 L126 220 L120 232 L114 220 Z" fill="#cdd3de" stroke="none" opacity=".85"/>
+                <path d="M8 120 L20 114 L32 120 L20 126 Z" fill="#cdd3de" stroke="none" opacity=".85"/>
+                <path d="M208 120 L220 114 L232 120 L220 126 Z" fill="#cdd3de" stroke="none" opacity=".85"/>
+                <path d="M120 52 L179 154 L61 154 Z" stroke-width=".9" opacity=".5"/>
+                <g stroke-width="1" opacity=".55">
+                    <path d="M120 44 v8"/><path d="M120 188 v8"/>
+                    <path d="M44 120 h8"/><path d="M188 120 h8"/>
+                    <path d="M66.2 66.2 l5.7 5.7"/><path d="M168.1 168.1 l5.7 5.7"/>
+                    <path d="M66.2 173.8 l5.7 -5.7"/><path d="M168.1 71.9 l5.7 -5.7"/>
+                </g>
+            </svg>
+        </div>
         <!-- Search input -->
         <div class="palette-search-container">
-            <MudIcon Icon="@Icons.Material.Filled.Search" Class="palette-search-icon" />
+            <span class="palette-search-ring">
+                <svg class="palette-search-dial" viewBox="0 0 36 36" fill="none" stroke="#cdd3de" aria-hidden="true">
+                    <circle cx="18" cy="18" r="16" stroke-width="1" opacity=".5" stroke-dasharray="3 5"/>
+                    <circle cx="18" cy="18" r="11.5" stroke-width=".6" opacity=".3"/>
+                    <path d="M18 2 L19.6 5.4 L18 8.8 L16.4 5.4 Z" fill="#cdd3de" stroke="none" opacity=".8"/>
+                </svg>
+                <MudIcon Icon="@Icons.Material.Filled.Search" Class="palette-search-icon" />
+            </span>
             <input 
                 id="paletteSearchInput"
                 type="text" 

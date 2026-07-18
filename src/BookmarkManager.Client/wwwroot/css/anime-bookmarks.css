@@ -1,0 +1,1516 @@
+/* ============================================================================
+   Anime Worlds theme — Bookmarks page skin (Akatsuki v5.4 port).
+   ALL rules MUST be scoped under [data-theme="anime"] so other themes stay
+   untouched. Page anchor: .anime-bookmarks-page (added to the workspace div
+   in Pages/Bookmarks.razor — classes are only ever added, never renamed, so
+   drag-drop/marquee JS hooks keep working).
+
+   Mockup source: Docs/ui-design.md
+   Dialog skin (theme-neutral arcane): Docs/ui-design.md
+
+   CLOUD RATIONING: red clouds appear ONLY at the filter-panel hem (3 drifting
+   clouds), the active filter-chip marker, and ONE sky drifter. Nowhere else.
+   ============================================================================ */
+
+/* Decorative layers — never visible outside the anime theme. */
+.anime-art,
+.anime-hem,
+.anime-kunai {
+    display: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page {
+    --ab-night: #07080c;
+    --ab-steel: rgba(16, 18, 24, .82);
+    --ab-steel-solid: #101218;
+    --ab-line: #242833;
+    --ab-bone: #e6e2d8;
+    --ab-dim: rgba(230, 226, 216, .6);
+    --ab-faint: rgba(230, 226, 216, .36);
+    --ab-ghost: #565d6d;
+    --ab-red: #b01220;
+    --ab-red-hi: #d81f2c;
+    --ab-red-deep: #7a0a14;
+    font-family: 'Inter', sans-serif;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   1. NIGHT + ART + WEATHER (fixed layers, behind everything)
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .anime-art {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+/* Storm-graded Akatsuki circle art, centered, edges mask-melted into night */
+[data-theme="anime"] .anime-art .anime-art-bg {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    height: 165vh;
+    margin-top: -28vh;
+    transform: translateX(-50%);
+    -webkit-mask-image:
+        linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent),
+        linear-gradient(180deg, #000 78%, transparent 97%);
+    -webkit-mask-composite: source-in;
+    mask-image:
+        linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent),
+        linear-gradient(180deg, #000 78%, transparent 97%);
+    mask-composite: intersect;
+}
+
+/* subtle red aura halo over the ring */
+[data-theme="anime"] .anime-art .anime-halo {
+    position: absolute;
+    left: 50%;
+    top: -10vh;
+    width: 120vh;
+    height: 100vh;
+    transform: translateX(-50%);
+    background: radial-gradient(46% 34% at 50% 34%, rgba(176, 18, 32, .12), transparent 66%);
+}
+
+/* ONE slow red-cloud drifter */
+[data-theme="anime"] .anime-art .anime-dcloud {
+    position: absolute;
+    top: 5vh;
+    left: 0;
+    width: 520px;
+    opacity: .07;
+    filter: blur(1px) saturate(1.2);
+}
+
+/* radial center veil so panels stay readable over the art */
+[data-theme="anime"] .anime-art .anime-veil {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(54% 48% at 50% 44%, rgba(7, 8, 12, .42), transparent 76%);
+}
+
+/* two CSS rain-sheet layers */
+[data-theme="anime"] .anime-art .anime-rain {
+    position: absolute;
+    inset: 0;
+}
+
+[data-theme="anime"] .anime-art .anime-rain i {
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='260'%3E%3Cg stroke='%23bcc8dc' stroke-opacity='.14' stroke-width='1'%3E%3Cpath d='M10 0l-6 34M44 30l-6 36M78 8l-6 34M112 44l-6 36M26 96l-6 36M66 120l-6 36M104 150l-6 36M18 190l-6 36M88 210l-6 36M128 90l-6 36'/%3E%3C/g%3E%3C/svg%3E") repeat;
+}
+
+[data-theme="anime"] .anime-art .anime-rain i + i {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='170' height='340'%3E%3Cg stroke='%23bcc8dc' stroke-opacity='.1' stroke-width='1.4'%3E%3Cpath d='M20 0l-7 40M64 44l-7 42M108 16l-7 40M150 70l-7 42M36 130l-7 42M92 160l-7 42M136 210l-7 42M58 250l-7 42M120 290l-7 42'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+[data-theme="anime"] .anime-art .anime-mist {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(60px);
+}
+
+[data-theme="anime"] .anime-art .anime-mist.m1 {
+    left: -8vw;
+    top: 32vh;
+    width: 44vw;
+    height: 34vh;
+    background: rgba(120, 140, 170, .06);
+}
+
+[data-theme="anime"] .anime-art .anime-mist.m2 {
+    right: -10vw;
+    top: 66vh;
+    width: 40vw;
+    height: 30vh;
+    background: rgba(176, 18, 32, .05);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   2. FOLDER RAIL — the roster (rack) with member ring-kanji chips
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .anime-bookmarks-page .folder-zone {
+    position: relative;
+    background: var(--ab-steel) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--ab-line) !important;
+    border-radius: 10px !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .6);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-zone,
+[data-theme="anime"] .anime-bookmarks-page .folder-zone.mud-paper {
+    background-color: var(--ab-steel) !important;
+    border: 1px solid var(--ab-line) !important;
+}
+
+/* red corner-clip frame etched inside the rack */
+[data-theme="anime"] .anime-bookmarks-page .folder-zone::before {
+    content: '';
+    position: absolute;
+    inset: 5px;
+    pointer-events: none;
+    z-index: 1;
+    border: 1.4px solid rgba(216, 31, 44, .35);
+    border-radius: 7px;
+    clip-path: polygon(0 0, 18px 0, 18px 2px, 2px 2px, 2px 18px, 0 18px,
+        0 100%, 18px 100%, 18px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 18px), 0 calc(100% - 18px),
+        0 0, 100% 0, 100% 18px, calc(100% - 2px) 18px, calc(100% - 2px) 2px, calc(100% - 18px) 2px, calc(100% - 18px) 0,
+        100% 0, 100% 100%, calc(100% - 18px) 100%, calc(100% - 18px) calc(100% - 2px), calc(100% - 2px) calc(100% - 2px), calc(100% - 2px) calc(100% - 18px), 100% calc(100% - 18px));
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .zone-heading {
+    border-bottom: 1px solid rgba(216, 31, 44, .3);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .zone-heading .mud-typography {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .8rem;
+    letter-spacing: .32em;
+    color: var(--ab-red-hi);
+    text-transform: uppercase;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .zone-heading .mud-icon-button {
+    color: var(--ab-ghost) !important;
+    transition: color .2s, transform .2s;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .zone-heading .mud-icon-button:hover {
+    color: var(--ab-bone) !important;
+    transform: translateY(-1px);
+}
+
+/* roster rows */
+[data-theme="anime"] .anime-bookmarks-page .folder-drop-target {
+    border-radius: 4px;
+    color: var(--ab-dim);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-drop-target:hover {
+    background: rgba(230, 226, 216, .05);
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-drop-target .mud-icon-root {
+    color: var(--ab-ghost) !important;
+    opacity: .8;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-drop-target .mud-typography {
+    color: inherit;
+    font-family: 'Inter', sans-serif;
+    font-size: .88rem;
+}
+
+/* member ring — each folder carries an Akatsuki ring kanji, assigned
+   deterministically by DOM position (零青白朱玄空南北三玉 cycle) */
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item > .mud-treeview-item-content .folder-drop-target::before {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    margin-right: 2px;
+    border-radius: 50%;
+    border: 1px solid #2c303c;
+    background: #14161d;
+    font-family: 'Inter', sans-serif;
+    font-size: .7rem;
+    line-height: 1;
+    color: #6d7484;
+    content: '玉';
+    transition: border-color .2s, color .2s, box-shadow .2s;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+1) > .mud-treeview-item-content .folder-drop-target::before { content: '零'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+2) > .mud-treeview-item-content .folder-drop-target::before { content: '青'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+3) > .mud-treeview-item-content .folder-drop-target::before { content: '白'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+4) > .mud-treeview-item-content .folder-drop-target::before { content: '朱'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+5) > .mud-treeview-item-content .folder-drop-target::before { content: '玄'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+6) > .mud-treeview-item-content .folder-drop-target::before { content: '空'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+7) > .mud-treeview-item-content .folder-drop-target::before { content: '南'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+8) > .mud-treeview-item-content .folder-drop-target::before { content: '北'; }
+[data-theme="anime"] .anime-bookmarks-page .folder-zone li.mud-treeview-item:nth-of-type(10n+9) > .mud-treeview-item-content .folder-drop-target::before { content: '三'; }
+
+[data-theme="anime"] .anime-bookmarks-page .folder-drop-target:hover::before {
+    border-color: #3d4353;
+    color: #9aa0ad;
+}
+
+/* active folder = crimson wash + lit ring */
+[data-theme="anime"] .anime-bookmarks-page .mud-treeview .mud-treeview-item-content.mud-treeview-item-selected {
+    background-color: rgba(176, 18, 32, .13) !important;
+    box-shadow: inset 3px 0 0 var(--ab-red-hi);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .mud-treeview .mud-treeview-item-content.mud-treeview-item-selected .folder-drop-target {
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .mud-treeview .mud-treeview-item-content.mud-treeview-item-selected .folder-drop-target .mud-typography {
+    font-weight: 600;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .mud-treeview .mud-treeview-item-content.mud-treeview-item-selected .folder-drop-target::before {
+    border-color: var(--ab-red-hi);
+    color: var(--ab-red-hi);
+    box-shadow: 0 0 10px rgba(216, 31, 44, .45), inset 0 0 6px rgba(216, 31, 44, .25);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .mud-treeview .mud-treeview-item-content:hover {
+    background: rgba(230, 226, 216, .05) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .mud-treeview .mud-treeview-item-content.mud-treeview-item-selected:hover {
+    background: rgba(176, 18, 32, .16) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-count-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .68rem;
+    color: var(--ab-faint);
+    background: transparent;
+    border: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-drop-target.drag-over {
+    background: rgba(216, 31, 44, .13);
+    border-color: rgba(216, 31, 44, .4);
+    box-shadow: 0 0 12px rgba(216, 31, 44, .2);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-action-btn {
+    color: var(--ab-ghost);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-action-btn:hover {
+    background-color: rgba(216, 31, 44, .13);
+    color: var(--ab-red-hi);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .folder-inline-input {
+    background: #14161d !important;
+    border: 1px solid var(--ab-red-hi) !important;
+    color: var(--ab-bone) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   3. TOOLBAR — steel bar, Sharingan-awaken search, action cluster
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .anime-bookmarks-page .explorer-toolbar,
+[data-theme="anime"] .anime-bookmarks-page .explorer-toolbar.mud-paper {
+    background: var(--ab-steel) !important;
+    background-color: var(--ab-steel) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--ab-line) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .55) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .explorer-toolbar .select-all-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: .72rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--ab-faint) !important;
+    background: transparent !important;
+    border: 1px solid transparent !important;
+    border-radius: 4px !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .explorer-toolbar .select-all-btn:hover {
+    color: var(--ab-bone) !important;
+    border-color: rgba(216, 31, 44, .5) !important;
+    background: rgba(216, 31, 44, .08) !important;
+}
+
+/* ── the searchbar — collapsed = slow-turning triple tomoe in a dark tile;
+   on focus the field expands IN PLACE (real input keeps its behavior) while
+   the eye crossfades to Itachi's Mangekyou and the spin quickens ── */
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search {
+    position: relative;
+    max-width: 56px;
+    overflow: hidden;
+    transition: max-width .6s cubic-bezier(.25, .85, .3, 1);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search:focus-within,
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search:has(input:not(:placeholder-shown)) {
+    max-width: 1600px;
+}
+
+/* the eye — two stacked irises over the field's left edge */
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search::before,
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search::after {
+    content: '';
+    position: absolute;
+    z-index: 3;
+    pointer-events: none;
+    width: 26px;
+    height: 26px;
+    left: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    background-position: center;
+    background-size: contain;
+    background-repeat: no-repeat;
+    filter: drop-shadow(0 0 5px rgba(216, 31, 44, .45));
+    transition: opacity .45s ease;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search::before {
+    background-image: url("../assets/anime/bookmarks/tomoe-triple.webp");
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search::after {
+    background-image: url("../assets/anime/bookmarks/mangekyou-itachi.webp");
+    opacity: 0;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search:focus-within::before,
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search:has(input:not(:placeholder-shown))::before {
+    opacity: 0;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search:focus-within::after,
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search:has(input:not(:placeholder-shown))::after {
+    opacity: 1;
+}
+
+/* the dark tile the eye sleeps in / the awakened black field */
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-outlined {
+    background-color: rgba(230, 226, 216, .04) !important;
+    border-radius: 6px !important;
+    transition: background-color .25s, box-shadow .3s;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-outlined .mud-input-outlined-border {
+    border-color: var(--ab-line) !important;
+    border-radius: 6px !important;
+    transition: border-color .3s, box-shadow .3s;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-outlined:hover {
+    background-color: rgba(230, 226, 216, .08) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-outlined:hover .mud-input-outlined-border {
+    border-color: rgba(216, 31, 44, .5) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-outlined:focus-within {
+    background: linear-gradient(172deg, #12141b, #0b0d12 70%) !important;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, .6), inset 0 0 22px rgba(176, 18, 32, .12);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-outlined:focus-within .mud-input-outlined-border {
+    border-color: rgba(216, 31, 44, .55) !important;
+    box-shadow: none;
+}
+
+/* the stock magnifier is replaced by the eye (visual only — the input,
+   debounce, clear button and events are untouched) */
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-adornment-start {
+    display: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-slot {
+    padding-left: 46px !important;
+    color: var(--ab-bone);
+    font-family: 'Inter', sans-serif;
+    caret-color: var(--ab-red-hi);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-slot::placeholder {
+    color: rgba(230, 226, 216, .34);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-search .mud-input-adornment-end .mud-icon-root {
+    color: var(--ab-ghost);
+}
+
+/* action cluster — dark steel plaques */
+[data-theme="anime"] .anime-bookmarks-page .toolbar-action-group {
+    margin-left: auto;
+    flex: none;
+    background: #14161d;
+    border: 1px solid var(--ab-line);
+    border-radius: 7px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-action-divider {
+    background: var(--ab-line);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-action-group .toolbar-action-btn {
+    color: var(--ab-faint) !important;
+    border-radius: 7px !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .toolbar-action-group .toolbar-action-btn:hover {
+    color: var(--ab-bone) !important;
+    background: rgba(216, 31, 44, .12) !important;
+}
+
+/* selection bar (replaces toolbar while selecting) — lit cloak strip */
+[data-theme="anime"] .anime-bookmarks-page .selection-bar {
+    background: linear-gradient(172deg, #12141b, #0b0d12 70%) !important;
+    border: 1px solid rgba(216, 31, 44, .4) !important;
+    border-radius: 6px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .55), 0 0 18px rgba(176, 18, 32, .16);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .selection-bar .selection-count {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .selection-bar .mud-icon-button {
+    color: var(--ab-faint) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .selection-bar .mud-icon-button:hover {
+    color: var(--ab-bone) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .selection-bar .selection-action-btn {
+    border-radius: 4px !important;
+    border-color: rgba(216, 31, 44, .4) !important;
+    background: rgba(216, 31, 44, .13) !important;
+    color: var(--ab-bone) !important;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   4. FILTER PANEL — the cloak, red-cloud hem and all
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .anime-bookmarks-page .tag-filter-workspace {
+    position: relative;
+    background: linear-gradient(172deg, #12141b 0%, #0e1015 60%, #0b0d12 100%);
+    border: 1px solid #23262f;
+    border-radius: 6px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, .55);
+    padding: 14px 22px 44px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .tag-filter-workspace::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 1px;
+    background: rgba(255, 255, 255, .05);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .active-filters-row {
+    border-bottom: 1px solid rgba(230, 226, 216, .06);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .filter-label {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .78rem;
+    letter-spacing: .3em;
+    color: var(--ab-red-hi);
+    text-transform: uppercase;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .no-filters-placeholder {
+    font-style: italic;
+    color: var(--ab-faint);
+}
+
+/* active filters — crimson wash + tiny akatsuki-cloud marker */
+[data-theme="anime"] .anime-bookmarks-page .active-chip {
+    position: relative;
+    overflow: visible;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .72rem;
+    letter-spacing: .03em;
+    color: #fff;
+    background: linear-gradient(165deg, #c21323, #8f0d1a 65%, #6d0910);
+    border: 1px solid #4a050b;
+    border-radius: 3px;
+    text-shadow: 0 1px 2px rgba(40, 2, 5, .6);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, .4);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .active-chip:hover {
+    background: linear-gradient(165deg, #d81f2c, #a5111f 65%, #7a0a14);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .active-chip::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: -9px;
+    width: 21px;
+    height: 14px;
+    background: url("../assets/anime/bookmarks/akatsuki-cloud-cut.webp") center/contain no-repeat;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+    pointer-events: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .active-chip-close {
+    color: #ffd9d9;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .clear-all-filters-btn {
+    background: rgba(176, 18, 32, .15);
+    border: 1px solid rgba(216, 31, 44, .35);
+    color: #ff8f98;
+    border-radius: 3px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .clear-all-filters-btn:hover {
+    background: rgba(176, 18, 32, .25);
+    color: #ffd9d9;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .collapse-toggle-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: .66rem;
+    letter-spacing: .18em;
+    text-transform: uppercase;
+    color: var(--ab-faint);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .collapse-toggle-btn:hover {
+    color: var(--ab-bone);
+}
+
+/* grouped chip rows */
+[data-theme="anime"] .anime-bookmarks-page .category-row {
+    align-items: baseline;
+    padding: 5px 0;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-row + .category-row {
+    border-top: 1px solid rgba(230, 226, 216, .06);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-label {
+    width: 64px;
+    min-width: 64px;
+    font-family: 'Inter', sans-serif;
+    font-size: .62rem;
+    letter-spacing: .22em;
+    color: var(--ab-ghost);
+    text-transform: uppercase;
+}
+
+/* filter chips = dark steel plaques; active = crimson wash + cloud marker */
+[data-theme="anime"] .anime-bookmarks-page .category-tag-btn {
+    position: relative;
+    overflow: visible;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .72rem;
+    letter-spacing: .03em;
+    padding: 5px 13px 5px 11px;
+    color: #c7c3ba;
+    background: #171a21;
+    border: 1px solid #2a2e3a;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, .4);
+    transition: transform .16s, border-color .16s, color .16s, background-color .16s;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-tag-btn:hover {
+    transform: translateY(-2px);
+    border-color: rgba(216, 31, 44, .6);
+    color: var(--ab-bone);
+    background: #1b1f27;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-tag-btn .tag-btn-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    color: #6d7484;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-tag-btn.active {
+    color: #fff;
+    background: linear-gradient(165deg, #c21323, #8f0d1a 65%, #6d0910);
+    border-color: #4a050b;
+    text-shadow: 0 1px 2px rgba(40, 2, 5, .6);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-tag-btn.active .tag-btn-count {
+    color: #ffd9d9;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .category-tag-btn.active::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: -9px;
+    width: 21px;
+    height: 14px;
+    background: url("../assets/anime/bookmarks/akatsuki-cloud-cut.webp") center/contain no-repeat;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6));
+    pointer-events: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .expand-more-link {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .72rem;
+    color: var(--ab-faint);
+    border: 1px dashed rgba(230, 226, 216, .18);
+    border-radius: 3px;
+    padding: 5px 11px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .expand-more-link:hover {
+    color: var(--ab-bone);
+    border-color: rgba(216, 31, 44, .5);
+    text-decoration: none;
+}
+
+/* footer row: breadcrumb + Auto Tag */
+[data-theme="anime"] .anime-bookmarks-page .tag-footer-row {
+    border-top: 1px solid rgba(230, 226, 216, .06);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .breadcrumb-item.link {
+    color: var(--ab-faint);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .breadcrumb-item.link:hover {
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .breadcrumb-item.active {
+    color: var(--ab-bone) !important;
+    border-bottom: 1px solid rgba(216, 31, 44, .6);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .breadcrumb-separator {
+    color: rgba(216, 31, 44, .55);
+    opacity: 1;
+}
+
+/* Auto Tag — black gloss split-gradient + top inset highlight + sheen
+   sweep, carrying the gray kunai */
+[data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 600;
+    font-size: .72rem !important;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    padding: 8px 18px !important;
+    color: var(--ab-bone) !important;
+    background: linear-gradient(180deg, #23252e 0%, #14161c 48%, #0b0c11 52%, #12141a 100%) !important;
+    border: 1px solid #2e323e !important;
+    border-radius: 4px !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), 0 3px 0 #05060a, 0 8px 20px rgba(0, 0, 0, .5);
+    transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn::after {
+    content: '';
+    position: absolute;
+    top: -2px;
+    bottom: -2px;
+    left: -42%;
+    width: 32%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, .16), transparent);
+    transform: skewX(-18deg);
+    pointer-events: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn:hover {
+    transform: translateY(-1px);
+    border-color: #4a5060 !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .2), 0 4px 0 #3d040a, 0 12px 26px rgba(176, 18, 32, .4);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn:active {
+    transform: translateY(1px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 1px 0 #3d040a;
+}
+
+/* kunai replaces the stock sparkle icon under this theme (visual only) */
+[data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn .mud-button-icon-start {
+    display: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn .anime-kunai {
+    display: block;
+    height: 13px;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .55));
+}
+
+/* the cloak hem — 3 sparse red clouds drifting left → right along a
+   hairline at the panel's bottom edge */
+[data-theme="anime"] .anime-hem {
+    display: block;
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 8px;
+    height: 22px;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+[data-theme="anime"] .anime-hem::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 2px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(216, 31, 44, .4) 10%, rgba(216, 31, 44, .4) 90%, transparent);
+}
+
+[data-theme="anime"] .anime-hem .anime-hem-cloud {
+    position: absolute;
+    bottom: 2px;
+    left: 14%;
+    width: 30px;
+    opacity: .85;
+}
+
+[data-theme="anime"] .anime-hem .anime-hem-cloud.c2 {
+    width: 23px;
+    opacity: .6;
+    left: 52%;
+}
+
+[data-theme="anime"] .anime-hem .anime-hem-cloud.c3 {
+    width: 18px;
+    opacity: .45;
+    left: 84%;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   5. CARD GRID — cloak tiles with crimson hanko
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card {
+    background: linear-gradient(168deg, #12141b 0%, #0e1015 62%, #0b0d12 100%);
+    border: 1px solid #23262f;
+    border-radius: 4px;
+    color: var(--ab-bone);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .045), inset 0 -3px 0 rgba(176, 18, 32, .5),
+        0 8px 16px rgba(0, 0, 0, .45);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card:hover {
+    border-color: rgba(216, 31, 44, .55);
+    background: linear-gradient(168deg, #14161d 0%, #101218 62%, #0c0e13 100%);
+    transform: translateY(-3px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), inset 0 -3px 0 rgba(216, 31, 44, .8),
+        0 14px 30px rgba(0, 0, 0, .6), 0 0 18px rgba(176, 18, 32, .16);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card.is-selected {
+    border-color: rgba(216, 31, 44, .7);
+    background: linear-gradient(168deg, #1a1013 0%, #120d11 62%, #0d0a0e 100%);
+    box-shadow: inset 0 0 0 1px rgba(216, 31, 44, .4), inset 0 -3px 0 rgba(216, 31, 44, .8),
+        0 0 18px rgba(176, 18, 32, .25);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card.is-focused {
+    outline: 2px solid var(--ab-bone);
+    outline-offset: 2px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card.is-marquee-hit {
+    outline: 1.5px dashed var(--ab-red-hi);
+    outline-offset: 1px;
+}
+
+/* top-edge sheen — thin crimson whisper instead of the default accent line */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card::before {
+    background: linear-gradient(90deg, transparent, rgba(216, 31, 44, .6), transparent);
+    opacity: 0;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card:hover::before {
+    opacity: 1;
+}
+
+/* favicon sits bare on the cloak tile — no hanko box (user verdict 2026-07-18:
+   red tile + green folder fallback icon clashed) */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-icon {
+    width: 35px;
+    height: 35px;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-icon .cover-image {
+    border-radius: 3px;
+}
+
+/* bone titles in Inter */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-title {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: .98rem;
+    letter-spacing: .015em;
+    line-height: 1.28;
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-title a:hover {
+    color: var(--ab-red-hi);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-url {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #69707f;
+    opacity: 1;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card:hover .bookmark-card-url {
+    color: var(--ab-red-hi);
+}
+
+/* footer — hairline, red folder tag, mono date */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-footer {
+    border-top: 1px solid #1e222b;
+    padding-top: 9px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .tag-badge {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .64rem;
+    letter-spacing: .05em;
+    color: #9aa0ad;
+    background: #15181f;
+    border: 1px solid #262b36;
+    border-radius: 3px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-folder-path {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: .66rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--ab-red-hi);
+    background: rgba(216, 31, 44, .1);
+    border: 1px solid rgba(216, 31, 44, .3);
+    border-radius: 3px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: .62rem;
+    color: var(--ab-ghost);
+}
+
+/* floating action cluster on hover */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-card-actions {
+    background: rgba(11, 13, 18, .92);
+    border: 1px solid #2a2e3a;
+    border-radius: 4px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bm-icon-btn {
+    color: var(--ab-faint);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bm-icon-btn:hover {
+    background: rgba(216, 31, 44, .15);
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bm-icon-btn.btn-active {
+    color: #fbbf24;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bm-icon-btn.btn-error:hover {
+    background: rgba(216, 31, 44, .2);
+    color: #ff5b66;
+}
+
+/* select checkbox — crimson check */
+[data-theme="anime"] .anime-bookmarks-page .bm-checkbox:hover {
+    border-color: var(--ab-red-hi);
+    background-color: rgba(216, 31, 44, .13);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bm-checkbox:checked {
+    background: var(--ab-red);
+    border-color: var(--ab-red);
+    box-shadow: 0 0 0 3px rgba(216, 31, 44, .18);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bm-checkbox:focus-visible {
+    border-color: var(--ab-red-hi);
+    box-shadow: 0 0 0 3px rgba(216, 31, 44, .18);
+}
+
+/* marquee selection rectangle */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-marquee-rect {
+    border: 1px solid var(--ab-red-hi);
+    background: rgba(216, 31, 44, .1);
+}
+
+/* skeleton loading cards — dark cloak shimmer */
+[data-theme="anime"] .anime-bookmarks-page .skeleton-card {
+    background: linear-gradient(168deg, #12141b 0%, #0e1015 62%, #0b0d12 100%);
+    border: 1px solid #23262f;
+    border-radius: 4px;
+    box-shadow: inset 0 -3px 0 rgba(176, 18, 32, .35);
+}
+
+/* empty state — dashed cloak panel */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list .empty-state {
+    background: rgba(16, 18, 24, .6);
+    border: 1px dashed #2a2e3a;
+    border-radius: 8px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list .empty-state-icon-wrap {
+    background: rgba(216, 31, 44, .12);
+    border: 1px solid rgba(216, 31, 44, .35);
+    color: var(--ab-red-hi);
+    box-shadow: 0 0 18px rgba(176, 18, 32, .25);
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list .empty-state-icon-wrap .mud-icon-root {
+    color: var(--ab-red-hi) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list .empty-state-title {
+    font-family: 'Inter', sans-serif;
+    color: var(--ab-bone) !important;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list .empty-state-cta {
+    background: linear-gradient(165deg, #c21323, #8f0d1a 65%, #6d0910) !important;
+    color: #fff !important;
+    border-radius: 4px !important;
+}
+
+/* hover preview popover — cloak info card (popover teleports to body) */
+[data-theme="anime"] .bookmark-preview-popover .bookmark-preview-content {
+    background: linear-gradient(168deg, #14161d 0%, #101218 62%, #0c0e13 100%);
+    border: 1px solid rgba(216, 31, 44, .4);
+    border-radius: 6px;
+    color: var(--ab-bone);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .6), 0 0 18px rgba(176, 18, 32, .16);
+}
+
+[data-theme="anime"] .bookmark-preview-popover .bookmark-preview-title {
+    font-family: 'Inter', sans-serif;
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .bookmark-preview-popover .bookmark-preview-url,
+[data-theme="anime"] .bookmark-preview-popover .bookmark-preview-meta,
+[data-theme="anime"] .bookmark-preview-popover .bookmark-preview-folder {
+    color: #69707f;
+}
+
+[data-theme="anime"] .bookmark-preview-popover .tag-badge {
+    font-weight: 600;
+    font-size: .64rem;
+    color: #9aa0ad;
+    background: #15181f;
+    border: 1px solid #262b36;
+    border-radius: 3px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   6. CONTEXT MENU — cloak popover (markup lives in Bookmarks.razor)
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .custom-context-menu {
+    background: rgba(16, 18, 24, .92);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    border: 1px solid #2a2e3a;
+    border-radius: 6px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .65);
+}
+
+[data-theme="anime"] .custom-context-menu .custom-context-menu-header {
+    font-family: 'Inter', sans-serif;
+    letter-spacing: .12em;
+    color: var(--ab-red-hi);
+}
+
+[data-theme="anime"] .custom-context-menu .custom-context-menu-subheader {
+    font-family: 'Inter', sans-serif;
+    letter-spacing: .18em;
+    color: var(--ab-ghost);
+}
+
+[data-theme="anime"] .custom-context-menu .custom-context-menu-item {
+    color: var(--ab-dim) !important;
+}
+
+[data-theme="anime"] .custom-context-menu .custom-context-menu-item:hover {
+    background: rgba(216, 31, 44, .13) !important;
+    color: var(--ab-bone) !important;
+}
+
+[data-theme="anime"] .custom-context-menu .custom-context-menu-item.danger:hover {
+    background: rgba(216, 31, 44, .2) !important;
+    color: #ff5b66 !important;
+}
+
+[data-theme="anime"] .custom-context-menu .custom-context-menu-divider {
+    background: rgba(230, 226, 216, .08);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   7. MENUS / SNACKBARS that float over the page (teleported to body)
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .mud-popover .mud-paper:has(> .mud-list) {
+    background: #101218;
+    border: 1px solid #2a2e3a;
+    border-radius: 6px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .65);
+}
+
+[data-theme="anime"] .mud-popover .mud-list {
+    background: transparent;
+    border-radius: 6px;
+}
+
+[data-theme="anime"] .mud-popover .mud-list .mud-list-item,
+[data-theme="anime"] .mud-popover .mud-list .mud-menu-item {
+    color: var(--ab-dim);
+}
+
+[data-theme="anime"] .mud-popover .mud-list .mud-list-item:hover,
+[data-theme="anime"] .mud-popover .mud-list .mud-menu-item:hover {
+    background: rgba(216, 31, 44, .12);
+    color: var(--ab-bone);
+}
+
+[data-theme="anime"] .mud-snackbar {
+    background: linear-gradient(172deg, #14161d, #0b0d12 70%);
+    border: 1px solid #2a2e3a;
+    border-left: 3px solid var(--ab-red);
+    border-radius: 6px;
+    color: var(--ab-bone);
+    font-family: 'Inter', sans-serif;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   8. SCROLLBARS — thin dark steel
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list::-webkit-scrollbar,
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .overflow-auto::-webkit-scrollbar,
+[data-theme="anime"] .anime-bookmarks-page .custom-context-menu-quick-actions::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list::-webkit-scrollbar-thumb,
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .overflow-auto::-webkit-scrollbar-thumb,
+[data-theme="anime"] .anime-bookmarks-page .custom-context-menu-quick-actions::-webkit-scrollbar-thumb {
+    background: #262b36;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+[data-theme="anime"] .anime-bookmarks-page .bookmark-list::-webkit-scrollbar-thumb:hover,
+[data-theme="anime"] .anime-bookmarks-page .folder-zone .overflow-auto::-webkit-scrollbar-thumb:hover {
+    background: rgba(216, 31, 44, .45);
+    background-clip: content-box;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   9. AUTOTAGGER DIALOG + REVIEW ROWS — theme-NEUTRAL arcane glass
+   (from Docs/ui-design.md; dialogs float
+   over every page, so no Akatsuki clouds/red here — silver-gray glyph
+   glow, faint seal, dark arcane glass)
+   ════════════════════════════════════════════════════════════════════════ */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog {
+    --arc: #cdd3de;
+    --arc-dim: rgba(205, 211, 222, .55);
+    --arc-faint: rgba(205, 211, 222, .28);
+    --arc-ghost: rgba(205, 211, 222, .12);
+    --arc-line: rgba(205, 211, 222, .14);
+    --arc-text: #e9ebef;
+    --arc-text-dim: rgba(206, 209, 217, .55);
+    position: relative;
+    overflow: hidden;
+    background: rgba(22, 23, 27, .82);
+    backdrop-filter: blur(38px) saturate(150%);
+    -webkit-backdrop-filter: blur(38px) saturate(150%);
+    border: 1px solid var(--arc-line);
+    border-radius: 14px;
+    box-shadow: 0 0 0 1px rgba(12, 10, 18, .6), 0 0 70px rgba(150, 158, 172, .14),
+        0 24px 60px rgba(0, 0, 0, .65);
+    color: var(--arc-text);
+    font-family: 'Inter', sans-serif;
+}
+
+/* etched top edge — a hairline of arcane script light */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 8%;
+    right: 8%;
+    height: 1px;
+    z-index: 2;
+    background: linear-gradient(90deg, transparent, var(--arc-dim), transparent);
+    opacity: .7;
+    pointer-events: none;
+}
+
+/* faint summoning seal behind the content */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 430px;
+    height: 430px;
+    transform: translate(-50%, -50%);
+    z-index: 0;
+    pointer-events: none;
+    opacity: .1;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 240 240' fill='none' stroke='%23cdd3de'%3E%3Ccircle cx='120' cy='120' r='112' stroke-width='1.4' opacity='.8'/%3E%3Ccircle cx='120' cy='120' r='104' stroke-width='.7' opacity='.45'/%3E%3Ccircle cx='120' cy='120' r='97' stroke-width='.8' opacity='.4'/%3E%3Cpath d='M120 8 L126 20 L120 32 L114 20 Z' fill='%23cdd3de' stroke='none' opacity='.85'/%3E%3Cpath d='M120 208 L126 220 L120 232 L114 220 Z' fill='%23cdd3de' stroke='none' opacity='.85'/%3E%3Cpath d='M8 120 L20 114 L32 120 L20 126 Z' fill='%23cdd3de' stroke='none' opacity='.85'/%3E%3Cpath d='M208 120 L220 114 L232 120 L220 126 Z' fill='%23cdd3de' stroke='none' opacity='.85'/%3E%3Cpath d='M120 52 L179 154 L61 154 Z' stroke-width='.9' opacity='.5'/%3E%3C/svg%3E") center/contain no-repeat;
+    filter: drop-shadow(0 0 20px rgba(205, 211, 222, .25));
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-title,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-content,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-actions {
+    position: relative;
+    z-index: 1;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-title {
+    border-bottom: 1px solid rgba(205, 211, 222, .09);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-title .mud-typography {
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: .95rem;
+    letter-spacing: .18em;
+    color: var(--arc);
+    text-shadow: 0 0 12px rgba(205, 211, 222, .35);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-title .mud-icon-root {
+    color: var(--arc-dim) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-actions {
+    border-top: 1px solid rgba(205, 211, 222, .09);
+    background: rgba(12, 13, 16, .4);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-typography,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-input-label,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-switch-label,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-checkbox-label {
+    color: var(--arc-text-dim);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-typography.mud-text-secondary,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-text-secondary {
+    color: var(--arc-text-dim) !important;
+}
+
+/* outlined papers inside the dialog → arcane glass tiles */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-paper.mud-paper-outlined {
+    background: rgba(205, 211, 222, .05) !important;
+    border: 1px solid var(--arc-line) !important;
+    border-radius: 8px !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-paper .mud-icon-root {
+    color: var(--arc-dim) !important;
+}
+
+/* scrollable list wells */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-dialog-content div[style*="overflow-y: auto"] {
+    border-color: var(--arc-line) !important;
+    background: rgba(12, 13, 16, .35);
+}
+
+/* terminal log — keep its dark console, arcane rim */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog #tagger-terminal-log {
+    background-color: #0b0d14 !important;
+    color: #c6cbd8;
+    border: 1px solid var(--arc-line);
+}
+
+/* chips → silver-gray glyph plaques */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip {
+    background: var(--arc-ghost);
+    border: 1px solid var(--arc-faint);
+    color: var(--arc);
+    border-radius: 4px;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-primary {
+    background: var(--arc-ghost);
+    color: var(--arc);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip .mud-chip-close-button {
+    color: var(--arc-dim);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip .mud-chip-close-button:hover {
+    color: var(--arc);
+}
+
+/* suggested-title chips — faint arcane well */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .suggested-title-chip {
+    background: rgba(205, 211, 222, .06);
+    border: 1px solid var(--arc-line);
+    border-radius: 6px;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .suggested-title-chip-prefix {
+    font-family: 'Cinzel', serif;
+    font-weight: 700;
+    font-size: .62rem;
+    letter-spacing: .18em;
+    color: var(--arc-dim);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .suggested-title-chip .mud-button-root {
+    color: var(--arc);
+}
+
+/* ghost/outlined buttons inside the dialog → arcane steel */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-outlined,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-outlined.mud-button-outlined-primary {
+    border-color: var(--arc-faint) !important;
+    color: var(--arc) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-outlined:hover,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-outlined.mud-button-outlined-primary:hover {
+    background: var(--arc-ghost) !important;
+    border-color: var(--arc-dim) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-text,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-text.mud-button-text-primary {
+    color: var(--arc-dim) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-text:hover,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-text.mud-button-text-primary:hover {
+    color: var(--arc) !important;
+    background: var(--arc-ghost) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-button-filled.mud-button-filled-primary {
+    background: linear-gradient(180deg, #3a3f4c, #23262f 55%, #181b22) !important;
+    color: var(--arc-text) !important;
+    border: 1px solid var(--arc-faint);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 3px 10px rgba(0, 0, 0, .5);
+}
+
+/* reruns table */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-table {
+    background: transparent;
+    color: var(--arc-text-dim);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-table .mud-table-head .mud-table-cell {
+    color: var(--arc-dim);
+    font-family: 'Cinzel', serif;
+    letter-spacing: .12em;
+    font-size: .62rem;
+    border-bottom: 1px solid var(--arc-line);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-table .mud-table-cell {
+    border-bottom: 1px solid rgba(205, 211, 222, .07);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-table .mud-table-row:hover {
+    background: rgba(205, 211, 222, .04);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-expansion-panels,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-expand-panel {
+    background: transparent;
+    border-color: var(--arc-line);
+    color: var(--arc-text-dim);
+}
+
+/* progress + checkbox + switch accents → silver glyph glow */
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-progress-linear-bar {
+    background: linear-gradient(90deg, rgba(205, 211, 222, .45), var(--arc));
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-checkbox .mud-icon-root,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-switch .mud-switch-span {
+    color: var(--arc-dim) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-input input,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-input-slot {
+    color: var(--arc-text);
+    caret-color: var(--arc);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-input-outlined .mud-input-outlined-border {
+    border-color: var(--arc-faint) !important;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-input-outlined:focus-within .mud-input-outlined-border {
+    border-color: var(--arc-dim) !important;
+    box-shadow: 0 0 10px rgba(205, 211, 222, .12);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-alert {
+    background: rgba(205, 211, 222, .06);
+    color: var(--arc-text);
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   10. MOTION — Amegakure weather + accents. Everything decorative lives
+   behind prefers-reduced-motion; static states above are the reduced view.
+   ════════════════════════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: no-preference) {
+    [data-theme="anime"] .anime-art .anime-rain i {
+        animation: ab-rain-a 1.15s linear infinite;
+    }
+
+    [data-theme="anime"] .anime-art .anime-rain i + i {
+        animation: ab-rain-b 1.9s linear infinite;
+    }
+
+    [data-theme="anime"] .anime-art .anime-dcloud {
+        animation: ab-cloud-drift 150s linear infinite;
+    }
+
+    [data-theme="anime"] .anime-art .anime-mist.m1 {
+        animation: ab-mist-drift 26s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .anime-art .anime-mist.m2 {
+        animation: ab-mist-drift 32s ease-in-out infinite alternate-reverse;
+    }
+
+    [data-theme="anime"] .anime-art .anime-art-bg {
+        animation: ab-art-drift 36s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .anime-art .anime-halo {
+        animation: ab-halo-breathe 8s ease-in-out infinite alternate;
+    }
+
+    /* the eye idles as a slow-turning tomoe; awakened (focus) it spins fast */
+    [data-theme="anime"] .anime-bookmarks-page .toolbar-search::before,
+    [data-theme="anime"] .anime-bookmarks-page .toolbar-search::after {
+        animation: ab-eye-spin 16s linear infinite;
+    }
+
+    [data-theme="anime"] .anime-bookmarks-page .toolbar-search:focus-within::before,
+    [data-theme="anime"] .anime-bookmarks-page .toolbar-search:focus-within::after,
+    [data-theme="anime"] .anime-bookmarks-page .toolbar-search:has(input:not(:placeholder-shown))::before,
+    [data-theme="anime"] .anime-bookmarks-page .toolbar-search:has(input:not(:placeholder-shown))::after {
+        animation-duration: 2.8s;
+    }
+
+    /* hem clouds, 26s/36s/46s staggered */
+    [data-theme="anime"] .anime-hem .anime-hem-cloud {
+        animation: ab-hem-drift 26s linear infinite;
+    }
+
+    [data-theme="anime"] .anime-hem .anime-hem-cloud.c2 {
+        animation-duration: 36s;
+        animation-delay: -14s;
+    }
+
+    [data-theme="anime"] .anime-hem .anime-hem-cloud.c3 {
+        animation-duration: 46s;
+        animation-delay: -31s;
+    }
+
+    /* Auto Tag sheen sweep, every 4.6s */
+    [data-theme="anime"] .anime-bookmarks-page .anime-autotag-btn::after {
+        animation: ab-sheen-sweep 4.6s ease-in-out 1.6s infinite;
+    }
+
+    /* the dialog's faint seal turns slowly */
+    [data-theme="anime"] .mud-dialog.auto-tagger-dialog::after {
+        animation: ab-seal-turn 90s linear infinite;
+    }
+}
+
+@keyframes ab-rain-a {
+    from { background-position: 0 0; }
+    to { background-position: -30px 260px; }
+}
+
+@keyframes ab-rain-b {
+    from { background-position: 0 0; }
+    to { background-position: -36px 340px; }
+}
+
+@keyframes ab-cloud-drift {
+    from { transform: translateX(-45vw); }
+    to { transform: translateX(115vw); }
+}
+
+@keyframes ab-mist-drift {
+    from { transform: translateX(0); }
+    to { transform: translateX(6vw); }
+}
+
+@keyframes ab-art-drift {
+    from { transform: translateX(-50%) translateY(-8px) scale(1); }
+    to { transform: translateX(-50%) translateY(8px) scale(1.03); }
+}
+
+@keyframes ab-halo-breathe {
+    from { opacity: .5; }
+    to { opacity: 1; }
+}
+
+@keyframes ab-eye-spin {
+    from { transform: translateY(-50%) rotate(0deg); }
+    to { transform: translateY(-50%) rotate(360deg); }
+}
+
+@keyframes ab-hem-drift {
+    from { left: -6%; }
+    to { left: 103%; }
+}
+
+@keyframes ab-sheen-sweep {
+    0% { left: -42%; }
+    55%, 100% { left: 132%; }
+}
+
+@keyframes ab-seal-turn {
+    from { transform: translate(-50%, -50%) rotate(0); }
+    to { transform: translate(-50%, -50%) rotate(360deg); }
+}

@@ -185,3 +185,24 @@
     --bm-favorite: #FF8C69;
     --bm-favorite-soft: rgba(255, 140, 105, 0.12);
 }
+
+/* 5. Anime Worlds Theme (design-mockups port — per-page artwork skins) */
+[data-theme="anime"] {
+    --bm-bg: #07080c;
+    --bm-bg-elevated: #0c0e14;
+    --bm-surface: rgba(16, 18, 24, 0.62);
+    --bm-surface-raised: rgba(22, 25, 33, 0.78);
+    --bm-surface-muted: rgba(16, 18, 24, 0.34);
+    --bm-popover-bg: #101218;
+    --bm-border: rgba(230, 226, 216, 0.08);
+    --bm-border-strong: rgba(230, 226, 216, 0.16);
+    --bm-border-accent: rgba(216, 31, 44, 0.4);
+    --bm-text: #e6e2d8;
+    --bm-text-secondary: #a8a49a;
+    --bm-text-muted: #6d7280;
+    --bm-accent: #d81f2c;
+    --bm-accent-hover: #ff5b66;
+    --bm-accent-soft: rgba(216, 31, 44, 0.13);
+    --bm-accent-glow: rgba(216, 31, 44, 0.3);
+    --bm-appbar-bg: rgba(7, 8, 12, 0.66);
+}

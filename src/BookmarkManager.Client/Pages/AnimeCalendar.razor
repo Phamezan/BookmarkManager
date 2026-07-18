@@ -6,6 +6,15 @@
 <PageTitle>Anime Calendar</PageTitle>
 
 <div class="bookmarks-workspace anime-cal-workspace">
+    @* Decorative night-watch backdrop (Shenron's Watch skin). Renders visibly only
+       under [data-theme="anime"] — hidden by default in anime-calendar.css. *@
+    <div class="anime-art" aria-hidden="true">
+        <div class="anime-art-sky"></div>
+        <img class="anime-art-bg" src="assets/anime/calendar/background.webp" alt="" />
+        <div class="anime-art-stars anime-art-stars-a"></div>
+        <div class="anime-art-stars anime-art-stars-b"></div>
+        <img class="anime-art-shenron" src="assets/anime/calendar/shenron.webp" alt="" />
+    </div>
     <main class="bookmark-zone anime-cal-zone flex-grow-1" style="grid-column: 1 / -1;">
         <div class="acal-media-tabs" role="tablist">
             <button type="button" role="tab" class="@($"acal-media-tab{(_mediaTab == MediaTab.Anime ? " is-active" : "")}")"
@@ -41,7 +50,8 @@
                 <div class="rec-chip-actions">
                     @if (_unmatchedBookmarks.Count > 0)
                     {
-                        <button type="button" class="rec-clear-btn" disabled="@_autoMatching" @onclick="() => AutoMatchAllAsync(false)">
+                        <button type="button" class="rec-clear-btn acal-match-btn" disabled="@_autoMatching" @onclick="() => AutoMatchAllAsync(false)">
+                            <img class="acal-match-ball" src="assets/anime/calendar/db-4.webp" alt="" aria-hidden="true" />
                             @if (_autoMatching)
                             {
                                 <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-1" />
@@ -103,9 +113,21 @@
         else
         {
             <div class="anime-cal">
-                <CalendarToolbar Current="_view" CurrentChanged="SetView"
-                                 Eyebrow="@ToolbarEyebrow" Title="@ToolbarTitle"
-                                 OnPrev="GoPrev" OnNext="GoNext" />
+                <div class="acal-toolbar-wrap">
+                    <CalendarToolbar Current="_view" CurrentChanged="SetView"
+                                     Eyebrow="@ToolbarEyebrow" Title="@ToolbarTitle"
+                                     OnPrev="GoPrev" OnNext="GoNext" />
+                    @* Decorative gathering strip: one ball per dragon ball, lit while at
+                       least that many airing series are gathered this period. *@
+                    <div class="acal-gather" aria-hidden="true" title="Dragon balls gathered this week">
+                        @for (var i = 1; i <= 7; i++)
+                        {
+                            var ball = i;
+                            <img class="@(ball > Math.Min(7, _airingCount) ? "is-dim" : null)"
+                                 src="@($"assets/anime/calendar/db-{ball}.webp")" alt="" loading="lazy" />
+                        }
+                    </div>
+                </div>
 
                 @if (_loading)
                 {

@@ -19,6 +19,8 @@ public partial class UrlMigrator : IDisposable
 
     private List<DeadDomainCandidateDto> _deadDomains = [];
     private bool _loadingDeadDomains;
+    private bool _deadDomainsExpanded;
+    private const int DeadDomainsCollapsedCount = 10;
     private string _manualHost = string.Empty;
     private string _suggestedTargetHost = string.Empty;
     private bool _starting;
