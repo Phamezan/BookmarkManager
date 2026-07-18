@@ -303,6 +303,12 @@
     cursor: not-allowed;
 }
 
+/* Expand/collapse toggle under the dead-domains list */
+.migrator-expand-btn {
+    display: flex;
+    margin: var(--bm-space-2) auto 0;
+}
+
 /* Manual entry row */
 .migrator-manual-row {
     align-items: flex-end !important;

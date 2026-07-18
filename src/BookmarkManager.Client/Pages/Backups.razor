@@ -4,6 +4,8 @@
 <PageTitle>Backups</PageTitle>
 
 <div class="backups-page page-surface">
+    <div class="anime-art" aria-hidden="true"></div>
+    <div class="anime-veil" aria-hidden="true"></div>
     <div class="backups-eyebrow mono">Database · Snapshots</div>
     <h1 class="backups-title">Backups</h1>
     <p class="backups-lede">
@@ -42,6 +44,7 @@
             <button type="button" class="backups-cta" disabled="@_creating" @onclick="CreateBackupAsync">
                 @(_creating ? "Backing up…" : "Back up now")
             </button>
+            <img class="backups-leaper" src="assets/anime/backups/leaper.webp" alt="" aria-hidden="true" />
         </section>
 
         <section class="backups-ribbon" aria-label="Backup summary">

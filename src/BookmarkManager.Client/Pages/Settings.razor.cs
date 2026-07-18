@@ -65,7 +65,8 @@ public partial class Settings
         new ThemeOption { Id = "default", Name = "Premium Dark", Description = "Default indigo & deep obsidian style", BgColor = "#08090D", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#F4F4F6", AccentColor = "#818CF8" },
         new ThemeOption { Id = "grand-line", Name = "Grand Line Gold", Description = "Weathered parchment & straw gold pirate theme", BgColor = "#0D0E12", BorderColor = "rgba(244,208,104,0.12)", TextColor = "#F4ECD8", AccentColor = "#F4D068" },
         new ThemeOption { Id = "catppuccin-mocha", Name = "Catppuccin Mocha", Description = "Cozy dark pastel cappuccino palette", BgColor = "#1e1e2e", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#cdd6f4", AccentColor = "#cba6f7" },
-        new ThemeOption { Id = "sakura", Name = "Sakura Sunset", Description = "Vibrant dark cherry & pink blossom theme", BgColor = "#1a1016", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#fff3f8", AccentColor = "#ff79c6" }
+        new ThemeOption { Id = "sakura", Name = "Sakura Sunset", Description = "Vibrant dark cherry & pink blossom theme", BgColor = "#1a1016", BorderColor = "rgba(255,255,255,0.06)", TextColor = "#fff3f8", AccentColor = "#ff79c6" },
+        new ThemeOption { Id = "anime", Name = "Anime Worlds", Description = "Per-page anime artwork themes from the design mockups", BgColor = "#07080c", BorderColor = "rgba(230,226,216,0.08)", TextColor = "#e6e2d8", AccentColor = "#d81f2c" }
     };
 
     private string _selectedThemeId = "default";

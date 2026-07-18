@@ -1,0 +1,1126 @@
+/* ============================================================================
+   Anime Worlds theme — page skin. ALL rules MUST be scoped under
+   [data-theme="anime"] so other themes stay untouched.
+
+   URL Migrator — port of Docs/ui-design.md (v2.2).
+   Zoro artwork fitted to the content footprint: a crisp centered stage slice
+   (head + crossed swords, `cover`, slow vertical drift) mask-melted into a
+   blurred cover clone that fills the rest of the viewport. Blade-cut panels,
+   corner target ticks, slash-tally confidence marks (///,//,/), green haki
+   accent. Fonts (Bebas Neue / Rajdhani / IBM Plex Mono) load globally in
+   index.html; artwork is local at ../assets/anime/urlmigrator/background.webp.
+   ============================================================================ */
+
+/* Radar sweep angle — inert custom-property registration (no visual effect
+   on its own, so it is safe to register unscoped). */
+@property --um-ra { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+/* Art layers exist in the DOM for every theme; keep them inert unless the
+   anime theme is active (enabled again inside the scoped rules below). */
+.anime-art,
+.anime-grain,
+.anime-radar {
+    display: none;
+}
+
+/* ── 0. Page tokens & base type ─────────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page {
+    --um-void: #060b18;
+    --um-panel: rgba(13, 20, 38, 0.64);
+    --um-line: #233252;
+    --um-line-hi: #3a5490;
+    --um-slash: #8dfc5f;
+    --um-wound: #ff5347;
+    --um-amber: #ffc857;
+    --um-bone: #e2e9f6;
+    --um-dim: #7d8bb0;
+    font-family: "Rajdhani", sans-serif;
+    font-weight: 500;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .mud-typography-caption {
+    font-family: "IBM Plex Mono", monospace;
+}
+
+/* ── 1. Background art: blurred field + crisp stage slice + veils ────────── */
+[data-theme="anime"] .url-migrator-page .anime-art {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+[data-theme="anime"] .url-migrator-page > *:not(.anime-art):not(.anime-grain) {
+    position: relative;
+    z-index: 1;
+}
+
+[data-theme="anime"] .url-migrator-page .anime-art-field {
+    position: absolute;
+    inset: -56px;
+    background: url("../assets/anime/urlmigrator/background.webp") center 30% / cover no-repeat;
+    filter: blur(30px) brightness(0.62) saturate(1.3);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-art-stage {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: min(1660px, calc(100vw - 68px));
+    transform: translateX(-50%);
+    background: url("../assets/anime/urlmigrator/background.webp") center 30% / cover no-repeat;
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 90px, #000 calc(100% - 90px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 90px, #000 calc(100% - 90px), transparent);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-art-veil {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(55% 70% at 50% 42%, rgba(140, 252, 95, 0.08), transparent 70%),
+        linear-gradient(90deg, rgba(6, 11, 24, 0.5) 0%, transparent 20%, transparent 80%, rgba(6, 11, 24, 0.5) 100%),
+        linear-gradient(180deg, rgba(6, 11, 24, 0.62) 0%, rgba(6, 11, 24, 0.34) 30%, rgba(6, 11, 24, 0.3) 62%, var(--um-void) 98%);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-bolt {
+    position: absolute;
+    color: var(--um-wound);
+    opacity: 0;
+    filter: drop-shadow(0 0 7px rgba(255, 83, 71, 0.8));
+}
+
+[data-theme="anime"] .url-migrator-page .anime-bolt-a {
+    left: calc(50% - 46vh);
+    top: 6vh;
+    height: 190px;
+}
+
+[data-theme="anime"] .url-migrator-page .anime-bolt-b {
+    left: calc(50% + 30vh);
+    top: 34vh;
+    height: 250px;
+}
+
+[data-theme="anime"] .url-migrator-page .anime-embers {
+    position: absolute;
+    inset: 0;
+}
+
+[data-theme="anime"] .url-migrator-page .anime-embers i {
+    position: absolute;
+    bottom: -2vh;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    opacity: 0;
+    background: #ffb35c;
+    box-shadow: 0 0 6px 2px rgba(255, 138, 60, 0.53);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(3n) {
+    background: #b8ff8f;
+    box-shadow: 0 0 6px 2px rgba(141, 252, 95, 0.53);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(1) { left: 37%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(2) { left: 41%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(3) { left: 44%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(4) { left: 47%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(5) { left: 50%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(6) { left: 53%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(7) { left: 56%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(8) { left: 59%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(9) { left: 62%; }
+[data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(10) { left: 45%; }
+
+/* Film grain over the page content — quiet surface craft. */
+[data-theme="anime"] .url-migrator-page .anime-grain {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: overlay;
+    background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/></filter><rect width="180" height="180" filter="url(%23n)"/></svg>');
+}
+
+/* ── 2. Page heading ────────────────────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .page-heading .mud-typography-h4 {
+    font-family: "Bebas Neue", sans-serif;
+    font-weight: 400;
+    font-size: 2.05rem;
+    letter-spacing: 0.06em;
+    line-height: 0.9;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .page-heading .anime-title-accent {
+    color: var(--um-slash);
+    text-shadow: 0 0 26px rgba(141, 252, 95, 0.4);
+}
+
+[data-theme="anime"] .url-migrator-page .page-heading .mud-typography-body2 {
+    color: var(--um-dim) !important;
+    text-shadow: 0 1px 10px var(--um-void), 0 0 4px var(--um-void);
+}
+
+/* ── 3. Panels — blade-cut corners ──────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .ops-panel.mud-paper {
+    background: var(--um-panel) !important;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: none;
+    border-radius: 0;
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
+    box-shadow: inset 0 0 0 1px var(--um-line), inset 0 0 34px rgba(3, 6, 14, 0.6);
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .mud-typography-h6 {
+    font-family: "Bebas Neue", sans-serif;
+    font-weight: 400;
+    font-size: 1.02rem;
+    letter-spacing: 0.22em;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-panel-header {
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--um-line);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-panel-header .mud-icon-root {
+    color: var(--um-slash) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-refresh-btn.mud-icon-button {
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--um-slash) !important;
+    transition: color 0.2s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-refresh-btn.mud-icon-button:hover {
+    border: none;
+    background: transparent;
+    color: #d6ffc4 !important;
+}
+
+/* ── 4. Dead domains list + manual entry ────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-dead-domain-row {
+    gap: 10px;
+    padding: 7px 2px;
+    border-top: none;
+    border-bottom: 1px solid #1a2742;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-dead-domain-row::before {
+    content: "\2715";
+    flex: none;
+    width: 14px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--um-wound);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-dead-domain-row:first-child {
+    border-top: none;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-domain-host {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-domain-count {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.06em;
+    color: var(--um-wound);
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-migrate-btn {
+    height: auto;
+    padding: 5px 10px;
+    border: 1px solid #3c5a2c;
+    border-radius: 0;
+    background: transparent;
+    color: var(--um-slash);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.58rem;
+    font-weight: 400;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-migrate-btn:hover:not(:disabled) {
+    background: var(--um-slash);
+    color: var(--um-void);
+    box-shadow: 0 0 12px rgba(141, 252, 95, 0.4);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-migrate-btn .mud-icon-root {
+    color: inherit !important;
+    font-size: 0.9rem;
+}
+
+[data-theme="anime"] .url-migrator-page .mud-divider {
+    border: none;
+    border-top: 1px dashed #2a3a60;
+    background: transparent;
+}
+
+/* Manual entry fields — mono dark inputs, green focus edge. */
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-outlined,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-outlined {
+    background: #0a1122;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-outlined-border,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-outlined-border {
+    border-color: var(--um-line) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-outlined:focus-within .mud-input-outlined-border,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-outlined:focus-within .mud-input-outlined-border {
+    border-color: var(--um-slash) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-slot,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-slot {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.74rem;
+    color: var(--um-bone) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-slot::placeholder,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-slot::placeholder {
+    color: #4c5a80;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-label,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-label {
+    color: var(--um-dim) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-adornment .mud-icon-root {
+    color: var(--um-dim) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-row + .mud-typography-caption {
+    font-size: 0.6rem;
+    letter-spacing: 0.06em;
+    color: #4c5a80 !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-start-btn.mud-button-root {
+    border: none;
+    border-radius: 0 !important;
+    background: var(--um-slash);
+    color: var(--um-void);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem;
+    font-weight: 600 !important;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    box-shadow: 0 0 20px rgba(141, 252, 95, 0.24);
+    transition: box-shadow 0.2s, filter 0.2s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-start-btn.mud-button-root:hover:not(:disabled) {
+    background: var(--um-slash);
+    color: var(--um-void);
+    filter: brightness(1.12);
+    box-shadow: 0 0 30px rgba(141, 252, 95, 0.47);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-start-btn.mud-button-root:disabled {
+    background: #22304a;
+    color: #5a6a90;
+    box-shadow: none;
+}
+
+/* ── 5. Run status panel — radar, processed bar, pills ──────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-progress-panel {
+    position: relative;
+    padding-right: 118px;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-panel .migrator-progress-host {
+    font-family: "IBM Plex Mono", monospace;
+    letter-spacing: 0;
+    color: var(--um-slash);
+    text-shadow: 0 0 12px rgba(141, 252, 95, 0.4);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-radar {
+    display: block;
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    width: 86px;
+    height: 86px;
+    border-radius: 50%;
+    background: radial-gradient(circle, #0a1326 0%, #060c1b 72%);
+    box-shadow: inset 0 0 0 1px var(--um-line-hi), inset 0 0 18px rgba(0, 0, 0, 0.8);
+    pointer-events: none;
+}
+
+[data-theme="anime"] .url-migrator-page .anime-radar::before {
+    content: "";
+    position: absolute;
+    inset: 8px;
+    border-radius: 50%;
+    background: repeating-radial-gradient(circle, transparent 0 11px, rgba(42, 60, 102, 0.13) 11px 12px);
+    box-shadow: inset 0 0 0 1px rgba(42, 60, 102, 0.27);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-radar-sweep {
+    position: absolute;
+    inset: 8px;
+    display: block;
+    border-radius: 50%;
+    background: conic-gradient(from var(--um-ra), transparent 0 74%, rgba(141, 252, 95, 0.03) 80%, rgba(141, 252, 95, 0.33) 92%, #d8ffc8 97%, transparent 100%);
+    -webkit-mask: radial-gradient(circle, #000 0 62%, transparent 63%);
+    mask: radial-gradient(circle, #000 0 62%, transparent 63%);
+}
+
+[data-theme="anime"] .url-migrator-page .anime-radar-ping {
+    position: absolute;
+    left: 58%;
+    top: 34%;
+    display: block;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--um-slash);
+    box-shadow: 0 0 8px 2px rgba(141, 252, 95, 0.67);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-bar.mud-progress-linear {
+    height: 6px !important;
+    border-radius: 0;
+    background: #0a0f1e;
+    clip-path: polygon(0 0, calc(100% - 5px) 0, 100% 100%, 0 100%);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-bar .mud-progress-linear-bar {
+    background: linear-gradient(90deg, #2f6b22, var(--um-slash) 70%, #d8ffc8);
+    box-shadow: 0 0 12px rgba(141, 252, 95, 0.53);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-bar .mud-progress-linear-bar::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 34%;
+    background: linear-gradient(105deg, transparent, rgba(240, 255, 225, 0.55), transparent);
+    transform: translateX(-140%) skewX(-14deg);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-panel .mud-typography-body2 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--um-dim) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-panel .migrator-resolving-line {
+    font-family: "Rajdhani", sans-serif;
+    font-size: 0.92rem;
+    letter-spacing: 0;
+    text-transform: none;
+    font-style: normal;
+    color: var(--um-dim) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-resolving-line::before {
+    content: "\2727  ";
+    color: var(--um-slash);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-stat-pill {
+    gap: 4px;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.62rem;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--um-dim);
+    box-shadow: inset 0 0 0 1px var(--um-line);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-stat-pill strong {
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-stat-row .migrator-stat-pill:first-child {
+    color: #bfe8a8;
+    box-shadow: inset 0 0 0 1px #4c7a35;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-stat-row .migrator-stat-pill:first-child strong {
+    color: var(--um-slash);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-stat-row .migrator-stat-pill:last-child {
+    color: #e8b0a8;
+    box-shadow: inset 0 0 0 1px #7a3535;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-stat-row .migrator-stat-pill:last-child strong {
+    color: var(--um-wound);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-progress-panel .mud-alert {
+    background: rgba(60, 14, 12, 0.5) !important;
+    border-radius: 0;
+    color: #e8b0a8;
+}
+
+/* ── 6. Review tabs ─────────────────────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-tabs .mud-tabs-tabbar {
+    background: transparent;
+    border-bottom: 1px solid rgba(42, 53, 80, 0.6);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-tabs .mud-tab {
+    min-width: 0;
+    min-height: 40px;
+    padding: 10px 20px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--um-dim);
+    transition: color 0.2s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-tabs .mud-tab:hover {
+    background: transparent;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-tabs .mud-tab-active {
+    color: var(--um-slash);
+    text-shadow: 0 0 12px rgba(141, 252, 95, 0.4);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-tabs .mud-tab-slider {
+    height: 2px;
+    background: linear-gradient(90deg, rgba(141, 252, 95, 0.13), var(--um-slash) 60%, #eaffdb);
+    box-shadow: 0 0 12px rgba(141, 252, 95, 0.8);
+}
+
+/* ── 7. Orphan alert ────────────────────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-orphaned-alert.mud-alert {
+    background: rgba(38, 28, 10, 0.5) !important;
+    backdrop-filter: blur(6px);
+    border: none;
+    border-left: 3px solid var(--um-amber);
+    border-radius: 0 !important;
+    box-shadow: none;
+    color: #e8d5a8;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-orphaned-alert .mud-alert-icon {
+    color: var(--um-amber);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-orphaned-alert .mud-typography {
+    font-size: 0.95rem;
+    color: #e8d5a8 !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-cancel-all-orphaned-btn.mud-button-root {
+    height: auto;
+    padding: 6px 12px;
+    border: 1px solid #7a6228;
+    border-radius: 0;
+    background: transparent;
+    color: var(--um-amber);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-cancel-all-orphaned-btn.mud-button-root:hover:not(:disabled) {
+    background: var(--um-amber);
+    color: #241a06;
+}
+
+/* ── 8. Tier groups (expansion panels) ──────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-groups.mud-expansion-panels {
+    background: transparent;
+    border: none;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-group.mud-expand-panel {
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #1a2742;
+    border-radius: 0;
+    box-shadow: none;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-group .mud-expand-panel-header {
+    min-height: 0;
+    padding: 10px 2px;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-group .mud-expand-panel-header .mud-typography-subtitle1 {
+    font-family: "Bebas Neue", sans-serif;
+    font-weight: 400;
+    font-size: 1.06rem;
+    letter-spacing: 0.2em;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-group .mud-expand-panel-icon {
+    color: var(--um-dim);
+    transition: color 0.2s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-group .mud-expand-panel-header:hover .mud-expand-panel-icon {
+    color: var(--um-slash);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-group .mud-expand-panel-content {
+    margin-left: 0;
+    padding: 0 0 8px;
+    border: none;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-orphaned-group .mud-expand-panel-header {
+    border-left: 3px solid var(--um-amber);
+    padding-left: 10px;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-unresolved-group .mud-expand-panel-header {
+    border-left: 3px dashed #2c3c64;
+    padding-left: 10px;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-approve-group-btn.mud-button-root {
+    position: relative;
+    overflow: hidden;
+    height: auto;
+    padding: 7px 14px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    color: var(--um-slash);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    box-shadow: inset 0 0 0 1px #3c5a2c;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-approve-group-btn.mud-button-root:hover:not(:disabled) {
+    background: var(--um-slash);
+    color: var(--um-void);
+    box-shadow: 0 0 14px rgba(141, 252, 95, 0.4);
+}
+
+/* ── 9. Proposal cards — corner-ticked dark steel, struck old → slash → new */
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row {
+    position: relative;
+    margin-bottom: 10px;
+    padding: 15px 20px 14px;
+    border-top: none;
+    background: var(--um-panel);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: inset 0 0 0 1px var(--um-line);
+    transition: box-shadow 0.25s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row::before,
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row::after {
+    content: "";
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+    transition: border-color 0.25s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1.6px solid var(--um-line-hi);
+    border-left: 1.6px solid var(--um-line-hi);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row::after {
+    bottom: -1px;
+    right: -1px;
+    border-bottom: 1.6px solid var(--um-line-hi);
+    border-right: 1.6px solid var(--um-line-hi);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row:hover {
+    box-shadow: inset 0 0 0 1px #37508a, 0 0 22px rgba(60, 90, 160, 0.25);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row:hover::before,
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row:hover::after {
+    border-color: var(--um-slash);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row .mud-typography-body1 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--um-bone);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-url-text {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.75rem;
+    color: var(--um-dim) !important;
+}
+
+/* Dead URL: dimmed, struck through in wound red. */
+[data-theme="anime"] .url-migrator-page .migrator-url-text:has(+ .migrator-url-text) {
+    color: #5d6c92 !important;
+    text-decoration: line-through;
+    text-decoration-color: var(--um-wound);
+    text-decoration-thickness: 1.5px;
+}
+
+/* Found candidate: green slash carved above the replacement URL. */
+[data-theme="anime"] .url-migrator-page .migrator-url-text + .migrator-url-text {
+    color: var(--um-slash) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-url-text + .migrator-url-text::before {
+    content: "";
+    display: block;
+    width: 150px;
+    height: 2px;
+    margin: 5px 0 3px;
+    background: linear-gradient(90deg, var(--um-slash), transparent);
+    box-shadow: 0 0 10px rgba(141, 252, 95, 0.9);
+    transform: skewX(-30deg);
+    transform-origin: left center;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-detail {
+    color: var(--um-dim) !important;
+}
+
+/* Unresolved rows: hollow, dashed, no slash. */
+[data-theme="anime"] .url-migrator-page .migrator-unresolved-row {
+    background: rgba(13, 20, 38, 0.5);
+    box-shadow: inset 0 0 0 1px dashed #2c3c64;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-unresolved-row::before,
+[data-theme="anime"] .url-migrator-page .migrator-unresolved-row::after {
+    border-color: #2c3c64;
+}
+
+/* Confidence / status badges — stamped outline chips. */
+[data-theme="anime"] .url-migrator-page .status-badge {
+    gap: 7px;
+    padding: 3px 9px;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.62rem;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+[data-theme="anime"] .url-migrator-page .status-badge--success {
+    color: var(--um-slash);
+    box-shadow: inset 0 0 0 1px #3c5a2c;
+}
+
+[data-theme="anime"] .url-migrator-page .status-badge--warning {
+    color: var(--um-amber);
+    box-shadow: inset 0 0 0 1px #7a6228;
+}
+
+[data-theme="anime"] .url-migrator-page .status-badge--danger {
+    color: var(--um-wound);
+    box-shadow: inset 0 0 0 1px #7a3535;
+}
+
+[data-theme="anime"] .url-migrator-page .status-badge--watching {
+    color: #8b9ac0;
+    box-shadow: inset 0 0 0 1px #2c3c64;
+}
+
+[data-theme="anime"] .url-migrator-page .status-badge--active {
+    color: var(--um-dim);
+    box-shadow: inset 0 0 0 1px var(--um-line);
+}
+
+/* Slash-tally marks on confidence tiers (/// High, // Medium, / Low). */
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row .status-badge::before {
+    content: "";
+    display: none;
+    align-self: center;
+    height: 11px;
+    background: repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px);
+    filter: drop-shadow(0 0 3px currentColor);
+    transform: skewX(-24deg);
+    transform-origin: bottom center;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row .status-badge--success::before {
+    display: block;
+    width: 18px;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row .status-badge--warning::before {
+    display: block;
+    width: 11px;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-proposal-row .status-badge--danger::before {
+    display: block;
+    width: 4px;
+}
+
+/* Row actions — small stamped outline buttons. */
+[data-theme="anime"] .url-migrator-page .migrator-row-actions .mud-icon-button {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--um-line);
+    border-radius: 0;
+    background: transparent;
+    color: var(--um-dim) !important;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-row-actions .migrator-approve-btn {
+    border-color: #3c5a2c;
+    color: var(--um-slash) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-row-actions .migrator-approve-btn:hover:not(:disabled) {
+    background: var(--um-slash);
+    color: var(--um-void) !important;
+    box-shadow: 0 0 14px rgba(141, 252, 95, 0.53);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-row-actions .migrator-reject-btn:hover:not(:disabled) {
+    border-color: var(--um-wound);
+    color: var(--um-wound) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-row-actions .migrator-cancel-btn:hover:not(:disabled) {
+    border-color: var(--um-amber);
+    color: var(--um-amber) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-row-actions .mud-icon-button:disabled {
+    opacity: 0.35;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-open-link.mud-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    border: 1px solid var(--um-line);
+    color: var(--um-dim) !important;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-open-link.mud-link:hover {
+    border-color: var(--um-slash);
+    color: var(--um-slash) !important;
+    text-shadow: 0 0 10px rgba(141, 252, 95, 0.9);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-url-btn.mud-button-root {
+    height: auto;
+    padding: 7px 14px;
+    border: 1px solid #2a3c66;
+    border-radius: 0;
+    background: transparent;
+    color: #9fb4dd;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.58rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-url-btn.mud-button-root:hover:not(:disabled) {
+    border-color: var(--um-slash);
+    color: var(--um-slash);
+}
+
+/* ── 10. Batch bar ──────────────────────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-review-footer {
+    justify-content: flex-end;
+    padding-top: 8px;
+    border-top: none;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-approve-all-high-btn.mud-button-root {
+    position: relative;
+    overflow: hidden;
+    height: auto;
+    padding: 11px 22px;
+    border: none;
+    border-radius: 0;
+    background: var(--um-slash);
+    color: var(--um-void);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+    box-shadow: 0 0 24px rgba(141, 252, 95, 0.27);
+    transition: box-shadow 0.2s, filter 0.2s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-approve-all-high-btn.mud-button-root:hover:not(:disabled) {
+    background: var(--um-slash);
+    color: var(--um-void);
+    filter: brightness(1.1);
+    box-shadow: 0 0 34px rgba(141, 252, 95, 0.53);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-approve-all-high-btn.mud-button-root:disabled {
+    background: #22304a;
+    color: #5a6a90;
+    box-shadow: none;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-approve-all-high-btn::before,
+[data-theme="anime"] .url-migrator-page .migrator-approve-group-btn::before {
+    content: "";
+    position: absolute;
+    top: -20%;
+    bottom: -20%;
+    left: 0;
+    width: 45%;
+    background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+    transform: translateX(-160%) skewX(-18deg);
+    pointer-events: none;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-reject-remaining-btn.mud-button-root {
+    height: auto;
+    padding: 11px 22px;
+    border: 1px solid var(--um-line);
+    border-radius: 0;
+    background: rgba(12, 20, 40, 0.69);
+    color: var(--um-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    backdrop-filter: blur(6px);
+    transition: all 0.2s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-reject-remaining-btn.mud-button-root:hover:not(:disabled) {
+    border-color: var(--um-dim);
+    color: var(--um-bone);
+    transform: translateY(-1px);
+}
+
+/* ── 11. History table ──────────────────────────────────────────────────── */
+[data-theme="anime"] .url-migrator-page .migrator-history-table.mud-simple-table {
+    background: var(--um-panel) !important;
+    backdrop-filter: blur(9px);
+    box-shadow: inset 0 0 0 1px var(--um-line);
+    border-radius: 0;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-history-table thead th {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--um-line-hi) !important;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.6rem;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--um-dim) !important;
+    text-align: left;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-history-table tbody td {
+    padding: 10px 16px;
+    border-bottom: 1px solid #1a2742 !important;
+    font-size: 0.98rem;
+    color: var(--um-bone) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-history-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-history-table .migrator-host-cell {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--um-dim) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-history-table td:nth-child(4) {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.68rem;
+    color: var(--um-dim) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-history-row:hover td {
+    background: rgba(60, 90, 160, 0.08) !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-edit-bookmark-btn.mud-button-root,
+[data-theme="anime"] .url-migrator-page .migrator-revert-btn.mud-button-root {
+    height: auto;
+    padding: 5px 10px;
+    margin-right: 5px;
+    border: 1px solid var(--um-line);
+    border-radius: 0;
+    background: transparent;
+    color: var(--um-dim);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.6rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: all 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-edit-bookmark-btn.mud-button-root:hover:not(:disabled),
+[data-theme="anime"] .url-migrator-page .migrator-revert-btn.mud-button-root:hover:not(:disabled) {
+    border-color: var(--um-slash);
+    color: var(--um-slash);
+}
+
+/* ── 12. Small screens ──────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    [data-theme="anime"] .url-migrator-page .migrator-progress-panel {
+        padding-right: var(--bm-space-5, 20px);
+    }
+
+    [data-theme="anime"] .url-migrator-page .anime-radar {
+        display: none;
+    }
+}
+
+/* ── 13. Motion — all decorative animation gated ────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+    @keyframes umArtDrift { from { background-position-y: 26%; } to { background-position-y: 34%; } }
+    @keyframes umRadarSpin { to { --um-ra: 360deg; } }
+    @keyframes umPingPulse {
+        0%, 100% { box-shadow: 0 0 8px 2px rgba(141, 252, 95, 0.67); }
+        50% { box-shadow: 0 0 14px 5px rgba(141, 252, 95, 0.4); }
+    }
+    @keyframes umShimmer {
+        0% { transform: translateX(-140%) skewX(-14deg); }
+        60%, 100% { transform: translateX(320%) skewX(-14deg); }
+    }
+    @keyframes umBoltFlick {
+        0%, 90.9%, 100% { opacity: 0; }
+        92% { opacity: 0.85; }
+        93.5% { opacity: 0.12; }
+        95% { opacity: 0.55; }
+        96.5% { opacity: 0; }
+    }
+    @keyframes umEmberRise {
+        0% { transform: translate3d(0, 0, 0); opacity: 0; }
+        10% { opacity: 0.55; }
+        80% { opacity: 0.55; }
+        100% { transform: translate3d(-30px, -104vh, 0); opacity: 0; }
+    }
+    @keyframes umFadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes umSlashDraw { from { transform: skewX(-30deg) scaleX(0); } to { transform: skewX(-30deg) scaleX(1); } }
+    @keyframes umTallyDraw { from { transform: skewX(-24deg) scaleY(0); } to { transform: skewX(-24deg) scaleY(1); } }
+    @keyframes umGlowBreathe {
+        0%, 100% { text-shadow: 0 0 26px rgba(141, 252, 95, 0.25); }
+        50% { text-shadow: 0 0 34px rgba(141, 252, 95, 0.55); }
+    }
+
+    /* Background: art drifts almost imperceptibly — alive, not dizzy. */
+    [data-theme="anime"] .url-migrator-page .anime-art-stage {
+        animation: umArtDrift 42s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .url-migrator-page .anime-bolt-a { animation: umBoltFlick 9s linear 2.2s infinite; }
+    [data-theme="anime"] .url-migrator-page .anime-bolt-b { animation: umBoltFlick 13s linear 5.5s infinite; }
+
+    [data-theme="anime"] .url-migrator-page .anime-embers i { animation: umEmberRise 14s linear infinite; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(1) { animation-duration: 13s; animation-delay: 0s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(2) { animation-duration: 17s; animation-delay: 3.1s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(3) { animation-duration: 12s; animation-delay: 6.4s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(4) { animation-duration: 19s; animation-delay: 1.7s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(5) { animation-duration: 15s; animation-delay: 9.2s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(6) { animation-duration: 18s; animation-delay: 4.8s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(7) { animation-duration: 14s; animation-delay: 11.5s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(8) { animation-duration: 16s; animation-delay: 7.6s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(9) { animation-duration: 12.5s; animation-delay: 2.4s; }
+    [data-theme="anime"] .url-migrator-page .anime-embers i:nth-child(10) { animation-duration: 20s; animation-delay: 13s; }
+
+    /* Header + panels: one quiet entrance on mount. */
+    [data-theme="anime"] .url-migrator-page > .page-heading { animation: umFadeUp 0.5s ease both; }
+    [data-theme="anime"] .url-migrator-page > .mud-paper { animation: umFadeUp 0.55s ease both; }
+    [data-theme="anime"] .url-migrator-page > .mud-paper:nth-child(4) { animation-delay: 0.1s; }
+    [data-theme="anime"] .url-migrator-page > .mud-paper:nth-child(5) { animation-delay: 0.18s; }
+    [data-theme="anime"] .url-migrator-page > .mud-paper:nth-child(6) { animation-delay: 0.26s; }
+
+    /* Status panel life. */
+    [data-theme="anime"] .url-migrator-page .anime-radar-sweep { animation: umRadarSpin 4.6s linear infinite; }
+    [data-theme="anime"] .url-migrator-page .anime-radar-ping { animation: umPingPulse 2.2s ease-in-out infinite; }
+    [data-theme="anime"] .url-migrator-page .migrator-progress-bar .mud-progress-linear-bar::after { animation: umShimmer 3.4s ease-in-out 1.2s infinite; }
+
+    /* Slash carves in above the candidate; tally marks grow on the tiers. */
+    [data-theme="anime"] .url-migrator-page .migrator-url-text + .migrator-url-text::before {
+        animation: umSlashDraw 0.52s cubic-bezier(0.22, 0.85, 0.3, 1.15) both;
+    }
+
+    [data-theme="anime"] .url-migrator-page .migrator-proposal-row .status-badge::before {
+        animation: umTallyDraw 0.3s ease-out both;
+    }
+
+    [data-theme="anime"] .url-migrator-page .page-heading .anime-title-accent {
+        animation: umGlowBreathe 5.4s ease-in-out 1.4s infinite;
+    }
+
+    /* Katana-flash sheen sweeping the primary batch/group approve buttons. */
+    [data-theme="anime"] .url-migrator-page .migrator-approve-all-high-btn.mud-button-root:hover:not(:disabled)::before,
+    [data-theme="anime"] .url-migrator-page .migrator-approve-group-btn.mud-button-root:hover:not(:disabled)::before {
+        transform: translateX(320%) skewX(-18deg);
+        transition: transform 0.5s ease;
+    }
+}

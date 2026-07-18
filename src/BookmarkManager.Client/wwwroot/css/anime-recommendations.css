@@ -1,0 +1,1039 @@
+/* ============================================================================
+   Anime Worlds theme — Recommendations page skin ("Grimoire", Black Clover).
+   Port of Docs/ui-design.md onto the real
+   Recommendations.razor DOM. ALL rules are scoped under [data-theme="anime"]
+   and the page-only .rec-page wrapper so other themes and other pages stay
+   pixel-untouched. The only unscoped rules are the art-layer display:none
+   gates (rule: decorative layers default-hidden outside the anime theme).
+   ============================================================================ */
+
+/* Art layers: hidden unless the anime theme is active (gate kept OUTSIDE the
+   anime scope on purpose; enabled below inside it). */
+.rec-page .anime-art,
+.rec-page .anime-aura,
+.rec-page .anime-embers,
+.rec-page .rec-featured-watermark,
+.rec-page .rec-featured-seal,
+.rec-page .rec-featured-sword {
+    display: none;
+}
+
+/* Local palette (mirrors the mockup :root) — page-scoped so the shared
+   --bm-* tokens in themes.css are never redefined for other pages. */
+[data-theme="anime"] .rec-page {
+    --rec-ink: #0d0a0e;
+    --rec-panel: rgba(18, 13, 20, .74);
+    --rec-red: #e22636;
+    --rec-red-hot: #ff3b4d;
+    --rec-red-deep: #8f1220;
+    --rec-bone: #ece2c6;
+    --rec-bone-dim: #c9bda0;
+    --rec-bone-faint: #9c917a;
+    --rec-line: rgba(236, 226, 198, .16);
+    font-family: "Cormorant Garamond", serif;
+    color: var(--rec-bone);
+}
+
+/* ── Full-bleed swords artwork, crushed to dusk ─────────────────────────── */
+[data-theme="anime"] .rec-page .anime-art {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: var(--rec-ink) url("../assets/anime/recommendations/background.webp") 50% 38% / 100% 248% no-repeat;
+}
+
+/* dusk veil: daylight crushed to black, red ember glow low behind the blades,
+   edges melted into the ink ground */
+[data-theme="anime"] .rec-page .anime-art::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(90% 55% at 50% 86%, rgba(226, 38, 54, .30), transparent 62%),
+        linear-gradient(180deg, rgba(13, 10, 14, .84) 0%, rgba(13, 10, 14, .48) 18%, rgba(13, 10, 14, .26) 42%, rgba(13, 10, 14, .46) 68%, rgba(13, 10, 14, .90) 100%),
+        linear-gradient(90deg, rgba(13, 10, 14, .80) 0%, transparent 16%, transparent 84%, rgba(13, 10, 14, .80) 100%);
+}
+
+/* faint red vignette pulse behind content center */
+[data-theme="anime"] .rec-page .anime-aura {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: radial-gradient(46% 34% at 50% 30%, rgba(226, 38, 54, .10), transparent 70%);
+}
+
+/* rising ember motes */
+[data-theme="anime"] .rec-page .anime-embers {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+[data-theme="anime"] .rec-page .anime-embers i {
+    position: absolute;
+    bottom: -12px;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--rec-red-hot);
+    opacity: 0;
+    filter: blur(.4px);
+    box-shadow: 0 0 6px 1px rgba(255, 59, 77, .7);
+}
+
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(1) { left: 8%; animation-duration: 11s; animation-delay: 0s; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(2) { left: 19%; animation-duration: 14s; animation-delay: 3.5s; width: 2px; height: 2px; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(3) { left: 31%; animation-duration: 12s; animation-delay: 7s; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(4) { left: 44%; animation-duration: 16s; animation-delay: 1.5s; width: 2px; height: 2px; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(5) { left: 57%; animation-duration: 10s; animation-delay: 5s; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(6) { left: 66%; animation-duration: 15s; animation-delay: 9s; width: 2px; height: 2px; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(7) { left: 78%; animation-duration: 12.5s; animation-delay: 2.2s; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(8) { left: 88%; animation-duration: 13.5s; animation-delay: 6.4s; width: 2px; height: 2px; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(9) { left: 37%; animation-duration: 17s; animation-delay: 11s; }
+[data-theme="anime"] .rec-page .anime-embers i:nth-child(10) { left: 71%; animation-duration: 11.5s; animation-delay: 8.2s; width: 4px; height: 4px; }
+
+/* Content column above the fixed art layers */
+[data-theme="anime"] .rec-page .bookmark-zone {
+    position: relative;
+    z-index: 1;
+}
+
+[data-theme="anime"] .rec-page .bookmark-list {
+    /* sword watermark / clover watermark bleed past the row box — clip, don't scroll */
+    overflow-x: hidden;
+    /* headroom for the Demon-Destroyer standing proud of the featured page */
+    padding-top: 76px;
+    scrollbar-color: rgba(226, 38, 54, .35) transparent;
+}
+
+/* ── Controls row (folder chips + clear + reshuffle) ────────────────────── */
+[data-theme="anime"] .rec-page .rec-controls-row {
+    gap: 16px;
+    background: var(--rec-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--rec-line);
+    padding: 13px 20px;
+    margin-bottom: 18px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .45);
+}
+
+[data-theme="anime"] .rec-page .rec-controls-row::before {
+    content: "Folders";
+    font-family: "Space Mono", monospace;
+    font-size: .64rem;
+    letter-spacing: .26em;
+    text-transform: uppercase;
+    color: var(--rec-bone-faint);
+    white-space: nowrap;
+}
+
+[data-theme="anime"] .rec-page .rec-subtitle {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 1.05rem;
+    color: var(--rec-bone-dim);
+}
+
+/* folder chips = black plaques (red when active) */
+[data-theme="anime"] .rec-page .rec-folder-chip {
+    font-family: "Cinzel", serif;
+    font-size: .74rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    padding: 7px 15px;
+    color: var(--rec-bone-dim);
+    border: 1px solid var(--rec-line);
+    border-radius: 0;
+    background: rgba(236, 226, 198, .05);
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+    transition: background .2s, color .2s, border-color .2s, transform .18s;
+}
+
+[data-theme="anime"] .rec-page .rec-folder-chip:hover {
+    border-color: rgba(236, 226, 198, .45);
+    color: var(--rec-bone);
+    transform: translateY(-1px);
+}
+
+[data-theme="anime"] .rec-page .rec-folder-chip.is-checked {
+    background: var(--rec-red);
+    border-color: var(--rec-red-deep);
+    color: var(--rec-bone);
+    box-shadow: 0 0 14px rgba(226, 38, 54, .35);
+}
+
+[data-theme="anime"] .rec-page .rec-chip-actions {
+    gap: 10px;
+}
+
+/* clear = ghost plaque */
+[data-theme="anime"] .rec-page .rec-clear-btn {
+    font-family: "Cinzel", serif;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    padding: 9px 16px;
+    white-space: nowrap;
+    background: transparent;
+    border: 1px solid var(--rec-line);
+    border-radius: 0;
+    color: var(--rec-bone-faint);
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+    transition: border-color .2s, color .2s;
+}
+
+[data-theme="anime"] .rec-page .rec-clear-btn:not(:disabled):hover {
+    border-color: var(--rec-bone-dim);
+    color: var(--rec-bone);
+}
+
+[data-theme="anime"] .rec-page .rec-clear-btn:disabled {
+    opacity: .4;
+}
+
+/* reshuffle in the controls row = red plaque */
+[data-theme="anime"] .rec-page .rec-controls-row .rec-reshuffle-btn {
+    font-family: "Cinzel", serif;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    height: auto;
+    padding: 9px 16px;
+    white-space: nowrap;
+    background: var(--rec-red);
+    border: 1px solid var(--rec-red-deep);
+    border-radius: 0;
+    color: var(--rec-bone);
+    box-shadow: 0 6px 18px rgba(226, 38, 54, .28);
+    clip-path: polygon(7px 0, 100% 0, 100% calc(100% - 7px), calc(100% - 7px) 100%, 0 100%, 0 7px);
+    transition: transform .2s, box-shadow .2s;
+}
+
+[data-theme="anime"] .rec-page .rec-controls-row .rec-reshuffle-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 9px 24px rgba(226, 38, 54, .4);
+}
+
+[data-theme="anime"] .rec-page .rec-controls-row .rec-reshuffle-btn:disabled {
+    opacity: .45;
+}
+
+[data-theme="anime"] .rec-page .rec-controls-row .rec-reshuffle-btn .mud-icon-root {
+    font-size: .85rem !important;
+    transition: transform .5s ease;
+}
+
+[data-theme="anime"] .rec-page .rec-controls-row .rec-reshuffle-btn:hover:not(:disabled) .mud-icon-root {
+    transform: rotate(360deg);
+}
+
+/* anti-magic slash divider */
+[data-theme="anime"] .rec-page .rec-divider {
+    position: relative;
+    height: 2px;
+    margin: 2px 0 26px;
+    opacity: .9;
+    background: linear-gradient(90deg, transparent, var(--rec-red-deep) 16%, var(--rec-red-hot) 50%, var(--rec-red-deep) 84%, transparent);
+    background-size: 220% 100%;
+}
+
+[data-theme="anime"] .rec-page .rec-divider::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 150px;
+    height: 22px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(50% 50% at 50% 50%, rgba(255, 59, 77, .5), transparent 70%);
+    filter: blur(4px);
+}
+
+/* ══════════════ FEATURED PICK — page torn from the grimoire ══════════════ */
+[data-theme="anime"] .rec-page .rec-featured {
+    position: relative;
+    margin-bottom: 38px;
+}
+
+/* giant red clover watermark rotating 240s behind the page */
+[data-theme="anime"] .rec-page .rec-featured-watermark {
+    display: block;
+    position: absolute;
+    left: -120px;
+    top: -100px;
+    width: 470px;
+    height: 470px;
+    z-index: 0;
+    pointer-events: none;
+    opacity: .2;
+    background: url("../assets/anime/recommendations/clover-red.webp") center / contain no-repeat;
+    filter: drop-shadow(0 0 60px rgba(226, 38, 54, .4));
+}
+
+[data-theme="anime"] .rec-page .rec-featured-frame {
+    position: relative;
+    z-index: 1;
+    padding: 3px;
+    background: linear-gradient(120deg, #2a2126 0%, #0d0a0e 40%, #3a2a30 70%, #0d0a0e 100%);
+    box-shadow: 0 30px 70px rgba(0, 0, 0, .6);
+}
+
+/* deckled black-ink edge (filter #rec-deckle defined in the page's svg defs) */
+[data-theme="anime"] .rec-page .rec-featured-frame::after {
+    content: "";
+    position: absolute;
+    inset: -2px;
+    padding: 4px;
+    pointer-events: none;
+    opacity: .9;
+    background: linear-gradient(135deg, #3d3037 0%, #171118 30%, #4a3540 55%, #171118 80%, #33262c 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    filter: url(#rec-deckle);
+}
+
+/* bone parchment page */
+[data-theme="anime"] .rec-page .rec-featured-inner {
+    position: relative;
+    overflow: hidden;
+    padding: 34px 300px 30px 42px;
+    background:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.35 0 0 0 0 0.28 0 0 0 0 0.16 0 0 0 0.14 0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E"),
+        radial-gradient(520px 260px at 92% -14%, rgba(255, 255, 255, .5), transparent 62%),
+        radial-gradient(300px 200px at 4% 110%, rgba(226, 38, 54, .06), transparent 62%),
+        linear-gradient(120deg, #efe6cc 0%, #e6d9b6 100%);
+    background-blend-mode: multiply, normal, normal, normal;
+    color: #1c1418;
+    box-shadow: inset 0 0 60px rgba(60, 40, 20, .12);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    font-family: "Space Mono", monospace;
+    font-size: .66rem;
+    font-weight: 400;
+    letter-spacing: .32em;
+    text-transform: uppercase;
+    color: var(--rec-red-deep);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-eyebrow::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    max-width: 210px;
+    transform-origin: left;
+    background: linear-gradient(90deg, var(--rec-red-deep), transparent);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-title {
+    font-family: "Cinzel", serif;
+    font-weight: 700;
+    font-size: clamp(1.35rem, 2.4vw, 1.9rem);
+    line-height: 1.14;
+    color: #171015;
+    margin-bottom: 8px;
+    max-width: 26ch;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-url {
+    font-family: "Space Mono", monospace;
+    font-size: .78rem;
+    color: #6d5c50;
+    margin-bottom: 16px;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-tags {
+    gap: 8px;
+    margin-bottom: 22px;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-tag {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: .86rem;
+    letter-spacing: 0;
+    padding: 4px 13px;
+    color: #4d3f36;
+    border: 1px solid rgba(60, 45, 30, .35);
+    border-radius: 0;
+    background: rgba(255, 255, 255, .28);
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+    transition: transform .2s, border-color .2s;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-tag:hover {
+    transform: translateY(-1px);
+    border-color: #4d3f36;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-favorite {
+    border-color: var(--rec-red-deep);
+    color: var(--rec-red-deep);
+    background: rgba(226, 38, 54, .08);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-favorite .mud-icon-root {
+    color: var(--rec-red-deep) !important;
+    font-size: .8rem !important;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-category {
+    border-color: #171015;
+    color: #171015;
+    background: rgba(23, 16, 21, .07);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-actions {
+    gap: 12px;
+}
+
+/* visit = solid black plaque with red shine sweep */
+[data-theme="anime"] .rec-page .rec-visit-btn {
+    position: relative;
+    overflow: hidden;
+    font-family: "Cinzel", serif;
+    font-size: .82rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    background: #171015;
+    color: var(--rec-bone);
+    padding: 13px 32px;
+    border-radius: 0;
+    text-decoration: none;
+    clip-path: polygon(9px 0, 100% 0, 100% calc(100% - 9px), calc(100% - 9px) 100%, 0 100%, 0 9px);
+    box-shadow: 0 10px 24px rgba(23, 16, 21, .35);
+    transition: transform .2s, box-shadow .2s;
+}
+
+[data-theme="anime"] .rec-page .rec-visit-btn .mud-icon-root {
+    font-size: .85rem !important;
+}
+
+[data-theme="anime"] .rec-page .rec-visit-btn:hover {
+    background: #171015;
+    transform: translateY(-2px);
+    box-shadow: 0 0 0 1px var(--rec-red), 0 12px 30px rgba(226, 38, 54, .35);
+}
+
+[data-theme="anime"] .rec-page .rec-visit-btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -70%;
+    width: 45%;
+    background: linear-gradient(100deg, transparent, rgba(255, 59, 77, .35), transparent);
+    transform: skewX(-20deg);
+    transition: left .55s ease;
+}
+
+[data-theme="anime"] .rec-page .rec-visit-btn:hover::after {
+    left: 130%;
+}
+
+/* reshuffle on the parchment page = ink ghost button */
+[data-theme="anime"] .rec-page .rec-featured .rec-reshuffle-btn {
+    font-family: "Cinzel", serif;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    height: auto;
+    background: transparent;
+    border: 1px solid rgba(60, 45, 30, .4);
+    border-radius: 0;
+    color: #4d3f36;
+    padding: 12px 18px;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    transition: border-color .2s, color .2s, transform .2s;
+}
+
+[data-theme="anime"] .rec-page .rec-featured .rec-reshuffle-btn:hover:not(:disabled) {
+    border-color: #171015;
+    color: #171015;
+    background: transparent;
+    transform: translateY(-1px);
+}
+
+[data-theme="anime"] .rec-page .rec-featured .rec-reshuffle-btn .mud-icon-root {
+    font-size: .9rem !important;
+    transition: transform .5s ease;
+}
+
+[data-theme="anime"] .rec-page .rec-featured .rec-reshuffle-btn:hover:not(:disabled) .mud-icon-root {
+    transform: rotate(360deg);
+}
+
+/* prev/next = ink diamonds, counter = mono position */
+[data-theme="anime"] .rec-page .rec-featured-nav {
+    gap: 12px;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-nav-arrow {
+    width: 34px;
+    height: 34px;
+    border: 1px solid rgba(60, 45, 30, .5);
+    border-radius: 0;
+    color: #171015;
+    background: rgba(255, 255, 255, .25);
+    display: grid;
+    place-items: center;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    transition: border-color .2s, color .2s, transform .2s;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-nav-arrow .mud-icon-root {
+    font-size: 1rem !important;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-nav-arrow:hover {
+    border-color: #171015;
+    color: #171015;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-nav .rec-featured-nav-arrow:first-child:hover {
+    transform: translateX(-3px);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-nav .rec-featured-nav-arrow:last-child:hover {
+    transform: translateX(3px);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-position {
+    font-family: "Space Mono", monospace;
+    font-size: .76rem;
+    letter-spacing: .06em;
+    color: #6d5c50;
+}
+
+/* red five-leaf wax seal, stamped top-right of the page */
+[data-theme="anime"] .rec-page .rec-featured-seal {
+    display: block;
+    position: absolute;
+    right: 172px;
+    top: 16px;
+    width: 96px;
+    height: 96px;
+    z-index: 3;
+    pointer-events: none;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 34%, #ff4a5c 0%, var(--rec-red) 38%, var(--rec-red-deep) 78%, #5d0a14 100%);
+    box-shadow: 0 8px 22px rgba(93, 10, 20, .5), inset 0 2px 6px rgba(255, 255, 255, .28), inset 0 -6px 12px rgba(60, 4, 10, .55);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-seal::before {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(236, 226, 198, .4);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-seal::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background: radial-gradient(circle at 30% 24%, rgba(255, 255, 255, .35), transparent 42%);
+}
+
+[data-theme="anime"] .rec-page .rec-featured-seal img {
+    position: absolute;
+    inset: 18px;
+    width: 60px;
+    height: 60px;
+    z-index: 1;
+    filter: drop-shadow(0 1px 1px rgba(60, 4, 10, .6));
+}
+
+/* Demon-Destroyer standing at the page's right edge, rune-glow pulsing */
+[data-theme="anime"] .rec-page .rec-featured-sword {
+    display: block;
+    position: absolute;
+    right: 64px;
+    top: -64px;
+    height: calc(100% + 108px);
+    z-index: 2;
+    pointer-events: none;
+    filter: drop-shadow(0 18px 30px rgba(0, 0, 0, .55));
+}
+
+[data-theme="anime"] .rec-page .rec-featured-sword img {
+    height: 100%;
+    display: block;
+}
+
+[data-theme="anime"] .rec-page .rec-featured-sword::after {
+    content: "";
+    position: absolute;
+    inset: 18% 30% 12% 30%;
+    z-index: -1;
+    background: radial-gradient(50% 50% at 50% 50%, rgba(255, 59, 77, .4), transparent 70%);
+    filter: blur(14px);
+    opacity: .7;
+}
+
+/* ── More to rediscover — the ledger ────────────────────────────────────── */
+[data-theme="anime"] .rec-page .rec-more-heading {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin: 0 0 14px;
+    font-family: "Cinzel", serif;
+    font-weight: 700;
+    font-size: 1.16rem;
+    letter-spacing: .05em;
+    text-transform: none;
+    color: var(--rec-bone);
+}
+
+[data-theme="anime"] .rec-page .rec-more-heading::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, var(--rec-line), transparent);
+}
+
+[data-theme="anime"] .rec-page .rec-more-list {
+    background: var(--rec-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--rec-line);
+    overflow: hidden;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .45);
+}
+
+[data-theme="anime"] .rec-page .rec-more-row {
+    position: relative;
+    align-items: center;
+    gap: 18px;
+    padding: 13px 22px;
+    border-top: 1px solid rgba(236, 226, 198, .08);
+    transition: background .25s, transform .25s, box-shadow .25s;
+}
+
+[data-theme="anime"] .rec-page .rec-more-row:first-child {
+    border-top: none;
+}
+
+/* red ledger slash that inks in on hover */
+[data-theme="anime"] .rec-page .rec-more-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 2.5px;
+    background: linear-gradient(var(--rec-red-hot), var(--rec-red-deep));
+    opacity: 0;
+    transform: scaleY(.4);
+    transition: opacity .25s, transform .25s;
+    box-shadow: 0 0 10px rgba(255, 59, 77, .6);
+}
+
+[data-theme="anime"] .rec-page .rec-more-row:hover {
+    background: rgba(236, 226, 198, .05);
+    z-index: 1;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .5);
+}
+
+[data-theme="anime"] .rec-page .rec-more-row:hover::before {
+    opacity: 1;
+    transform: scaleY(1);
+}
+
+/* red Cinzel numeral */
+[data-theme="anime"] .rec-page .rec-more-index {
+    font-family: "Cinzel", serif;
+    font-style: normal;
+    font-size: 1.06rem;
+    font-weight: 700;
+    color: var(--rec-red);
+    text-shadow: 0 0 12px rgba(226, 38, 54, .4);
+    width: 52px;
+    flex-shrink: 0;
+    padding-top: 0;
+}
+
+[data-theme="anime"] .rec-page .rec-more-title {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: 1.12rem;
+    color: var(--rec-bone);
+}
+
+/* favorite star recolored to anti-magic red (base uses --bm-warning inline) */
+[data-theme="anime"] .rec-page .rec-more-title .mud-icon-root {
+    color: var(--rec-red-hot) !important;
+    font-size: .9rem !important;
+}
+
+[data-theme="anime"] .rec-page .rec-more-host {
+    font-family: "Space Mono", monospace;
+    font-size: .7rem;
+    color: var(--rec-bone-faint);
+}
+
+[data-theme="anime"] .rec-page .rec-more-tags {
+    gap: 6px;
+    margin-top: 6px;
+}
+
+[data-theme="anime"] .rec-page .rec-more-tag {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    font-size: .78rem;
+    color: var(--rec-bone-dim);
+    padding: 2px 10px;
+    border: 1px solid rgba(236, 226, 198, .18);
+    border-radius: 0;
+    background: rgba(236, 226, 198, .04);
+}
+
+/* row action icon buttons = small ink plaques; delete turns red on hover */
+[data-theme="anime"] .rec-page .rec-more-actions {
+    gap: 6px;
+}
+
+[data-theme="anime"] .rec-page .rec-more-actions .mud-icon-button-root {
+    width: 31px;
+    height: 31px;
+    padding: 0;
+    border: 1px solid rgba(236, 226, 198, .18);
+    border-radius: 0;
+    background: rgba(236, 226, 198, .04);
+    color: var(--rec-bone-faint);
+    transition: border-color .2s, color .2s, background .2s, transform .18s;
+}
+
+[data-theme="anime"] .rec-page .rec-more-actions .mud-icon-button-root .mud-icon-root {
+    font-size: 1rem !important;
+}
+
+[data-theme="anime"] .rec-page .rec-more-actions .mud-icon-button-root:hover {
+    border-color: var(--rec-bone-dim);
+    color: var(--rec-bone);
+    background: rgba(236, 226, 198, .1);
+    transform: translateY(-2px);
+}
+
+[data-theme="anime"] .rec-page .rec-more-actions .mud-icon-button-root.mud-error-text:hover {
+    border-color: var(--rec-red-hot);
+    color: var(--rec-red-hot);
+}
+
+/* ── loading + empty states, same ink-and-parchment language ────────────── */
+[data-theme="anime"] .rec-page .rec-featured-skeleton {
+    border: 1px solid var(--rec-line);
+    border-radius: 0;
+    background: linear-gradient(90deg,
+            rgba(236, 226, 198, .05) 25%,
+            rgba(236, 226, 198, .10) 50%,
+            rgba(236, 226, 198, .05) 75%);
+    background-size: 200% 100%;
+}
+
+[data-theme="anime"] .rec-page .rec-more-list .skeleton-card {
+    border: 1px solid var(--rec-line);
+    border-radius: 0;
+    margin: 10px 12px;
+    background: linear-gradient(90deg,
+            rgba(236, 226, 198, .05) 25%,
+            rgba(236, 226, 198, .10) 50%,
+            rgba(236, 226, 198, .05) 75%);
+    background-size: 200% 100%;
+}
+
+[data-theme="anime"] .rec-page .empty-state {
+    background: var(--rec-panel);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px dashed var(--rec-line);
+    border-radius: 0;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, .45);
+}
+
+[data-theme="anime"] .rec-page .empty-state-icon-wrap {
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 34%, #ff4a5c 0%, var(--rec-red) 38%, var(--rec-red-deep) 78%, #5d0a14 100%);
+    border: 1px solid var(--rec-red-deep);
+    box-shadow: 0 8px 22px rgba(93, 10, 20, .5), inset 0 2px 6px rgba(255, 255, 255, .28), inset 0 -6px 12px rgba(60, 4, 10, .55);
+}
+
+[data-theme="anime"] .rec-page .empty-state-icon-wrap .mud-icon-root {
+    color: var(--rec-bone) !important;
+}
+
+[data-theme="anime"] .rec-page .empty-state-title {
+    font-family: "Cinzel", serif;
+    color: var(--rec-bone) !important;
+    letter-spacing: .04em;
+}
+
+[data-theme="anime"] .rec-page .empty-state-sub {
+    font-family: "Cormorant Garamond", serif;
+    font-size: 1rem !important;
+    color: var(--rec-bone-faint) !important;
+}
+
+/* ── responsive ─────────────────────────────────────────────────────────── */
+@media (max-width: 1200px) {
+    [data-theme="anime"] .rec-page .rec-featured-inner {
+        padding-right: 42px;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-sword {
+        display: none;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-watermark {
+        left: auto;
+        right: -140px;
+        opacity: .12;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-seal {
+        right: 20px;
+    }
+}
+
+@media (max-width: 760px) {
+    [data-theme="anime"] .rec-page .rec-controls-row {
+        padding: 12px 14px;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-inner {
+        padding: 26px 22px;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-title {
+        font-size: 1.35rem;
+        max-width: none;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-seal {
+        width: 74px;
+        height: 74px;
+        right: 16px;
+        top: 14px;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-seal img {
+        inset: 14px;
+        width: 46px;
+        height: 46px;
+    }
+
+    [data-theme="anime"] .rec-page .rec-more-row {
+        gap: 12px;
+        padding: 12px 14px;
+    }
+
+    [data-theme="anime"] .rec-page .rec-more-index {
+        width: 38px;
+    }
+}
+
+/* ══════════════ motion pass — all decorative animation gated ═════════════ */
+@media (prefers-reduced-motion: no-preference) {
+    [data-theme="anime"] .rec-page .anime-art {
+        animation: animeRecArtPan 46s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .rec-page .anime-aura {
+        animation: animeRecAuraPulse 7s ease-in-out infinite alternate;
+    }
+
+    [data-theme="anime"] .rec-page .anime-embers i {
+        animation-name: animeRecEmberRise;
+        animation-timing-function: linear;
+        animation-iteration-count: infinite;
+    }
+
+    [data-theme="anime"] .rec-page .rec-controls-row {
+        animation: animeRecFadeSlideDown .5s ease-out backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-folder-chip {
+        animation: animeRecChipPop .45s cubic-bezier(.2, .9, .3, 1.25) backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(1) { animation-delay: .16s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(2) { animation-delay: .21s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(3) { animation-delay: .26s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(4) { animation-delay: .31s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(5) { animation-delay: .36s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(6) { animation-delay: .41s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(7) { animation-delay: .46s; }
+    [data-theme="anime"] .rec-page .rec-folder-chip:nth-child(n+8) { animation-delay: .51s; }
+
+    [data-theme="anime"] .rec-page .rec-chip-actions {
+        animation: animeRecFadeSlideDown .5s ease-out .34s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-divider {
+        animation: animeRecDividerDraw .55s ease-out .3s backwards,
+            animeRecRuleFlow 9s linear 1.2s infinite;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured {
+        animation: animeRecFeatureRiseSettle .9s cubic-bezier(.3, .9, .3, 1) .32s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-eyebrow {
+        animation: animeRecRiseIn .5s ease-out .66s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-eyebrow::after {
+        animation: animeRecGrowX .6s ease-out .8s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-title {
+        animation: animeRecRiseIn .55s ease-out .74s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-url {
+        animation: animeRecRiseIn .5s ease-out .82s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-tags {
+        animation: animeRecRiseIn .5s ease-out .9s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-actions {
+        animation: animeRecRiseIn .5s ease-out .98s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-seal {
+        animation: animeRecSealSlam .5s cubic-bezier(.2, 1.4, .4, 1) 1.15s backwards,
+            animeRecSealPulse 4.5s ease-in-out 2.2s infinite;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-sword {
+        animation: animeRecSwordRise .8s cubic-bezier(.25, .9, .3, 1) .9s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-sword::after {
+        animation: animeRecRuneGlow 3.8s ease-in-out 2s infinite;
+    }
+
+    [data-theme="anime"] .rec-page .rec-featured-watermark {
+        animation: animeRecWmSpin 240s linear 1.4s infinite, animeRecWmIn 1.2s ease-out .5s backwards;
+    }
+
+    [data-theme="anime"] .rec-page .rec-more-heading {
+        animation: animeRecFadeSlideDown .55s ease-out .95s backwards;
+    }
+
+    /* rows keep the shared recRowIn entrance (calendar.css) so the GSAP
+       drag transforms on .rec-more-row never fight a theme transform
+       animation; the red numerals ink in on top of it. */
+    [data-theme="anime"] .rec-page .rec-more-index {
+        animation: animeRecInkIn .55s ease-out backwards;
+        animation-delay: calc(1s + var(--rec-index, 0) * 55ms);
+    }
+}
+
+@keyframes animeRecFadeSlideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes animeRecRiseIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes animeRecChipPop {
+    from { opacity: 0; transform: scale(.6); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes animeRecDividerDraw {
+    from { opacity: 0; transform: scaleX(0); }
+    to { opacity: .9; transform: scaleX(1); }
+}
+
+@keyframes animeRecRuleFlow {
+    from { background-position: 0% 0; }
+    to { background-position: 220% 0; }
+}
+
+@keyframes animeRecGrowX {
+    from { opacity: 0; transform: scaleX(0); }
+    to { opacity: 1; transform: scaleX(1); }
+}
+
+@keyframes animeRecFeatureRiseSettle {
+    0% { opacity: 0; transform: translateY(30px); }
+    55% { opacity: 1; transform: translateY(-5px); }
+    75% { transform: translateY(2px); }
+    100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes animeRecSealSlam {
+    0% { opacity: 0; transform: scale(2.1) rotate(-14deg); }
+    60% { opacity: 1; transform: scale(.92) rotate(2deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); }
+}
+
+@keyframes animeRecSealPulse {
+    0%, 100% { box-shadow: 0 8px 22px rgba(93, 10, 20, .5), inset 0 2px 6px rgba(255, 255, 255, .28), inset 0 -6px 12px rgba(60, 4, 10, .55); }
+    50% { box-shadow: 0 8px 30px rgba(226, 38, 54, .65), inset 0 2px 6px rgba(255, 255, 255, .28), inset 0 -6px 12px rgba(60, 4, 10, .55); }
+}
+
+@keyframes animeRecSwordRise {
+    from { opacity: 0; transform: translateY(46px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes animeRecRuneGlow {
+    0%, 100% { opacity: .35; }
+    50% { opacity: .85; }
+}
+
+@keyframes animeRecInkIn {
+    0% { opacity: 0; transform: scale(1.4) rotate(-8deg); filter: blur(2px); }
+    55% { opacity: 1; filter: blur(0); }
+    80% { transform: scale(.96) rotate(1deg); }
+    100% { opacity: 1; transform: scale(1) rotate(0); filter: blur(0); }
+}
+
+@keyframes animeRecArtPan {
+    from { background-position: 49% 36%; }
+    to { background-position: 51% 41%; }
+}
+
+@keyframes animeRecWmSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes animeRecWmIn {
+    from { opacity: 0; }
+    to { opacity: .2; }
+}
+
+@keyframes animeRecAuraPulse {
+    from { opacity: .5; }
+    to { opacity: 1; }
+}
+
+@keyframes animeRecEmberRise {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    8% { opacity: .9; }
+    70% { opacity: .55; }
+    100% { transform: translateY(-104vh) translateX(3vw); opacity: 0; }
+}

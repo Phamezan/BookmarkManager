@@ -12,7 +12,16 @@
 }
 else
 {
-    <div class="bookmarks-workspace">
+    <div class="bookmarks-workspace anime-bookmarks-page">
+        <div class="anime-art" aria-hidden="true">
+            <img class="anime-art-bg" src="assets/anime/bookmarks/background-rain.webp" alt="" />
+            <div class="anime-halo"></div>
+            <img class="anime-dcloud" src="assets/anime/bookmarks/akatsuki-cloud-cut.webp" alt="" />
+            <div class="anime-veil"></div>
+            <div class="anime-rain"><i></i><i></i></div>
+            <div class="anime-mist m1"></div>
+            <div class="anime-mist m2"></div>
+        </div>
         <BookmarkSidebar TreeLoading="@_treeLoading"
                          FolderTree="@_folderTree"
                          SelectedFolderId="@_selectedFolderId"
@@ -169,9 +178,16 @@ else
 
                             <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
                                        StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="OpenAutoTaggerDialog"
-                                       Disabled="@_loading">
+                                       Disabled="@_loading" Class="anime-autotag-btn">
+                                <img class="anime-kunai" src="assets/anime/bookmarks/kunai-gray.webp" alt="" aria-hidden="true" />
                                 Auto Tag
                             </MudButton>
+                        </div>
+
+                        <div class="anime-hem" aria-hidden="true">
+                            <img class="anime-hem-cloud" src="assets/anime/bookmarks/akatsuki-cloud-cut.webp" alt="" />
+                            <img class="anime-hem-cloud c2" src="assets/anime/bookmarks/akatsuki-cloud-cut.webp" alt="" />
+                            <img class="anime-hem-cloud c3" src="assets/anime/bookmarks/akatsuki-cloud-cut.webp" alt="" />
                         </div>
                     </div>
                 }

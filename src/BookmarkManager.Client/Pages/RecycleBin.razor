@@ -6,7 +6,14 @@
 
 <PageTitle>Recycle Bin</PageTitle>
 
-<div class="bookmarks-workspace">
+<div class="bookmarks-workspace recycle-bin-page">
+    @* Anime-theme art layer (cork board, vignette, wood frame). Hidden by default via
+       anime-recyclebin.css; only rendered visibly under [data-theme="anime"]. *@
+    <div class="anime-art" aria-hidden="true">
+        <div class="anime-art-board"></div>
+        <div class="anime-art-vignette"></div>
+        <div class="anime-art-frame"></div>
+    </div>
     <main class="bookmark-zone flex-grow-1" style="grid-column: 1 / -1;">
         <div class="bookmark-header">
             <div class="bookmark-breadcrumbs">
@@ -90,17 +97,28 @@
                     @* Group Folders First *@
                     @foreach (var item in _deleted.Where(i => i.Type == NodeType.Folder))
                     {
-                        <div class="@($"bookmark-card {(IsSelected(item.Id) ? "is-selected" : "")}")" 
-                             role="listitem" 
+                        <div class="@($"bookmark-card {(IsSelected(item.Id) ? "is-selected" : "")} {(item.PurgeAfter is not null && item.PurgeAfter.Value <= DateTime.UtcNow.AddDays(3) ? "purge-soon" : "")}")"
+                             role="listitem"
                              @onclick="@((e) => OnRowClick(e, item))">
                             <div class="bookmark-select" @onclick:stopPropagation>
-                                <input type="checkbox" 
-                                       checked="@IsSelected(item.Id)" 
-                                       @onclick="@((e) => OnCheckboxClick(e, item.Id))" 
-                                       class="bm-checkbox" 
+                                <input type="checkbox"
+                                       checked="@IsSelected(item.Id)"
+                                       @onclick="@((e) => OnCheckboxClick(e, item.Id))"
+                                       class="bm-checkbox"
                                        aria-label="@($"Select {item.Title}")" />
                             </div>
-                            
+
+                            @* Decorative wanted-poster header (anime theme only). *@
+                            <div class="wanted-poster" aria-hidden="true">
+                                <i class="wanted-tape wanted-tape-tl" aria-hidden="true"></i>
+                                <i class="wanted-tape wanted-tape-tr" aria-hidden="true"></i>
+                                <i class="wanted-coffee" aria-hidden="true"></i>
+                                <i class="wanted-scorch" aria-hidden="true"></i>
+                                <i class="wanted-ember" aria-hidden="true"></i>
+                                <i class="wanted-smoke wanted-smoke-1" aria-hidden="true"></i>
+                                <i class="wanted-smoke wanted-smoke-2" aria-hidden="true"></i>
+                            </div>
+
                             <div class="bookmark-card-header">
                                 <div class="bookmark-card-title-group">
                                     <div class="bookmark-card-icon">
@@ -131,17 +149,28 @@
                     @* Group Bookmarks Second *@
                     @foreach (var item in _deleted.Where(i => i.Type != NodeType.Folder))
                     {
-                        <div class="@($"bookmark-card {(IsSelected(item.Id) ? "is-selected" : "")}")" 
-                             role="listitem" 
+                        <div class="@($"bookmark-card {(IsSelected(item.Id) ? "is-selected" : "")} {(item.PurgeAfter is not null && item.PurgeAfter.Value <= DateTime.UtcNow.AddDays(3) ? "purge-soon" : "")}")"
+                             role="listitem"
                              @onclick="@((e) => OnRowClick(e, item))">
                             <div class="bookmark-select" @onclick:stopPropagation>
-                                <input type="checkbox" 
-                                       checked="@IsSelected(item.Id)" 
-                                       @onclick="@((e) => OnCheckboxClick(e, item.Id))" 
-                                       class="bm-checkbox" 
+                                <input type="checkbox"
+                                       checked="@IsSelected(item.Id)"
+                                       @onclick="@((e) => OnCheckboxClick(e, item.Id))"
+                                       class="bm-checkbox"
                                        aria-label="@($"Select {item.Title}")" />
                             </div>
-                            
+
+                            @* Decorative wanted-poster header (anime theme only). *@
+                            <div class="wanted-poster" aria-hidden="true">
+                                <i class="wanted-tape wanted-tape-tl" aria-hidden="true"></i>
+                                <i class="wanted-tape wanted-tape-tr" aria-hidden="true"></i>
+                                <i class="wanted-coffee" aria-hidden="true"></i>
+                                <i class="wanted-scorch" aria-hidden="true"></i>
+                                <i class="wanted-ember" aria-hidden="true"></i>
+                                <i class="wanted-smoke wanted-smoke-1" aria-hidden="true"></i>
+                                <i class="wanted-smoke wanted-smoke-2" aria-hidden="true"></i>
+                            </div>
+
                             <div class="bookmark-card-header">
                                 <div class="bookmark-card-title-group">
                                     <div class="bookmark-card-icon">

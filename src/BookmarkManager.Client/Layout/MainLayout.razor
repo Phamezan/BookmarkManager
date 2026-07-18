@@ -10,6 +10,10 @@
    Ambient depth now comes from CSS on .app-shell / body. *@
 
 <MudLayout Class="app-shell">
+    @* Decorative anime-theme shell layer (arcane seal watermark). Hidden unless [data-theme="anime"]; pure CSS, no behavior. *@
+    <div class="anime-art" aria-hidden="true">
+        <div class="anime-art-seal"></div>
+    </div>
     <MudAppBar Elevation="0" Class="app-topbar">
         <NavMenu />
         <MudSpacer />

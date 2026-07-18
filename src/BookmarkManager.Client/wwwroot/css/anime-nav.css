@@ -1,0 +1,332 @@
+/* ============================================================================
+   Anime Worlds theme — shared chrome skin (Wayfinder Rail port of
+   Docs/ui-design.md ALL rules MUST be scoped under
+   [data-theme="anime"] so other themes stay untouched.
+
+   The mockup is a vertical rail; the real shell is a horizontal glass
+   capsule centered in the top app bar. Same visual language mapped onto
+   the existing geometry: rail -> topbar + capsule, chip -> die-cut mascot
+   per link, seals cycle -> settings icon, disc bar + diamond -> active
+   link markers, stage-seal -> fixed art layer behind content.
+   ============================================================================ */
+
+/* --- Visibility gates: new decorative nodes stay invisible outside anime --- */
+.nav-mascot,
+.nav-mascot-cycle,
+.anime-art {
+    display: none;
+}
+
+/* --- Arcane tokens (silver-gray glow, command-palette language) --- */
+[data-theme="anime"] {
+    --anm-void: #0c0a12;
+    --anm-glass: rgba(22, 20, 30, .72);
+    --anm-glass-soft: rgba(205, 211, 222, .06);
+    --anm-arc: #cdd3de;
+    --anm-arc-dim: rgba(205, 211, 222, .6);
+    --anm-arc-faint: rgba(205, 211, 222, .3);
+    --anm-arc-ghost: rgba(205, 211, 222, .1);
+    --anm-text: #e9ebef;
+    --anm-text-dim: rgba(233, 235, 239, .55);
+    --anm-line: rgba(205, 211, 222, .14);
+}
+
+/* --- Shell backdrop: mockup .stage-bg ported onto body --- */
+[data-theme="anime"] body {
+    background:
+        radial-gradient(70% 60% at 30% 20%, rgba(120, 126, 150, .14), transparent 65%),
+        linear-gradient(160deg, #12101a 0%, #0c0a12 60%, #0a0810 100%) !important;
+}
+
+/* --- Art layer: giant arcane seal watermark (mockup .stage-seal) ---
+   Source seals are already light silver line-art, so no invert() here
+   (the mockup inverted dark source art). */
+[data-theme="anime"] .anime-art {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+[data-theme="anime"] .anime-art-seal {
+    position: absolute;
+    right: -180px;
+    top: -180px;
+    width: 560px;
+    height: 560px;
+    opacity: .1;
+    background: url("../assets/anime/nav/nav-settings-b.webp") center/contain no-repeat;
+}
+
+/* --- Topbar = the rail's glass panel --- */
+[data-theme="anime"] .app-topbar {
+    background: rgba(12, 10, 18, .78) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--anm-line);
+    box-shadow: 0 1px 30px rgba(0, 0, 0, .4);
+}
+
+/* --- Connection status chip (absent from mockup) in the same language --- */
+[data-theme="anime"] .topbar-status .mud-chip {
+    background: var(--anm-glass);
+    border-color: var(--anm-arc-ghost);
+    color: var(--anm-text-dim);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+/* --- The capsule = the rail's link stack --- */
+[data-theme="anime"] .primary-nav {
+    background: var(--anm-glass);
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--anm-line);
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .45), inset 0 1px 0 rgba(205, 211, 222, .06);
+}
+
+[data-theme="anime"] .primary-nav .mud-nav-link {
+    border: 1px solid transparent;
+    color: var(--anm-text-dim);
+    transition: background .16s, border-color .16s, color .16s;
+}
+
+[data-theme="anime"] .primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover {
+    background: var(--anm-glass-soft) !important;
+    border-color: rgba(205, 211, 222, .1);
+    color: var(--anm-text);
+}
+
+/* --- Die-cut mascot stickers replace the SVG icons (anime only) --- */
+[data-theme="anime"] .primary-nav .nav-icon-svg {
+    display: none;
+}
+
+[data-theme="anime"] .primary-nav .nav-mascot {
+    display: block;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    object-fit: contain;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .55));
+    transition: transform .2s, filter .2s;
+}
+
+[data-theme="anime"] .primary-nav .mud-nav-link:hover .nav-mascot {
+    transform: translateY(-2px) scale(1.07);
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .6));
+}
+
+/* --- Settings chip: three silver seals stacked for the palindrome cycle --- */
+[data-theme="anime"] .primary-nav .nav-mascot-cycle {
+    display: block;
+    position: relative;
+    width: 30px;
+    height: 30px;
+    flex: none;
+    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .55));
+    transition: transform .2s, filter .2s;
+}
+
+[data-theme="anime"] .primary-nav .nav-mascot-cycle img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    opacity: 0;
+}
+
+/* Static reduced-motion state: first seal only. */
+[data-theme="anime"] .primary-nav .nav-mascot-cycle img:first-child {
+    opacity: 1;
+}
+
+[data-theme="anime"] .primary-nav .mud-nav-link:hover .nav-mascot-cycle {
+    transform: translateY(-2px) scale(1.07);
+    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .6));
+}
+
+/* --- Active link: brighter wash + arcane disc bar + glowing diamond --- */
+[data-theme="anime"] .primary-nav .mud-nav-link.active:not(.mud-nav-link-disabled),
+[data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active:not(.mud-nav-link-disabled) {
+    color: var(--anm-text) !important;
+    font-weight: 600;
+    background: rgba(205, 211, 222, .09) !important;
+    border-color: var(--anm-arc-faint);
+    box-shadow: inset 0 0 18px rgba(205, 211, 222, .05);
+    text-shadow: 0 0 12px rgba(205, 211, 222, .3);
+}
+
+[data-theme="anime"] .primary-nav .mud-nav-link.active .nav-mascot,
+[data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active .nav-mascot,
+[data-theme="anime"] .primary-nav .mud-nav-link.active .nav-mascot-cycle,
+[data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active .nav-mascot-cycle {
+    transform: scale(1.08);
+    filter: drop-shadow(0 0 10px rgba(205, 211, 222, .55)) drop-shadow(0 3px 6px rgba(0, 0, 0, .5));
+}
+
+/* Arcane disc bar at the link's left edge (mockup .link.active::before,
+   rotated 90deg for the horizontal capsule). */
+[data-theme="anime"] .primary-nav .mud-nav-link.active::before,
+[data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active::before {
+    content: "";
+    position: absolute;
+    left: -2px;
+    top: 50%;
+    width: 5px;
+    height: 62%;
+    border-radius: 0 3px 3px 0;
+    transform: translateY(-50%);
+    background: linear-gradient(180deg, #e7ebf2, #aab2c2);
+    box-shadow: 0 0 14px rgba(205, 211, 222, .65);
+    pointer-events: none;
+}
+
+/* Glowing diamond tucked into the top-right corner (mockup .link.active::after,
+   moved because horizontal pill labels fill the mid-right space). */
+[data-theme="anime"] .primary-nav .mud-nav-link.active::after,
+[data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active::after {
+    content: "";
+    position: absolute;
+    top: 5px;
+    right: 7px;
+    width: 6px;
+    height: 6px;
+    transform: rotate(45deg);
+    background: var(--anm-arc);
+    box-shadow: 0 0 10px 2px rgba(205, 211, 222, .55);
+    pointer-events: none;
+}
+
+/* --- JS-driven indicator: DOM untouched, restyled as the arcane aura --- */
+[data-theme="anime"] .nav-active-indicator-disc {
+    border-radius: 12px;
+    background: radial-gradient(circle at center, rgba(205, 211, 222, .15) 0%, rgba(205, 211, 222, .03) 60%, transparent 85%);
+    border: 1px solid var(--anm-arc-ghost);
+    box-shadow: 0 0 16px rgba(205, 211, 222, .1);
+}
+
+/* Route-change particles spawned by nav-indicator.js — silver instead of indigo. */
+[data-theme="anime"] .nav-particle {
+    background: var(--anm-arc);
+    box-shadow: 0 0 6px rgba(205, 211, 222, .6);
+}
+
+/* --- Motion (decorative only; reduced-motion users get the static state) --- */
+@media (prefers-reduced-motion: no-preference) {
+    [data-theme="anime"] .app-topbar {
+        animation: animeRailIn .55s cubic-bezier(.3, .9, .3, 1) backwards;
+    }
+
+    [data-theme="anime"] .primary-nav .mud-nav-link {
+        animation: animeNavRiseIn .4s ease-out backwards;
+    }
+
+    /* .nav-active-indicator is child 1, so links are children 2-9. */
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(2) { animation-delay: .26s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(3) { animation-delay: .32s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(4) { animation-delay: .38s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(5) { animation-delay: .44s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(6) { animation-delay: .5s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(7) { animation-delay: .56s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(8) { animation-delay: .62s; }
+    [data-theme="anime"] .primary-nav .mud-nav-link:nth-child(9) { animation-delay: .68s; }
+
+    [data-theme="anime"] .primary-nav .mud-nav-link.active::before,
+    [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active::before {
+        animation: animeDiscIn .45s cubic-bezier(.25, 1.3, .4, 1) .6s backwards,
+            animeDiscGlow 3s ease-in-out 1.4s infinite;
+    }
+
+    [data-theme="anime"] .primary-nav .mud-nav-link.active::after,
+    [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active::after {
+        animation: animeDiamondPulse 3.2s ease-in-out 1.2s infinite;
+    }
+
+    /* Settings seals: 16s palindrome crossfade A->B->C->B->A (no visible
+       restart) + 26s continuous one-way spin of each stacked seal. */
+    [data-theme="anime"] .nav-mascot-cycle img:nth-child(1) {
+        animation: animeSealCycleA 16s linear infinite, animeSealChipSpin 26s linear infinite;
+    }
+
+    [data-theme="anime"] .nav-mascot-cycle img:nth-child(2) {
+        animation: animeSealCycleB 16s linear infinite, animeSealChipSpin 26s linear infinite;
+    }
+
+    [data-theme="anime"] .nav-mascot-cycle img:nth-child(3) {
+        animation: animeSealCycleC 16s linear infinite, animeSealChipSpin 26s linear infinite;
+    }
+
+    [data-theme="anime"] .anime-art-seal {
+        animation: animeSealSpin 120s linear infinite;
+    }
+}
+
+@keyframes animeRailIn {
+    from { transform: translateX(-40px); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes animeNavRiseIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes animeDiscIn {
+    from { opacity: 0; transform: translateY(-50%) scaleY(.2); }
+    to { opacity: 1; transform: translateY(-50%) scaleY(1); }
+}
+
+@keyframes animeDiscGlow {
+    0%, 100% { box-shadow: 0 0 14px rgba(205, 211, 222, .65); }
+    50% { box-shadow: 0 0 22px rgba(205, 211, 222, .9); }
+}
+
+@keyframes animeDiamondPulse {
+    0%, 100% { box-shadow: 0 0 10px 2px rgba(205, 211, 222, .55); }
+    50% { box-shadow: 0 0 16px 4px rgba(205, 211, 222, .8); }
+}
+
+@keyframes animeSealSpin {
+    from { transform: rotate(0); }
+    to { transform: rotate(360deg); }
+}
+
+/* Ping-pong cycle A->B->C->B->A — seamless palindrome, no visible restart. */
+@keyframes animeSealCycleA {
+    0% { opacity: 1; }
+    21% { opacity: 1; }
+    25% { opacity: 0; }
+    96% { opacity: 0; }
+    100% { opacity: 1; }
+}
+
+@keyframes animeSealCycleB {
+    0% { opacity: 0; }
+    21% { opacity: 0; }
+    25% { opacity: 1; }
+    46% { opacity: 1; }
+    50% { opacity: 0; }
+    71% { opacity: 0; }
+    75% { opacity: 1; }
+    96% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+@keyframes animeSealCycleC {
+    0% { opacity: 0; }
+    46% { opacity: 0; }
+    50% { opacity: 1; }
+    71% { opacity: 1; }
+    75% { opacity: 0; }
+    100% { opacity: 0; }
+}
+
+@keyframes animeSealChipSpin {
+    from { transform: rotate(0); }
+    to { transform: rotate(360deg); }
+}

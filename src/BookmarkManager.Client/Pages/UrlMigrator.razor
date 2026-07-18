@@ -4,9 +4,26 @@
 <PageTitle>URL Migrator</PageTitle>
 
 <MudStack Spacing="4" Class="page-surface url-migrator-page">
+    @* Anime Worlds theme art layers — decorative only; hidden unless [data-theme="anime"] (see anime-urlmigrator.css). *@
+    <div class="anime-art" aria-hidden="true">
+        <div class="anime-art-field"></div>
+        <div class="anime-art-stage"></div>
+        <div class="anime-art-veil"></div>
+        <svg class="anime-bolt anime-bolt-a" viewBox="0 0 60 220" fill="none">
+            <path d="M34 2 L16 58 L30 58 L8 124 L24 124 L4 196" stroke="currentColor" stroke-width="3" stroke-linejoin="bevel" />
+        </svg>
+        <svg class="anime-bolt anime-bolt-b" viewBox="0 0 60 220" fill="none">
+            <path d="M26 2 L44 52 L30 52 L52 112 L36 112 L56 190" stroke="currentColor" stroke-width="3" stroke-linejoin="bevel" />
+        </svg>
+        <div class="anime-embers">
+            <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+    </div>
+    <div class="anime-grain" aria-hidden="true"></div>
+
     <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween" Class="page-heading">
         <div>
-            <MudText Typo="Typo.h4">URL Migrator</MudText>
+            <MudText Typo="Typo.h4">URL <span class="anime-title-accent">Migrator</span></MudText>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
                 Find working replacement links for bookmarks stuck on dead domains, verify them, then approve or reject.
             </MudText>
@@ -39,7 +56,7 @@
             else
             {
                 <div class="migrator-dead-domains-list" role="list" aria-label="Detected dead domains">
-                    @foreach (var domain in _deadDomains)
+                    @foreach (var domain in _deadDomainsExpanded ? _deadDomains : _deadDomains.Take(DeadDomainsCollapsedCount))
                     {
                         <div class="migrator-dead-domain-row" role="listitem">
                             <span class="migrator-domain-host">@domain.Host</span>
@@ -52,6 +69,15 @@
                         </div>
                     }
                 </div>
+                @if (_deadDomains.Count > DeadDomainsCollapsedCount)
+                {
+                    <button type="button" class="migrator-migrate-btn migrator-expand-btn"
+                            @onclick="@(() => _deadDomainsExpanded = !_deadDomainsExpanded)">
+                        @(_deadDomainsExpanded
+                            ? "Show less"
+                            : $"Show all ({_deadDomains.Count - DeadDomainsCollapsedCount} more)")
+                    </button>
+                }
             }
 
             <MudDivider Class="my-2" />
@@ -99,6 +125,7 @@
     {
         <MudPaper Elevation="0" Class="ops-panel migrator-progress-panel">
             <MudStack Spacing="3">
+                <div class="anime-radar" aria-hidden="true"><i class="anime-radar-sweep"></i><i class="anime-radar-ping"></i></div>
                 <MudText Typo="Typo.h6">
                     @(IsRunning ? "Migrating " : "Last run: ")<span class="migrator-progress-host">@_status.DeadHost</span>
                 </MudText>

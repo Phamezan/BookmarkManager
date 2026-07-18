@@ -8,4 +8,13 @@
 @import url("settings.css?v=3");
 @import url("library.css?v=3");
 @import url("backups.css?v=1");
+@import url("anime-bookmarks.css?v=1");
+@import url("anime-library.css?v=1");
+@import url("anime-recommendations.css?v=1");
+@import url("anime-recyclebin.css?v=1");
+@import url("anime-calendar.css?v=1");
+@import url("anime-urlmigrator.css?v=1");
+@import url("anime-backups.css?v=1");
+@import url("anime-palette.css?v=1");
+@import url("anime-nav.css?v=1");
 @import url("overrides.css?v=5");

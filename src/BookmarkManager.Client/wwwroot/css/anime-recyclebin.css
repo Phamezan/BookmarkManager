@@ -1,0 +1,813 @@
+/* ============================================================================
+   Anime Worlds theme — Recycle Bin page skin ("Wanted Board").
+   Port of Docs/ui-design.md onto Pages/RecycleBin.razor.
+   ALL rules are scoped under [data-theme="anime"] .recycle-bin-page so other
+   themes and other pages stay pixel-untouched. Decorative layers are gated by
+   CSS only — MudBlazor's `[hidden]{display:none !important}` kills the HTML
+   `hidden` attribute as a gate.
+
+   Font note: index.html font set is shared, so the mockup's Google fonts are
+   substituted with already-loaded faces — Rye -> Cinzel, IM Fell English ->
+   Cormorant Garamond, IBM Plex Mono stays IBM Plex Mono.
+   ============================================================================ */
+
+/* ---- tokens -------------------------------------------------------------- */
+[data-theme="anime"] .recycle-bin-page {
+    --rb-board: #42311f;
+    --rb-board-light: #5d4830;
+    --rb-parchment: #efe3c4;
+    --rb-parchment-deep: #e0cfa4;
+    --rb-ink: #3d3128;
+    --rb-blood: #8c2f21;
+    --rb-brass: #caa54f;
+    --rb-brass-dark: #8a6c2c;
+    --rb-brass-light: #e8c97a;
+    --rb-host: #7a6650;
+    --rb-crime: #5d4c3d;
+    --rb-time: #6f5b45;
+    --rb-display: 'Rye', 'Cinzel', 'Times New Roman', serif;
+    --rb-serif: 'IM Fell English', 'Cormorant Garamond', Georgia, serif;
+    --rb-mono: 'IBM Plex Mono', ui-monospace, monospace;
+    --rb-noise-fine: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.07 0'/></filter><rect width='260' height='260' filter='url(%23n)'/></svg>");
+    --rb-noise-blotch: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='b'><feTurbulence type='fractalNoise' baseFrequency='0.012 0.016' numOctaves='3' seed='7' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.09 0'/></filter><rect width='400' height='400' filter='url(%23b)'/></svg>");
+    /* Recolors the inline `color: var(--bm-warning) !important` purge-time span
+       (inline styles can't be overridden, but their var() can be re-pointed). */
+    --bm-warning: #96522a;
+}
+
+/* ============================================================================
+   1. Art layer — cork board, vignette, fixed wood frame (viewport-fixed,
+      pointer-events none, behind/below content; frame floats above chrome).
+      NOTE: gated via CSS only — MudBlazor ships `[hidden]{display:none !important}`,
+      so the `hidden` attribute must NOT be used on these layers.
+   ============================================================================ */
+.recycle-bin-page .anime-art {
+    display: none;
+}
+
+[data-theme="anime"] .recycle-bin-page .anime-art {
+    display: block;
+}
+
+[data-theme="anime"] .recycle-bin-page .anime-art > div {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+}
+
+[data-theme="anime"] .recycle-bin-page .anime-art-board {
+    z-index: 0;
+    background:
+        var(--rb-noise-fine) 0 0/260px,
+        var(--rb-noise-blotch) 0 0/400px,
+        repeating-linear-gradient(90deg, #00000014 0 3px, transparent 3px 110px),
+        radial-gradient(90% 70% at 50% 0%, var(--rb-board-light), var(--rb-board) 70%);
+}
+
+[data-theme="anime"] .recycle-bin-page .anime-art-vignette {
+    z-index: 1;
+    background: radial-gradient(130% 100% at 50% 38%, transparent 52%, #140c06b8 100%);
+}
+
+[data-theme="anime"] .recycle-bin-page > .bookmark-zone {
+    position: relative;
+    z-index: 2;
+}
+
+[data-theme="anime"] .recycle-bin-page .anime-art-frame {
+    z-index: 1200;
+    box-shadow: inset 0 0 0 10px #2a1d10, inset 0 0 0 12px #5d452a,
+        inset 0 0 0 16px #241808, inset 0 0 60px 20px #000000a6;
+}
+
+/* ============================================================================
+   2. Header — breadcrumbs become the centered notice-board masthead.
+   ============================================================================ */
+[data-theme="anime"] .recycle-bin-page .breadcrumbs-container {
+    border: none;
+    justify-content: center;
+    row-gap: 2px;
+    padding: var(--bm-space-2) var(--bm-space-4) var(--bm-space-3);
+}
+
+[data-theme="anime"] .recycle-bin-page .breadcrumb-item.active {
+    flex-basis: 100%;
+    justify-content: center;
+    font-family: var(--rb-display);
+    font-weight: 700;
+    font-size: 2.1rem;
+    letter-spacing: .08em;
+    color: var(--rb-parchment);
+    text-shadow: 0 1px 0 #ffffff14, 2px 4px 0 #00000066, 0 10px 24px #000a;
+}
+
+[data-theme="anime"] .recycle-bin-page .breadcrumb-separator {
+    color: #c9b184;
+    opacity: .55;
+}
+
+/* muted explainer line — italic aged serif on a translucent backing chip */
+[data-theme="anime"] .recycle-bin-page .breadcrumb-item.text-muted {
+    font-family: var(--rb-serif);
+    font-style: italic;
+    font-size: 1.02rem;
+    color: #d8c49a;
+    text-shadow: 0 1px 2px #0008;
+    background: #2c201366;
+    border-radius: 999px;
+    padding: 1px 12px;
+}
+
+/* ============================================================================
+   3. Toolbar / selection bar — dark plank with brass-edged mono controls.
+   ============================================================================ */
+[data-theme="anime"] .recycle-bin-page .explorer-toolbar,
+[data-theme="anime"] .recycle-bin-page .explorer-toolbar.mud-paper,
+[data-theme="anime"] .recycle-bin-page .selection-bar {
+    background: #2c2013cc !important;
+    border: 1.5px solid #c9b184 !important;
+    border-radius: 4px !important;
+    box-shadow: inset 0 0 0 1px #c9b18426, 0 6px 18px #0007 !important;
+}
+
+[data-theme="anime"] .recycle-bin-page .explorer-toolbar .mud-icon-root {
+    color: var(--rb-brass) !important;
+}
+
+[data-theme="anime"] .recycle-bin-page .explorer-toolbar .mud-text-secondary,
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-typography {
+    color: #e8d5a8 !important;
+    font-family: var(--rb-mono);
+    font-size: .7rem;
+    letter-spacing: .1em;
+    text-shadow: 0 1px 2px #0009;
+}
+
+/* selection-bar buttons = mockup .tbtn ghost buttons */
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled,
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled.mud-button-filled-primary {
+    background: #2c201366 !important;
+    color: #e8d5a8 !important;
+    border: 1.5px solid #c9b184 !important;
+    border-radius: 2px !important;
+    box-shadow: inset 0 0 0 1px #c9b18426, 0 2px 6px #0005 !important;
+    font-family: var(--rb-mono) !important;
+    font-size: .68rem !important;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    text-shadow: 0 1px 2px #0009;
+}
+
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled:hover {
+    background: #c9b184 !important;
+    color: var(--rb-board) !important;
+    text-shadow: none;
+}
+
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled .mud-icon-root {
+    color: inherit !important;
+}
+
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-icon-button {
+    color: #c9b184 !important;
+}
+
+[data-theme="anime"] .recycle-bin-page .selection-bar .mud-icon-button:hover {
+    background: #c9b18422 !important;
+}
+
+/* ============================================================================
+   4. Board grid + fugitive card.
+   ============================================================================ */
+[data-theme="anime"] .recycle-bin-page .bookmark-grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 38px 30px;
+    padding: 8px 4px 0;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card {
+    --rot: 0deg;
+    --d: 0s;
+    --glint-d: 0s;
+    cursor: pointer;
+    padding: 0 0 var(--bm-space-3);
+    overflow: visible;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background:
+        linear-gradient(115deg, transparent 42%, #ffe9b8b3 50%, transparent 58%),
+        var(--rb-noise-fine) 0 0/170px,
+        linear-gradient(160deg, var(--rb-parchment), var(--rb-parchment-deep));
+    background-size: 240% 100%, 170px, auto;
+    background-position: 160% 0, 0 0, 0 0; /* glint layer parked off-canvas */
+    background-blend-mode: normal, multiply, normal;
+    border: 1px solid var(--rb-brass-dark);
+    border-radius: 3px;
+    box-shadow: 0 14px 34px #00000080, 0 3px 8px #0006, inset 0 1px 0 #fff8;
+    color: var(--rb-ink);
+    transform: rotate(var(--rot));
+    transition: transform .35s cubic-bezier(.22, .61, .36, 1), box-shadow .35s, border-color .2s;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n+1) { --rot: -1.4deg; }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n+2) { --rot: 1deg; }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n+3) { --rot: -.6deg; }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n) { --rot: 1.6deg; }
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:hover {
+    transform: rotate(0) translateY(-10px) scale(1.025);
+    z-index: 4;
+    border-color: var(--rb-brass-dark);
+    background:
+        linear-gradient(115deg, transparent 42%, #ffe9b8b3 50%, transparent 58%),
+        var(--rb-noise-fine) 0 0/170px,
+        linear-gradient(160deg, var(--rb-parchment), var(--rb-parchment-deep));
+    background-size: 240% 100%, 170px, auto;
+    background-position: 160% 0, 0 0, 0 0;
+    box-shadow: 0 30px 60px #000000bd, 0 6px 18px #0007, inset 0 1px 0 #fff8;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card.is-selected {
+    border-color: var(--rb-blood);
+    background:
+        linear-gradient(115deg, transparent 42%, #ffe9b8b3 50%, transparent 58%),
+        var(--rb-noise-fine) 0 0/170px,
+        linear-gradient(160deg, var(--rb-parchment), var(--rb-parchment-deep));
+    background-size: 240% 100%, 170px, auto;
+    background-position: 160% 0, 0 0, 0 0;
+    box-shadow: 0 14px 34px #00000080, 0 0 0 2px #8c2f2166, inset 0 1px 0 #fff8;
+}
+
+/* purge due within 3 days -> blood urgency (also flips inline warning var) */
+[data-theme="anime"] .recycle-bin-page .bookmark-card.purge-soon {
+    --bm-warning: var(--rb-blood);
+}
+
+/* ---- pushpin (replaces base top-edge sheen) + its cast shadow (replaces
+        base cursor bloom) -------------------------------------------------- */
+[data-theme="anime"] .recycle-bin-page .bookmark-card::before {
+    inset: -9px auto auto 50%;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    z-index: 5;
+    background: radial-gradient(circle at 35% 30%, #e8e2d4, #7d7364 60%, #3f3931);
+    box-shadow: 0 2px 5px #000a, inset 0 -2px 3px #0006;
+    opacity: 1;
+    transform: translateX(-50%);
+    transition: none;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n+2)::before {
+    background: radial-gradient(circle at 35% 30%, #f2e3b6, #caa54f 55%, #6d531f);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n+3)::before {
+    background: radial-gradient(circle at 35% 30%, #e8b7ac, #a03a2e 60%, #4d150d);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n)::before {
+    background: radial-gradient(circle at 35% 30%, #b9c9dd, #2e4a6b 60%, #101f31);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card::after {
+    inset: 7px auto auto 50%;
+    width: 20px;
+    height: 7px;
+    border-radius: 50%;
+    z-index: 1;
+    background: #00000059;
+    filter: blur(3px);
+    opacity: 1;
+    transform: translateX(-46%);
+    transition: none;
+}
+
+/* ============================================================================
+   5. Wanted poster — decorative header art, assigned deterministically by
+      card position (10 posters cycle via :nth-child; markup stays dumb).
+   ============================================================================ */
+.recycle-bin-page .wanted-poster {
+    display: none;
+}
+
+[data-theme="anime"] .recycle-bin-page .wanted-poster {
+    display: block;
+    position: relative;
+    width: calc(100% - 16px);
+    margin: 4px 8px 0;
+    aspect-ratio: 0.68;
+    background-color: #d8c69c;
+    background-size: cover;
+    background-position: center top;
+    border-radius: 2px;
+    box-shadow: 0 10px 26px #00000066, 0 2px 6px #0005;
+    filter: saturate(.94);
+    transform-origin: top center;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+1) .wanted-poster { background-image: url("../assets/anime/recyclebin/luffy.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+2) .wanted-poster { background-image: url("../assets/anime/recyclebin/zoro.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+3) .wanted-poster { background-image: url("../assets/anime/recyclebin/nami.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+4) .wanted-poster { background-image: url("../assets/anime/recyclebin/usopp.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+5) .wanted-poster { background-image: url("../assets/anime/recyclebin/sanji.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+6) .wanted-poster { background-image: url("../assets/anime/recyclebin/chopper.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+7) .wanted-poster { background-image: url("../assets/anime/recyclebin/robin.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+8) .wanted-poster { background-image: url("../assets/anime/recyclebin/franky.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+9) .wanted-poster { background-image: url("../assets/anime/recyclebin/brook.webp"); }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n) .wanted-poster { background-image: url("../assets/anime/recyclebin/jimbe.webp"); }
+
+/* aged-paper weathering variance (mockup nth-child filter pass) */
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(3n) .wanted-poster {
+    filter: saturate(.9) sepia(.14) brightness(.96);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(3n+1) .wanted-poster {
+    filter: saturate(.95) sepia(.06) hue-rotate(-5deg);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n) .wanted-poster {
+    filter: saturate(.92) sepia(.1) brightness(1.02) hue-rotate(3deg);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:hover .wanted-poster {
+    filter: saturate(1) brightness(1.04);
+}
+
+/* brass strip = top edge of the plaque, drawn at the poster's lower edge */
+[data-theme="anime"] .recycle-bin-page .wanted-poster::after {
+    content: '';
+    position: absolute;
+    left: -9px;
+    right: -9px;
+    bottom: -5px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--rb-brass-dark), var(--rb-brass-light) 30%, var(--rb-brass-dark) 55%, #d9b96a 80%, var(--rb-brass-dark));
+    pointer-events: none;
+}
+
+/* ---- tape strips (subset of cards, varied corners/angles) ---------------- */
+[data-theme="anime"] .recycle-bin-page .wanted-tape {
+    display: none;
+    position: absolute;
+    width: 86px;
+    height: 24px;
+    z-index: 2;
+    pointer-events: none;
+    background: linear-gradient(100deg, #efe6ccdb, #e2d3aedb 55%, #d8c69cdb);
+    box-shadow: 0 1px 4px #00000038, inset 0 0 6px #fff7;
+    opacity: .92;
+    clip-path: polygon(2% 8%, 5% 0, 95% 4%, 98% 12%, 100% 50%, 97% 88%, 94% 100%, 4% 96%, 0 82%, 1% 45%);
+}
+
+@supports (backdrop-filter: blur(1px)) {
+    [data-theme="anime"] .recycle-bin-page .wanted-tape {
+        backdrop-filter: blur(1px) saturate(.9);
+    }
+}
+
+[data-theme="anime"] .recycle-bin-page .wanted-tape-tl { top: -6px; left: -12px; transform: rotate(-9deg); }
+[data-theme="anime"] .recycle-bin-page .wanted-tape-tr { top: -4px; right: -14px; transform: rotate(8deg); }
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(3n+1) .wanted-tape-tl { display: block; }
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4n+3) .wanted-tape-tr { display: block; }
+
+/* ---- coffee ring (occasional, low on the poster) ------------------------- */
+[data-theme="anime"] .recycle-bin-page .wanted-coffee {
+    display: none;
+    position: absolute;
+    bottom: 14px;
+    left: -8px;
+    width: 74px;
+    height: 74px;
+    z-index: 2;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    opacity: .5;
+    filter: blur(.5px);
+    border-radius: 50%;
+    transform: rotate(-18deg);
+    background: radial-gradient(circle, transparent 53%, #6b452299 56%, #7c4f2699 58%, #4c2e1266 62%, transparent 66%);
+}
+
+[data-theme="anime"] .recycle-bin-page .wanted-coffee::after {
+    content: '';
+    position: absolute;
+    bottom: -9px;
+    left: 8px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    opacity: .55;
+    background: radial-gradient(circle, transparent 52%, #6b452288 56%, transparent 64%);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(5n+2) .wanted-coffee { display: block; }
+
+/* ---- scorched corner + ember + smoke (only cards ≤3 days from purge) ----- */
+[data-theme="anime"] .recycle-bin-page .wanted-scorch {
+    display: none;
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 46%;
+    aspect-ratio: 1;
+    z-index: 2;
+    pointer-events: none;
+    mix-blend-mode: multiply;
+    filter: blur(.3px);
+    background:
+        radial-gradient(circle at 100% 0%, #0d0704 0 6%, #1e0f06e0 16%, #3a1c0a66 30%, transparent 52%),
+        radial-gradient(circle at 100% 0%, transparent 50%, #00000070 53%, transparent 58%);
+}
+
+[data-theme="anime"] .recycle-bin-page .wanted-ember {
+    display: none;
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 34%;
+    aspect-ratio: 1;
+    z-index: 2;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    filter: blur(1px);
+    opacity: .35;
+    background: radial-gradient(circle at 97% 3%, #ff9a3fbb 0%, #ff6a1f55 16%, transparent 40%);
+}
+
+[data-theme="anime"] .recycle-bin-page .wanted-smoke {
+    display: none;
+    position: absolute;
+    top: 5%;
+    width: 26px;
+    height: 44px;
+    z-index: 2;
+    pointer-events: none;
+    border-radius: 50%;
+    mix-blend-mode: screen;
+    filter: blur(6px);
+    opacity: 0;
+    background: radial-gradient(ellipse at center, #d8d2c855 0%, transparent 70%);
+}
+
+[data-theme="anime"] .recycle-bin-page .wanted-smoke-1 { right: 9%; }
+[data-theme="anime"] .recycle-bin-page .wanted-smoke-2 { right: 15%; }
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card.purge-soon .wanted-scorch,
+[data-theme="anime"] .recycle-bin-page .bookmark-card.purge-soon .wanted-ember,
+[data-theme="anime"] .recycle-bin-page .bookmark-card.purge-soon .wanted-smoke {
+    display: block;
+}
+
+/* ============================================================================
+   6. Plaque content — real bookmark data on the parchment under the poster.
+   ============================================================================ */
+[data-theme="anime"] .recycle-bin-page .bookmark-card-header {
+    padding: 12px 14px 0;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-title {
+    font-family: var(--rb-serif);
+    font-weight: 600;
+    font-size: 1.14rem;
+    line-height: 1.2;
+    letter-spacing: 0;
+    color: var(--rb-ink);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-icon {
+    color: var(--rb-brass-dark);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-url {
+    font-family: var(--rb-mono);
+    font-size: .62rem;
+    letter-spacing: .02em;
+    color: var(--rb-host);
+    opacity: 1;
+    padding: 2px 14px 0;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:hover .bookmark-card-url {
+    color: var(--rb-crime);
+    opacity: 1;
+}
+
+/* footer = bounty row: deleted/purge ledger lines under a dashed rule */
+[data-theme="anime"] .recycle-bin-page .bookmark-card-footer {
+    margin: auto 12px 0;
+    padding: 8px 2px 0;
+    border-top: 1px dashed #8a6c2c66;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-time {
+    font-family: var(--rb-mono);
+    font-size: .64rem;
+    letter-spacing: .05em;
+    color: var(--rb-time);
+}
+
+/* card checkbox = small brass-rimmed tack (keeps base hover-reveal behavior) */
+[data-theme="anime"] .recycle-bin-page .bookmark-card .bookmark-select {
+    top: 10px;
+    right: 10px;
+    z-index: 6;
+    background: #efe3c4e6;
+    border-radius: 50%;
+    padding: 3px;
+    box-shadow: 0 2px 6px #0009;
+}
+
+[data-theme="anime"] .recycle-bin-page .bm-checkbox {
+    border-radius: 50%;
+    border: 1.5px solid var(--rb-brass-dark);
+    background-color: var(--rb-parchment);
+    box-shadow: inset 0 -2px 3px #0002;
+}
+
+[data-theme="anime"] .recycle-bin-page .bm-checkbox:hover {
+    border-color: var(--rb-blood);
+    background-color: #f5ecd2;
+}
+
+[data-theme="anime"] .recycle-bin-page .bm-checkbox:checked {
+    background: var(--rb-blood);
+    border-color: #6d2318;
+    box-shadow: 0 0 0 3px #8c2f2138;
+}
+
+[data-theme="anime"] .recycle-bin-page .bm-checkbox:checked::after {
+    border-color: #f3e5c8;
+}
+
+[data-theme="anime"] .recycle-bin-page .bm-checkbox:focus-visible {
+    border-color: var(--rb-blood);
+    box-shadow: 0 0 0 3px #caa54f66;
+}
+
+/* restore action = rubber stamp (keeps base hover-reveal behavior) */
+[data-theme="anime"] .recycle-bin-page .bookmark-card-actions {
+    bottom: 10px;
+    right: 10px;
+    z-index: 7;
+    background: #efe3c4f2;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: 2px solid var(--rb-ink);
+    border-radius: 3px 5px 4px 6px/4px 3px 6px 5px;
+    box-shadow: inset 0 0 0 1px #3d31281f, 0 2px 0 #0004;
+    transform: rotate(-1.5deg) translateY(4px);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card:hover .bookmark-card-actions,
+[data-theme="anime"] .recycle-bin-page .bookmark-card:focus-within .bookmark-card-actions {
+    transform: rotate(-1.5deg) translateY(0);
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-actions .mud-icon-button {
+    color: var(--rb-ink) !important;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-actions .mud-icon-button:hover {
+    background: var(--rb-ink) !important;
+    color: var(--rb-parchment) !important;
+}
+
+[data-theme="anime"] .recycle-bin-page .bookmark-card-actions .mud-icon-button:active {
+    transform: translateY(2px) scale(.92);
+}
+
+/* focus visibility across themed controls */
+[data-theme="anime"] .recycle-bin-page .mud-button:focus-visible,
+[data-theme="anime"] .recycle-bin-page .mud-icon-button:focus-visible {
+    outline: 2px dashed var(--rb-brass);
+    outline-offset: 2px;
+}
+
+/* ============================================================================
+   7. Loading skeletons + empty state, in the same materials.
+   ============================================================================ */
+[data-theme="anime"] .recycle-bin-page .skeleton-card {
+    background: linear-gradient(90deg,
+            #efe3c440 25%,
+            #efe3c4a6 50%,
+            #efe3c440 75%);
+    background-size: 200% 100%;
+    border: 1px solid var(--rb-brass-dark);
+    border-radius: 3px;
+    box-shadow: 0 14px 34px #00000066;
+    height: 380px;
+}
+
+[data-theme="anime"] .recycle-bin-page .empty-state {
+    position: relative;
+    background:
+        var(--rb-noise-fine) 0 0/170px,
+        linear-gradient(160deg, var(--rb-parchment), var(--rb-parchment-deep));
+    background-blend-mode: multiply, normal;
+    border: 1px solid var(--rb-brass-dark);
+    border-radius: 3px;
+    box-shadow: 0 14px 34px #00000080, inset 0 1px 0 #fff8;
+    color: var(--rb-crime);
+    font-family: var(--rb-serif);
+    transform: rotate(-.6deg);
+    max-width: 520px;
+    margin: 24px auto 0;
+}
+
+/* pin on the empty-state notice */
+[data-theme="anime"] .recycle-bin-page .empty-state::before {
+    content: '';
+    position: absolute;
+    top: -9px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #f2e3b6, #caa54f 55%, #6d531f);
+    box-shadow: 0 2px 5px #000a, inset 0 -2px 3px #0006;
+}
+
+[data-theme="anime"] .recycle-bin-page .empty-state .mud-icon-root {
+    color: var(--rb-brass-dark);
+}
+
+[data-theme="anime"] .recycle-bin-page .empty-state .mud-typography,
+[data-theme="anime"] .recycle-bin-page .empty-state > .mud-typography {
+    color: var(--rb-ink);
+    font-family: var(--rb-serif);
+}
+
+[data-theme="anime"] .recycle-bin-page .empty-state .mud-text-secondary,
+[data-theme="anime"] .recycle-bin-page .empty-state .mud-typography.mud-text-secondary {
+    color: var(--rb-crime) !important;
+    font-style: italic;
+}
+
+/* ============================================================================
+   8. Motion pass — everything decorative lives behind no-preference.
+   ============================================================================ */
+@media (prefers-reduced-motion: no-preference) {
+
+    /* 0. chrome entrance */
+    @keyframes rb-riseIn {
+        from { opacity: 0; transform: translateY(14px); }
+        to { opacity: 1; transform: none; }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-header {
+        animation: rb-riseIn .7s ease-out backwards;
+    }
+
+    /* 1. poster entrance — slapped onto the board with overshoot bounce */
+    @keyframes rb-pinIn {
+        0% { opacity: 0; transform: scale(1.14) rotate(calc(var(--rot) + 3.5deg)) translateY(-16px); }
+        55% { opacity: 1; transform: scale(.965) rotate(calc(var(--rot) - .8deg)) translateY(2px); }
+        80% { transform: scale(1.012) rotate(calc(var(--rot) + .3deg)) translateY(-1px); }
+        100% { opacity: 1; transform: scale(1) rotate(var(--rot)) translateY(0); }
+    }
+
+    /* 5. brass plaque glint — warm diagonal light sweep, masked to the card */
+    @keyframes rb-plaqueGlint {
+        0% { background-position: -60% 0, 0 0, 0 0; }
+        8% { background-position: 160% 0, 0 0, 0 0; }
+        100% { background-position: 160% 0, 0 0, 0 0; }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card {
+        animation: rb-pinIn .55s cubic-bezier(.3, 1.2, .42, 1) backwards,
+            rb-plaqueGlint 10s linear infinite;
+        animation-delay: var(--d), var(--glint-d);
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(1) { --d: .02s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(2) { --d: .09s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(3) { --d: .16s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(4) { --d: .23s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(5) { --d: .30s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(6) { --d: .37s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(7) { --d: .44s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(8) { --d: .51s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(9) { --d: .58s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10) { --d: .65s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(n+11) { --d: .65s; }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(2n) { --glint-d: -3.5s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(3n) { --glint-d: -6.5s; }
+
+    /* 1b. pin pops in just after the poster lands; its shadow fades in behind */
+    @keyframes rb-pinDrop {
+        0% { opacity: 0; transform: translateX(-50%) scale(.2); }
+        60% { opacity: 1; transform: translateX(-50%) scale(1.25); }
+        100% { opacity: 1; transform: translateX(-50%) scale(1); }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card::before {
+        animation: rb-pinDrop .35s ease-out backwards;
+        animation-delay: calc(var(--d) + .22s);
+    }
+
+    @keyframes rb-fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card::after {
+        animation: rb-fadeIn .4s ease-out backwards;
+        animation-delay: calc(var(--d) + .3s);
+    }
+
+    /* 2. ambient sway — CSS-only approximation of the mockup's one-at-a-time
+       draft: a 40s cycle where each card sways for ~3.4s, windows staggered
+       4s apart via per-child delays so sways never overlap. */
+    @keyframes rb-ambSwing {
+        0% { transform: rotate(0); }
+        1.1% { transform: rotate(-1.3deg); }
+        2.6% { transform: rotate(1.05deg); }
+        4% { transform: rotate(-.55deg); }
+        5.3% { transform: rotate(.25deg); }
+        6.4% { transform: rotate(0); }
+        100% { transform: rotate(0); }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .wanted-poster {
+        animation: rb-ambSwing 40s ease-in-out infinite;
+        animation-delay: var(--sway-d, 0s);
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+1) .wanted-poster { --sway-d: 0s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+2) .wanted-poster { --sway-d: -4s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+3) .wanted-poster { --sway-d: -8s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+4) .wanted-poster { --sway-d: -12s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+5) .wanted-poster { --sway-d: -16s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+6) .wanted-poster { --sway-d: -20s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+7) .wanted-poster { --sway-d: -24s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+8) .wanted-poster { --sway-d: -28s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n+9) .wanted-poster { --sway-d: -32s; }
+    [data-theme="anime"] .recycle-bin-page .bookmark-card:nth-child(10n) .wanted-poster { --sway-d: -36s; }
+
+    /* 3. purge countdown — slow warning breathe on the urgent purge line */
+    @keyframes rb-urgentBreathe {
+        0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+        50% { filter: drop-shadow(0 0 5px #c9432f9c); }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .bookmark-card.purge-soon .bookmark-card-footer .bookmark-card-time:last-of-type {
+        font-weight: 600;
+        animation: rb-urgentBreathe 3.6s ease-in-out infinite;
+    }
+
+    /* 4. ember glow + rising smoke on scorched posters */
+    @keyframes rb-emberPulse {
+        0%, 100% { opacity: .3; }
+        50% { opacity: .75; }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .wanted-ember {
+        animation: rb-emberPulse 4.6s ease-in-out infinite;
+    }
+
+    @keyframes rb-smokeRise {
+        0% { transform: translate(0, 10px) scale(.6); opacity: 0; }
+        20% { opacity: .5; }
+        100% { transform: translate(-14px, -84px) scale(1.5) rotate(8deg); opacity: 0; }
+    }
+
+    [data-theme="anime"] .recycle-bin-page .wanted-smoke-1 {
+        animation: rb-smokeRise 7s linear infinite;
+    }
+
+    [data-theme="anime"] .recycle-bin-page .wanted-smoke-2 {
+        animation: rb-smokeRise 7s 3.5s linear infinite;
+    }
+
+    /* 6. control press feedback */
+    [data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled {
+        transition: background .2s, color .2s, transform .15s ease;
+    }
+
+    [data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled:hover {
+        transform: translateY(-2px);
+    }
+
+    [data-theme="anime"] .recycle-bin-page .selection-bar .mud-button-filled:active {
+        transform: translateY(1px) scale(.97);
+    }
+}
+
+/* ============================================================================
+   9. Sticky header — melt into the board. The base theme paints a near-opaque
+      --bm-bg bar (bookmarks.css .bookmark-header); on the wanted board the
+      masthead sits on open cork, so the bar becomes a soft board-toned veil
+      that fades downward (no hard edge, keeps scrolled cards readable).
+   ============================================================================ */
+[data-theme="anime"] .recycle-bin-page .bookmark-header {
+    background: linear-gradient(180deg,
+        rgba(43, 30, 17, 0.88) 0%,
+        rgba(43, 30, 17, 0.55) 55%,
+        rgba(43, 30, 17, 0) 100%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
