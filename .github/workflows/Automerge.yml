@@ -1,3 +1,7 @@
+# NOTE: This CI/CD workflow reflects the original author's personal solo-dev
+# setup (auto-merge on push, no review gate). If you're forking this repo,
+# don't rely on this file as-is — write your own pipeline that fits your
+# own review/branching conventions.
 name: CI/CD Auto-Merge Pipeline
 
 on:
