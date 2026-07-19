@@ -18,9 +18,6 @@ public sealed class LibraryProviderRegistryTests
 
         public Task<LibraryEntryDto?> GetDetailsAsync(string providerId, CancellationToken cancellationToken)
             => Task.FromResult<LibraryEntryDto?>(null);
-
-        public Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken)
-            => Task.FromResult<LibraryReleaseInfo?>(null);
     }
 
     private sealed class FakeScopeFactory(BookmarkManager.Api.Data.AppDbContext db) : IServiceScopeFactory, IServiceScope, IServiceProvider

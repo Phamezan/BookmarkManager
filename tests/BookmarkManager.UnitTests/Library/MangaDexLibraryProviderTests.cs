@@ -83,37 +83,4 @@ public sealed class MangaDexLibraryProviderTests
         using var doc = JsonDocument.Parse("""{ "id": "x", "attributes": {} }""");
         Assert.Null(MangaDexLibraryProvider.MapManga(doc.RootElement, "MangaDex"));
     }
-
-    [Fact]
-    public void ParseLatestRelease_ReadsFirstFeedChapter()
-    {
-        const string json = """
-        {
-          "data": [
-            {
-              "attributes": {
-                "chapter": "201",
-                "volume": "15",
-                "publishAt": "2024-06-01T12:00:00Z"
-              }
-            }
-          ]
-        }
-        """;
-
-        using var doc = JsonDocument.Parse(json);
-        var release = MangaDexLibraryProvider.ParseLatestRelease(doc.RootElement, "manga-id");
-
-        Assert.NotNull(release);
-        Assert.Equal("201", release!.LatestChapter);
-        Assert.Equal("15", release.LatestVolume);
-        Assert.Equal(new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero), release.LastReleaseAt);
-    }
-
-    [Fact]
-    public void ParseLatestRelease_ReturnsNullWhenFeedEmpty()
-    {
-        using var doc = JsonDocument.Parse("""{ "data": [] }""");
-        Assert.Null(MangaDexLibraryProvider.ParseLatestRelease(doc.RootElement, "manga-id"));
-    }
 }

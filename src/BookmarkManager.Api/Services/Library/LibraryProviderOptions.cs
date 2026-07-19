@@ -12,6 +12,4 @@ public sealed class LibraryProviderOptions
     /// <summary>Hard per-provider ceiling for a single search call so one slow scraper can't
     /// bottleneck a fan-out search response.</summary>
     public int SearchTimeoutSeconds { get; init; } = 5;
-
-    public int DetailsTimeoutSeconds { get; init; } = 10;
 }

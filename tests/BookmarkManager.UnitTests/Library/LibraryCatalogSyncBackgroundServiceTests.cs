@@ -32,9 +32,6 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         public Task<LibraryEntryDto?> GetDetailsAsync(string providerId, CancellationToken cancellationToken) =>
             Task.FromResult(onGetDetails?.Invoke(providerId));
 
-        public Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken) =>
-            Task.FromResult<LibraryReleaseInfo?>(null);
-
         public Task<CatalogPageResult> GetCatalogPageAsync(string mediaTypeQuery, string? continuationToken, CancellationToken cancellationToken) =>
             Task.FromResult(onGetPage is not null
                 ? onGetPage(mediaTypeQuery, continuationToken)

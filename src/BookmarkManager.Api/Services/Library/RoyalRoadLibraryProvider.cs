@@ -9,10 +9,10 @@ using Microsoft.Extensions.Options;
 namespace BookmarkManager.Api.Services.Library;
 
 /// <summary>
-/// RoyalRoad has no official API. This scrapes the public search page and fiction pages, and reads
-/// the public syndication (RSS) feed for the latest chapter. Documented as fragile: RoyalRoad can
-/// change markup at any time, so every parse step degrades to an empty/null result on mismatch
-/// rather than throwing - a broken selector here must never break the rest of a fan-out search.
+/// RoyalRoad has no official API. This scrapes the public search page and fiction pages.
+/// Documented as fragile: RoyalRoad can change markup at any time, so every parse step
+/// degrades to an empty/null result on mismatch rather than throwing - a broken selector
+/// here must never break the rest of a fan-out search.
 /// </summary>
 public sealed partial class RoyalRoadLibraryProvider(
     IHttpClientFactory httpFactory,
@@ -24,7 +24,6 @@ public sealed partial class RoyalRoadLibraryProvider(
     private const string BaseUrl = "https://www.royalroad.com";
     private static readonly TimeSpan SearchCacheTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan DetailsCacheTtl = TimeSpan.FromHours(3);
-    private static readonly TimeSpan ReleaseCacheTtl = TimeSpan.FromMinutes(20);
 
     private static readonly ProviderRateLimiter RateLimiter = new(
         tokenLimit: 3,
@@ -75,28 +74,6 @@ public sealed partial class RoyalRoadLibraryProvider(
                 await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
                 var html = await GetHtmlAsync(url, ct).ConfigureAwait(false);
                 return html is null ? null : ParseFictionPage(html, providerId, ProviderName);
-            },
-            null,
-            cancellationToken);
-    }
-
-    public Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken)
-    {
-        if (!IsEnabled)
-            return Task.FromResult<LibraryReleaseInfo?>(null);
-
-        var cacheKey = $"{ProviderName}:release:{providerId}";
-        var url = $"{BaseUrl}/fiction/syndication/{Uri.EscapeDataString(providerId)}";
-
-        return ExecuteAsync(
-            cacheKey,
-            ReleaseCacheTtl,
-            TimeSpan.FromSeconds(8),
-            async ct =>
-            {
-                await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
-                var xml = await GetHtmlAsync(url, ct).ConfigureAwait(false);
-                return xml is null ? null : ParseSyndicationFeed(xml, providerId);
             },
             null,
             cancellationToken);
@@ -228,27 +205,6 @@ public sealed partial class RoyalRoadLibraryProvider(
             $"{BaseUrl}/fiction/{providerId}/{slug}");
     }
 
-    public static LibraryReleaseInfo? ParseSyndicationFeed(string xml, string providerId)
-    {
-        var itemMatch = FeedItemBlockRegex().Match(xml);
-        if (!itemMatch.Success)
-            return null;
-
-        var block = itemMatch.Value;
-        var titleMatch = FeedTitleRegex().Match(block);
-        if (!titleMatch.Success)
-            return null;
-
-        var chapterTitle = WebUtility.HtmlDecode(titleMatch.Groups["title"].Value).Trim();
-        var link = FeedLinkRegex().Match(block) is { Success: true } linkMatch ? linkMatch.Groups["link"].Value.Trim() : string.Empty;
-        DateTimeOffset? pubDate = FeedPubDateRegex().Match(block) is { Success: true } pubDateMatch &&
-                                   DateTimeOffset.TryParse(pubDateMatch.Groups["pubdate"].Value.Trim(), out var parsed)
-            ? parsed
-            : null;
-
-        return new LibraryReleaseInfo(chapterTitle, null, pubDate, link.Length > 0 ? link : $"{BaseUrl}/fiction/{providerId}");
-    }
-
     private static string SlugFromTitle(string title) =>
         NonSlugCharRegex().Replace(title.ToLowerInvariant(), "-").Trim('-');
 
@@ -274,18 +230,6 @@ public sealed partial class RoyalRoadLibraryProvider(
 
     [GeneratedRegex("""(?is)<span\b[^>]*class\s*=\s*['"][^'"]*label[^'"]*['"][^>]*>\s*(?<status>ONGOING|COMPLETED|HIATUS|STUB|DROPPED)\s*</span>""")]
     private static partial Regex FictionStatusRegex();
-
-    [GeneratedRegex("""(?is)<item>.*?</item>""")]
-    private static partial Regex FeedItemBlockRegex();
-
-    [GeneratedRegex("""(?is)<title>(?<title>.*?)</title>""")]
-    private static partial Regex FeedTitleRegex();
-
-    [GeneratedRegex("""(?is)<link>(?<link>.*?)</link>""")]
-    private static partial Regex FeedLinkRegex();
-
-    [GeneratedRegex("""(?is)<pubDate>(?<pubdate>.*?)</pubDate>""")]
-    private static partial Regex FeedPubDateRegex();
 
     [GeneratedRegex(@"[^a-z0-9]+")]
     private static partial Regex NonSlugCharRegex();

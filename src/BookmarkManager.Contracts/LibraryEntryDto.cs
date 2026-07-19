@@ -1,6 +1,6 @@
 namespace BookmarkManager.Contracts;
 
-/// <summary>One catalog entry returned by a Library media provider (AniList, MangaDex, Kitsu, RoyalRoad, NovelUpdates).</summary>
+/// <summary>One catalog entry returned by a Library media provider (AniList, MangaDex, Kitsu, RoyalRoad, Novelfire, RanobeDB).</summary>
 public sealed record LibraryEntryDto(
     string Provider,
     string ProviderId,

@@ -135,14 +135,6 @@ public sealed partial class AniListLibraryProvider(
             cancellationToken);
     }
 
-    public async Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken)
-    {
-        var entry = await GetDetailsAsync(providerId, cancellationToken).ConfigureAwait(false);
-        return entry is null
-            ? null
-            : new LibraryReleaseInfo(entry.LatestChapter, entry.LatestVolume, entry.LastReleaseAt, entry.SourceUrl);
-    }
-
     private async Task<JsonDocument?> QueryAsync(object body, CancellationToken cancellationToken)
     {
         var http = CreateClient();

@@ -95,14 +95,6 @@ public sealed partial class NovelfireLibraryProvider(
             cancellationToken);
     }
 
-    public async Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken)
-    {
-        var entry = await GetDetailsAsync(providerId, cancellationToken).ConfigureAwait(false);
-        return entry is null
-            ? null
-            : new LibraryReleaseInfo(entry.LatestChapter, null, entry.LastReleaseAt, entry.SourceUrl);
-    }
-
     private async Task<string?> GetHtmlAsync(string url, CancellationToken cancellationToken)
     {
         var http = CreateClient();
