@@ -1,4 +1,4 @@
-import type { ExtensionEvent, ExtensionEventType } from "../api/contracts";
+import type { ExtensionEvent } from "../api/contracts";
 import {
   type BraveBookmarkTreeNode,
   toBrowserNode,
@@ -112,5 +112,3 @@ export function normalizeReorder(
     },
   };
 }
-
-export { type ExtensionEventType, type BraveBookmarkTreeNode, type BraveBookmarkRemoveInfo };

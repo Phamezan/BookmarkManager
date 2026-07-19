@@ -27,7 +27,3 @@ export function validateApiBaseUrl(raw: string): Result<string, string> {
   const origin = parsed.origin;
   return { ok: true, value: origin };
 }
-
-export function normalizeBaseUrl(raw: string): string {
-  return raw.replace(/\/+$/, "");
-}

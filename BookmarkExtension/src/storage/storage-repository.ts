@@ -20,8 +20,6 @@ type ChromeStorageLocal = {
   remove(keys: string | string[]): Promise<void>;
 };
 
-const OUTBOX_THRESHOLD = 5000;
-
 /** Bookmarks Bar node id used as the default quick-bookmark destination. */
 export const DEFAULT_FOLDER_ID = "1";
 const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
@@ -133,16 +131,6 @@ export class ChromeStorageRepository implements StorageRepository {
       await this.storage.set({ "bm.outbox": outbox });
     });
     await this.outboxChain;
-  }
-
-  async getOutboxCount(): Promise<number> {
-    const result = await this.storage.get("bm.outbox");
-    const outbox = (result["bm.outbox"] as Record<string, OutboxEntry>) ?? {};
-    return Object.keys(outbox).length;
-  }
-
-  isAtThreshold(count: number): boolean {
-    return count >= OUTBOX_THRESHOLD;
   }
 
   async saveCorrelation(value: CommandCorrelation): Promise<void> {

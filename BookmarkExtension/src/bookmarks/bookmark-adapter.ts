@@ -12,8 +12,6 @@ import {
 } from "./browser-node-mapper";
 
 interface BraveBookmarksApi {
-  getTree(): Promise<BraveBookmarkTreeNode[]>;
-  get(id: string): Promise<BraveBookmarkTreeNode[]>;
   getSubTree(id: string): Promise<BraveBookmarkTreeNode[]>;
   create(bookmark: {
     parentId: string;

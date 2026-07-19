@@ -26,7 +26,6 @@ describe("PopupController", () => {
         return { success: true };
       },
       requestPermission: async () => permissionGranted,
-      now: () => new Date("2026-06-22T10:00:00Z"),
     });
   });
 
@@ -150,7 +149,6 @@ describe("PopupController", () => {
           return { success: true, filename: "BookmarkManagerBackups/bookmarks-backup-x.html", error: null };
         },
         requestPermission: async () => permissionGranted,
-        now: () => new Date("2026-06-22T10:00:00Z"),
       });
 
       const result = await controller.manualBackup();
@@ -202,7 +200,6 @@ describe("PopupController", () => {
           return { success: false };
         },
         requestPermission: async () => permissionGranted,
-        now: () => new Date("2026-06-22T10:00:00Z"),
       });
       const result = await controller.confirmDuplicateCreate();
       expect(result.success).toBe(false);

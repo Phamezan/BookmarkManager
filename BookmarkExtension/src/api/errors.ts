@@ -38,13 +38,3 @@ export function classifyError(
   }
   return "permanent";
 }
-
-export function isRetryable(classification: RetryClassification): boolean {
-  return classification === "retryable" || classification === "config_stale";
-}
-
-export function backoffDelay(attemptCount: number): number {
-  const base = 5000;
-  const max = 300000;
-  return Math.min(base * Math.pow(2, attemptCount), max);
-}

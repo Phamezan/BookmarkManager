@@ -1,7 +1,6 @@
 import type {
   ApiClient,
   BookmarkAdapter,
-  ExtensionConfig,
   ExtensionEvent,
   OutboxEntry,
   ServerConfig,
@@ -236,7 +235,3 @@ export class SyncCoordinator {
     return status?.lastSuccessAt ?? null;
   }
 }
-
-
-
-export { type ExtensionConfig };

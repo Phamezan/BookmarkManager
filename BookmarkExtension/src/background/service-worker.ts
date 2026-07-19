@@ -222,8 +222,9 @@ export class ServiceWorker {
 
   /**
    * Handles the `quick-bookmark` command. Resolves the active tab, the last
-   * remembered folder, and either edits an existing exact-URL match or creates
-   * a new bookmark, then stores transient editor state and opens the popup.
+   * remembered folder, and either reuses an existing exact-URL match or
+   * creates a new bookmark, then stores transient editor state and opens the
+   * popup.
    *
    * This issues real `chrome.bookmarks` operations only — the normal
    * `onCreated`/`onChanged`/`onMoved` listeners handle sync. No synthetic
@@ -324,7 +325,7 @@ export class ServiceWorker {
       }
 
       // Series-level duplicate gate: when this exact URL is not bookmarked
-      // yet (an exact match becomes an edit, not a new bookmark) but another
+      // yet (an exact match is reused, not duplicated) but another
       // chapter of the same series is, don't create — stash the pending
       // creation and let the popup ask the user to confirm.
       if (this.deps.duplicateDetector && !(await this.hasExactBookmark(url))) {
@@ -422,10 +423,9 @@ export class ServiceWorker {
   }
 
   /**
-   * Searches browser bookmarks for an exact-URL match. If found, edits the
-   * match in the remembered folder first (or the first match), updating the
-   * title and moving it into the remembered folder when needed. Otherwise
-   * creates a new bookmark in the remembered folder.
+   * Searches browser bookmarks for an exact-URL match. If found, returns the
+   * match in the remembered folder first (or the first match) unchanged.
+   * Otherwise creates a new bookmark in the remembered folder.
    */
   private async resolveOrCreateBookmark(
     url: string,
