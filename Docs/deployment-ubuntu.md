@@ -1,3 +1,9 @@
+---
+status: operational
+last_verified: 2026-07-17
+note: Evergreen runbook. Keep current with docker-compose, port, TLS, and backup-volume conventions. Verify against docker-compose.yml + Program.cs when those change.
+---
+
 # Ubuntu Deployment
 
 This project runs as a single ASP.NET Core API container that serves the Blazor WebAssembly client from the same origin. The Brave extension stays on the desktop host and points at the server URL you configure in its popup.
@@ -84,22 +90,21 @@ The in-tab command palette (extension shortcut on any webpage) embeds the `/pale
 
 The server keeps its http endpoint untouched and adds a second https endpoint (dual Kestrel binding).
 
-1. Install [mkcert](https://github.com/FiloSottile/mkcert) on the desktop machine running Brave and install its local CA (this is what makes Brave trust the LAN cert):
+### Quick setup
 
-   ```bash
-   mkcert -install
-   ```
+Requires [mkcert](https://github.com/FiloSottile/mkcert) installed on the machine you run the script from — no pure-.NET substitute exists here, since this needs a cert trusted across LAN devices, not just the local machine (`dotnet dev-certs https --trust` only covers `localhost` on the machine that ran it).
 
-2. Generate a PEM cert/key for the server's LAN name/IP and place both files in `certs/` at the repo root on the server:
+On the server (or wherever you're generating the cert):
 
-   ```bash
-   mkdir -p certs
-   mkcert -cert-file certs/lan.pem -key-file certs/lan-key.pem <server-hostname> <server-lan-ip>
-   ```
+```bash
+scripts/setup-tls.sh <server-hostname> <server-lan-ip>
+```
 
-   If you generate on the desktop, copy `certs/lan.pem` and `certs/lan-key.pem` to the server's repo checkout. `certs/` is gitignored — never commit key material.
+This installs mkcert's local CA, writes `certs/lan.pem` + `certs/lan-key.pem`, and prints the next command. A PowerShell equivalent (`scripts/setup-tls.ps1`) is provided for local Windows dev.
 
-3. Start with the TLS overlay compose file:
+Then:
+
+1. Start with the TLS overlay compose file:
 
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
@@ -107,23 +112,36 @@ The server keeps its http endpoint untouched and adds a second https endpoint (d
 
    This keeps http on 8080 and adds https on 8443 (set `BOOKMARK_MANAGER_TLS_PORT` in `.env` to change it).
 
-4. Allow the port if `ufw` is enabled:
+2. Allow the port if `ufw` is enabled:
 
    ```bash
    sudo ufw allow 8443/tcp
    ```
 
-5. Verify from the desktop:
+3. Verify from the desktop:
 
    ```bash
    curl https://<server-ip>:8443/health/live
    ```
 
-   Then open `https://<server-ip>:8443/palette` in Brave — it must load without a certificate warning. If it warns, the mkcert root CA is not installed in that browser profile.
+   Then open `https://<server-ip>:8443/palette` in Brave — it must load without a certificate warning. If it warns, mkcert's root CA isn't installed in that browser's device/profile; run `mkcert -install` there too (see the script's final message).
 
 The extension derives the palette's https origin from the configured API base URL (8080 → 8443, 5080 → 5443, otherwise 8443). Keep the API base URL in the extension popup pointed at the http endpoint; nothing else changes.
 
-For local Windows development the same pattern is available via the `https` launch profile (`dotnet run --launch-profile https`), which expects `certs/lan.pem` / `certs/lan-key.pem` at the repo root and serves http on 5080 plus https on 5443.
+For local Windows development the same pattern is available via the `https` launch profile (`dotnet run --launch-profile https`), which expects `certs/lan.pem` / `certs/lan-key.pem` at the repo root and serves http on 5080 plus https on 5443 — generate them with `scripts/setup-tls.ps1`.
+
+<details>
+<summary>Manual steps (if you'd rather not run the script)</summary>
+
+```bash
+mkcert -install
+mkdir -p certs
+mkcert -cert-file certs/lan.pem -key-file certs/lan-key.pem <server-hostname> <server-lan-ip>
+```
+
+If you generate on the desktop instead of the server, copy `certs/lan.pem` and `certs/lan-key.pem` to the server's repo checkout. `certs/` is gitignored — never commit key material.
+
+</details>
 
 ## Updates
 
