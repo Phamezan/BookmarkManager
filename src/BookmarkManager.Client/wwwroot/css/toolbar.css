@@ -340,6 +340,13 @@
     border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
+/* Standalone Auto Tag button — always rendered (not gated by the tag filter
+   panel), so it needs its own alignment now that it's not inside
+   .tag-footer-row's space-between flex row. */
+.anime-autotag-btn-standalone {
+    align-self: flex-end;
+}
+
 /* Selection bar — sticky, accent-tinted */
 .selection-bar {
     position: sticky;
