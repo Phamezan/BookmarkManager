@@ -83,7 +83,7 @@ public sealed partial class ExtensionService
         var ids = allNodes.Where(n => n.Id != Guid.Empty).Select(n => n.Id).Distinct().ToHashSet();
         if (ids.Count == 0) return;
 
-        // Fetch all active (non-deleted) nodes under the tracked roots to check for orphans
+        // Fetch all active (non-deleted) nodes to check for orphans
         var activeNodes = await db.BookmarkNodes.Where(n => !n.IsDeleted).ToListAsync(ct);
         var parentToChildren = activeNodes.GroupBy(n => n.ParentId).ToDictionary(g => g.Key ?? Guid.Empty, g => g.ToList());
 
