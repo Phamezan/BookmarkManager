@@ -188,22 +188,12 @@ public sealed class PipelineIntegrationTests
         private readonly IReadOnlyList<string> _candidates;
         public StubDuckDuckGoSearchService(IReadOnlyList<string> candidates) => _candidates = candidates;
 
-        public Task<string?> FindAlternativeUrlAsync(string bookmarkTitle, string? category, string deadDomain, CancellationToken ct)
-            => throw new NotSupportedException("Retired scoring path should not be used by the search stage.");
-
-        public string CleanBookmarkTitle(string title) => title;
-
         public Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
             => Task.FromResult(_candidates);
     }
 
     private sealed class NotCalledDuckDuckGoSearchService : IDuckDuckGoSearchService
     {
-        public Task<string?> FindAlternativeUrlAsync(string bookmarkTitle, string? category, string deadDomain, CancellationToken ct)
-            => throw new InvalidOperationException("DuckDuckGo fallback should not be used when Groq compound search succeeds.");
-
-        public string CleanBookmarkTitle(string title) => title;
-
         public Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
             => throw new InvalidOperationException("DuckDuckGo fallback should not be used when Groq compound search succeeds.");
     }

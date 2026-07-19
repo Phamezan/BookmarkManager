@@ -157,11 +157,6 @@ public class GroqCompoundSearchServiceTests
 
         public StubDuckDuckGoSearchService(IReadOnlyList<string> candidates) => _candidates = candidates;
 
-        public Task<string?> FindAlternativeUrlAsync(string bookmarkTitle, string? category, string deadDomain, CancellationToken ct)
-            => throw new NotSupportedException("Retired scoring path should not be used by the search stage.");
-
-        public string CleanBookmarkTitle(string title) => title;
-
         public Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
         {
             WasCalled = true;

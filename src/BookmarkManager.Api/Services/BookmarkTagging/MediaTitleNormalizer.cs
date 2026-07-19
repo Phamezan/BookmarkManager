@@ -199,9 +199,6 @@ public static partial class MediaTitleNormalizer
         return query.Length >= 2 ? query : null;
     }
 
-    public static IReadOnlyList<MediaTitleCandidate> GetProviderCandidates(MediaTagLookupContext context)
-        => context.NormalizedTitle.Candidates.Take(MaxProviderCandidates).ToList();
-
     public static string BuildLooseQuery(string candidate, int maxTokens = 4)
     {
         var tokens = TokenizeForSearch(candidate)

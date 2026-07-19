@@ -31,14 +31,6 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
         _logger = logger;
     }
 
-    public Task<ProviderTagResult> GetTagsForTitleAsync(string title, string? url, CancellationToken cancellationToken)
-        => GetTagsForTitleAsync(new MediaTagLookupContext(
-            title,
-            url,
-            BookmarkTagDomain.Anime,
-            null,
-            MediaTitleNormalizer.Normalize(title, url, BookmarkTagDomain.Anime)), cancellationToken);
-
     public async Task<ProviderTagResult> GetTagsForTitleAsync(MediaTagLookupContext context, CancellationToken cancellationToken)
     {
         if (context.Domain != BookmarkTagDomain.Anime)
