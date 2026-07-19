@@ -30,7 +30,9 @@
         <section class="card" id="connection-section">
           <label for="api-url">API Base URL</label>
           <div class="input-row">
-            <select id="api-url" aria-label="API Base URL"></select>
+            <input type="text" id="api-url" list="api-url-list" aria-label="API Base URL"
+              autocomplete="off" spellcheck="false" placeholder="http://localhost:5080" />
+            <datalist id="api-url-list"></datalist>
             <button id="save-btn" type="button" class="btn-primary" aria-label="Save and connect">
               <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M5 12L10 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -74,7 +76,7 @@
         <!-- ── Open Manager Section ───────────────────────────────────── -->
         <section class="card" id="open-manager-section" style="margin-top: 10px;">
           <button id="open-manager-btn" type="button" class="btn-primary btn-full">
-            <span>Open Manager</span>
+            <span>Open Bookmark Manager</span>
           </button>
         </section>
 

@@ -22,7 +22,7 @@ export interface ShortcutEditorState {
   title: string;
   parentId: string;
   capturedAt: string;
-  /** True when the command created a new node; false when it edited an existing one. */
+  /** True when the command created a new node; false when it reused an existing one. */
   wasCreated: boolean;
 }
 
@@ -163,6 +163,8 @@ export interface CompletionRequest {
 export interface ExtensionSettings {
   apiBaseUrl: string;
   setupComplete: boolean;
+  /** Most-recently-used API base URLs (newest first), for quick dev/prod switching. */
+  recentApiBaseUrls?: string[];
 }
 
 export interface ServerConfig {

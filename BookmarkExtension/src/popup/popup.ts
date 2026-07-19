@@ -1,17 +1,15 @@
 import type { PendingDuplicateState, ShortcutEditorState, StorageRepository } from "../api/contracts";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
-type ApiBaseUrlOption = {
-  label: string;
-  value: string;
-};
+export const DEFAULT_API_BASE_URL = "http://localhost:5080";
 
-const API_BASE_URL_OPTIONS: ApiBaseUrlOption[] = [
-  { label: "localhost", value: "http://localhost:5080" },
-  { label: "192.168.1.100", value: "http://192.168.1.100:8080" },
-];
+const MAX_RECENT_API_BASE_URLS = 5;
 
-export const DEFAULT_API_BASE_URL = API_BASE_URL_OPTIONS[0]!.value;
+/** Moves `value` to the front of `recent`, de-duplicated, capped at MAX_RECENT_API_BASE_URLS. */
+function withRecentApiBaseUrl(recent: string[] | undefined, value: string): string[] {
+  const deduped = (recent ?? []).filter((url) => url !== value);
+  return [value, ...deduped].slice(0, MAX_RECENT_API_BASE_URLS);
+}
 
 /** Subset of chrome.bookmarks used by the editor. Injectable for testability. */
 export interface PopupBookmarkApi {
@@ -25,7 +23,6 @@ export interface PopupDeps {
   storage: StorageRepository;
   sendMessage: (message: unknown) => Promise<unknown>;
   requestPermission: (origin: string) => Promise<boolean>;
-  now: () => Date;
   /** Browser bookmark mutators. Optional so non-editor tests can omit it. */
   bookmarks?: PopupBookmarkApi;
 }
@@ -35,6 +32,7 @@ export class PopupController {
 
   async loadState(): Promise<{
     apiBaseUrl: string;
+    recentApiBaseUrls: string[];
     setupComplete: boolean;
     syncState: string;
     lastSync: string | null;
@@ -46,6 +44,7 @@ export class PopupController {
 
     return {
       apiBaseUrl: settings?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
+      recentApiBaseUrls: settings?.recentApiBaseUrls ?? [],
       setupComplete: settings?.setupComplete ?? false,
       syncState: status?.state ?? "NotConfigured",
       lastSync: status?.lastSuccessAt ?? null,
@@ -67,9 +66,11 @@ export class PopupController {
       return { success: false, error: "Host permission denied" };
     }
 
+    const existing = await this.deps.storage.getSettings();
     await this.deps.storage.saveSettings({
       apiBaseUrl: validation.value,
       setupComplete: true,
+      recentApiBaseUrls: withRecentApiBaseUrl(existing?.recentApiBaseUrls, validation.value),
     });
 
     await this.deps.sendMessage({ type: "manualSync" });
@@ -217,37 +218,6 @@ export class PopupController {
   }
 }
 
-/**
- * Builds a readable full-path label (e.g. "Bookmarks Bar / Dev / React") for a
- * folder by walking parent pointers in the flat catalog. Falls back to the
- * node title or "(root)" when ancestry cannot be resolved.
- */
-export function buildFolderPath(
-  catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[],
-  folderId: string,
-): string {
-  const byId = new Map<string, { browserNodeId: string; parentBrowserNodeId: string | null; title: string }>();
-  for (const node of catalog) {
-    byId.set(node.browserNodeId, node);
-  }
-  const segments: string[] = [];
-  let current = byId.get(folderId);
-  let guard = 0;
-  while (current && guard < 32) {
-    if (current.title.length > 0) segments.unshift(current.title);
-    const parentId = current.parentBrowserNodeId;
-    if (!parentId || parentId === "0") break;
-    current = byId.get(parentId);
-    guard++;
-  }
-  if (segments.length === 0) {
-    const leaf = byId.get(folderId);
-    if (leaf && leaf.title.length > 0) return leaf.title;
-    return "(root)";
-  }
-  return segments.join(" / ");
-}
-
 // ── DOM Bootstrap (browser-only) ────────────────────────────────────────────
 
 import { ChromeStorageRepository } from "../storage/storage-repository";
@@ -275,7 +245,6 @@ if (isBrowser) {
         return false;
       }
     },
-    now: () => new Date(),
     bookmarks: {
       update: async (id, changes) => {
         await chrome.bookmarks.update(id, changes);
@@ -309,7 +278,8 @@ if (isBrowser) {
   const els = {
     normalMode:    document.getElementById("normal-mode")     as HTMLElement | null,
     editorMode:    document.getElementById("editor-mode")     as HTMLElement | null,
-    apiUrl:        document.getElementById("api-url")         as HTMLSelectElement | null,
+    apiUrl:        document.getElementById("api-url")         as HTMLInputElement | null,
+    apiUrlList:    document.getElementById("api-url-list")    as HTMLDataListElement | null,
     saveBtn:       document.getElementById("save-btn")        as HTMLButtonElement | null,
     clearBtn:      document.getElementById("clear-btn")       as HTMLButtonElement | null,
     configShortcut:document.getElementById("configure-shortcut-btn") as HTMLButtonElement | null,
@@ -394,40 +364,32 @@ if (isBrowser) {
     els.backupMsg.className = `message${type ? " " + type : ""}`;
   }
 
-  function populateApiBaseUrlSelect(select: HTMLSelectElement, selectedValue: string): void {
-    select.options.length = 0;
+  function populateApiBaseUrlList(
+    datalist: HTMLDataListElement,
+    input: HTMLInputElement,
+    recentApiBaseUrls: string[],
+    currentValue: string,
+  ): void {
+    const suggestions = withRecentApiBaseUrl(recentApiBaseUrls, DEFAULT_API_BASE_URL);
 
-    const presetValues = new Set(API_BASE_URL_OPTIONS.map((option) => option.value));
-    const activeValue = presetValues.has(selectedValue) ? selectedValue : DEFAULT_API_BASE_URL;
-
-    for (const option of API_BASE_URL_OPTIONS) {
+    datalist.textContent = "";
+    for (const url of suggestions) {
       const el = document.createElement("option");
-      el.value = option.value;
-      el.textContent = option.label;
-      if (option.value === activeValue) {
-        el.selected = true;
-      }
-      select.appendChild(el);
+      el.value = url;
+      datalist.appendChild(el);
     }
 
-    select.value = activeValue;
-  }
-
-  function getApiBaseUrlLabel(baseUrl: string): string {
-    const preset = API_BASE_URL_OPTIONS.find((option) => option.value === baseUrl);
-    if (preset) return preset.label;
-
-    try {
-      return new URL(baseUrl).host;
-    } catch {
-      return baseUrl;
+    // Don't clobber in-progress typing: only set the value on first render.
+    if (!input.dataset.initialized) {
+      input.value = currentValue;
+      input.dataset.initialized = "true";
     }
   }
 
   function syncOpenManagerButtonLabel(): void {
     if (!els.openManagerBtn) return;
     const activeBaseUrl = els.apiUrl?.value?.trim() ?? DEFAULT_API_BASE_URL;
-    els.openManagerBtn.textContent = `Open Manager (${getApiBaseUrlLabel(activeBaseUrl)})`;
+    els.openManagerBtn.textContent = "Open Bookmark Manager";
     els.openManagerBtn.title = `Open ${activeBaseUrl}`;
   }
 
@@ -437,8 +399,8 @@ if (isBrowser) {
   async function refreshNormalStatus(): Promise<void> {
     const state = await controller.loadState();
 
-    if (els.apiUrl) {
-      populateApiBaseUrlSelect(els.apiUrl, state.apiBaseUrl);
+    if (els.apiUrl && els.apiUrlList) {
+      populateApiBaseUrlList(els.apiUrlList, els.apiUrl, state.recentApiBaseUrls, state.apiBaseUrl);
     }
 
     syncOpenManagerButtonLabel();
@@ -634,7 +596,7 @@ if (isBrowser) {
     }
   });
 
-  els.apiUrl?.addEventListener("change", () => {
+  els.apiUrl?.addEventListener("input", () => {
     syncOpenManagerButtonLabel();
   });
 
