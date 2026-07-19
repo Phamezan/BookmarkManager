@@ -1,4 +1,5 @@
 import type { PendingDuplicateState, ShortcutEditorState, StorageRepository } from "../api/contracts";
+import { normalizeBookmarkUrl } from "../bookmarks/duplicate-detector";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
 export const DEFAULT_API_BASE_URL = "http://localhost:5080";
@@ -25,6 +26,10 @@ export interface PopupDeps {
   requestPermission: (origin: string) => Promise<boolean>;
   /** Browser bookmark mutators. Optional so non-editor tests can omit it. */
   bookmarks?: PopupBookmarkApi;
+  /** Optional tab lookup to invalidate stale series-duplicate confirms. */
+  getTab?: (tabId: number) => Promise<{ url?: string }>;
+  /** Active tab in the current window — confirm only valid while still focused there. */
+  getActiveTab?: () => Promise<{ id?: number; url?: string } | null>;
 }
 
 export class PopupController {
@@ -199,9 +204,54 @@ export class PopupController {
 
   // ── Series-Duplicate Confirmation ─────────────────────────────────────────
 
-  /** Loads the pending series-duplicate confirmation, if any. */
+  /** Loads the pending series-duplicate confirmation, if any and still valid. */
   async loadPendingDuplicate(): Promise<PendingDuplicateState | null> {
-    return await this.deps.storage.getPendingDuplicateState();
+    const pending = await this.deps.storage.getPendingDuplicateState();
+    if (!pending) return null;
+
+    // Legacy / corrupt entries without a source tab — drop them.
+    if (typeof pending.sourceTabId !== "number") {
+      await this.deps.storage.clearPendingDuplicateState();
+      return null;
+    }
+
+    // Confirm is only meaningful while the user is still on that page.
+    // Prefer the active tab: switching away (new tab, other site) must drop it
+    // even if the original tab is still open in the background.
+    if (this.deps.getActiveTab) {
+      try {
+        const active = await this.deps.getActiveTab();
+        if (
+          !active?.id ||
+          active.id !== pending.sourceTabId ||
+          !active.url ||
+          normalizeBookmarkUrl(active.url) !== normalizeBookmarkUrl(pending.url)
+        ) {
+          await this.deps.storage.clearPendingDuplicateState();
+          return null;
+        }
+        return pending;
+      } catch {
+        await this.deps.storage.clearPendingDuplicateState();
+        return null;
+      }
+    }
+
+    // Fallback when getActiveTab is unavailable (unit tests without chrome).
+    if (this.deps.getTab) {
+      try {
+        const tab = await this.deps.getTab(pending.sourceTabId);
+        if (!tab.url || normalizeBookmarkUrl(tab.url) !== normalizeBookmarkUrl(pending.url)) {
+          await this.deps.storage.clearPendingDuplicateState();
+          return null;
+        }
+      } catch {
+        await this.deps.storage.clearPendingDuplicateState();
+        return null;
+      }
+    }
+
+    return pending;
   }
 
   /** User chose "create anyway": the background worker creates the bookmark. */
@@ -244,6 +294,18 @@ if (isBrowser) {
       } catch {
         return false;
       }
+    },
+    getTab: async (tabId) => {
+      const tab = await chrome.tabs.get(tabId);
+      return tab.url ? { url: tab.url } : {};
+    },
+    getActiveTab: async () => {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab) return null;
+      return {
+        ...(typeof tab.id === "number" ? { id: tab.id } : {}),
+        ...(tab.url ? { url: tab.url } : {}),
+      };
     },
     bookmarks: {
       update: async (id, changes) => {

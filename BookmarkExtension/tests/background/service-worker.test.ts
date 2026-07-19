@@ -49,6 +49,10 @@ function makeChromeStub(bookmarks: FakeBookmarks, storage: FakeStorage) {
       query: vi.fn().mockResolvedValue([]),
       update: vi.fn(),
       create: vi.fn(),
+      get: vi.fn(),
+      onRemoved: { addListener: vi.fn() },
+      onUpdated: { addListener: vi.fn() },
+      onActivated: { addListener: vi.fn() },
     },
     scripting: { executeScript: vi.fn() },
     omnibox: {
@@ -201,6 +205,102 @@ describe("ServiceWorker", () => {
     const events = Object.values(outbox ?? {}).map((entry) => entry.event);
     expect(events).toHaveLength(1);
     expect(events[0]?.causedByOperationId).toBeNull();
+  });
+});
+
+describe("ServiceWorker pending-duplicate tab guards", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  async function makeWorkerWithStorage() {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const fakeStorage = new FakeStorage();
+    vi.stubGlobal("chrome", makeChromeStub(bookmarks, fakeStorage));
+
+    const { ChromeStorageRepository } = await import("../../src/storage/storage-repository");
+    const { ServiceWorker } = await import("../../src/background/service-worker");
+    const storage = new ChromeStorageRepository(fakeStorage);
+
+    const worker = new ServiceWorker({
+      api: {
+        heartbeat: vi.fn(),
+        getConfig: vi.fn(),
+        uploadSnapshot: vi.fn(),
+        sendEvents: vi.fn(),
+        claimCommands: vi.fn(),
+        completeCommand: vi.fn(),
+      } as never,
+      adapter: { getSubtree: vi.fn(), apply: vi.fn() } as never,
+      storage,
+      backupManager: {
+        runAutoBackupIfDue: vi.fn(),
+        runManualBackup: vi.fn(),
+      } as never,
+      getExtensionVersion: () => "0.1.0",
+      getBraveVersion: () => "1.0",
+      now: () => new Date(),
+    });
+
+    return { worker, storage };
+  }
+
+  const pending = {
+    url: "https://site.com/manga/solo/chapter-125",
+    title: "Solo Ch 125",
+    folderId: "1",
+    sourceTabId: 99,
+    duplicates: [{ id: "10", title: "Solo Ch 124", parentTitle: "Manga" }],
+    capturedAt: "2026-07-14T00:00:00Z",
+  };
+
+  it("clears pending confirm when the source tab closes", async () => {
+    const { worker, storage } = await makeWorkerWithStorage();
+    await storage.savePendingDuplicateState(pending);
+
+    await worker.clearPendingDuplicateForTab(99);
+    expect(await storage.getPendingDuplicateState()).toBeNull();
+  });
+
+  it("ignores closes for unrelated tabs", async () => {
+    const { worker, storage } = await makeWorkerWithStorage();
+    await storage.savePendingDuplicateState(pending);
+
+    await worker.clearPendingDuplicateForTab(1);
+    expect(await storage.getPendingDuplicateState()).toEqual(pending);
+  });
+
+  it("clears pending confirm when the user switches to another tab", async () => {
+    const { worker, storage } = await makeWorkerWithStorage();
+    await storage.savePendingDuplicateState(pending);
+
+    await worker.clearPendingDuplicateIfLeftTab(1);
+    expect(await storage.getPendingDuplicateState()).toBeNull();
+  });
+
+  it("keeps pending confirm when the source tab stays focused", async () => {
+    const { worker, storage } = await makeWorkerWithStorage();
+    await storage.savePendingDuplicateState(pending);
+
+    await worker.clearPendingDuplicateIfLeftTab(99);
+    expect(await storage.getPendingDuplicateState()).toEqual(pending);
+  });
+
+  it("clears pending confirm when the source tab navigates away", async () => {
+    const { worker, storage } = await makeWorkerWithStorage();
+    await storage.savePendingDuplicateState(pending);
+
+    await worker.clearPendingDuplicateIfNavigated(99, "https://other.com/");
+    expect(await storage.getPendingDuplicateState()).toBeNull();
+  });
+
+  it("keeps pending confirm when the URL is only normalized differently", async () => {
+    const { worker, storage } = await makeWorkerWithStorage();
+    await storage.savePendingDuplicateState(pending);
+
+    await worker.clearPendingDuplicateIfNavigated(99, "https://site.com/manga/solo/chapter-125/");
+    expect(await storage.getPendingDuplicateState()).toEqual(pending);
   });
 });
 

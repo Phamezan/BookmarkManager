@@ -30,6 +30,7 @@ public partial class CommandPalette : IDisposable
         public string? Category { get; set; }
         public string? Url { get; set; }
         public bool IsFolder { get; set; }
+        public bool IsTag { get; set; }
         public bool IsSectionHeader { get; set; }
         public string? SectionTitle { get; set; }
         public string? Tooltip { get; set; }
@@ -66,15 +67,18 @@ public partial class CommandPalette : IDisposable
     private DotNetObjectReference<CommandPalette>? _dotNetRef;
     private CancellationTokenSource? _searchCts;
     private Guid? _filterFolderId;
+    private List<string> _filterTagNames = [];
+    private List<TagCountDto> _allTags = [];
     private IDisposable? _ctrlPRegistration;
 
     // Load-more paging state: tracks the request shape of the currently-loaded page so
-    // "Load more" can fetch the next page with the same query/folder filter and append.
+    // "Load more" can fetch the next page with the same query/folder/tag filter and append.
     private int _loadedPage = 1;
     private int _loadedPageSize = DefaultPageSize;
     private int _totalResultCount;
     private string _loadedQuery = string.Empty;
     private Guid? _loadedFolderId;
+    private List<string> _loadedTags = [];
     private bool _isLoadingMore;
     /// <summary>Effective bookmark query used for title highlighting (empty for default results / folder autocomplete).</summary>
     private string _highlightQuery = string.Empty;
@@ -129,6 +133,7 @@ public partial class CommandPalette : IDisposable
             _searchQuery = string.Empty;
             _selectedIndex = 0;
             _filterFolderId = null;
+            _filterTagNames = [];
             _results.Clear();
             _totalResultCount = 0;
             _triggerStagger = true;
@@ -138,6 +143,7 @@ public partial class CommandPalette : IDisposable
             _searchCts?.Cancel();
             _searchCts = new CancellationTokenSource();
             _ = LoadDefaultResultsAsync(_searchCts.Token);
+            _ = LoadTagsAsync(_searchCts.Token);
             _ = JSRuntime.InvokeVoidAsync("focusPaletteInput");
         }
         else if (Embedded)
@@ -240,11 +246,12 @@ public partial class CommandPalette : IDisposable
         _loadedPageSize = request.PageSize;
         _loadedQuery = request.Query;
         _loadedFolderId = request.FolderId;
+        _loadedTags = request.Tags;
         _totalResultCount = totalCount;
     }
 
     /// <summary>
-    /// Fetches the next page (same query/folder filter as the currently-loaded results) and
+    /// Fetches the next page (same query/folder/tag filter as the currently-loaded results) and
     /// appends it. Triggered by the Load more button and by scrolling near the list bottom.
     /// </summary>
     private async Task LoadMoreResultsAsync()
@@ -261,7 +268,8 @@ public partial class CommandPalette : IDisposable
                 Query = _loadedQuery,
                 Page = _loadedPage + 1,
                 PageSize = _loadedPageSize,
-                FolderId = _loadedFolderId
+                FolderId = _loadedFolderId,
+                Tags = _loadedTags
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
             // Prefer ids already present so load-more doesn't duplicate recent or prior pages.
@@ -293,6 +301,22 @@ public partial class CommandPalette : IDisposable
     [JSInvokable]
     public Task LoadMoreFromScroll() => LoadMoreResultsAsync();
 
+    /// <summary>Loads the full tag+count list once per palette session for client-side "#" autocomplete.</summary>
+    private async Task LoadTagsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            _allTags = await BookmarkService.GetTagsAsync(cancellationToken: cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch
+        {
+            _allTags = [];
+        }
+    }
+
     private async Task HandleSearchInput(ChangeEventArgs e)
     {
         _historyIndex = null;
@@ -312,6 +336,7 @@ public partial class CommandPalette : IDisposable
         if (string.IsNullOrEmpty(_searchQuery))
         {
             _filterFolderId = null;
+            _filterTagNames = [];
             await LoadDefaultResultsAsync(token);
             return;
         }
@@ -319,82 +344,53 @@ public partial class CommandPalette : IDisposable
         var folderTree = await BookmarkService.GetFolderTreeAsync(token);
         RebuildFolderPathMap(folderTree);
 
-        // 1. Folder Autocomplete Mode: starts with ">" and doesn't contain a space
-        if (_searchQuery.StartsWith(">") && !_searchQuery.Contains(" "))
-        {
-            _filterFolderId = null;
-            var folderQuery = _searchQuery.Substring(1).Trim();
-
-            var folderMatches = new List<FolderSearchResult>();
-            FindFoldersRecursive(folderTree, folderQuery, string.Empty, folderMatches);
-
-            _results = folderMatches.Select(MapFolderToItem).ToList();
-            // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
-            _highlightQuery = string.Empty;
-            AssignResultIndices();
-            _totalResultCount = _results.Count;
-            _loadedBookmarkCount = _results.Count;
-            _listHeaderTitle = "Folders";
-            StateHasChanged();
-            return;
-        }
-
-        // 2. Bookmark Search Mode (potentially folder-filtered with ">FolderName")
+        // Peel off leading ">Folder" / "#Tag" filter tokens, in any order and any combination
+        // (e.g. ">Novels #action", "#action #comedy >Novels query"). Each resolved token narrows
+        // the search; whatever remains once no more tokens match is the free-text bookmark query.
+        // A trailing, still-being-typed token (no space after it yet) breaks out to show that
+        // token's autocomplete suggestions instead of running a search.
+        var remaining = _searchQuery;
         Guid? activeFolderId = null;
-        var bookmarkQuery = _searchQuery;
+        var activeTags = new List<string>();
 
-        if (_searchQuery.StartsWith(">"))
+        while (remaining.StartsWith(">") || remaining.StartsWith("#"))
         {
-            string? activeFolderName = null;
-            if (_filterFolderId.HasValue)
+            if (remaining.StartsWith(">"))
             {
-                var folder = FindFolderById(folderTree, _filterFolderId.Value);
-                if (folder != null && _searchQuery.StartsWith($">{folder.Title}", StringComparison.OrdinalIgnoreCase))
+                if (!remaining.Contains(' '))
                 {
-                    activeFolderName = folder.Title;
-                    activeFolderId = _filterFolderId;
+                    _filterFolderId = null;
+                    ShowFolderAutocomplete(remaining.Substring(1).Trim(), folderTree);
+                    return;
                 }
-            }
 
-            if (activeFolderName == null)
-            {
-                var spaceIndex = _searchQuery.IndexOf(' ');
-                if (spaceIndex > 1)
-                {
-                    var parsedFolderName = _searchQuery.Substring(1, spaceIndex - 1).Trim();
-                    _filterFolderId = FindFolderIdByName(folderTree, parsedFolderName);
-                    if (_filterFolderId.HasValue)
-                    {
-                        activeFolderName = parsedFolderName;
-                        activeFolderId = _filterFolderId;
-                    }
-                }
-                else
-                {
-                    var parsedFolderName = _searchQuery.Substring(1).Trim();
-                    _filterFolderId = FindFolderIdByName(folderTree, parsedFolderName);
-                    if (_filterFolderId.HasValue)
-                    {
-                        activeFolderName = parsedFolderName;
-                        activeFolderId = _filterFolderId;
-                    }
-                }
-            }
+                var (folderId, rest) = ResolveFolderToken(remaining, folderTree);
+                if (folderId is null) break; // Unresolved — treat the rest (including ">") as free text.
 
-            if (activeFolderName != null)
+                activeFolderId = folderId;
+                _filterFolderId = folderId;
+                remaining = rest;
+            }
+            else
             {
-                var prefixLength = activeFolderName.Length + 1; // ">FolderName"
-                if (_searchQuery.Length > prefixLength && _searchQuery[prefixLength] == ' ')
+                if (!remaining.Contains(' '))
                 {
-                    prefixLength++;
+                    _filterTagNames = activeTags;
+                    ShowTagAutocomplete(remaining.Substring(1).Trim());
+                    return;
                 }
-                bookmarkQuery = _searchQuery.Substring(prefixLength);
+
+                var (tagName, rest) = ResolveTagToken(remaining);
+                if (tagName is null) break;
+
+                activeTags.Add(tagName);
+                remaining = rest;
             }
         }
-        else
-        {
-            _filterFolderId = null;
-        }
+
+        if (activeFolderId is null) _filterFolderId = null;
+        _filterTagNames = activeTags;
+        var bookmarkQuery = remaining;
 
         try
         {
@@ -406,7 +402,8 @@ public partial class CommandPalette : IDisposable
                 Query = bookmarkQuery.Trim(),
                 Page = 1,
                 PageSize = SearchPageSize,
-                FolderId = activeFolderId
+                FolderId = activeFolderId,
+                Tags = activeTags
             };
             var pagedResult = await BookmarkService.SearchBookmarksAsync(request, token);
 
@@ -430,6 +427,93 @@ public partial class CommandPalette : IDisposable
             _results.Clear();
             StateHasChanged();
         }
+    }
+
+    /// <summary>
+    /// Resolves a leading ">FolderName" token off <paramref name="remaining"/> (which contains
+    /// a space). Prefers the already-locked <see cref="_filterFolderId"/> so folder names with
+    /// spaces — picked via autocomplete — keep matching as the rest of the query is typed;
+    /// otherwise falls back to an exact single-word name lookup.
+    /// </summary>
+    private (Guid? FolderId, string Remainder) ResolveFolderToken(string remaining, List<FolderTreeNodeDto>? folderTree)
+    {
+        if (_filterFolderId.HasValue)
+        {
+            var locked = FindFolderById(folderTree, _filterFolderId.Value);
+            if (locked != null && remaining.StartsWith($">{locked.Title}", StringComparison.OrdinalIgnoreCase))
+            {
+                return (locked.Id, StripToken(remaining, locked.Title.Length + 1));
+            }
+        }
+
+        var spaceIndex = remaining.IndexOf(' ');
+        if (spaceIndex <= 1) return (null, remaining);
+
+        var candidateName = remaining.Substring(1, spaceIndex - 1).Trim();
+        var id = FindFolderIdByName(folderTree, candidateName);
+        return id.HasValue ? (id, StripToken(remaining, candidateName.Length + 1)) : (null, remaining);
+    }
+
+    /// <summary>Same idea as <see cref="ResolveFolderToken"/> but for a leading "#TagName" token.</summary>
+    private (string? Tag, string Remainder) ResolveTagToken(string remaining)
+    {
+        var locked = _filterTagNames.FirstOrDefault(t => remaining.StartsWith($"#{t}", StringComparison.OrdinalIgnoreCase));
+        if (locked != null)
+        {
+            return (locked, StripToken(remaining, locked.Length + 1));
+        }
+
+        var spaceIndex = remaining.IndexOf(' ');
+        if (spaceIndex <= 1) return (null, remaining);
+
+        var candidateName = remaining.Substring(1, spaceIndex - 1).Trim();
+        var match = _allTags.FirstOrDefault(t => t.Tag.Equals(candidateName, StringComparison.OrdinalIgnoreCase));
+        return match != null ? (match.Tag, StripToken(remaining, candidateName.Length + 1)) : (null, remaining);
+    }
+
+    /// <summary>Drops a resolved "&gt;Name" / "#Name" token (and one following space, if any) off the front.</summary>
+    private static string StripToken(string remaining, int tokenLength)
+    {
+        var prefixLength = tokenLength; // includes the leading '>' or '#'
+        if (remaining.Length > prefixLength && remaining[prefixLength] == ' ')
+            prefixLength++;
+        return remaining.Substring(prefixLength);
+    }
+
+    private void ShowFolderAutocomplete(string folderQuery, List<FolderTreeNodeDto>? folderTree)
+    {
+        var folderMatches = new List<FolderSearchResult>();
+        FindFoldersRecursive(folderTree, folderQuery, string.Empty, folderMatches);
+
+        _results = folderMatches.Select(MapFolderToItem).ToList();
+        // Folder autocomplete returns everything in one shot — no paging, so "Load more" never shows.
+        _highlightQuery = string.Empty;
+        AssignResultIndices();
+        _totalResultCount = _results.Count;
+        _loadedBookmarkCount = _results.Count;
+        _listHeaderTitle = "Folders";
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Tags are cached client-side (<see cref="_allTags"/>, loaded once per palette session) since a
+    /// bookmark manager can easily carry hundreds of tags — filtering that list locally on every
+    /// keystroke is instant and avoids a round trip per character typed.
+    /// </summary>
+    private void ShowTagAutocomplete(string tagQuery)
+    {
+        var tagMatches = string.IsNullOrEmpty(tagQuery)
+            ? _allTags
+            : _allTags.Where(t => t.Tag.Contains(tagQuery, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        _results = tagMatches.Select(MapTagToItem).ToList();
+        _highlightQuery = string.Empty;
+        AssignResultIndices();
+        _selectedIndex = FirstSelectableIndex();
+        _totalResultCount = _results.Count;
+        _loadedBookmarkCount = _results.Count;
+        _listHeaderTitle = "Tags";
+        StateHasChanged();
     }
 
     private void AssignResultIndices()
@@ -630,6 +714,11 @@ public partial class CommandPalette : IDisposable
             await AutocompleteFolder(selected);
             return;
         }
+        if (selected.IsTag)
+        {
+            await AutocompleteTag(selected);
+            return;
+        }
 
         _ = RecordFrecencyOpenAsync(selected);
         _ = RecordSearchHistoryIfNeededAsync();
@@ -666,6 +755,11 @@ public partial class CommandPalette : IDisposable
         if (selected.IsFolder)
         {
             await AutocompleteFolder(selected);
+            return;
+        }
+        if (selected.IsTag)
+        {
+            await AutocompleteTag(selected);
             return;
         }
 
@@ -707,6 +801,11 @@ public partial class CommandPalette : IDisposable
             await AutocompleteFolder(selected);
             return;
         }
+        if (selected.IsTag)
+        {
+            await AutocompleteTag(selected);
+            return;
+        }
 
         _ = RecordFrecencyOpenAsync(selected);
         _ = RecordSearchHistoryIfNeededAsync();
@@ -732,56 +831,41 @@ public partial class CommandPalette : IDisposable
         await RefreshSearchHistoryAsync();
     }
 
+    /// <summary>
+    /// Completes the trailing (still-being-typed) ">Folder" token that produced the current
+    /// autocomplete list, keeping any already-resolved filter tokens before it intact — so
+    /// picking a folder after "#action " (or before typing a tag next) composes rather than
+    /// replaces the query.
+    /// </summary>
     private async Task AutocompleteFolder(PaletteItem selected)
     {
         _filterFolderId = selected.Id;
-        _searchQuery = $">{selected.Title} ";
+        _searchQuery = $"{GetPrefixBeforeLastToken(_searchQuery)}>{selected.Title} ";
         _selectedIndex = 0;
         _results.Clear();
         StateHasChanged();
 
         _ = JSRuntime.InvokeVoidAsync("setPaletteInput", _searchQuery);
-
-        await SearchFolderBookmarksAsync(_filterFolderId.Value);
+        await RunSearchAsync(_searchQuery, debounce: false);
     }
 
-    private async Task SearchFolderBookmarksAsync(Guid folderId)
+    /// <summary>Same idea as <see cref="AutocompleteFolder"/> but for a trailing "#Tag" token.</summary>
+    private async Task AutocompleteTag(PaletteItem selected)
     {
-        _searchCts?.Cancel();
-        _searchCts = new CancellationTokenSource();
-        var token = _searchCts.Token;
+        _searchQuery = $"{GetPrefixBeforeLastToken(_searchQuery)}#{selected.Title} ";
+        _selectedIndex = 0;
+        _results.Clear();
+        StateHasChanged();
 
-        try
-        {
-            var request = new SearchRequest
-            {
-                Query = string.Empty,
-                Page = 1,
-                PageSize = SearchPageSize,
-                FolderId = folderId
-            };
-            var pagedResult = await BookmarkService.SearchBookmarksAsync(request, token);
-            
-            if (!token.IsCancellationRequested)
-            {
-                _highlightQuery = string.Empty;
-                _results = pagedResult.Items?.Select(MapBookmarkToItem).ToList() ?? [];
-                AssignResultIndices();
-                _selectedIndex = FirstSelectableIndex();
-                RememberLoadedPage(request, pagedResult.TotalCount);
-                _loadedBookmarkCount = _results.Count;
-                _listHeaderTitle = "Bookmarks";
-                StateHasChanged();
-            }
-        }
-        catch (TaskCanceledException)
-        {
-        }
-        catch
-        {
-            _results.Clear();
-            StateHasChanged();
-        }
+        _ = JSRuntime.InvokeVoidAsync("setPaletteInput", _searchQuery);
+        await RunSearchAsync(_searchQuery, debounce: false);
+    }
+
+    /// <summary>Everything up to and including the space before the query's last (incomplete) token.</summary>
+    private static string GetPrefixBeforeLastToken(string query)
+    {
+        var lastSpace = query.LastIndexOf(' ');
+        return lastSpace >= 0 ? query.Substring(0, lastSpace + 1) : string.Empty;
     }
 
     private async Task HandleItemClick(int index)
@@ -892,6 +976,20 @@ public partial class CommandPalette : IDisposable
             Category = "Folder",
             IsFolder = true,
             Tooltip = folder.Title
+        };
+    }
+
+    private static PaletteItem MapTagToItem(TagCountDto tag)
+    {
+        return new PaletteItem
+        {
+            Id = Guid.Empty,
+            Title = tag.Tag,
+            TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(tag.Tag, string.Empty),
+            Subtitle = $"{tag.Count} bookmark{(tag.Count == 1 ? "" : "s")}",
+            Category = "Tag",
+            IsTag = true,
+            Tooltip = tag.Tag
         };
     }
 

@@ -30,6 +30,7 @@ public static class WebApplicationDbExtensions
 
         var backupService = scope.ServiceProvider.GetRequiredService<BookmarkManager.Api.Services.Backup.IBackupService>();
         await backupService.RecoverInterruptedBackupsAsync(ct);
+        await backupService.PurgeLegacyManifestsAsync(ct);
     }
 
     private static async Task BumpConfigVersionAsync(AppDbContext db, CancellationToken ct)

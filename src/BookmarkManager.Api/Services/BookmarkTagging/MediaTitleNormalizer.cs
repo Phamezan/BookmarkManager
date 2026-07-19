@@ -199,16 +199,56 @@ public static partial class MediaTitleNormalizer
         return query.Length >= 2 ? query : null;
     }
 
-    public static string BuildLooseQuery(string candidate, int maxTokens = 4)
+    public static string BuildLooseQuery(string candidate, int maxTokens = 8)
     {
         var tokens = TokenizeForSearch(candidate)
             .Where(token => !GenericNoiseTokens.Contains(token))
-            .Take(maxTokens)
             .ToList();
 
-        return tokens.Count == 0
-            ? NormalizeForSearch(candidate)
-            : string.Join(' ', tokens);
+        if (tokens.Count == 0)
+            return NormalizeForSearch(candidate);
+
+        var limited = tokens.Take(maxTokens).ToList();
+
+        var seasonMarker = ExtractSeasonMarker(candidate);
+        if (seasonMarker is not null)
+        {
+            var markerTokens = NormalizeForSearch(seasonMarker)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var markerToken in markerTokens)
+            {
+                if (!limited.Contains(markerToken))
+                    limited.Add(markerToken);
+            }
+        }
+
+        return string.Join(' ', limited);
+    }
+
+    /// <summary>
+    /// Extracts a season/part qualifier from a title if present, normalized to a display form
+    /// ("Season 3", "Part 2"). Used to keep season disambiguation in provider search queries and
+    /// to re-attach it to AI/provider canonical titles that dropped it (AniList's own canonical
+    /// title for a franchise is often just the base name, which would otherwise make suggested
+    /// titles for different seasons of the same show collide).
+    /// </summary>
+    public static string? ExtractSeasonMarker(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var match = SeasonMarkerRegex().Match(title);
+        if (!match.Success)
+            return null;
+
+        if (match.Groups["snum"].Success)
+            return $"Season {match.Groups["snum"].Value}";
+        if (match.Groups["onum"].Success)
+            return $"Season {match.Groups["onum"].Value}";
+        if (match.Groups["pnum"].Success)
+            return $"Part {match.Groups["pnum"].Value}";
+
+        return null;
     }
 
     public static string NormalizeForSearch(string value)
@@ -537,4 +577,7 @@ public static partial class MediaTitleNormalizer
 
     [GeneratedRegex(@"[\p{L}\p{N}]+")]
     private static partial Regex TokenRegex();
+
+    [GeneratedRegex(@"(?i)\b(?:season\s+(?<snum>\d+)|(?<onum>\d+)(?:st|nd|rd|th)\s+season|part\s+(?<pnum>\d+))\b")]
+    private static partial Regex SeasonMarkerRegex();
 }

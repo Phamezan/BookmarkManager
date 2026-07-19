@@ -152,6 +152,10 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.GetAsync<Dictionary<Guid, int>>("api/bookmarks/untagged-counts", cancellationToken)
            ?? new Dictionary<Guid, int>();
 
+    public async Task<Dictionary<Guid, int>> GetFolderCountsAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<Dictionary<Guid, int>>("api/bookmarks/folder-counts", cancellationToken)
+           ?? new Dictionary<Guid, int>();
+
     public async Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default)
     {
         try

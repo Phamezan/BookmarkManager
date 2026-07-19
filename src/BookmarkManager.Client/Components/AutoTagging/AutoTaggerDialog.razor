@@ -19,12 +19,6 @@
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
                 <MudText Typo="Typo.body2" Class="mud-text-secondary">Scanning bookmarks for untagged items...</MudText>
             }
-            else if (_currentState == TaggerState.Selection && _selectableFolders.Count == 0)
-            {
-                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">
-                    All bookmarks are fully tagged! There are no untagged bookmarks found.
-                </MudAlert>
-            }
             else if (_currentState == TaggerState.Selection)
             {
                 <!-- Selection Screen -->
@@ -40,34 +34,51 @@
                         Turn this on to use OpenRouter only for canonical title matching; source providers still supply the
                         tags.
                     </MudText>
-                    <div
-                        style="max-height: 160px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
-                        <MudGrid Spacing="1">
-                            @foreach (var folder in _selectableFolders)
-                            {
-                                var isChecked = _selectedFolderIds.Contains(folder.Id);
-                                <MudItem xs="12" sm="6">
-                                    <MudPaper Outlined="true" Class="pa-2 d-flex align-center justify-space-between"
-                                              Style="background: transparent;">
-                                        <div class="d-flex align-center gap-2 text-truncate">
-                                            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
-                                                     Color="Color.Primary" />
-                                            <span class="text-truncate" style="font-size: 0.9rem;">
-                                                @folder.Title
-                                                <span class="mud-text-secondary"
-                                                      style="font-size: 0.75rem; font-weight: 600; margin-left: 4px;">
-                                                    (@_untaggedCounts[folder.Id] untagged)
+                    <MudSwitch T="bool" @bind-Value="_forceRefresh" Color="Color.Warning"
+                               Label="Re-tag already tagged bookmarks" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        Off: only untagged bookmarks are processed. On: every bookmark in the selected folder(s) is
+                        re-run through the tagger, overwriting existing tags with fresh results.
+                    </MudText>
+                    @if (_selectableFolders.Count == 0)
+                    {
+                        <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">
+                            @(_forceRefresh
+                                ? "No bookmarks found in any folder."
+                                : "All bookmarks are fully tagged! Turn on \"Re-tag already tagged bookmarks\" to run the tagger again anyway.")
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <div
+                            style="max-height: 160px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+                            <MudGrid Spacing="1">
+                                @foreach (var folder in _selectableFolders)
+                                {
+                                    var isChecked = _selectedFolderIds.Contains(folder.Id);
+                                    <MudItem xs="12" sm="6">
+                                        <MudPaper Outlined="true" Class="pa-2 d-flex align-center justify-space-between"
+                                                  Style="background: transparent;">
+                                            <div class="d-flex align-center gap-2 text-truncate">
+                                                <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Small"
+                                                         Color="Color.Primary" />
+                                                <span class="text-truncate" style="font-size: 0.9rem;">
+                                                    @folder.Title
+                                                    <span class="mud-text-secondary"
+                                                          style="font-size: 0.75rem; font-weight: 600; margin-left: 4px;">
+                                                        (@GetFolderCount(folder.Id) @(_forceRefresh ? "bookmark(s)" : "untagged"))
+                                                    </span>
                                                 </span>
-                                            </span>
-                                        </div>
-                                        <MudCheckBox T="bool" Value="isChecked"
-                                                     ValueChanged="@((val) => OnFolderCheckChanged(folder.Id, val))"
-                                                     Color="Color.Primary" Dense="true" />
-                                    </MudPaper>
-                                </MudItem>
-                            }
-                        </MudGrid>
-                    </div>
+                                            </div>
+                                            <MudCheckBox T="bool" Value="isChecked"
+                                                         ValueChanged="@((val) => OnFolderCheckChanged(folder.Id, val))"
+                                                         Color="Color.Primary" Dense="true" />
+                                        </MudPaper>
+                                    </MudItem>
+                                }
+                            </MudGrid>
+                        </div>
+                    }
 
                 </MudStack>
             }
@@ -387,7 +398,18 @@
                     }
                     else if (_currentState == TaggerState.Reruns)
                     {
-                        <MudButton Variant="Variant.Text" OnClick="Cancel">Close</MudButton>
+                        @if (_selectedResultIds.Count > 0 && !_isEditingTags)
+                        {
+                            <MudButton Variant="Variant.Text" Color="Color.Error"
+                                       StartIcon="@Icons.Material.Filled.Undo"
+                                       OnClick="CancelSelectedResultsAsync" Disabled="@_rerunsLoading">
+                                Cancel @_selectedResultIds.Count Selected
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Text" OnClick="Cancel">Close</MudButton>
+                        }
                         @if (_isEditingTags)
                         {
                             <MudButton Variant="Variant.Text" OnClick="CancelEditTags">Cancel Edit</MudButton>
@@ -440,9 +462,22 @@
     private string? _etaText;
     private string? _currentBookmarkTitle;
 
-    private List<FolderTreeNodeDto> _selectableFolders = [];
+    private List<FolderTreeNodeDto> _allFlatFolders = [];
     private Dictionary<Guid, int> _untaggedCounts = new();
+    private Dictionary<Guid, int> _folderCounts = new();
     private HashSet<Guid> _selectedFolderIds = [];
+    private bool _forceRefresh;
+
+    /// <summary>
+    /// Folders offered for selection. Normally only folders with untagged bookmarks — but
+    /// with "Re-tag already tagged bookmarks" on, every folder with any bookmark is eligible,
+    /// since the whole point is to re-run tagging on bookmarks that already have tags.
+    /// </summary>
+    private List<FolderTreeNodeDto> _selectableFolders =>
+        _allFlatFolders.Where(f => GetFolderCount(f.Id) > 0).ToList();
+
+    private int GetFolderCount(Guid folderId) =>
+        _forceRefresh ? _folderCounts.GetValueOrDefault(folderId, 0) : _untaggedCounts.GetValueOrDefault(folderId, 0);
 
     private List<TerminalLogEntry> _logs = [];
     private CancellationTokenSource? _cts;
@@ -459,16 +494,14 @@
         {
             var rawFolders = await BookmarkService.GetFolderTreeAsync();
             _untaggedCounts = await BookmarkService.GetUntaggedCountsAsync();
+            _folderCounts = await BookmarkService.GetFolderCountsAsync();
             var aiSettings = await BookmarkService.GetAiTaggingSettingsAsync();
             _useAiSeriesAutoTagging = aiSettings.Enabled;
             _preferredBatchSize = aiSettings.PreferredBatchSize > 0 ? aiSettings.PreferredBatchSize : 25;
 
             var flatFolders = new List<FolderTreeNodeDto>();
             FlattenFolders(rawFolders, flatFolders);
-
-            _selectableFolders = flatFolders
-                .Where(f => _untaggedCounts.TryGetValue(f.Id, out var count) && count > 0)
-                .ToList();
+            _allFlatFolders = flatFolders;
 
             _selectedFolderIds.Clear();
             if (CurrentFolderId.HasValue && _selectableFolders.Any(folder => folder.Id == CurrentFolderId.Value))
@@ -536,7 +569,7 @@
     {
         _currentState = TaggerState.Tagging;
         _processedCount = 0;
-        _totalCount = _selectedFolderIds.Sum(id => _untaggedCounts.GetValueOrDefault(id, 0));
+        _totalCount = _selectedFolderIds.Sum(id => GetFolderCount(id));
         _logs.Clear();
         _reviewItems.Clear();
         ResetRerunsState();
@@ -570,7 +603,8 @@
 
                 var bookmarks = await BookmarkService.GetBookmarksAsync(folderId);
                 var untagged = bookmarks
-                    .Where(b => b.Type == NodeType.Bookmark && (b.Metadata?.Tags == null || b.Metadata.Tags.Count == 0))
+                    .Where(b => b.Type == NodeType.Bookmark
+                        && (_forceRefresh || b.Metadata?.Tags == null || b.Metadata.Tags.Count == 0))
                     .ToList();
 
                 if (untagged.Count == 0)

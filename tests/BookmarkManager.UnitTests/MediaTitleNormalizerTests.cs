@@ -107,9 +107,11 @@ public sealed class MediaTitleNormalizerTests
     [Fact]
     public void BuildLooseQuery_UsesFirstMeaningfulWords()
     {
+        // "A Monster Who Levels Up" has 5 real title tokens, which now fits within the
+        // default maxTokens (8), so nothing gets truncated.
         var query = MediaTitleNormalizer.BuildLooseQuery("A Monster Who Levels Up");
 
-        Assert.Equal("a monster who levels", query);
+        Assert.Equal("a monster who levels up", query);
     }
 
     [Fact]
@@ -205,5 +207,49 @@ public sealed class MediaTitleNormalizerTests
 
         Assert.False(features.IsBrand);
         Assert.True(features.LooksLikeTitle);
+    }
+
+    [Theory]
+    [InlineData("That Time I Got Reincarnated as a Slime Season 3", "Season 3")]
+    [InlineData("that time i got reincarnated as a slime season 3", "Season 3")]
+    public void ExtractSeasonMarker_ReturnsSeasonForSeasonNKeyword(string title, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.ExtractSeasonMarker(title));
+    }
+
+    [Fact]
+    public void ExtractSeasonMarker_ReturnsSeasonForOrdinalSeasonKeyword()
+    {
+        Assert.Equal("Season 3", MediaTitleNormalizer.ExtractSeasonMarker("Eighty Six 3rd Season"));
+    }
+
+    [Fact]
+    public void ExtractSeasonMarker_ReturnsPartForPartKeyword()
+    {
+        Assert.Equal("Part 2", MediaTitleNormalizer.ExtractSeasonMarker("Mushoku Tensei II Part 2"));
+    }
+
+    [Fact]
+    public void ExtractSeasonMarker_ReturnsNullWhenNoMarkerPresent()
+    {
+        Assert.Null(MediaTitleNormalizer.ExtractSeasonMarker("One Piece Episode 1092"));
+    }
+
+    [Fact]
+    public void BuildLooseQuery_ReproTitle_KeepsSeasonNumberPastTokenCap()
+    {
+        var query = MediaTitleNormalizer.BuildLooseQuery(
+            "That Time I Got Reincarnated as a Slime Season 3 English Sub/Dub online Free on Aniwatch.to");
+
+        Assert.Contains("reincarnated", query);
+        Assert.Contains("3", query.Split(' '));
+    }
+
+    [Fact]
+    public void BuildLooseQuery_ShortCandidateWithoutSeasonMarker_IsUnaffectedByDefaultChange()
+    {
+        var query = MediaTitleNormalizer.BuildLooseQuery("Solo Leveling");
+
+        Assert.Equal("solo leveling", query);
     }
 }

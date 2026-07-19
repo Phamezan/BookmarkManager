@@ -139,8 +139,10 @@ public class FakeBookmarkService : IBookmarkService
         => OnTestAiTaggingKey != null ? OnTestAiTaggingKey(request) : Task.FromResult(new TestAiKeyResponse { Success = true, Message = "fake" });
 
     public Dictionary<Guid, int> UntaggedCounts { get; set; } = new();
+    public Dictionary<Guid, int> FolderCounts { get; set; } = new();
 
     public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(UntaggedCounts);
+    public Task<Dictionary<Guid, int>> GetFolderCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(FolderCounts);
     
     public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) 
         => OnBulkSaveTags != null ? OnBulkSaveTags(request) : Task.FromResult(false);

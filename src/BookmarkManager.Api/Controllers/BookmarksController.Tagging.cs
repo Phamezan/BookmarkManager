@@ -115,6 +115,26 @@ public partial class BookmarksController
     return Ok();
     }
 
+    /// <summary>
+    /// Total bookmark count per folder (tagged + untagged). Powers the "re-tag already
+    /// tagged bookmarks" mode in the Auto Tagger, where a fully-tagged folder must still
+    /// be selectable and show its real bookmark count instead of 0.
+    /// </summary>
+    [HttpGet("folder-counts")]
+    public async Task<ActionResult<Dictionary<Guid, int>>> GetFolderCountsAsync(CancellationToken ct)
+    {
+    var bookmarks = await _db.BookmarkNodes
+        .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark)
+        .ToListAsync(ct);
+
+    var counts = bookmarks
+        .Where(b => b.ParentId.HasValue)
+        .GroupBy(b => b.ParentId!.Value)
+        .ToDictionary(g => g.Key, g => g.Count());
+
+    return Ok(counts);
+    }
+
     [HttpGet("untagged-counts")]
     public async Task<ActionResult<Dictionary<Guid, int>>> GetUntaggedCountsAsync(CancellationToken ct)
     {

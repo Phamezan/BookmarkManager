@@ -45,6 +45,7 @@ export class ServiceWorker {
   private coordinator: SyncCoordinator;
   private deps: ServiceWorkerDeps;
   private bookmarkListenersRegistered = false;
+  private pendingDuplicateGuardsRegistered = false;
   private importInProgress = false;
   /**
    * Normalized URLs whose series-duplicate creation the user just confirmed
@@ -63,6 +64,7 @@ export class ServiceWorker {
       getBraveVersion: deps.getBraveVersion,
     });
     this.registerBookmarkListeners();
+    this.registerPendingDuplicateGuards();
   }
 
   async initialize(): Promise<void> {
@@ -80,8 +82,78 @@ export class ServiceWorker {
     }
 
     this.registerBookmarkListeners();
+    this.registerPendingDuplicateGuards();
     await this.scheduleSync();
     this.connectWebSocket();
+  }
+
+  /**
+   * Drops a pending series-duplicate confirm when its source tab closes,
+   * navigates away, or the user switches to another tab — the prompt is only
+   * valid while still focused on the page that triggered it.
+   */
+  private registerPendingDuplicateGuards(): void {
+    if (this.pendingDuplicateGuardsRegistered) return;
+    this.pendingDuplicateGuardsRegistered = true;
+
+    chrome.tabs.onRemoved.addListener((tabId) => {
+      void this.clearPendingDuplicateForTab(tabId);
+    });
+
+    chrome.tabs.onActivated.addListener((activeInfo) => {
+      void this.clearPendingDuplicateIfLeftTab(activeInfo.tabId);
+    });
+
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+      if (changeInfo.url !== undefined) {
+        void this.clearPendingDuplicateIfNavigated(tabId, changeInfo.url);
+        return;
+      }
+      // Some SPA navigations only report status; re-check the live tab URL.
+      if (changeInfo.status === "complete" || changeInfo.status === "loading") {
+        void this.recheckPendingDuplicateTab(tabId);
+      }
+    });
+  }
+
+  /** @internal exposed for tests */
+  async clearPendingDuplicateForTab(tabId: number): Promise<void> {
+    const pending = await this.deps.storage.getPendingDuplicateState();
+    if (!pending || pending.sourceTabId !== tabId) return;
+    await this.deps.storage.clearPendingDuplicateState();
+    console.log("[worker] cleared pending duplicate — source tab closed:", tabId);
+  }
+
+  /**
+   * User focused a different tab than the one that opened the confirm.
+   * @internal exposed for tests
+   */
+  async clearPendingDuplicateIfLeftTab(activeTabId: number): Promise<void> {
+    const pending = await this.deps.storage.getPendingDuplicateState();
+    if (!pending || pending.sourceTabId === activeTabId) return;
+    await this.deps.storage.clearPendingDuplicateState();
+    console.log("[worker] cleared pending duplicate — left source tab:", pending.sourceTabId);
+  }
+
+  /** @internal exposed for tests */
+  async clearPendingDuplicateIfNavigated(tabId: number, newUrl: string): Promise<void> {
+    const pending = await this.deps.storage.getPendingDuplicateState();
+    if (!pending || pending.sourceTabId !== tabId) return;
+    if (normalizeBookmarkUrl(newUrl) === normalizeBookmarkUrl(pending.url)) return;
+    await this.deps.storage.clearPendingDuplicateState();
+    console.log("[worker] cleared pending duplicate — source tab navigated:", tabId);
+  }
+
+  private async recheckPendingDuplicateTab(tabId: number): Promise<void> {
+    const pending = await this.deps.storage.getPendingDuplicateState();
+    if (!pending || pending.sourceTabId !== tabId) return;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (!tab.url) return;
+      await this.clearPendingDuplicateIfNavigated(tabId, tab.url);
+    } catch {
+      // Tab gone — onRemoved will clear, or already gone.
+    }
   }
 
   private registerBookmarkListeners(): void {
@@ -327,8 +399,13 @@ export class ServiceWorker {
       // Series-level duplicate gate: when this exact URL is not bookmarked
       // yet (an exact match is reused, not duplicated) but another
       // chapter of the same series is, don't create — stash the pending
-      // creation and let the popup ask the user to confirm.
-      if (this.deps.duplicateDetector && !(await this.hasExactBookmark(url))) {
+      // creation and let the popup ask the user to confirm. Requires a
+      // tab id so we can drop the prompt if the user leaves the page.
+      if (
+        this.deps.duplicateDetector &&
+        typeof tab.id === "number" &&
+        !(await this.hasExactBookmark(url))
+      ) {
         const duplicates = await this.deps.duplicateDetector.getSeriesDuplicates(url, "");
         if (duplicates.length > 0) {
           await this.deps.storage.clearShortcutEditorState();
@@ -336,6 +413,7 @@ export class ServiceWorker {
             url,
             title,
             folderId,
+            sourceTabId: tab.id,
             duplicates,
             capturedAt: this.deps.now().toISOString(),
           });

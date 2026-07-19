@@ -52,13 +52,6 @@ else
                                   TypeFilter="@_typeFilter"
                                   TypeFilterChanged="OnTypeFilterChanged" />
 
-                <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="OpenAutoTaggerDialog"
-                           Disabled="@_loading" Class="anime-autotag-btn anime-autotag-btn-standalone">
-                    <img class="anime-kunai" src="assets/anime/bookmarks/kunai-gray.webp" alt="" aria-hidden="true" />
-                    Auto Tag
-                </MudButton>
-
                 @if (ShouldShowTagBar)
                 {
                     <div class="tag-filter-workspace">
@@ -191,6 +184,13 @@ else
                         </div>
                     </div>
                 }
+
+                <MudButton Variant="Variant.Text" Color="Color.Default" Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.AutoAwesome" OnClick="OpenAutoTaggerDialog"
+                           Disabled="@_loading" Class="anime-autotag-btn anime-autotag-btn-standalone">
+                    <img class="anime-kunai" src="assets/anime/bookmarks/kunai-gray.webp" alt="" aria-hidden="true" />
+                    Auto Tag
+                </MudButton>
             </div>
 
             <BookmarkList Loading="@_loading"

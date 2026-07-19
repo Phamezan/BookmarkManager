@@ -363,7 +363,8 @@ kbd {
 }
 
 #normal-mode[hidden],
-#editor-mode[hidden] {
+#editor-mode[hidden],
+#duplicate-mode[hidden] {
   display: none !important;
 }
 

@@ -102,4 +102,26 @@ public sealed class BookmarkTitleSuggestionBuilderTests
 
         Assert.Equal("I Can Make Everything Level UP — Chapter 46", suggested);
     }
+
+    [Fact]
+    public void Build_ReattachesSeasonMarkerDroppedFromCanonicalTitle()
+    {
+        var suggested = BookmarkTitleSuggestionBuilder.Build(
+            "That Time I Got Reincarnated as a Slime",
+            "Watch That Time I Got Reincarnated as a Slime Season 3 English Sub/Dub online Free on Aniwatch.to",
+            "https://aniwatchtv.to/watch/that-time-i-got-reincarnated-as-a-slime-season-3-19109?ep=128062");
+
+        Assert.Contains("Season 3", suggested);
+    }
+
+    [Fact]
+    public void Build_DoesNotDuplicateSeasonMarkerWhenCanonicalAlreadyHasOne()
+    {
+        var suggested = BookmarkTitleSuggestionBuilder.Build(
+            "Solo Leveling Season 2",
+            "Solo Leveling Season 2 English Sub",
+            "https://example.com/solo-leveling-season-2");
+
+        Assert.DoesNotContain("Season 2 Season 2", suggested);
+    }
 }

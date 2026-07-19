@@ -18,6 +18,9 @@ public partial class AutoTaggerDialog
     // Reruns panel state
     private bool _isEditingTags;
     private List<AiAutoTagBookmarkStatusDto> _runResults = [];
+    /// <summary>Tags each bookmark had immediately before this dialog's run started, so
+    /// "Cancel Selected" can revert a bad test run instead of leaving live-saved tags in place.</summary>
+    private Dictionary<Guid, List<string>> _preRunTagSnapshot = new();
     private HashSet<Guid> _selectedResultIds = [];
     private string _rerunStatusFilter = "All";
     private bool _rerunsLoading;
@@ -70,6 +73,7 @@ public partial class AutoTaggerDialog
     private void ResetRerunsState()
     {
         _runResults.Clear();
+        _preRunTagSnapshot.Clear();
         _selectedResultIds.Clear();
         _editTagsBuffer.Clear();
         _providerTimings.Clear();
@@ -194,6 +198,7 @@ public partial class AutoTaggerDialog
                 break;
 
             var folder = _selectableFolders.First(f => f.Id == folderId);
+            await CaptureFolderTagSnapshotAsync(folderId);
             var excludedBookmarkIds = new HashSet<Guid>();
             var folderProcessed = 0;
             var totalTagged = 0;
@@ -201,7 +206,7 @@ public partial class AutoTaggerDialog
             var totalLowConfidence = 0;
             var totalNoSourceTags = 0;
             var totalFailedChunks = 0;
-            var folderTotal = _untaggedCounts.GetValueOrDefault(folderId, 0);
+            var folderTotal = GetFolderCount(folderId);
 
             _statusText = $"AI tagging '{folder.Title}'...";
             AddLog($"Running OpenRouter series matching for '{folder.Title}'...", LogType.Info);
@@ -291,6 +296,23 @@ public partial class AutoTaggerDialog
             AddLog("Click 'Results & Reruns' to review statuses, edit tags, or rerun skipped bookmarks.", LogType.Info);
     }
 
+    /// <summary>Snapshots each bookmark's current tags before this folder's run touches them,
+    /// so a bad test run can be reverted per-bookmark via "Cancel Selected". Best-effort: if the
+    /// fetch fails, tagging still proceeds — those bookmarks just won't be revertible.</summary>
+    private async Task CaptureFolderTagSnapshotAsync(Guid folderId)
+    {
+        try
+        {
+            var bookmarks = await BookmarkService.GetBookmarksAsync(folderId);
+            foreach (var bookmark in bookmarks.Where(b => b.Type == NodeType.Bookmark))
+                _preRunTagSnapshot[bookmark.Id] = bookmark.Metadata?.Tags?.ToList() ?? [];
+        }
+        catch
+        {
+            // Best-effort — see summary doc comment above.
+        }
+    }
+
     private async Task<AiAutoTagSummaryDto> RequestAiBatchWithHeartbeatAsync(
         Guid folderId,
         int batchSize,
@@ -300,7 +322,7 @@ public partial class AutoTaggerDialog
         var batchStarted = DateTimeOffset.UtcNow;
         var requestTask = BookmarkService.AiAutoTagFolderBatchAsync(folderId, new AiAutoTagBatchRequestDto
         {
-            ForceRefresh = false,
+            ForceRefresh = _forceRefresh,
             MaxCandidates = batchSize,
             ExcludedBookmarkIds = excludedBookmarkIds.ToList()
         }, CancellationToken.None);
@@ -449,6 +471,55 @@ public partial class AutoTaggerDialog
         {
             Snackbar.Add($"Rerun failed: {ex.Message}", Severity.Error);
             AddLog($"Rerun error: {ex.Message}", LogType.Error);
+        }
+        finally
+        {
+            _rerunsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>Reverts the checked bookmarks' tags to their pre-run snapshot (captured in
+    /// <see cref="CaptureFolderTagSnapshotAsync"/>) and drops them from the results list —
+    /// the "flawed test run, don't keep it" escape hatch. Bookmarks with no snapshot entry
+    /// (e.g. this dialog session never captured them) revert to no tags rather than being
+    /// left in their possibly-wrong tagged state.</summary>
+    private async Task CancelSelectedResultsAsync()
+    {
+        if (_selectedResultIds.Count == 0)
+            return;
+
+        _rerunsLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var ids = _selectedResultIds.ToList();
+            var tagsDict = ids.ToDictionary(
+                id => id,
+                id => _preRunTagSnapshot.TryGetValue(id, out var snapshot) ? snapshot : new List<string>());
+
+            var success = await BookmarkService.BulkSaveTagsAsync(new BulkSaveTagsRequest { Tags = tagsDict });
+
+            if (success)
+            {
+                foreach (var id in ids)
+                {
+                    _runResults.RemoveAll(r => r.BookmarkId == id);
+                    _selectedResultIds.Remove(id);
+                    _preRunTagSnapshot.Remove(id);
+                }
+
+                Snackbar.Add($"Reverted {ids.Count} bookmark(s) to their pre-run tags.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add("Failed to cancel selected bookmarks.", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error cancelling selected bookmarks: {ex.Message}", Severity.Error);
         }
         finally
         {

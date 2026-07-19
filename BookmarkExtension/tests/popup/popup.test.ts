@@ -176,14 +176,69 @@ describe("PopupController", () => {
       url: "https://site.com/manga/solo-leveling/chapter-125",
       title: "Solo Leveling Ch 125",
       folderId: "50",
+      sourceTabId: 42,
       duplicates: [{ id: "10", title: "Solo Leveling Ch 124", parentTitle: "Manga" }],
       capturedAt: "2026-07-14T00:00:00Z",
     };
 
-    it("loads pending duplicate state", async () => {
+    it("loads pending duplicate state when source tab still matches", async () => {
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => permissionGranted,
+        getActiveTab: async () => ({ id: pending.sourceTabId, url: pending.url }),
+      });
       expect(await controller.loadPendingDuplicate()).toBeNull();
       await repo.savePendingDuplicateState(pending);
       expect(await controller.loadPendingDuplicate()).toEqual(pending);
+    });
+
+    it("clears pending state when source tab navigated away", async () => {
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => permissionGranted,
+        getActiveTab: async () => ({ id: pending.sourceTabId, url: "https://other.com/" }),
+      });
+      await repo.savePendingDuplicateState(pending);
+      expect(await controller.loadPendingDuplicate()).toBeNull();
+      expect(await repo.getPendingDuplicateState()).toBeNull();
+    });
+
+    it("clears pending state when a different tab is active", async () => {
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => permissionGranted,
+        getActiveTab: async () => ({ id: 999, url: pending.url }),
+      });
+      await repo.savePendingDuplicateState(pending);
+      expect(await controller.loadPendingDuplicate()).toBeNull();
+      expect(await repo.getPendingDuplicateState()).toBeNull();
+    });
+
+    it("clears pending state when source tab is gone", async () => {
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => permissionGranted,
+        getActiveTab: async () => null,
+      });
+      await repo.savePendingDuplicateState(pending);
+      expect(await controller.loadPendingDuplicate()).toBeNull();
+      expect(await repo.getPendingDuplicateState()).toBeNull();
     });
 
     it("confirmDuplicateCreate sends the confirm message to the worker", async () => {

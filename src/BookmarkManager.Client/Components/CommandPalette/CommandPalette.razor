@@ -47,7 +47,7 @@
                 id="paletteSearchInput"
                 type="text" 
                 class="palette-input" 
-                placeholder="Search bookmarks or pick a folder..." 
+                placeholder="Search bookmarks, > for folders, # for tags..."
                 value="@_searchQuery"
                 @oninput="HandleSearchInput"
                 autocomplete="off"
@@ -69,6 +69,14 @@
                         @if (string.IsNullOrWhiteSpace(_searchQuery))
                         {
                             <span>No folders found</span>
+                        }
+                        else if (_searchQuery.StartsWith("#"))
+                        {
+                            <span>No tags found matching "@_searchQuery"</span>
+                        }
+                        else if (_searchQuery.StartsWith(">"))
+                        {
+                            <span>No folders found matching "@_searchQuery"</span>
                         }
                         else
                         {
@@ -102,6 +110,10 @@
                                         @if (item.IsFolder)
                                         {
                                             <MudIcon Icon="@Icons.Material.Filled.Folder" />
+                                        }
+                                        else if (item.IsTag)
+                                        {
+                                            <MudIcon Icon="@Icons.Material.Filled.Sell" />
                                         }
                                         else if (GetFaviconUrl(item.Url) is { } favicon)
                                         {

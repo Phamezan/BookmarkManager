@@ -57,6 +57,46 @@ public sealed class BackupService : IBackupService
         }
     }
 
+    /// <summary>
+    /// Deletes <see cref="BackupManifest"/> rows left over from the JSON import/export/restore
+    /// feature removed in commit 8392bd3. That feature used a different status vocabulary than
+    /// <see cref="BackupManifestStatus"/>, so any row whose <see cref="BackupManifest.Status"/>
+    /// isn't one of the three current values is provably a dead artifact — the current backup
+    /// code has never written anything else. Safe to run on every startup: once purged, there's
+    /// nothing left to match.
+    /// </summary>
+    public async Task PurgeLegacyManifestsAsync(CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var knownStatuses = new[] { BackupManifestStatus.Running, BackupManifestStatus.Succeeded, BackupManifestStatus.Failed };
+        var legacy = await db.BackupManifests
+            .Where(m => !knownStatuses.Contains(m.Status))
+            .ToListAsync(ct);
+
+        if (legacy.Count == 0)
+        {
+            return;
+        }
+
+        var backupDirectory = ResolveBackupDirectory(_options.Value);
+        foreach (var manifest in legacy)
+        {
+            if (!string.IsNullOrWhiteSpace(manifest.FilePath))
+            {
+                var fullPath = Path.GetFullPath(manifest.FilePath);
+                if (IsPathUnderDirectory(fullPath, backupDirectory))
+                {
+                    DeleteFileIfExists(fullPath);
+                }
+            }
+        }
+
+        db.BackupManifests.RemoveRange(legacy);
+        await db.SaveChangesAsync(ct);
+        _logger.LogInformation("Purged {Count} legacy backup manifest row(s) from the removed JSON backup feature.", legacy.Count);
+    }
+
     public async Task<BackupManifestDto> CreateBackupAsync(string trigger, CancellationToken ct = default)
     {
         if (!await _backupLock.WaitAsync(0, ct))

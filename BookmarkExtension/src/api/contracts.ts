@@ -31,11 +31,16 @@ export interface ShortcutEditorState {
  * like an already-bookmarked series. Consumed by the popup to ask the user to
  * confirm before the bookmark is actually created. Lives in
  * `chrome.storage.local` under `bm.pendingDuplicateState`.
+ *
+ * Cleared when the source tab navigates away or is closed — the confirm is
+ * only meaningful while still on the page that triggered it.
  */
 export interface PendingDuplicateState {
   url: string;
   title: string;
   folderId: string;
+  /** Tab that owned the page when quick-bookmark fired. */
+  sourceTabId: number;
   duplicates: { id: string; title: string; parentTitle: string | null }[];
   capturedAt: string;
 }
