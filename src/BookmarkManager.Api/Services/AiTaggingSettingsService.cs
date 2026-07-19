@@ -88,6 +88,10 @@ public class AiTaggingSettingsService
             GroqBaseUrl = string.IsNullOrWhiteSpace(settings.GroqBaseUrl)
                 ? "https://api.groq.com/openai/v1"
                 : settings.GroqBaseUrl.Trim().TrimEnd('/'),
-            GroqRequestsPerMinute = settings.GroqRequestsPerMinute <= 0 ? 25 : settings.GroqRequestsPerMinute
+            GroqRequestsPerMinute = settings.GroqRequestsPerMinute <= 0 ? 25 : settings.GroqRequestsPerMinute,
+            MigrationSearchModel = string.IsNullOrWhiteSpace(settings.MigrationSearchModel)
+                ? "groq/compound-mini"
+                : settings.MigrationSearchModel.Trim(),
+            MigrationAutoApproveHigh = settings.MigrationAutoApproveHigh
         };
 }
