@@ -1,3 +1,9 @@
+---
+status: live
+last_verified: 2026-07-17
+note: Evergreen reference map of current code in src/BookmarkManager.Api/Services/BookmarkTagging/ and Services/Library/. Update when the normalizer/scoring pipeline changes; §7 opinions are suggestions, not committed work.
+---
+
 # Title Matching, Slugs, and Filter Logic
 
 Reference map of every slug/title-normalization/filter routine used by auto-tagging (`src/BookmarkManager.Api/Services/BookmarkTagging/`) and the Library catalog (`src/BookmarkManager.Api/Services/Library/`). Describes what IS, with file+member pointers, so new work can extend or collapse this logic deliberately instead of adding a fourth copy of jaccard scoring.

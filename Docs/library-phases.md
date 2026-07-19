@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Library feature shipped. Phases 1, 2, 7, 8, 9 = implemented. Phases 3–5 (tracking + release watcher + progress UX) were built then removed in Phase 8 — see Phase 8 entry. Phase 6 = implementation complete, manual E2E pending. Do not treat any phase as open work; this is history.
+---
+
 # Library — Unified Discovery Catalog & Latest Chapter Tracker
 
 Implementation phases. UI mock (Phase 0) already done on branch `Library`.

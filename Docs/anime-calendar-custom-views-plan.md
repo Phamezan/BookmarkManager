@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Shipped. Heron.MudCalendar removed from csproj; Agenda/Month/Week/Day custom views built; "Backlog" section (day-cell click-through, larger Day covers, hover countdown) also implemented per the "Implemented instead" note. Treat as history.
+---
+
 # Anime Calendar — custom views, drop Heron.MudCalendar
 
 ## Context

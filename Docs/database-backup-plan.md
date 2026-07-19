@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Phases 1–6 shipped. BackupService.cs + BackupBackgroundJob.cs + Backups.razor page + restore-on-restart (BackupPendingRestore.cs) all live. Treat as history; only revisit if backup semantics change.
+---
+
 # Database Backup — Implementation Plan
 
 **Branch:** `feature/database-backup`

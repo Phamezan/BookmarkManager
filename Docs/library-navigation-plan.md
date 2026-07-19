@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Library→Bookmark navigation Phases A–B shipped (BookmarkSeriesMatchService.cs, MediaDetailsDialog, LibraryReadingProgressDto, /bookmarks?bookmarkId= deep link). One optional deep-link component test remains unchecked.
+---
+
 # Library ↔ Bookmark Navigation
 
 Status: **Library phases A–B implemented** · **Command palette owned separately**

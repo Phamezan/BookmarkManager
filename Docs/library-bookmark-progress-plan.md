@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Shipped. BookmarkSeriesMatchService.cs + GET api/library/reading-progress + client badges/filter all live. Subsumed by library-navigation-plan.md (which added the navigation layer on top).
+---
+
 # Library: Bookmark Progress Badges, Status Badges, and Catch-up Filter
 
 ## Goal
