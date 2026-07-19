@@ -10,9 +10,6 @@ namespace BookmarkManager.Client.Pages;
 
 public partial class Bookmarks : IDisposable
 {
-    protected const string SortTitle = "Title";
-    protected const string SortUpdated = "Updated";
-
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
@@ -35,7 +32,6 @@ public partial class Bookmarks : IDisposable
     private readonly HashSet<Guid> _selectedBookmarkIds = [];
     private string _dragType = "";
     private Guid _draggedFolderId;
-    private string FavoritesDragOverStyle { get; set; } = "";
     private CancellationTokenSource? _wsCts;
     private bool _contextMenuOpen;
     private double _contextMenuX;

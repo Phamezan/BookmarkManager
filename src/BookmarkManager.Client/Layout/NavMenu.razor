@@ -99,19 +99,6 @@
 </div>
 
 @code {
-    // Icons8 CDN trial. Change to try other looks: doodle, clouds, stickers, plasticine, bubbles, cute-clipart.
-    // Not every icon name exists in every style; second argument is the fallback name.
-    private const string IconStyle = "doodle";
-
-    private static readonly HashSet<string> MissingInDoodle = new() { "bookmark" };
-
-    private static string IconUrl(string name, string? fallback = null)
-    {
-        if (fallback is not null && IconStyle == "doodle" && MissingInDoodle.Contains(name))
-            name = fallback;
-        return $"https://img.icons8.com/{IconStyle}/96/{name}.png";
-    }
-
     protected override void OnInitialized()
     {
         Nav.LocationChanged += OnLocationChanged;

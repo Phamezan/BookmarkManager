@@ -7,7 +7,7 @@ using MudBlazor;
 namespace BookmarkManager.Client.Features.MangaCalendar.Components;
 
 /// <summary>Self-contained manhwa release calendar - pulls MangaDex's global chapter feed directly,
-/// with no bookmark/folder matching involved (see <see cref="Controllers.MangaCalendarController"/>
+/// with no bookmark/folder matching involved (see the API's MangaCalendarController
 /// for why the bookmark-matching approach was dropped). The feed is server-cached (~30 min), so
 /// there's no need to react to bookmark sync events here.</summary>
 public partial class MangaCalendarPanel

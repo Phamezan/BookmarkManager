@@ -35,26 +35,6 @@ public partial class Bookmarks
         return items.All(i => _selectedBookmarkIds.Contains(i.Id));
     }
 
-    private void ToggleSelectAll(Microsoft.AspNetCore.Components.ChangeEventArgs e)
-    {
-        var checkedVal = e.Value is bool b && b;
-        var items = VisibleItems;
-        if (checkedVal)
-        {
-            foreach (var item in items)
-            {
-                _selectedBookmarkIds.Add(item.Id);
-            }
-        }
-        else
-        {
-            foreach (var item in items)
-            {
-                _selectedBookmarkIds.Remove(item.Id);
-            }
-        }
-    }
-
     private void ToggleSelectAllButton()
     {
         var items = VisibleItems;
@@ -133,14 +113,6 @@ public partial class Bookmarks
         if (!_selectedBookmarkIds.Contains(id))
             _selectedBookmarkIds.Clear();
         _selectedBookmarkIds.Add(id);
-    }
-
-    private string GetDragData()
-    {
-        var ids = _selectedBookmarkIds.Count > 0
-            ? _selectedBookmarkIds
-            : throw new InvalidOperationException("No bookmarks selected");
-        return string.Join(",", ids);
     }
 
 }

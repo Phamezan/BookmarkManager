@@ -143,21 +143,6 @@ public partial class BookmarksController
     return Ok(tags);
     }
 
-    /// <summary>
-    /// Backfill tags on active bookmarks through the same folder-aware provider routing
-    /// used by the manual Auto Tagger. This is explicit work and is never triggered
-    /// by extension reconnect or snapshot restore.
-    /// </summary>
-    [HttpPost("retag-all")]
-    public async Task<ActionResult<object>> RetagAllAsync(
-    [FromQuery] bool overwrite = false,
-    [FromServices] BookmarkManager.Api.Services.AutoTaggerService autoTagger = default!,
-    CancellationToken ct = default)
-    {
-    var result = await autoTagger.ProcessAsync(overwrite, folderIds: null, ct);
-    return Ok(result);
-    }
-
     [HttpPost("{folderId:guid}/ai-auto-tag")]
     public async Task<ActionResult<AiAutoTagSummaryDto>> AiAutoTagAsync(
     Guid folderId,

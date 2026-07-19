@@ -32,8 +32,6 @@ public sealed class KeyboardShortcutService : IAsyncDisposable
     private DotNetObjectReference<KeyboardShortcutService>? _dotNetRef;
     private bool _initialized;
 
-    public bool IsContextActive(string context) => _activeContexts.Contains(context);
-
     public void SetContextActive(string context, bool active)
     {
         if (active)
