@@ -11,7 +11,6 @@ public class AppDbContext : DbContext
     public DbSet<ActivityLogEntry> ActivityLog => Set<ActivityLogEntry>();
     public DbSet<BackupManifest> BackupManifests => Set<BackupManifest>();
 
-    public DbSet<AdminAccount> AdminAccounts => Set<AdminAccount>();
     public DbSet<ExtensionClient> ExtensionClients => Set<ExtensionClient>();
     public DbSet<AppConfig> AppConfig => Set<AppConfig>();
     public DbSet<ExtensionEventEntry> ExtensionEvents => Set<ExtensionEventEntry>();
@@ -72,13 +71,6 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Trigger).HasMaxLength(32).IsRequired();
             entity.Property(e => e.Error).HasMaxLength(500);
             entity.HasIndex(e => e.CreatedAt);
-        });
-
-        modelBuilder.Entity<AdminAccount>(entity =>
-        {
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.PasswordHash).HasMaxLength(256).IsRequired();
-            entity.Property(e => e.PasswordSalt).HasMaxLength(128).IsRequired();
         });
 
         modelBuilder.Entity<ExtensionClient>(entity =>
