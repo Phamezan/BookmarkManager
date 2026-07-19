@@ -19,16 +19,10 @@ public partial class BookmarksController
     [HttpGet("url-migration/dead-domains")]
     public async Task<ActionResult<List<DeadDomainCandidateDto>>> GetDeadDomainCandidatesAsync(CancellationToken ct)
     {
-        var brokenLinksFolder = await _db.BookmarkNodes
-            .FirstOrDefaultAsync(n => n.Type == NodeType.Folder && n.Title == BrokenLinksFolderHelper.FolderName && !n.IsDeleted, ct);
-
-        if (brokenLinksFolder == null)
-        {
-            return Ok(new List<DeadDomainCandidateDto>());
-        }
-
+        // Detection is report-only: the link checker flags IsLinkBroken in place
+        // (no "Broken Links" folder moves anymore).
         var bookmarks = await _db.BookmarkNodes
-            .Where(n => n.ParentId == brokenLinksFolder.Id && n.Type == NodeType.Bookmark && !n.IsDeleted && n.Url != null)
+            .Where(n => n.IsLinkBroken && n.Type == NodeType.Bookmark && !n.IsDeleted && n.Url != null)
             .ToListAsync(ct);
 
         var grouped = bookmarks

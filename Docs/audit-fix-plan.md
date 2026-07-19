@@ -1,3 +1,9 @@
+---
+status: partial
+last_verified: 2026-07-17
+note: Dated 2026-07-08. Phase 4.1 (TitleMatching.cs dedup) shipped. Phases 0 (dataprotection key), 1 (sync protocol), 2 (client silent-failures), 3 (server bugs), 5 (dead code) NOT independently verified against current code — re-check each finding at file:line before acting. Some findings may already be fixed.
+---
+
 # Audit Fix Plan — BookmarkManager
 
 Date: 2026-07-08. Branch base: `recommendations` (clean at ae2e16f).
@@ -160,12 +166,13 @@ public class UndoService
 
 ## Phase 3 — Server bug fixes (independent, one PR)
 
-### 3.1 Link checker false positives
+### 3.1 Link checker false positives — RESOLVED 2026-07-18
+Report-only refactor: the checker now flags `IsLinkBroken` on the node (no folder moves), and non-success statuses are classified — 401/403/429 + `cf-mitigated` challenges count as alive, only 404/410/connection failure/timeout count as broken, 5xx = unknown (not broken). Original note:
 `LinkCheckerService.cs:196-203`: `TaskCanceledException` and `catch (Exception)` both return `true` (= broken), so shutdown or an internal bug moves healthy bookmarks into "Broken Links".
 - `TaskCanceledException` where `ct.IsCancellationRequested` rethrows (shutdown, not verdict). Pure timeout (`TaskCanceledException` with inner `TimeoutException` / token not cancelled) may stay "broken".
 - `catch (Exception ex)`: log at Warning with URL, return `false` (unknown ≠ broken). Only definitive signals (HTTP error status, DNS failure via `HttpRequestException`) count as broken.
 - Line 96: replace `new HttpClient(...)` with a named client from `IHttpClientFactory` (`Program.cs` already configures named clients; add `"LinkChecker"` with the same timeout/redirect settings).
-- `_isRunning` (lines 23–63): guard reads/writes with a lock like `AutoTaggerBackgroundJob._statusLock`, and re-queue a trigger that arrives during an active run instead of dropping it (set a `_rerunRequested` flag checked at loop end).
+- `_isRunning` (lines 23–63): guard reads/writes with a `_statusLock`-style lock, and re-queue a trigger that arrives during an active run instead of dropping it (set a `_rerunRequested` flag checked at loop end).
 
 ### 3.2 Reorder version semantics
 `BookmarksController.Commands.cs:282-311`: bump `node.Version++` for each reordered node and set the command's `ExpectedVersion` from the node, replacing the hardcoded `1`. Normalize incoming positions to contiguous `0..n` by sort order before writing the projection, so server and extension (which already normalizes at `ExtensionService.Events.cs:283-287`) agree.
