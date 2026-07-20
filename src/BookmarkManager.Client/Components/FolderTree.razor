@@ -19,7 +19,7 @@
                     var fi = item as FolderTreeItemData;
                 }
                 <div class="d-flex align-center folder-drop-target"
-                     style="@(item.Value.HasValue && DisabledFolderIds.Contains(item.Value.Value) ? "width: 100%; opacity: 0.45; cursor: not-allowed; pointer-events: none;" : "width: 100%;")"
+                     style="width: 100%;"
                      data-drop-target="true"
                      draggable="true"
                      data-drag-type="folder"
@@ -71,7 +71,6 @@
 @code {
     [Parameter] public List<FolderTreeNodeDto> Folders { get; set; } = [];
     [Parameter] public Guid? SelectedFolderId { get; set; }
-    [Parameter] public HashSet<Guid> DisabledFolderIds { get; set; } = [];
     [Parameter] public EventCallback<Guid> FolderSelected { get; set; }
     [Parameter] public EventCallback<Guid> FolderDrop { get; set; }
     [Parameter] public EventCallback<Guid> FolderDragStart { get; set; }

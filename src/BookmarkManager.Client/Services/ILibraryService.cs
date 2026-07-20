@@ -16,4 +16,5 @@ public interface ILibraryService
     Task ToggleProviderAsync(string providerName, bool enabled, CancellationToken cancellationToken = default);
     Task<List<LibraryReadingProgressDto>> GetReadingProgressAsync(CancellationToken cancellationToken = default);
     Task<List<LibraryEntryDto>> GetMyBookmarkedSeriesAsync(CancellationToken cancellationToken = default);
+    Task<List<LibraryEntryDto>> GetSavedForLaterAsync(CancellationToken cancellationToken = default);
 }

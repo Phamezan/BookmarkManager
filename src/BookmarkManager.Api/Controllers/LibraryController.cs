@@ -131,6 +131,97 @@ public sealed class LibraryController(
         return Ok(entries);
     }
 
+    /// <summary>
+    /// PlanToRead bookmarks as library cards when catalog-matched; unmatched roots are
+    /// synthesized from the bookmark title/URL so the Later shelf is never empty of orphans.
+    /// </summary>
+    [HttpGet("saved-for-later")]
+    public async Task<ActionResult<List<LibraryEntryDto>>> GetSavedForLater(CancellationToken cancellationToken)
+    {
+        var planNodes = await db.BookmarkNodes
+            .AsNoTracking()
+            .Where(n => !n.IsDeleted
+                        && n.Type == NodeType.Bookmark
+                        && n.Status == BookmarkReadingStatus.PlanToRead
+                        && n.Url != null)
+            .OrderByDescending(n => n.UpdatedAt)
+            .Take(200)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (planNodes.Count == 0)
+            return Ok(new List<LibraryEntryDto>());
+
+        var matches = await matchService.GetMatchesAsync(cancellationToken).ConfigureAwait(false);
+        var matchByBookmarkId = matches.ToDictionary(m => m.BookmarkId);
+        var matchedKeys = new List<(string Provider, string ProviderId)>();
+        foreach (var node in planNodes)
+        {
+            if (matchByBookmarkId.TryGetValue(node.Id, out var match))
+                matchedKeys.Add((match.Provider, match.ProviderId));
+        }
+
+        var catalogEntries = await searchService.GetEntriesByKeysAsync(matchedKeys, cancellationToken).ConfigureAwait(false);
+        var catalogByKey = catalogEntries.ToDictionary(
+            e => (e.Provider, e.ProviderId),
+            StringPairComparer.Instance);
+
+        var results = new List<LibraryEntryDto>();
+        var seenCatalog = new HashSet<(string, string)>();
+        foreach (var node in planNodes)
+        {
+            if (matchByBookmarkId.TryGetValue(node.Id, out var match)
+                && catalogByKey.TryGetValue((match.Provider, match.ProviderId), out var entry))
+            {
+                if (seenCatalog.Add((entry.Provider, entry.ProviderId)))
+                    results.Add(entry);
+                continue;
+            }
+
+            // Unmatched series-root: synthesize a minimal card from the bookmark.
+            results.Add(SynthesizePlanToReadEntry(node));
+        }
+
+        return Ok(results);
+    }
+
+    private static LibraryEntryDto SynthesizePlanToReadEntry(BookmarkNode node)
+    {
+        var genres = string.IsNullOrWhiteSpace(node.Tags)
+            ? (IReadOnlyList<string>)Array.Empty<string>()
+            : node.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var author = Uri.TryCreate(node.Url, UriKind.Absolute, out var uri) ? uri.Host : "bookmark";
+        return new LibraryEntryDto(
+            Provider: "bookmark",
+            ProviderId: node.Id.ToString("N"),
+            Title: node.Title,
+            AlternateTitles: [],
+            Authors: [author],
+            MediaType: LibraryMediaType.Webnovel,
+            CoverImageUrl: node.CoverImageUrl,
+            Synopsis: "Saved for later",
+            Genres: genres,
+            Rating: null,
+            Status: BookmarkReadingStatus.PlanToRead,
+            LatestChapter: null,
+            LatestVolume: null,
+            LastReleaseAt: null,
+            SourceUrl: node.Url ?? string.Empty);
+    }
+
+    private sealed class StringPairComparer : IEqualityComparer<(string, string)>
+    {
+        public static readonly StringPairComparer Instance = new();
+        public bool Equals((string, string) x, (string, string) y) =>
+            string.Equals(x.Item1, y.Item1, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.Item2, y.Item2, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode((string, string) obj) =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item1),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Item2));
+    }
+
     [HttpGet("providers/health")]
     public ActionResult<List<ProviderHealthDto>> GetProvidersHealth()
     {

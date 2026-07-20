@@ -234,7 +234,7 @@ function makeDetector(overrides?: {
   parents?: Record<string, BraveBookmarkTreeNode>;
 }) {
   const storage = new FakeStorage();
-  const notifications = { create: vi.fn() };
+  const showAlert = vi.fn();
   const detector = new DuplicateDetector({
     bookmarks: {
       get: async (id) => {
@@ -243,16 +243,16 @@ function makeDetector(overrides?: {
       },
       getTree: async () => overrides?.tree ?? [],
     },
-    notifications,
+    showAlert,
     storage,
     now: () => new Date("2026-07-14T00:00:00Z"),
   });
-  return { detector, notifications, storage };
+  return { detector, showAlert, storage };
 }
 
 describe("DuplicateDetector.checkNewBookmark", () => {
-  it("notifies when a different chapter of the same series is already bookmarked", async () => {
-    const { detector, notifications } = makeDetector({
+  it("stays silent — series dups use the extension popup, not an overlay", async () => {
+    const { detector, showAlert } = makeDetector({
       tree: [
         folder("50", "Manga", [
           bookmark("10", "https://site.com/manga/solo-leveling/chapter-124", "Solo Leveling Ch 124", "50"),
@@ -268,38 +268,12 @@ describe("DuplicateDetector.checkNewBookmark", () => {
       url: "https://site.com/manga/solo-leveling/chapter-125",
     });
 
-    expect(notifications.create).toHaveBeenCalledTimes(1);
-    const opts = notifications.create.mock.calls[0]?.[0] as { title: string; message: string };
-    expect(opts.title).toBe("Series already bookmarked");
-    expect(opts.message).toContain('"Solo Leveling Ch 124"');
-    expect(opts.message).toContain('"Manga"');
+    expect(showAlert).not.toHaveBeenCalled();
   });
 
-  it("stays silent for a new series", async () => {
-    const { detector, notifications } = makeDetector({
-      tree: [
-        folder("50", "Manga", [
-          bookmark("10", "https://site.com/manga/one-piece/chapter-1000", "One Piece", "50"),
-        ]),
-      ],
-    });
-    await detector.checkNewBookmark({
-      id: "11",
-      title: "Solo Leveling",
-      url: "https://site.com/manga/solo-leveling/chapter-1",
-    });
-    expect(notifications.create).not.toHaveBeenCalled();
-  });
-
-  it("skips non-http(s) URLs", async () => {
-    const { detector, notifications } = makeDetector();
-    await detector.checkNewBookmark({ id: "1", title: "x", url: "javascript:void(0)" });
-    expect(notifications.create).not.toHaveBeenCalled();
-  });
-
-  it("swallows getTree failures", async () => {
+  it("swallows nothing when called (no-op)", async () => {
     const storage = new FakeStorage();
-    const notifications = { create: vi.fn() };
+    const showAlert = vi.fn();
     const detector = new DuplicateDetector({
       bookmarks: {
         get: async () => [],
@@ -307,14 +281,14 @@ describe("DuplicateDetector.checkNewBookmark", () => {
           throw new Error("boom");
         },
       },
-      notifications,
+      showAlert,
       storage,
       now: () => new Date(),
     });
     await expect(
       detector.checkNewBookmark({ id: "1", title: "x", url: "https://a.com" }),
     ).resolves.toBeUndefined();
-    expect(notifications.create).not.toHaveBeenCalled();
+    expect(showAlert).not.toHaveBeenCalled();
   });
 });
 
@@ -362,34 +336,34 @@ describe("DuplicateDetector.scanFolders", () => {
     folder("1", "Bar", [folder("100", "Manga"), folder("101", "Manga")]),
   ];
 
-  it("notifies once per new duplicate group", async () => {
-    const { detector, notifications } = makeDetector({ tree: dupTree });
+  it("alerts once per new duplicate group", async () => {
+    const { detector, showAlert } = makeDetector({ tree: dupTree });
 
     await detector.scanFolders();
 
-    expect(notifications.create).toHaveBeenCalledTimes(1);
-    const opts = notifications.create.mock.calls[0]?.[0] as { title: string; message: string };
+    expect(showAlert).toHaveBeenCalledTimes(1);
+    const opts = showAlert.mock.calls[0]?.[0] as { title: string; message: string };
     expect(opts.title).toBe("Duplicate folders");
     expect(opts.message).toContain('"Manga" appears 2 times under "Bar"');
   });
 
-  it("does not re-notify an already announced group", async () => {
-    const { detector, notifications } = makeDetector({ tree: dupTree });
+  it("does not re-alert an already announced group", async () => {
+    const { detector, showAlert } = makeDetector({ tree: dupTree });
     await detector.scanFolders();
     await detector.scanFolders();
-    expect(notifications.create).toHaveBeenCalledTimes(1);
+    expect(showAlert).toHaveBeenCalledTimes(1);
   });
 
-  it("prunes resolved groups so a re-created duplicate notifies again", async () => {
+  it("prunes resolved groups so a re-created duplicate alerts again", async () => {
     const storage = new FakeStorage();
-    const notifications = { create: vi.fn() };
+    const showAlert = vi.fn();
     let tree = dupTree;
     const detector = new DuplicateDetector({
       bookmarks: {
         get: async () => [],
         getTree: async () => tree,
       },
-      notifications,
+      showAlert,
       storage,
       now: () => new Date(),
     });
@@ -402,10 +376,10 @@ describe("DuplicateDetector.scanFolders", () => {
 
     tree = dupTree;
     await detector.scanFolders();
-    expect(notifications.create).toHaveBeenCalledTimes(2);
+    expect(showAlert).toHaveBeenCalledTimes(2);
   });
 
-  it("caps notifications per scan but remembers all groups", async () => {
+  it("caps alerts per scan but remembers all groups", async () => {
     const manyDups = [
       folder("1", "Bar", [
         folder("100", "A"),
@@ -418,18 +392,18 @@ describe("DuplicateDetector.scanFolders", () => {
         folder("107", "D"),
       ]),
     ];
-    const { detector, notifications } = makeDetector({ tree: manyDups });
+    const { detector, showAlert } = makeDetector({ tree: manyDups });
 
     await detector.scanFolders();
-    expect(notifications.create).toHaveBeenCalledTimes(3);
+    expect(showAlert).toHaveBeenCalledTimes(3);
 
     await detector.scanFolders();
-    expect(notifications.create).toHaveBeenCalledTimes(3);
+    expect(showAlert).toHaveBeenCalledTimes(3);
   });
 
   it("swallows getTree failures", async () => {
     const storage = new FakeStorage();
-    const notifications = { create: vi.fn() };
+    const showAlert = vi.fn();
     const detector = new DuplicateDetector({
       bookmarks: {
         get: async () => [],
@@ -437,7 +411,7 @@ describe("DuplicateDetector.scanFolders", () => {
           throw new Error("boom");
         },
       },
-      notifications,
+      showAlert,
       storage,
       now: () => new Date(),
     });

@@ -5,11 +5,13 @@ import type {
   CompletionRequest,
   EventBatchRequest,
   EventBatchResponse,
+  ExtensionBookmarkEnrichment,
   ExtensionConfig,
   HeartbeatRequest,
   HeartbeatResponse,
   SnapshotRequestPayload,
   SnapshotResponse,
+  TagCount,
 } from "./contracts";
 import { ApiError } from "./errors";
 
@@ -148,6 +150,51 @@ export class HttpApiClient implements ApiClient {
       "POST",
       `/api/extension/commands/${operationId}/complete`,
       input,
+    );
+  }
+
+  async getBookmarkEnrichmentByBrowserId(
+    browserNodeId: string,
+  ): Promise<ExtensionBookmarkEnrichment | null> {
+    try {
+      return await this.request<ExtensionBookmarkEnrichment>(
+        "GET",
+        `/api/extension/bookmarks/by-browser-id/${encodeURIComponent(browserNodeId)}`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async setBookmarkCoverByBrowserId(
+    browserNodeId: string,
+    coverImageUrl: string,
+  ): Promise<void> {
+    await this.request<void>(
+      "PUT",
+      `/api/extension/bookmarks/by-browser-id/${encodeURIComponent(browserNodeId)}/cover`,
+      { coverImageUrl },
+    );
+  }
+
+  getTags(): Promise<TagCount[]> {
+    return this.request<TagCount[]>("GET", "/api/bookmarks/tags");
+  }
+
+  bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void> {
+    return this.request<void>("POST", "/api/bookmarks/tags/bulk-save", {
+      tags: tagsByBookmarkId,
+      manuallyEditedTagIds: Object.keys(tagsByBookmarkId),
+    });
+  }
+
+  aiRetag(serverId: string): Promise<string[]> {
+    return this.request<string[]>(
+      "POST",
+      `/api/bookmarks/${encodeURIComponent(serverId)}/ai-tags`,
     );
   }
 }

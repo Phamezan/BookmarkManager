@@ -1,0 +1,21 @@
+---
+description: "Test layout, frameworks, and scoping rules"
+globs: tests/**,BookmarkExtension/**/*.test.ts
+alwaysApply: false
+---
+
+# Testing Rules
+
+## Layout
+
+- `tests/BookmarkManager.UnitTests` — plain xUnit unit tests.
+- `tests/BookmarkManager.Api.IntegrationTests` — xUnit + `Microsoft.AspNetCore.Mvc.Testing`.
+- `tests/BookmarkManager.Client.ComponentTests` — xUnit + **bunit 2.5.3**. Standard setup: `context.Services.AddMudServices()`, `JSInterop.Mode = JSRuntimeMode.Loose`. Render component, interact via `.Find()`/`.Click()`, assert via callbacks or markup (pattern: `FolderTreeTests.cs`, `BookmarksToolbarTests.cs`).
+- Extension tests: alongside source in `BookmarkExtension/`, run via `vitest` (`npm test`).
+
+## Rules
+
+- **No mocking library anywhere** (no Moq/NSubstitute) — don't introduce one. Style favors real objects/integration-style tests. Internal API types tested via `InternalsVisibleTo("BookmarkManager.UnitTests")` when needed (e.g. `AutoTagRunTelemetry.SnapshotRecords()`).
+- Add/update tests at the layer where behavior is owned.
+- **Do not run the full `dotnet test BookmarkManager.sln` while developing a feature** (~3 min; CI runs it on PR). Scope: single test project, or `dotnet test --filter "FullyQualifiedName~MethodOrClassName"`. Full suite locally only when explicitly asked or when a change affects cross-cutting behavior (sync protocol, shared DTOs, EF Core migrations).
+- Green build is not end-to-end proof for sync changes — verify duplicate event delivery, repeated acknowledgement, offline replay, restart behavior; run unpacked extension against disposable Brave profile for UI-facing sync changes (`Docs/planv1.md` scenarios).

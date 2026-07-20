@@ -11,6 +11,7 @@ public partial class Bookmarks
 {
     protected override async Task OnInitializedAsync()
     {
+        NavHome.HomeRequested += OnNavHomeRequestedAsync;
         ExtensionConnectionService.ConnectionStateChanged += OnConnectionStateChanged;
         if (ExtensionConnectionService.IsConnected)
         {
@@ -19,6 +20,39 @@ public partial class Bookmarks
         else
         {
             _treeLoading = false;
+        }
+    }
+
+    private Task OnNavHomeRequestedAsync(string routeKey)
+    {
+        if (!string.Equals(routeKey, "bookmarks", StringComparison.OrdinalIgnoreCase))
+            return Task.CompletedTask;
+
+        return InvokeAsync(ResetToDefaultViewAsync);
+    }
+
+    /// <summary>Nav re-click: Bookmarks Bar root, clear search/filters, scroll top.</summary>
+    private async Task ResetToDefaultViewAsync()
+    {
+        if (_folderTree.Count == 0)
+            return;
+
+        _searchQuery = "";
+        ClearAllFilters();
+        _processedBookmarkId = null;
+
+        var rootFolder = _folderTree.FirstOrDefault(f => f.Title.Equals("Bookmarks Bar", StringComparison.OrdinalIgnoreCase))
+                         ?? _folderTree[0];
+        if (rootFolder.Id != Guid.Empty)
+            await OnFolderSelected(rootFolder.Id);
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("scrollAppContentToTop");
+        }
+        catch
+        {
+            // ignore
         }
     }
 
@@ -245,6 +279,7 @@ public partial class Bookmarks
 
     public void Dispose()
     {
+        NavHome.HomeRequested -= OnNavHomeRequestedAsync;
         ExtensionConnectionService.ConnectionStateChanged -= OnConnectionStateChanged;
         _wsCts?.Cancel();
         _wsCts?.Dispose();

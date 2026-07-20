@@ -2,8 +2,9 @@ namespace BookmarkManager.Api.Services.Library;
 
 /// <summary>
 /// Consecutive-failure circuit breaker. After <paramref name="failureThreshold"/> failures in a
-/// row the breaker opens for <paramref name="cooldown"/>, so a provider outage (e.g. NovelUpdates
-/// hitting a Cloudflare captcha wall) stops burning request budget instead of retrying every call.
+/// row the breaker opens for <paramref name="cooldown"/>, so a provider outage (e.g. RoyalRoad
+/// rate-limiting or blocking scraper traffic) stops burning request budget instead of retrying
+/// every call.
 /// </summary>
 public sealed class ProviderCircuitBreaker(int failureThreshold = 3, TimeSpan? cooldown = null)
 {

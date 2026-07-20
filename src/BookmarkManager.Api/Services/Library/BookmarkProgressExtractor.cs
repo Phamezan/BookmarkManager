@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using BookmarkManager.Api.Services.BookmarkTagging;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace BookmarkManager.Api.Services.Library;
 
@@ -54,6 +55,17 @@ public static partial class BookmarkProgressExtractor
         return best is null ? (null, null) : (best.Value.Trim(), bestChapter);
     }
 
+    // Hosts whose "ep" query parameter is an opaque internal id with no relation to the real
+    // episode number - already handled separately by Services.UrlMigration.WaybackEpisodeIdResolver
+    // for dead-link migration. Duplicated here intentionally rather than shared across namespaces:
+    // it's a small, stable list, and these are two different bounded contexts (progress display
+    // here vs dead-link recovery there). For every other host, "ep" genuinely is the real episode
+    // number (e.g. Miruro: "/watch/{internalMediaId}/{slug}?ep={realEpisodeNumber}").
+    private static readonly HashSet<string> OpaqueEpisodeQueryHosts = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "aniwatchtv.to", "aniwatch.to", "hianime.to", "zoro.to"
+    };
+
     private static (string? RawText, double? Chapter) ExtractFromUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
@@ -65,14 +77,39 @@ public static partial class BookmarkProgressExtractor
         double? bestChapter = null;
         string? bestRawText = null;
 
+        // Webtoon arc slugs encode arc as chapter-N and real progress as ep-M. Prefer the
+        // episode and do not let "highest wins" promote the arc chapter over it.
+        var arcMatched = false;
         foreach (Match match in WebtoonArcEpisodeSlugRegex().Matches(path))
+        {
             ConsiderSlugMatch(match, "ep", "Episode", ref best, ref bestChapter, ref bestRawText);
+            if (bestChapter is not null)
+                arcMatched = true;
+        }
 
-        foreach (Match match in SlugEpisodeRegex().Matches(path))
-            ConsiderSlugMatch(match, "1", "Episode", ref best, ref bestChapter, ref bestRawText);
+        if (!arcMatched)
+        {
+            foreach (Match match in SlugEpisodeRegex().Matches(path))
+                ConsiderSlugMatch(match, "1", "Episode", ref best, ref bestChapter, ref bestRawText);
 
-        foreach (Match match in SlugChapterRegex().Matches(path))
-            ConsiderSlugMatch(match, "1", "Chapter", ref best, ref bestChapter, ref bestRawText);
+            foreach (Match match in SlugChapterRegex().Matches(path))
+                ConsiderSlugMatch(match, "1", "Chapter", ref best, ref bestChapter, ref bestRawText);
+        }
+
+        var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? uri.Host[4..] : uri.Host;
+        if (!OpaqueEpisodeQueryHosts.Contains(host))
+        {
+            var query = QueryHelpers.ParseQuery(uri.Query);
+            if (query.TryGetValue("ep", out var epValues))
+            {
+                var epChapter = ParseChapter(epValues.ToString());
+                if (epChapter is not null && (bestChapter is null || epChapter > bestChapter))
+                {
+                    bestChapter = epChapter;
+                    bestRawText = $"Episode {epValues}";
+                }
+            }
+        }
 
         return bestChapter is null ? (null, null) : (bestRawText, bestChapter);
     }
@@ -109,10 +146,10 @@ public static partial class BookmarkProgressExtractor
         RegexOptions.IgnoreCase)]
     private static partial Regex ProgressMarkerRegex();
 
-    [GeneratedRegex(@"(?:chapter|ch)[-_/.]?(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\b(?:chapter|ch)[-_/.]?(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
     private static partial Regex SlugChapterRegex();
 
-    [GeneratedRegex(@"(?:episode|ep)[-_/.](\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"\b(?:episode|ep)[-_/.](\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
     private static partial Regex SlugEpisodeRegex();
 
     [GeneratedRegex(@"(?:chapter|ch)[-_/.]?\d+[-_/.]ep[-_/.](?<ep>\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]

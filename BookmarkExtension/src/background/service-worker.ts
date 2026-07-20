@@ -1,21 +1,22 @@
 import type { BookmarkAdapter, StorageRepository } from "../api/contracts";
 import { SyncCoordinator } from "./sync-coordinator";
 import { BackupManager } from "../backup/backup-manager";
-import { matchEventToCorrelation } from "../commands/command-executor";
 import { migrate } from "../storage/migrations";
-import {
-  normalizeChange,
-  normalizeCreate,
-  normalizeMove,
-  normalizeRemove,
-  normalizeReorder,
-} from "../bookmarks/event-normalizer";
 import { ChromeStorageRepository } from "../storage/storage-repository";
 import { ChromeBookmarkAdapter } from "../bookmarks/bookmark-adapter";
-import { DuplicateDetector, normalizeBookmarkUrl } from "../bookmarks/duplicate-detector";
+import { DuplicateDetector } from "../bookmarks/duplicate-detector";
+import { BookmarkSaveToast, presentInPageAlert } from "../bookmarks/bookmark-save-toast";
 import { SettingsAwareApiClient } from "../api/settings-aware-client";
-import { resolvePaletteBaseUrl } from "../palette/palette-url";
-import type { ExtensionEvent } from "../api/contracts";
+import { POPUP_PORT_NAME } from "../popup/popup-port";
+import { PopupPresence } from "./popup-presence";
+import { PendingDuplicateGuards } from "./pending-duplicate-guards";
+import { QuickBookmarkHandler } from "./quick-bookmark";
+import { SyncWebSocket } from "./sync-websocket";
+import { PaletteCommands } from "./palette-commands";
+import { BookmarkEventPipeline } from "./bookmark-event-pipeline";
+import { createInPageAlertUi } from "./in-page-alert-ui";
+import { registerOmnibox } from "./omnibox";
+import { SidePanelController, SidePanelPresence } from "./side-panel";
 
 const ALARM_NAME = "bookmark-sync";
 const POLL_INTERVAL_MINUTES = 1.0;
@@ -23,12 +24,11 @@ const POLL_INTERVAL_MINUTES = 1.0;
 const DUPLICATE_SCAN_ALARM_NAME = "duplicate-scan";
 const DUPLICATE_SCAN_INTERVAL_MINUTES = 5;
 
-const WS_RECONNECT_BASE_MS = 3000;
-const WS_RECONNECT_MAX_MS = 60000;
-const WS_RECONNECT_JITTER_MS = 500;
+/** Second quick-bookmark press within this window on the same already-bookmarked
+ *  page removes the bookmark instead of re-opening the editor. */
+const QUICK_BOOKMARK_DOUBLE_TAP_MS = 600;
 
-/** Bookmarks Bar id, used as the fallback quick-bookmark destination. */
-const BOOKMARKS_BAR_ID = "1";
+export { POPUP_PORT_NAME };
 
 export interface ServiceWorkerDeps {
   api: SettingsAwareApiClient;
@@ -36,6 +36,12 @@ export interface ServiceWorkerDeps {
   storage: StorageRepository;
   backupManager: BackupManager;
   duplicateDetector?: DuplicateDetector;
+  saveToast?: BookmarkSaveToast;
+  sidePanel?: SidePanelController;
+  openSidePanel?: (tabId: number) => Promise<void>;
+  configureSidePanel?: () => Promise<void>;
+  /** Shows a "bookmark removed" confirmation toast (double-tap-to-remove gesture). */
+  showRemovedToast?: (input: { title: string; url: string | null }) => Promise<void>;
   getExtensionVersion: () => string;
   getBraveVersion: () => string;
   now: () => Date;
@@ -44,13 +50,20 @@ export interface ServiceWorkerDeps {
 export class ServiceWorker {
   private coordinator: SyncCoordinator;
   private deps: ServiceWorkerDeps;
-  private bookmarkListenersRegistered = false;
   private importInProgress = false;
-  /**
-   * Normalized URLs whose series-duplicate creation the user just confirmed
-   * in the popup — the following onCreated must not re-warn about them.
-   */
   private confirmedDuplicateUrls = new Set<string>();
+
+  /** URL the last quick-bookmark press acted on + when, for double-tap-to-remove. */
+  private lastQuickTapUrl: string | null = null;
+  private lastQuickTapAt = 0;
+
+  private popupPresence = new PopupPresence();
+  private sidePanelPresence = new SidePanelPresence();
+  private pendingDuplicateGuards: PendingDuplicateGuards;
+  private quickBookmark: QuickBookmarkHandler;
+  private syncSocket: SyncWebSocket;
+  private palette: PaletteCommands;
+  private bookmarkEvents: BookmarkEventPipeline;
 
   constructor(deps: ServiceWorkerDeps) {
     this.deps = deps;
@@ -62,7 +75,65 @@ export class ServiceWorker {
       getExtensionVersion: deps.getExtensionVersion,
       getBraveVersion: deps.getBraveVersion,
     });
-    this.registerBookmarkListeners();
+
+    this.pendingDuplicateGuards = new PendingDuplicateGuards({ storage: deps.storage });
+    this.quickBookmark = new QuickBookmarkHandler({
+      storage: deps.storage,
+      ...(deps.duplicateDetector ? { duplicateDetector: deps.duplicateDetector } : {}),
+      now: deps.now,
+      rememberConfirmedDuplicateUrl: (url) => {
+        this.confirmedDuplicateUrls.add(url);
+      },
+    });
+    this.syncSocket = new SyncWebSocket({
+      storage: deps.storage,
+      onSync: () => {
+        void this.coordinator.runSyncCycle();
+      },
+      onOpen: () => {
+        this.deps.backupManager
+          .runAutoBackupIfDue()
+          .catch((e) => console.error("[worker] auto-backup failed:", e));
+      },
+    });
+    this.palette = new PaletteCommands({ storage: deps.storage });
+    this.bookmarkEvents = new BookmarkEventPipeline({
+      storage: deps.storage,
+      coordinator: this.coordinator,
+      ...(deps.duplicateDetector ? { duplicateDetector: deps.duplicateDetector } : {}),
+      ...(deps.saveToast ? { saveToast: deps.saveToast } : {}),
+      now: deps.now,
+      isImportInProgress: () => this.importInProgress,
+      setImportInProgress: (value) => {
+        this.importInProgress = value;
+      },
+      consumeConfirmedDuplicateUrl: (normalizedUrl) => {
+        if (!this.confirmedDuplicateUrls.has(normalizedUrl)) return false;
+        this.confirmedDuplicateUrls.delete(normalizedUrl);
+        return true;
+      },
+    });
+
+    this.bookmarkEvents.register();
+    this.pendingDuplicateGuards.register();
+  }
+
+  handleConnect(port: chrome.runtime.Port): void {
+    this.popupPresence.handleConnect(port);
+    this.sidePanelPresence.handleConnect(port);
+  }
+
+  isPopupOpen(): boolean {
+    return this.popupPresence.isOpen();
+  }
+
+  isSidePanelOpen(): boolean {
+    return this.sidePanelPresence.isOpen();
+  }
+
+  /** Signals an already-open panel to re-fetch (new bookmark just armed). */
+  notifySidePanelRefresh(): void {
+    this.sidePanelPresence.requestRefresh();
   }
 
   async initialize(): Promise<void> {
@@ -79,461 +150,166 @@ export class ServiceWorker {
       return;
     }
 
-    this.registerBookmarkListeners();
+    this.bookmarkEvents.register();
+    this.pendingDuplicateGuards.register();
     await this.scheduleSync();
-    this.connectWebSocket();
-  }
-
-  private registerBookmarkListeners(): void {
-    if (this.bookmarkListenersRegistered) return;
-    this.bookmarkListenersRegistered = true;
-
-    const bookmarks = chrome.bookmarks;
-    console.log("[worker] Registering bookmark listeners");
-
-    bookmarks.onCreated.addListener(async (id, bookmark) => {
-      console.log("[bookmark] onCreated:", id, (bookmark as { title?: string })?.title);
-      const event = normalizeCreate(id, bookmark as never);
-      await this.handleBookmarkEvent(event);
-    });
-
-    bookmarks.onRemoved.addListener(async (id, removedNode) => {
-      console.log("[bookmark] onRemoved:", id);
-      // Capture the parent folder as the last active context for smart re-bookmarking
-      const parentId = (removedNode as { parentId?: string })?.parentId;
-      if (parentId) {
-        try {
-          await this.deps.storage.saveLastActiveFolder(parentId);
-          console.log("[worker] Last active folder saved:", parentId);
-        } catch (e) {
-          console.error("[worker] Failed to save last active folder:", e);
-        }
-      }
-      const event = normalizeRemove(id, removedNode as never);
-      await this.handleBookmarkEvent(event);
-    });
-
-    bookmarks.onChanged.addListener(async (id, changeInfo) => {
-      console.log("[bookmark] onChanged:", id);
-      const event = normalizeChange(id, changeInfo as never);
-      await this.handleBookmarkEvent(event);
-    });
-
-    bookmarks.onMoved.addListener(async (id, moveInfo) => {
-      console.log("[bookmark] onMoved:", id);
-      const event = normalizeMove(id, moveInfo as never);
-      await this.handleBookmarkEvent(event);
-    });
-
-    bookmarks.onChildrenReordered.addListener(async (id, reorderInfo) => {
-      console.log("[bookmark] onChildrenReordered:", id);
-      const event = normalizeReorder(id, reorderInfo as never);
-      await this.handleBookmarkEvent(event);
-    });
-
-    bookmarks.onImportBegan.addListener(() => {
-      console.log("[bookmark] onImportBegan");
-      this.importInProgress = true;
-    });
-
-    bookmarks.onImportEnded.addListener(() => {
-      console.log("[bookmark] onImportEnded");
-      this.importInProgress = false;
-      this.coordinator.runSyncCycle();
-      // Imports are the most likely source of duplicate folders — scan once
-      // right away rather than waiting for the next alarm tick.
-      this.deps.duplicateDetector?.scanFolders();
-    });
-  }
-
-  private async handleBookmarkEvent(event: ExtensionEvent): Promise<void> {
-    console.log("[bookmark] Enqueuing event:", event.eventType, event.browserNodeId);
-    const stamped = await this.stampCommandEcho(event);
-    await this.deps.storage.enqueueEvent(stamped);
-    console.log("[bookmark] Event enqueued, triggering sync");
-    this.coordinator.runSyncCycle();
-    this.runDuplicateChecks(stamped);
-  }
-
-  /**
-   * Fires duplicate detection for user-originated creations. Skips events
-   * caused by server commands (echoes) and events during a browser import
-   * (the post-import scan covers those). Fire-and-forget: detection failures
-   * never affect the sync path.
-   */
-  private runDuplicateChecks(event: ExtensionEvent): void {
-    const detector = this.deps.duplicateDetector;
-    if (!detector) return;
-    if (event.eventType !== "Created") return;
-    if (event.causedByOperationId !== null || this.importInProgress) return;
-
-    const node = (event.payload as { node?: { type?: string; title?: string; url?: string | null } })
-      .node;
-    if (!node) return;
-
-    if (node.type === "Bookmark" && typeof node.url === "string") {
-      const normalized = normalizeBookmarkUrl(node.url);
-      if (this.confirmedDuplicateUrls.has(normalized)) {
-        this.confirmedDuplicateUrls.delete(normalized);
-        return;
-      }
-      detector.checkNewBookmark({
-        id: event.browserNodeId,
-        title: node.title ?? "",
-        url: node.url,
-      });
-    } else if (node.type === "Folder") {
-      detector.scanFolders();
-    }
-  }
-
-  /**
-   * When a browser event was caused by a server command the executor just
-   * applied, stamp `causedByOperationId` so the server does not apply the
-   * echo as a fresh user edit. Correlation failures never block the event.
-   */
-  private async stampCommandEcho(event: ExtensionEvent): Promise<ExtensionEvent> {
+    void this.syncSocket.connect();
     try {
-      const correlations = await this.deps.storage.getAllCorrelations();
-      if (correlations.length === 0) return event;
-
-      const match = matchEventToCorrelation(event, correlations, this.deps.now());
-      if (!match) return event;
-
-      if (match.browserNodeId === null) {
-        // Pending Create matched by expected fields — record the browser id
-        // so this correlation cannot absorb a later unrelated creation, and
-        // so a re-delivered command short-circuits instead of re-creating.
-        await this.deps.storage.saveCorrelation({
-          ...match,
-          browserNodeId: event.browserNodeId,
-        });
-      }
-
-      console.log("[bookmark] Event caused by command:", match.operationId);
-      return { ...event, causedByOperationId: match.operationId };
+      await this.deps.configureSidePanel?.();
     } catch (e) {
-      console.warn("[bookmark] Echo correlation check failed:", e);
-      return event;
+      console.error("[worker] configureSidePanel failed:", e);
     }
   }
 
-  // ── Quick Bookmark ──────────────────────────────────────────────────────────
+  /** @internal exposed for tests */
+  async clearPendingDuplicateForTab(tabId: number): Promise<void> {
+    await this.pendingDuplicateGuards.clearForTab(tabId);
+  }
+
+  /** @internal exposed for tests */
+  async clearPendingDuplicateIfLeftTab(activeTabId: number): Promise<void> {
+    await this.pendingDuplicateGuards.clearIfLeftTab(activeTabId);
+  }
+
+  /** @internal exposed for tests */
+  async clearPendingDuplicateIfNavigated(tabId: number, newUrl: string): Promise<void> {
+    await this.pendingDuplicateGuards.clearIfNavigated(tabId, newUrl);
+  }
 
   /**
-   * Handles the `quick-bookmark` command. Resolves the active tab, the last
-   * remembered folder, and either edits an existing exact-URL match or creates
-   * a new bookmark, then stores transient editor state and opens the popup.
-   *
-   * This issues real `chrome.bookmarks` operations only — the normal
-   * `onCreated`/`onChanged`/`onMoved` listeners handle sync. No synthetic
-   * events are enqueued here.
+   * - Popup already open → ask it to commit whatever is pending (draft or
+   *   post-create editor), rather than just closing. The popup itself
+   *   decides what "commit now" means: submit the pending draft if one
+   *   exists, otherwise submit the post-create editor if one exists,
+   *   otherwise just close. This keeps the worker simple and puts the
+   *   branching where the state already lives (the popup, via
+   *   `chrome.storage`).
+   * - Popup closed → resolve/stash bookmark state and open popup.
    */
   async handleQuickBookmark(): Promise<void> {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab || !tab.url || !tab.title) {
-        console.warn("[worker] quick-bookmark: no active tab or missing URL/title");
+    const now = this.deps.now().getTime();
+
+    // Second press within the window → remove the bookmark for the active tab.
+    // The active-tab lookup only happens on this rapid-second-press path, so the
+    // normal single-press flow (and its "popup open → commit, no query" contract)
+    // is untouched.
+    if (this.lastQuickTapUrl !== null && now - this.lastQuickTapAt <= QUICK_BOOKMARK_DOUBLE_TAP_MS) {
+      const expectedUrl = this.lastQuickTapUrl;
+      this.clearQuickTap();
+      if (await this.tryDoubleTapRemove(expectedUrl)) return;
+      // Nothing removable (e.g. a brand-new, not-yet-created page) → fall through
+      // and let the normal flow commit/create as before.
+    }
+
+    if (this.popupPresence.isOpen()) {
+      const asked = this.popupPresence.requestCommitNow();
+      if (asked) {
+        this.clearQuickTap();
         return;
       }
-      const url = tab.url;
-      let title = tab.title;
+    }
 
-      // Only bookmark http/https pages
-      if (!url.startsWith("http://") && !url.startsWith("https://")) {
-        console.warn("[worker] quick-bookmark: non-http URL, skipping:", url);
-        return;
-      }
+    const actedUrl = await this.quickBookmark.run();
+    if (actedUrl) {
+      this.lastQuickTapUrl = actedUrl;
+      this.lastQuickTapAt = now;
+    } else {
+      this.clearQuickTap();
+    }
+  }
 
-      let extractedEpisodeOrChapter: string | null = null;
+  private clearQuickTap(): void {
+    this.lastQuickTapUrl = null;
+    this.lastQuickTapAt = 0;
+  }
 
-      // 1. Try extracting from URL search parameters first
+  /**
+   * Removes the bookmark(s) for `expectedUrl` iff the active tab is still that
+   * URL and it is genuinely bookmarked. `chrome.bookmarks.remove` fans out to
+   * the `onRemoved` pipeline, which propagates the soft-delete to the server.
+   * Returns true when a bookmark was removed.
+   */
+  private async tryDoubleTapRemove(expectedUrl: string): Promise<boolean> {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const url = tab?.url ?? null;
+    if (url !== expectedUrl) return false;
+
+    const results = await chrome.bookmarks.search({ url });
+    const matches = results.filter((n) => n.url === url);
+    if (matches.length === 0) return false;
+
+    const removedTitle = matches[0]?.title ?? "Bookmark";
+    for (const node of matches) {
       try {
-        const parsedUrl = new URL(url);
-        const epParam = parsedUrl.searchParams.get("ep") || parsedUrl.searchParams.get("episode") || parsedUrl.searchParams.get("p");
-        const chParam = parsedUrl.searchParams.get("ch") || parsedUrl.searchParams.get("chapter");
-
-        if (epParam && /^\d+$/.test(epParam)) {
-          extractedEpisodeOrChapter = `Episode ${epParam}`;
-        } else if (chParam && /^\d+$/.test(chParam)) {
-          extractedEpisodeOrChapter = `Chapter ${chParam}`;
-        } else {
-          // Try path matching e.g. /episode-10 or /ch-10
-          const pathMatch = parsedUrl.pathname.match(/(?:episode|ep|chapter|ch|volume|vol)[-/_.]?(\d+(?:\.\d+)?)/i);
-          if (pathMatch) {
-            const num = pathMatch[1];
-            if (pathMatch[0].toLowerCase().includes("ch")) {
-              extractedEpisodeOrChapter = `Chapter ${num}`;
-            } else {
-              extractedEpisodeOrChapter = `Episode ${num}`;
-            }
-          }
-        }
+        await chrome.bookmarks.remove(node.id);
       } catch (e) {
-        console.warn("[worker] Failed to parse URL search params or path:", e);
-      }
-
-      // 2. Fallback to DOM extraction if URL did not yield an episode/chapter
-      if (!extractedEpisodeOrChapter && tab.id) {
-        try {
-          const results = await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            func: () => {
-              const selectors = ['.episode-title', '.chapter-name', '#episode', '.chapter-number'];
-              for (const selector of selectors) {
-                const el = document.querySelector(selector);
-                if (el && el.textContent) {
-                  const text = el.textContent.trim();
-                  if (text) return text;
-                }
-              }
-
-              const regex = /(?:episode|ep|chapter|ch)\.?\s*(\d+(?:\.\d+)?)/i;
-              const headers = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span');
-              for (const el of Array.from(headers)) {
-                if (el.textContent) {
-                  const match = el.textContent.match(regex);
-                  if (match) {
-                    return match[0].trim();
-                  }
-                }
-              }
-              return null;
-            }
-          });
-
-          if (results && results[0] && results[0].result) {
-            extractedEpisodeOrChapter = results[0].result;
-          }
-        } catch (scriptError) {
-          console.warn("[worker] Failed to execute content script for title extraction:", scriptError);
-        }
-      }
-
-      // 3. Append to title if found and not already present
-      if (extractedEpisodeOrChapter) {
-        if (!title.toLowerCase().includes(extractedEpisodeOrChapter.toLowerCase())) {
-          title = `${title} - ${extractedEpisodeOrChapter}`;
-        }
-      }
-
-      const folderId = await this.resolveTargetFolder();
-      if (folderId === null) {
-        console.warn("[worker] quick-bookmark: no valid target folder available");
-        return;
-      }
-
-      // Series-level duplicate gate: when this exact URL is not bookmarked
-      // yet (an exact match becomes an edit, not a new bookmark) but another
-      // chapter of the same series is, don't create — stash the pending
-      // creation and let the popup ask the user to confirm.
-      if (this.deps.duplicateDetector && !(await this.hasExactBookmark(url))) {
-        const duplicates = await this.deps.duplicateDetector.getSeriesDuplicates(url, "");
-        if (duplicates.length > 0) {
-          await this.deps.storage.clearShortcutEditorState();
-          await this.deps.storage.savePendingDuplicateState({
-            url,
-            title,
-            folderId,
-            duplicates,
-            capturedAt: this.deps.now().toISOString(),
-          });
-          await this.openPopupOrBadge();
-          return;
-        }
-      }
-
-      const target = await this.resolveOrCreateBookmark(url, title, folderId);
-
-      await this.deps.storage.saveShortcutEditorState({
-        bookmarkId: target.id,
-        url,
-        title: target.title,
-        parentId: target.parentId,
-        capturedAt: this.deps.now().toISOString(),
-        wasCreated: target.wasCreated,
-      });
-
-      await this.openPopupOrBadge();
-    } catch (e) {
-      console.error("[worker] quick-bookmark failed:", e);
-      this.showBadge("X", "#EF4444");
-    }
-  }
-
-  private async hasExactBookmark(url: string): Promise<boolean> {
-    const results = await chrome.bookmarks.search({ url });
-    return results.some((n) => n.url === url);
-  }
-
-  /**
-   * Handles the popup's "create anyway" confirmation for a pending
-   * series-duplicate creation: creates the bookmark, suppresses the
-   * duplicate warning its onCreated would otherwise raise, and hands the
-   * popup the normal shortcut editor state for the new bookmark.
-   */
-  private async handleDuplicateConfirmCreate(): Promise<{ success: boolean }> {
-    const pending = await this.deps.storage.getPendingDuplicateState();
-    if (!pending) return { success: false };
-
-    this.confirmedDuplicateUrls.add(normalizeBookmarkUrl(pending.url));
-    const created = await chrome.bookmarks.create({
-      parentId: pending.folderId,
-      title: pending.title,
-      url: pending.url,
-    });
-    console.log("[worker] duplicate confirmed, bookmark created:", created.id);
-
-    await this.deps.storage.clearPendingDuplicateState();
-    await this.deps.storage.saveShortcutEditorState({
-      bookmarkId: created.id,
-      url: pending.url,
-      title: pending.title,
-      parentId: pending.folderId,
-      capturedAt: this.deps.now().toISOString(),
-      wasCreated: true,
-    });
-    return { success: true };
-  }
-
-  /**
-   * Resolves and validates the remembered destination folder, falling back to
-   * the Bookmarks Bar. Returns null if neither is usable.
-   */
-  private async resolveTargetFolder(): Promise<string | null> {
-    const remembered = await this.deps.storage.getLastActiveFolder();
-    if (await this.isValidFolder(remembered)) return remembered;
-    if (remembered !== BOOKMARKS_BAR_ID && (await this.isValidFolder(BOOKMARKS_BAR_ID))) {
-      return BOOKMARKS_BAR_ID;
-    }
-    return null;
-  }
-
-  private async isValidFolder(folderId: string): Promise<boolean> {
-    try {
-      const nodes = await chrome.bookmarks.get(folderId);
-      const node = nodes[0];
-      if (!node) return false;
-      // Folders have no url; bookmarks do.
-      return node.url === undefined;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Searches browser bookmarks for an exact-URL match. If found, edits the
-   * match in the remembered folder first (or the first match), updating the
-   * title and moving it into the remembered folder when needed. Otherwise
-   * creates a new bookmark in the remembered folder.
-   */
-  private async resolveOrCreateBookmark(
-    url: string,
-    title: string,
-    folderId: string,
-  ): Promise<{ id: string; title: string; parentId: string; wasCreated: boolean }> {
-    const results = await chrome.bookmarks.search({ url });
-    const exact = results.filter((n) => n.url === url);
-
-    if (exact.length > 0) {
-      const inFolder = exact.find((n) => n.parentId === folderId);
-      const chosen = inFolder ?? exact[0];
-      if (chosen) {
-        return {
-          id: chosen.id,
-          title: chosen.title,
-          parentId: chosen.parentId ?? folderId,
-          wasCreated: false,
-        };
+        console.warn("[worker] quick-bookmark double-tap remove failed:", node.id, e);
       }
     }
 
-    const created = await chrome.bookmarks.create({
-      parentId: folderId,
-      title,
-      url,
-    });
-    console.log("[worker] quick-bookmark: bookmark created:", created.id);
-    return { id: created.id, title, parentId: folderId, wasCreated: true };
+    await this.deps.storage.clearShortcutEditorState();
+    this.popupPresence.requestClose();
+    await this.deps.showRemovedToast?.({ title: removedTitle, url });
+    return true;
   }
 
-  /**
-   * Opens the extension popup when supported. Falls back to a short badge
-   * flash when openPopup is unavailable or rejected by the host browser.
-   */
-  private async openPopupOrBadge(): Promise<void> {
-    try {
-      const action = chrome.action as typeof chrome.action & {
-        openPopup?: (() => Promise<void>) | undefined;
-      };
-      if (typeof action.openPopup === "function") {
-        await action.openPopup();
-        return;
-      }
-    } catch (e) {
-      console.warn("[worker] openPopup unavailable, using badge fallback", e);
-    }
-    this.showBadge("✓", "#10B981");
-  }
-
-  private showBadge(text: string, color: string): void {
-    chrome.action.setBadgeText({ text }).catch(() => {});
-    chrome.action.setBadgeBackgroundColor({ color }).catch(() => {});
-    setTimeout(() => {
-      chrome.action.setBadgeText({ text: "" }).catch(() => {});
-    }, 2000);
-  }
-
-  // ── In-Tab Command Palette ───────────────────────────────────────────────────
-
-  /**
-   * Handles the `toggle-palette` command. Invoking the command grants
-   * activeTab, which authorizes the content-script injection without broad
-   * host permissions. The injector guards against double registration, so
-   * re-running executeScript on every toggle is idempotent.
-   */
   async handleTogglePalette(): Promise<void> {
+    await this.palette.toggle();
+  }
+
+  /**
+   * Panel-open → close (no `chrome.sidePanel.close()` API, so the panel
+   * page closes itself on a port message). Panel-closed → open it against
+   * the active tab from the command listener. CRITICAL: mirrors
+   * `handleSidePanelOpen` — no awaits happen before `chrome.sidePanel.open()`
+   * is reached, since `requestClose()` is synchronous.
+   */
+  async handleToggleSidePanel(tab?: chrome.tabs.Tab): Promise<void> {
+    if (this.sidePanelPresence.requestClose()) {
+      console.log("[worker] toggle-sidepanel: panel was open — closed");
+      return;
+    }
+
+    const tabId = tab?.id;
+    const windowId = tab?.windowId;
+    if (tabId != null) {
+      await chrome.sidePanel.open({ tabId });
+    } else if (windowId != null) {
+      await chrome.sidePanel.open({ windowId });
+    } else {
+      console.warn("[worker] toggle-sidepanel: no tab or window id available");
+      return;
+    }
+
+    // Gesture already consumed by open() above — now safe to await storage.
+    // Point the freshly-opened panel at THIS tab's bookmark (or empty state),
+    // so the shortcut surfaces the current page like the save toast does.
+    await this.pointPanelAtActiveTab();
+  }
+
+  /**
+   * Resolves the active tab's bookmark and tells the side panel to render it
+   * (or clears it → empty state when the page is not bookmarked). No-op when
+   * no side-panel controller is wired.
+   */
+  private async pointPanelAtActiveTab(): Promise<void> {
+    if (!this.deps.sidePanel) return;
     try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tab?.id || !tab.url || !/^https?:\/\//i.test(tab.url)) {
-        console.warn("[worker] toggle-palette: no active http(s) tab");
+      const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const url = active?.url ?? null;
+      if (!url || !(url.startsWith("http://") || url.startsWith("https://"))) {
+        await this.deps.sidePanel.setCurrent(null);
         return;
       }
-
-      const settings = await this.deps.storage.getSettings();
-      const paletteBaseUrl = resolvePaletteBaseUrl(settings?.apiBaseUrl);
-      if (!paletteBaseUrl) {
-        console.warn("[worker] toggle-palette: no API base URL configured");
-        this.showBadge("!", "#F59E0B");
-        return;
-      }
-
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ["palette-injector.js"],
-      });
-      await chrome.tabs.sendMessage(tab.id, { type: "palette/toggle" });
+      const results = await chrome.bookmarks.search({ url });
+      const match = results.find((n) => n.url === url) ?? null;
+      await this.deps.sidePanel.setCurrent(
+        match ? { browserNodeId: match.id, url } : null,
+      );
     } catch (e) {
-      console.error("[worker] toggle-palette failed:", e);
-      this.showBadge("X", "#EF4444");
+      console.error("[worker] toggle-sidepanel: point-at-active-tab failed:", e);
     }
   }
-
-  /** Opens a palette-requested URL in a new foreground tab. */
-  private async handlePaletteOpenTab(url: unknown): Promise<{ success: boolean }> {
-    if (typeof url !== "string" || !/^https?:\/\//i.test(url)) {
-      return { success: false };
-    }
-    await chrome.tabs.create({ url, active: true });
-    return { success: true };
-  }
-
-  private async getPaletteConfig(): Promise<{ paletteBaseUrl: string | null }> {
-    const settings = await this.deps.storage.getSettings();
-    return { paletteBaseUrl: resolvePaletteBaseUrl(settings?.apiBaseUrl) };
-  }
-
-  // ── Sync / Alarm ─────────────────────────────────────────────────────────────
 
   async scheduleSync(): Promise<void> {
     await chrome.alarms.create(ALARM_NAME, {
@@ -555,16 +331,19 @@ export class ServiceWorker {
     }
   }
 
-  async handleMessage(message: { type: string; url?: unknown }): Promise<unknown> {
+  async handleMessage(
+    message: { type: string; url?: unknown; serverId?: unknown; tags?: unknown },
+    sender?: chrome.runtime.MessageSender,
+  ): Promise<unknown> {
     switch (message.type) {
       case "palette/openTab":
-        return await this.handlePaletteOpenTab(message.url);
+        return await this.palette.openTab(message.url);
       case "palette/getConfig":
-        return await this.getPaletteConfig();
+        return await this.palette.getConfig();
       case "duplicate/confirmCreate":
-        return await this.handleDuplicateConfirmCreate();
+        return await this.quickBookmark.confirmPendingDuplicateCreate();
       case "manualSync":
-        this.connectWebSocket();
+        void this.syncSocket.connect();
         await this.coordinator.runSyncCycle();
         return { success: true };
       case "refreshCatalog":
@@ -579,105 +358,58 @@ export class ServiceWorker {
         }
       case "manualBackup":
         return await this.deps.backupManager.runManualBackup();
+      case "sidepanel/open":
+        return await this.handleSidePanelOpen(sender);
+      case "sidepanel/getCurrent":
+        return (await this.deps.sidePanel?.getCurrent()) ?? null;
+      case "sidepanel/getTags":
+        return (await this.deps.sidePanel?.getTags()) ?? [];
+      case "sidepanel/saveTags":
+        await this.deps.sidePanel?.saveTags({
+          serverId: String(message.serverId ?? ""),
+          tags: Array.isArray(message.tags) ? (message.tags as string[]) : [],
+        });
+        return { success: true };
+      case "sidepanel/aiRetag":
+        return (
+          (await this.deps.sidePanel?.aiRetag(String(message.serverId ?? ""))) ?? []
+        );
       default:
         return { success: false, error: "Unknown message type" };
     }
   }
 
-  // ── WebSocket ────────────────────────────────────────────────────────────────
-
-  private ws: WebSocket | null = null;
-  private wsReconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-  private wsReconnectAttempt = 0;
-
-  private async connectWebSocket(): Promise<void> {
-    // A live or in-progress socket already serves sync pushes; opening
-    // another would stack sockets, each firing its own sync cycles.
-    if (
-      this.ws &&
-      (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)
-    ) {
-      return;
+  /**
+   * CRITICAL: `chrome.sidePanel.open()` must be reached with NO awaits after
+   * the message arrives — the click-gesture that authorized it does not
+   * survive an async hop (even a storage.session read voids it). The 10s
+   * window is therefore enforced inside the toast before it ever sends this
+   * message; arming is consumed after the panel is already open.
+   */
+  private handleSidePanelOpen(
+    sender: chrome.runtime.MessageSender | undefined,
+  ): Promise<{ success: boolean }> {
+    const tabId = sender?.tab?.id;
+    if (tabId == null || !this.deps.openSidePanel) {
+      return Promise.resolve({ success: false });
     }
-
-    if (this.wsReconnectTimeout) {
-      clearTimeout(this.wsReconnectTimeout);
-      this.wsReconnectTimeout = null;
-    }
-    this.cleanupWebSocket();
-
-    const settings = await this.deps.storage.getSettings();
-    if (!settings || !settings.setupComplete || !settings.apiBaseUrl) {
-      this.scheduleWebSocketReconnect();
-      return;
-    }
-
-    const wsUrl = settings.apiBaseUrl
-      .replace("http://", "ws://")
-      .replace("https://", "wss://")
-      .replace(/\/$/, "") + "/api/sync/ws";
-
-    console.log("[worker] Connecting WebSocket to", wsUrl);
-    try {
-      const ws = new WebSocket(wsUrl);
-      this.ws = ws;
-
-      ws.onopen = () => {
-        this.wsReconnectAttempt = 0;
-        this.deps.backupManager
-          .runAutoBackupIfDue()
-          .catch((e) => console.error("[worker] auto-backup failed:", e));
-      };
-
-      ws.onmessage = (event) => {
-        if (event.data === "sync") {
-          console.log("[worker] WebSocket sync event received");
-          this.coordinator.runSyncCycle();
+    return this.deps.openSidePanel(tabId).then(
+      async () => {
+        const wasArmed = await this.deps.sidePanel?.tryOpen(tabId);
+        if (!wasArmed) {
+          console.warn("[worker] side panel opened outside arming window");
         }
-      };
-
-      ws.onclose = () => {
-        console.log("[worker] WebSocket closed, reconnecting...");
-        this.cleanupWebSocket();
-        this.scheduleWebSocketReconnect();
-      };
-
-      ws.onerror = (err) => {
-        console.error("[worker] WebSocket error:", err);
-      };
-    } catch (e) {
-      console.error("[worker] WebSocket connection failed:", e);
-      this.scheduleWebSocketReconnect();
-    }
-  }
-
-  private scheduleWebSocketReconnect(): void {
-    if (this.wsReconnectTimeout) {
-      clearTimeout(this.wsReconnectTimeout);
-    }
-    const delay =
-      Math.min(WS_RECONNECT_BASE_MS * 2 ** this.wsReconnectAttempt, WS_RECONNECT_MAX_MS) +
-      Math.random() * WS_RECONNECT_JITTER_MS;
-    this.wsReconnectAttempt++;
-    this.wsReconnectTimeout = setTimeout(() => this.connectWebSocket(), delay);
-  }
-
-  private cleanupWebSocket(): void {
-    if (this.ws) {
-      const ws = this.ws;
-      this.ws = null;
-      ws.onopen = null;
-      ws.onmessage = null;
-      ws.onclose = null;
-      ws.onerror = null;
-      try {
-        ws.close();
-      } catch {
-        // Ignored
-      }
-    }
+        return { success: true };
+      },
+      (e) => {
+        console.error("[worker] sidePanel.open failed:", e);
+        return { success: false };
+      },
+    );
   }
 }
+
+// ── Module composition root (MV3 service worker entry) ───────────────────────
 
 const storage = new ChromeStorageRepository(chrome.storage.local);
 const adapter = new ChromeBookmarkAdapter(chrome.bookmarks as never);
@@ -692,16 +424,51 @@ const backupManager = new BackupManager({
   now: () => new Date(),
 });
 
+const alertUi = createInPageAlertUi();
+
+const sidePanelController = new SidePanelController({
+  session: chrome.storage.session,
+  api,
+  now: () => Date.now(),
+});
+
 const duplicateDetector = new DuplicateDetector({
   bookmarks: {
     get: (id) => chrome.bookmarks.get(id) as never,
     getTree: () => chrome.bookmarks.getTree() as never,
   },
-  notifications: {
-    create: (options) => chrome.notifications.create(options),
-  },
+  showAlert: (options) =>
+    presentInPageAlert(
+      alertUi,
+      {
+        title: options.title,
+        lines: options.message ? [options.message] : [],
+      },
+      options.url,
+    ),
   storage: chrome.storage.local,
   now: () => new Date(),
+});
+
+const saveToast = new BookmarkSaveToast({
+  getEnrichment: (browserNodeId) =>
+    api.getBookmarkEnrichmentByBrowserId(browserNodeId),
+  getFolderTitle: async (parentId) => {
+    const nodes = await chrome.bookmarks.get(parentId);
+    return nodes[0]?.title ?? null;
+  },
+  ...alertUi,
+  sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now: () => Date.now(),
+  onToastShown: (info) => {
+    void sidePanelController
+      .arm(info)
+      .then(() => worker.notifySidePanelRefresh())
+      .catch((e) => console.error("[worker] side panel arm failed:", e));
+  },
+  getStashedCover: (url) => storage.getStashedCover(url),
+  persistCover: (browserNodeId, cover) =>
+    api.setBookmarkCoverByBrowserId(browserNodeId, cover),
 });
 
 const worker = new ServiceWorker({
@@ -710,6 +477,23 @@ const worker = new ServiceWorker({
   storage,
   backupManager,
   duplicateDetector,
+  saveToast,
+  sidePanel: sidePanelController,
+  openSidePanel: async (tabId) => {
+    await chrome.sidePanel.open({ tabId });
+  },
+  configureSidePanel: async () => {
+    await chrome.sidePanel.setOptions({
+      path: "sidepanel/index.html",
+      enabled: true,
+    });
+  },
+  showRemovedToast: (input) =>
+    presentInPageAlert(
+      alertUi,
+      { title: input.title, lines: ["Removed from bookmarks"] },
+      input.url,
+    ),
   getExtensionVersion: () => chrome.runtime.getManifest().version,
   getBraveVersion: () => {
     const match = navigator.userAgent.match(/Brave\/(\S+)/);
@@ -730,12 +514,13 @@ chrome.runtime.onStartup.addListener(() => {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   console.log("[worker] alarm fired:", alarm.name);
-  worker.handleAlarm(alarm);
+  void worker.handleAlarm(alarm);
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("[worker] message received:", (message as { type: string })?.type);
-  worker.handleMessage(message as { type: string })
+  worker
+    .handleMessage(message as { type: string }, sender)
     .then((result) => {
       sendResponse(result);
     })
@@ -746,66 +531,25 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-// ── Keyboard shortcut handler ────────────────────────────────────────────────
-chrome.commands.onCommand.addListener((command) => {
+chrome.runtime.onConnect.addListener((port) => {
+  worker.handleConnect(port);
+});
+
+chrome.commands.onCommand.addListener((command, tab) => {
   console.log("[worker] command received:", command);
   if (command === "quick-bookmark") {
     worker.handleQuickBookmark().catch((e) =>
-      console.error("[worker] handleQuickBookmark failed:", e)
+      console.error("[worker] handleQuickBookmark failed:", e),
     );
   } else if (command === "toggle-palette") {
     worker.handleTogglePalette().catch((e) =>
-      console.error("[worker] handleTogglePalette failed:", e)
+      console.error("[worker] handleTogglePalette failed:", e),
+    );
+  } else if (command === "toggle-sidepanel") {
+    worker.handleToggleSidePanel(tab).catch((e) =>
+      console.error("[worker] handleToggleSidePanel failed:", e),
     );
   }
 });
 
-// ── Search Omnibox Integration ──────────────────────────────────────────────
-chrome.omnibox.onInputChanged.addListener(async (text, suggest) => {
-  try {
-    const results = await chrome.bookmarks.search(text);
-    const suggestions = results
-      .filter(bm => bm.url !== undefined)
-      .slice(0, 5)
-      .map(bm => ({
-        content: bm.url!,
-        description: escapeHtml(bm.title || bm.url!)
-      }));
-    suggest(suggestions);
-  } catch (error) {
-    console.error("[omnibox] failed to search bookmarks:", error);
-  }
-});
-
-chrome.omnibox.onInputEntered.addListener((text, disposition) => {
-  let url = text;
-  if (!text.startsWith("http://") && !text.startsWith("https://")) {
-    chrome.bookmarks.search(text, (results) => {
-      const match = results.find(bm => bm.url !== undefined);
-      if (match && match.url) {
-        navigate(match.url, disposition);
-      }
-    });
-  } else {
-    navigate(url, disposition);
-  }
-});
-
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function navigate(url: string, disposition: string) {
-  if (disposition === "currentTab") {
-    chrome.tabs.update({ url });
-  } else if (disposition === "newForegroundTab") {
-    chrome.tabs.create({ url, active: true });
-  } else {
-    chrome.tabs.create({ url, active: false });
-  }
-}
+registerOmnibox();

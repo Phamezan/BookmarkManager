@@ -42,8 +42,9 @@ public partial class BookmarksController
 
     /// <summary>
     /// Saves tag edits and (optionally) title edits from the auto-tagger review page in
-    /// one request. Tag-only saves stay manager-only metadata (no sync command, no
-    /// broadcast). Title changes MUST go through <see cref="ApplyBookmarkProjectionUpdate"/>
+    /// one request. Tag-only saves stay manager-only metadata (no Brave sync command).
+    /// They still broadcast over the sync websocket so the client refreshes filter chips.
+    /// Title changes MUST go through <see cref="ApplyBookmarkProjectionUpdate"/>
     /// so they never diverge from Brave (see .cursor/commands/review-sync-change.md) —
     /// one SaveChanges + one broadcast for the whole batch either way.
     /// </summary>
@@ -68,7 +69,6 @@ public partial class BookmarksController
     var nodesById = nodes.ToDictionary(n => n.Id);
 
     var anyChange = false;
-    var anyTitleChange = false;
 
     foreach (var (bookmarkId, tags) in request.Tags)
     {
@@ -84,7 +84,7 @@ public partial class BookmarksController
         var source = request.ManuallyEditedTagIds is null || request.ManuallyEditedTagIds.Contains(bookmarkId)
             ? "Manual"
             : "Suggested";
-        TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, source)), confidence: null);
+        TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, source, (double?)null, (string?)null)), confidence: null);
         anyChange = true;
     }
 
@@ -101,18 +101,40 @@ public partial class BookmarksController
 
             ApplyBookmarkProjectionUpdate(node, trimmed, url: null);
             anyChange = true;
-            anyTitleChange = true;
         }
     }
 
     if (anyChange)
     {
         await _db.SaveChangesAsync(ct);
-        if (anyTitleChange)
-            await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+        // Tags are manager-only metadata (no Brave extension command). Still broadcast so
+        // the Blazor client reloads folder items and rebuilds filter chips — otherwise
+        // ManualEdit/bulk-save tags appear on the bookmark but stay invisible in filters
+        // until a full navigation/refresh.
+        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
     }
 
     return Ok();
+    }
+
+    /// <summary>
+    /// Total bookmark count per folder (tagged + untagged). Powers the "re-tag already
+    /// tagged bookmarks" mode in the Auto Tagger, where a fully-tagged folder must still
+    /// be selectable and show its real bookmark count instead of 0.
+    /// </summary>
+    [HttpGet("folder-counts")]
+    public async Task<ActionResult<Dictionary<Guid, int>>> GetFolderCountsAsync(CancellationToken ct)
+    {
+    var bookmarks = await _db.BookmarkNodes
+        .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark)
+        .ToListAsync(ct);
+
+    var counts = bookmarks
+        .Where(b => b.ParentId.HasValue)
+        .GroupBy(b => b.ParentId!.Value)
+        .ToDictionary(g => g.Key, g => g.Count());
+
+    return Ok(counts);
     }
 
     [HttpGet("untagged-counts")]
@@ -141,21 +163,6 @@ public partial class BookmarksController
     var folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, node.ParentId, ct);
     var tags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
     return Ok(tags);
-    }
-
-    /// <summary>
-    /// Backfill tags on active bookmarks through the same folder-aware provider routing
-    /// used by the manual Auto Tagger. This is explicit work and is never triggered
-    /// by extension reconnect or snapshot restore.
-    /// </summary>
-    [HttpPost("retag-all")]
-    public async Task<ActionResult<object>> RetagAllAsync(
-    [FromQuery] bool overwrite = false,
-    [FromServices] BookmarkManager.Api.Services.AutoTaggerService autoTagger = default!,
-    CancellationToken ct = default)
-    {
-    var result = await autoTagger.ProcessAsync(overwrite, folderIds: null, ct);
-    return Ok(result);
     }
 
     [HttpPost("{folderId:guid}/ai-auto-tag")]
@@ -268,6 +275,8 @@ public partial class BookmarksController
         Tag = p.Tag,
         Provider = p.Provider,
         Confidence = p.Confidence,
+        MatchScore = p.MatchScore,
+        MatchedTitle = p.MatchedTitle,
         CreatedAt = p.CreatedAt
     }).ToList());
     }

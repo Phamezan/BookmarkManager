@@ -1,3 +1,9 @@
+---
+status: partial
+last_verified: 2026-07-17
+note: Mixed state. Phase 5 (PaletteFrecencyService.cs exists) has shipped. Phases 1 (width/density), 2 (breadcrumb), 3 (highlight), 4 (virtual scroll), 6 (search history) NOT independently verified — re-check Components/CommandPalette/ state before acting on each phase.
+---
+
 # Command Palette Improvements — Implementation Plan
 
 Target component: `src/BookmarkManager.Client/Components/CommandPalette/`
@@ -5,7 +11,7 @@ Target component: `src/BookmarkManager.Client/Components/CommandPalette/`
 `wwwroot/js/command-palette.js`. Tests live in
 `tests/BookmarkManager.Client.ComponentTests` (bunit + xUnit).
 
-Read `AGENTS/AGENT.md` before starting. Do NOT touch sync protocol, the API,
+Read `.agents/AGENT.md` before starting. Do NOT touch sync protocol, the API,
 or `BookmarkManager.Contracts` — every feature below is client-only by design.
 Do not run the full solution test suite while developing; use scoped test runs
 (`dotnet test tests/BookmarkManager.Client.ComponentTests`).

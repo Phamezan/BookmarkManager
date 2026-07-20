@@ -1,3 +1,9 @@
+---
+status: partial
+last_verified: 2026-07-17
+note: Mixed state. Phases 2 (KeyboardShortcutService.cs exists) and 5-related (PaletteFrecencyService.cs exists) have shipped. Phase 0.0 shift-click fix, Phase 5 (review-page title edit), Phase 6 (auto-rename via CanonicalTitle) NOT shipped — no CanonicalTitle wiring found in Services/BookmarkTagging/*.cs. Read phases individually before assuming any is current work.
+---
+
 # Bookmarks Page UX — Implementation Plan
 
 Status: draft (2026-07-15). Scope: Bookmarks page interaction features + auto-tagger review-page editing + auto-renaming.

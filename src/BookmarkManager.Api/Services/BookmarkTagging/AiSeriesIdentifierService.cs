@@ -199,11 +199,6 @@ public sealed class AiSeriesIdentifierService
            || error.Contains("temporarily", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string DescribeTransientFailure(string? error)
-        => error?.Contains("429", StringComparison.OrdinalIgnoreCase) == true
-            ? $"AI rate limit ({error})"
-            : $"transient failure ({error})";
-
     private static TimeSpan GetTransientRetryDelay(int attempt)
         => attempt switch
         {

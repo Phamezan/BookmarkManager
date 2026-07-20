@@ -28,6 +28,18 @@ public sealed record MediaTitleCandidate(
     double Confidence,
     string Reason);
 
+/// <summary>Full breakdown of a <see cref="MediaTitleNormalizer.ScoreTokenSets"/> computation,
+/// used by diagnostic tooling to explain why a candidate did or did not clear a similarity
+/// threshold. Token lists are sorted ordinally for deterministic, testable output.</summary>
+public sealed record TokenSetScoreBreakdown(
+    double Jaccard,
+    double QueryCoverage,
+    double LengthPenalty,
+    double Score,
+    IReadOnlyList<string> SharedTokens,
+    IReadOnlyList<string> QueryOnlyTokens,
+    IReadOnlyList<string> CandidateOnlyTokens);
+
 public sealed record MediaTagLookupContext(
     string OriginalTitle,
     string? Url,
@@ -39,7 +51,7 @@ public sealed record MediaTagLookupContext(
 public static partial class MediaTitleNormalizer
 {
     public const int MaxProviderCandidates = 3;
-    public const double DefaultSimilarityThreshold = 0.55;
+    public const double DefaultSimilarityThreshold = SimilarityThresholds.Default;
 
     private static readonly string[] SegmentDelimiters = [" - ", " | ", " · ", " • ", " – ", " — ", " » ", " › ", " ~ "];
 
@@ -52,7 +64,8 @@ public static partial class MediaTitleNormalizer
         "mangadex", "manga dex", "mangakakalot", "manga kakalot", "comick", "webtoon", "webtoons",
         "animepahe", "anime pahe", "crunchyroll", "miruro", "gogoanime", "9anime", "aniwatch", "aniwave", "hianime",
         "kickassanime", "allanime", "zoro", "zorox",
-        "galaxy translations", "galaxy translation", "galaxytranslations"
+        "galaxy translations", "galaxy translation", "galaxytranslations",
+        "mangarockteam", "manga rock team", "manga rock"
     };
 
     private static readonly HashSet<string> GenericNoiseTokens = new(StringComparer.OrdinalIgnoreCase)
@@ -71,18 +84,33 @@ public static partial class MediaTitleNormalizer
 
     public static MediaTitleNormalizeResult Normalize(string title, string? url, BookmarkTagDomain domain)
     {
-        var originalTitle = title ?? string.Empty;
+        // Some sites ("Mage Adam_Chapter 191_NovelHi") use underscore as a segment delimiter
+        // instead of the punctuated separators in SegmentDelimiters - fold it into the same
+        // pipeline so chapter-marker classification and brand/noise scoring apply uniformly.
+        var originalTitle = (title ?? string.Empty).Contains('_')
+            ? title!.Replace("_", " - ")
+            : title ?? string.Empty;
         var host = ExtractHost(url);
         var segments = BuildSegments(originalTitle, host).ToList();
         var candidates = BuildCandidates(originalTitle, segments, domain).ToList();
 
         // Novel-site (NovelFire/NovelFull) page titles are noisy ("Series - Chapter N: chapter
         // title - Novel Fire") but the series slug in the URL is clean - prefer it over whatever
-        // BuildCandidates scraped from the title when one is available.
+        // BuildCandidates scraped from the title when one is available. Fall back to a generic
+        // /novel//series//book/ path slug for unknown hosts, and finally to the title itself when
+        // the bookmark's title IS the raw URL (common for some browsers' auto-generated titles).
         var novelSiteSlug = TryTitleFromNovelSiteUrl(url);
+        var novelSiteReason = "novel-site URL slug";
+        var novelSiteConfidence = 0.99;
+        if (string.IsNullOrWhiteSpace(novelSiteSlug))
+        {
+            novelSiteSlug = TryTitleFromGenericNovelPath(url) ?? TryTitleFromGenericNovelPath(title);
+            novelSiteReason = "generic novel URL slug";
+            novelSiteConfidence = 0.97;
+        }
         if (!string.IsNullOrWhiteSpace(novelSiteSlug))
         {
-            candidates.Insert(0, new MediaTitleCandidate(novelSiteSlug, 0.99, "novel-site URL slug"));
+            candidates.Insert(0, new MediaTitleCandidate(novelSiteSlug, novelSiteConfidence, novelSiteReason));
             candidates = candidates
                 .GroupBy(candidate => NormalizeForSearch(candidate.Query), StringComparer.OrdinalIgnoreCase)
                 .Where(group => group.Key.Length > 0)
@@ -133,11 +161,7 @@ public static partial class MediaTitleNormalizer
         if (string.IsNullOrWhiteSpace(slug))
             return null;
 
-        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries).ToList();
-        // Drop a trailing site id/hash ("15516", "yqqv0", "540q") but keep meaningful
-        // numeric tokens that are part of the title (e.g. "fruits-basket-2019").
-        if (tokens.Count > 1 && SlugIdTokenRegex().IsMatch(tokens[^1]))
-            tokens.RemoveAt(tokens.Count - 1);
+        var tokens = SplitAndCleanSlugTokens(slug);
 
         var query = string.Join(' ', tokens).Trim();
         return query.Length >= 2 ? query : null;
@@ -191,27 +215,111 @@ public static partial class MediaTitleNormalizer
             || NonTitlePathSegments.Contains(slug))
             return null;
 
-        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries)
+        var tokens = SplitAndCleanSlugTokens(slug)
             .Where(token => !token.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
             .ToList();
+        if (tokens.Count == 0)
+            return null;
 
         var query = string.Join(' ', tokens).Trim();
         return query.Length >= 2 ? query : null;
     }
 
-    public static IReadOnlyList<MediaTitleCandidate> GetProviderCandidates(MediaTagLookupContext context)
-        => context.NormalizedTitle.Candidates.Take(MaxProviderCandidates).ToList();
+    // Generic fallback for novel-hosting sites we don't explicitly know about (jadescrolls.com,
+    // etc.) with the common layout "/novel/{slug}/chapter-N" (or "/series/{slug}", "/book/{slug}").
+    // Also handles bookmarks whose TITLE is the raw URL string (some browsers/extensions fall back
+    // to the URL when a page never set <title>) by accepting a schemeless "domain.tld/path" value.
+    private static readonly string[] GenericNovelPathMarkers = { "novel", "series", "book" };
 
-    public static string BuildLooseQuery(string candidate, int maxTokens = 4)
+    public static string? TryTitleFromGenericNovelPath(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var candidate = value.Trim();
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri) || (uri.Scheme is not ("http" or "https")))
+        {
+            if (!GenericDomainPrefixRegex().IsMatch(candidate))
+                return null;
+            if (!Uri.TryCreate("https://" + candidate, UriKind.Absolute, out uri))
+                return null;
+        }
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var markerIndex = Array.FindIndex(segments, s => GenericNovelPathMarkers.Any(marker => s.Equals(marker, StringComparison.OrdinalIgnoreCase)));
+        if (markerIndex < 0)
+            return null;
+
+        var slug = segments
+            .Skip(markerIndex + 1)
+            .SkipWhile(s => s.StartsWith("chapter-", StringComparison.OrdinalIgnoreCase) || s.StartsWith("chapter_", StringComparison.OrdinalIgnoreCase))
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(slug) || NonTitlePathSegments.Contains(slug))
+            return null;
+
+        var tokens = SplitAndCleanSlugTokens(slug)
+            .Where(token => !token.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (tokens.Count == 0)
+            return null;
+
+        var query = string.Join(' ', tokens).Trim();
+        return query.Length >= 2 ? query : null;
+    }
+
+    public static string BuildLooseQuery(string candidate, int maxTokens = 8)
     {
         var tokens = TokenizeForSearch(candidate)
             .Where(token => !GenericNoiseTokens.Contains(token))
-            .Take(maxTokens)
             .ToList();
 
-        return tokens.Count == 0
-            ? NormalizeForSearch(candidate)
-            : string.Join(' ', tokens);
+        if (tokens.Count == 0)
+            return NormalizeForSearch(candidate);
+
+        var limited = tokens.Take(maxTokens).ToList();
+
+        var seasonMarker = ExtractSeasonMarker(candidate);
+        if (seasonMarker is not null)
+        {
+            // Use TokenizeForSearch (not NormalizeForSearch) here: NormalizeForSearch now strips
+            // "Season N" via ChapterMarkerRegex (F4), which would erase the very marker we just
+            // extracted and are trying to re-attach.
+            var markerTokens = TokenizeForSearch(seasonMarker);
+            foreach (var markerToken in markerTokens)
+            {
+                if (!limited.Contains(markerToken))
+                    limited.Add(markerToken);
+            }
+        }
+
+        return string.Join(' ', limited);
+    }
+
+    /// <summary>
+    /// Extracts a season/part qualifier from a title if present, normalized to a display form
+    /// ("Season 3", "Part 2"). Used to keep season disambiguation in provider search queries and
+    /// to re-attach it to AI/provider canonical titles that dropped it (AniList's own canonical
+    /// title for a franchise is often just the base name, which would otherwise make suggested
+    /// titles for different seasons of the same show collide).
+    /// </summary>
+    public static string? ExtractSeasonMarker(string? title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return null;
+
+        var match = SeasonMarkerRegex().Match(title);
+        if (!match.Success)
+            return null;
+
+        if (match.Groups["snum"].Success)
+            return $"Season {match.Groups["snum"].Value}";
+        if (match.Groups["onum"].Success)
+            return $"Season {match.Groups["onum"].Value}";
+        if (match.Groups["pnum"].Success)
+            return $"Part {match.Groups["pnum"].Value}";
+
+        return null;
     }
 
     public static string NormalizeForSearch(string value)
@@ -220,12 +328,35 @@ public static partial class MediaTitleNormalizer
             return string.Empty;
 
         var cleaned = value.ToLowerInvariant();
+        // Fan translations disagree on contractions ("I'm a Behemoth" vs "I Am Behemoth"), and
+        // apostrophe stripping alone turns "i'm" into the unshared token "im". Expand the
+        // unambiguous contractions first - both the query and the stored title pass through
+        // here, so the two sides stay symmetric. Possessive/'d/'s stay untouched (ambiguous).
+        cleaned = ExpandContractions(cleaned);
         // Strip apostrophes/quotes before punctuation removal so "soldier's" becomes
         // "soldiers" instead of being split into "soldier" + "s".
         cleaned = ApostropheRegex().Replace(cleaned, string.Empty);
         cleaned = ChapterMarkerRegex().Replace(cleaned, " ");
         cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
         return WhitespaceRegex().Replace(cleaned, " ").Trim();
+    }
+
+    // Only unambiguous expansions: "won't"/"can't" are irregular, generic "n't" covers the rest
+    // (don't/isn't/hasn't/...). 'm/'re/'ve/'ll are unique; 's (is/possessive) and 'd (would/had)
+    // are ambiguous and deliberately left for the apostrophe strip to fold.
+    private static string ExpandContractions(string lowercased)
+    {
+        var expanded = ImContractionRegex().Replace(lowercased, "i am");
+        expanded = WontContractionRegex().Replace(expanded, "will not");
+        expanded = CantContractionRegex().Replace(expanded, "cannot");
+        expanded = NtContractionRegex().Replace(expanded, "$1 not");
+        expanded = ReVeLlContractionRegex().Replace(expanded, match => match.Groups[1].Value switch
+        {
+            "re" => " are",
+            "ve" => " have",
+            _ => " will"
+        });
+        return expanded;
     }
 
     public static double ScoreTitleSimilarity(string queryTitle, IEnumerable<string> candidateTitles)
@@ -292,7 +423,11 @@ public static partial class MediaTitleNormalizer
         var hasChapterMarker = ChapterMarkerRegex().IsMatch(text);
         var isPureChapterMarker = PureChapterMarkerRegex().IsMatch(text.Trim());
         var isNoisePhrase = IsNoisePhrase(normalized, tokens);
-        var isBrand = IsBrand(normalized, host);
+        // A segment that IS a URL ("jadescrolls.com/novel/foo/chapter-259" - happens when a
+        // bookmark's title field is literally the raw URL) must never be treated as a title
+        // candidate, even though NormalizePhrase strips the punctuation that would otherwise let
+        // DomainLikeSegmentRegex catch it below - check the raw text before that stripping.
+        var isBrand = IsBrand(normalized, host) || IsUrlLikeText(text);
         var looksLikeTitle = wordCount > 0 && !isPureChapterMarker && !isNoisePhrase && !isBrand;
 
         return new SegmentFeatures(isBrand, isNoisePhrase, hasChapterMarker, isPureChapterMarker, looksLikeTitle, wordCount);
@@ -403,6 +538,15 @@ public static partial class MediaTitleNormalizer
         return false;
     }
 
+    // Detects a raw-URL-shaped segment ("jadescrolls.com/novel/foo/chapter-259") on the
+    // unnormalized text, before NormalizePhrase strips the dot/slash punctuation that would
+    // otherwise hide it from DomainLikeSegmentRegex.
+    private static bool IsUrlLikeText(string text)
+    {
+        var trimmed = text.Trim();
+        return GenericDomainPrefixRegex().IsMatch(trimmed) && trimmed.Contains('/', StringComparison.Ordinal);
+    }
+
     // Trailing scan-group suffixes ("Galaxy Translations", "Foo Scans") are release groups, not series titles.
     private static bool IsScanGroupBrand(string normalizedSegment)
     {
@@ -494,27 +638,47 @@ public static partial class MediaTitleNormalizer
     /// sets so callers matching one query against a large candidate pool (e.g. bookmark/catalog
     /// matching) can tokenize each side once instead of re-normalizing on every pairing.</summary>
     public static double ScoreTokenSets(HashSet<string> queryTokens, HashSet<string> candidateTokens)
+        => ExplainTokenSets(queryTokens, candidateTokens).Score;
+
+    /// <summary>Same scoring formula as <see cref="ScoreTokenSets"/>, but returns the full breakdown
+    /// (jaccard, query coverage, length penalty, and the shared/query-only/candidate-only token lists)
+    /// instead of just the final score - used by diagnostic tooling to explain why a match did or did
+    /// not clear a similarity threshold. This is the single source of the scoring math; <see cref="ScoreTokenSets"/>
+    /// delegates to it.</summary>
+    public static TokenSetScoreBreakdown ExplainTokenSets(HashSet<string> queryTokens, HashSet<string> candidateTokens)
     {
         if (queryTokens.Count == 0 || candidateTokens.Count == 0)
-            return 0;
+        {
+            return new TokenSetScoreBreakdown(
+                0, 0, 0, 0,
+                [],
+                queryTokens.OrderBy(t => t, StringComparer.Ordinal).ToList(),
+                candidateTokens.OrderBy(t => t, StringComparer.Ordinal).ToList());
+        }
 
-        var intersection = queryTokens.Intersect(candidateTokens).Count();
+        var sharedTokens = queryTokens.Intersect(candidateTokens).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        var queryOnlyTokens = queryTokens.Except(candidateTokens).OrderBy(t => t, StringComparer.Ordinal).ToList();
+        var candidateOnlyTokens = candidateTokens.Except(queryTokens).OrderBy(t => t, StringComparer.Ordinal).ToList();
+
+        var intersection = sharedTokens.Count;
         var union = queryTokens.Union(candidateTokens).Count();
         var jaccard = union == 0 ? 0 : (double)intersection / union;
         var queryCoverage = (double)intersection / queryTokens.Count;
-        var score = (jaccard + queryCoverage) / 2;
-        if (candidateTokens.Count > queryTokens.Count)
-            score -= Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04);
-        return Math.Clamp(score, 0, 1);
+        var lengthPenalty = candidateTokens.Count > queryTokens.Count
+            ? Math.Min(0.20, (candidateTokens.Count - queryTokens.Count) * 0.04)
+            : 0;
+        var score = Math.Clamp((jaccard + queryCoverage) / 2 - lengthPenalty, 0, 1);
+
+        return new TokenSetScoreBreakdown(jaccard, queryCoverage, lengthPenalty, score, sharedTokens, queryOnlyTokens, candidateOnlyTokens);
     }
 
-    [GeneratedRegex(@"\[[^\]]*\]|\([^\)]*\)")]
+    [GeneratedRegex(@"\[[^\]]*\]|\([^\)]*\)|~[^~]*~")]
     private static partial Regex BracketedTextRegex();
 
-    [GeneratedRegex(@"(?i)\b(?:chapter|ch\.?|episode|ep\.?|volume|vol\.?)\s*\d+(?:\.\d+)?\b")]
+    [GeneratedRegex(@"(?i)\b(?:chapter|ch\.?|episode|ep\.?|volume|vol\.?|season)\s*\d+(?:\.\d+)?\b")]
     private static partial Regex ChapterMarkerRegex();
 
-    [GeneratedRegex(@"(?i)^\s*(?:chapter|ch\.?|episode|ep\.?|volume|vol\.?)\s*\d+(?:\.\d+)?\s*$")]
+    [GeneratedRegex(@"(?i)^\s*(?:chapter|ch\.?|episode|ep\.?|volume|vol\.?|season)\s*\d+(?:\.\d+)?\s*$")]
     private static partial Regex PureChapterMarkerRegex();
 
     [GeneratedRegex(@"(?i)^(?<title>.*?)\s+(?<marker>(?:chapter|ch\.?|episode|ep\.?)\s*\d+(?:\.\d+)?)(?<suffix>.*)$")]
@@ -523,11 +687,86 @@ public static partial class MediaTitleNormalizer
     [GeneratedRegex(@"\b[\w][\w-]*\.(?:com|org|net|me|info|xyz|tv|co|ru|to)\b")]
     private static partial Regex DomainLikeSegmentRegex();
 
+    // A schemeless value that starts with a domain-like prefix ("jadescrolls.com/novel/...") -
+    // used to detect bookmarks whose title IS the raw URL string, before prefixing "https://".
+    [GeneratedRegex(@"(?i)^(?:[a-z0-9][a-z0-9-]*\.)+[a-z]{2,}(?=/|$)")]
+    private static partial Regex GenericDomainPrefixRegex();
+
+    // Contraction expansion (input is already lowercased; both straight and curly apostrophes).
+    [GeneratedRegex(@"\bi['’]m\b")]
+    private static partial Regex ImContractionRegex();
+
+    [GeneratedRegex(@"\bwon['’]t\b")]
+    private static partial Regex WontContractionRegex();
+
+    [GeneratedRegex(@"\bcan['’]t\b")]
+    private static partial Regex CantContractionRegex();
+
+    [GeneratedRegex(@"\b(\w+)n['’]t\b")]
+    private static partial Regex NtContractionRegex();
+
+    [GeneratedRegex(@"['’](re|ve|ll)\b")]
+    private static partial Regex ReVeLlContractionRegex();
+
     // A trailing slug id/hash: pure digits ("15516") or a short mixed alphanumeric token
     // that has both a letter and a digit ("yqqv0", "540q", "kn86"). Pure-letter tokens
-    // (real title words like "atelier") are intentionally excluded.
+    // (real title words like "atelier") are intentionally excluded. Four-digit years
+    // (1900-2099) are kept by <see cref="IsRemovableSlugIdToken"/>.
     [GeneratedRegex(@"(?i)^(?:\d+|(?=[a-z0-9]{3,7}$)(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+)$")]
-    private static partial Regex SlugIdTokenRegex();
+    private static partial Regex SoftSlugIdTokenRegex();
+
+    /// <summary>
+    /// Splits a URL slug on '-' and '.' so hashes glued with a dot ("leveling.yqqv0")
+    /// become separate tokens, then strips removable site-id hashes from the trailing
+    /// position and from the middle of the token list. Keeps title years like "2019".
+    /// </summary>
+    private static List<string> SplitAndCleanSlugTokens(string slug)
+    {
+        var tokens = slug.Split(['-', '.'], StringSplitOptions.RemoveEmptyEntries).ToList();
+        StripRemovableSlugIdTokens(tokens);
+        return tokens;
+    }
+
+    private static void StripRemovableSlugIdTokens(List<string> tokens)
+    {
+        // Trailing: site ids are often pure digits ("15516") or short hashes ("yqqv0").
+        while (tokens.Count > 1 && IsRemovableSlugIdToken(tokens[^1], allowPureDigits: true))
+            tokens.RemoveAt(tokens.Count - 1);
+
+        // Leading hashes ("yqqv0-fate-stay") — mixed alnum only, never pure digits.
+        while (tokens.Count > 1 && IsRemovableSlugIdToken(tokens[0], allowPureDigits: false))
+            tokens.RemoveAt(0);
+
+        // Middle mixed hashes — never pure digits ("mob-psycho-100-iii").
+        for (var i = tokens.Count - 2; i >= 1; i--)
+        {
+            if (IsRemovableSlugIdToken(tokens[i], allowPureDigits: false))
+                tokens.RemoveAt(i);
+        }
+    }
+
+    private static bool IsRemovableSlugIdToken(string token, bool allowPureDigits)
+    {
+        if (IsTitleYearToken(token))
+            return false;
+
+        // "2nd"/"3rd" season markers look like short mixed hashes but are title words.
+        if (OrdinalSlugTokenRegex().IsMatch(token))
+            return false;
+
+        if (!allowPureDigits && token.Length > 0 && token.All(char.IsDigit))
+            return false;
+
+        return SoftSlugIdTokenRegex().IsMatch(token);
+    }
+
+    private static bool IsTitleYearToken(string token) =>
+        token.Length == 4
+        && int.TryParse(token, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var year)
+        && year is >= 1900 and <= 2099;
+
+    [GeneratedRegex(@"^\d+(?:st|nd|rd|th)$", RegexOptions.IgnoreCase)]
+    private static partial Regex OrdinalSlugTokenRegex();
 
     [GeneratedRegex(@"[\u0027\u2019\u2018`'""]")]
     private static partial Regex ApostropheRegex();
@@ -540,4 +779,7 @@ public static partial class MediaTitleNormalizer
 
     [GeneratedRegex(@"[\p{L}\p{N}]+")]
     private static partial Regex TokenRegex();
+
+    [GeneratedRegex(@"(?i)\b(?:season\s+(?<snum>\d+)|(?<onum>\d+)(?:st|nd|rd|th)\s+season|part\s+(?<pnum>\d+))\b")]
+    private static partial Regex SeasonMarkerRegex();
 }

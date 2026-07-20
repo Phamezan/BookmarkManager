@@ -206,26 +206,6 @@ public sealed class MangaDexLibraryProvider(
             cancellationToken);
     }
 
-    public Task<LibraryReleaseInfo?> GetLatestReleaseAsync(string providerId, CancellationToken cancellationToken)
-    {
-        var cacheKey = $"{ProviderName}:release:{providerId}";
-        var url = $"{BaseUrl}/manga/{Uri.EscapeDataString(providerId)}/feed" +
-                   "?translatedLanguage[]=en&order[chapter]=desc&limit=1&includes[]=scanlation_group";
-
-        return ExecuteAsync(
-            cacheKey,
-            ReleaseCacheTtl,
-            TimeSpan.FromSeconds(10),
-            async ct =>
-            {
-                await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
-                using var doc = await GetJsonAsync(url, ct).ConfigureAwait(false);
-                return doc is null ? null : ParseLatestRelease(doc.RootElement, providerId);
-            },
-            null,
-            cancellationToken);
-    }
-
     /// <summary>Global "what's releasing" feed for the Manga calendar - independent of any bookmark.
     /// Covers all origin languages (manga, manhwa, manhua) - no originalLanguage filter, unlike the
     /// earlier manhwa-only cut of this feed. contentRating is capped at safe/suggestive to keep the
@@ -382,25 +362,6 @@ public sealed class MangaDexLibraryProvider(
         }
 
         return await response.Content.ReadFromJsonAsync<JsonDocument>(cancellationToken: cancellationToken).ConfigureAwait(false);
-    }
-
-    public static LibraryReleaseInfo? ParseLatestRelease(JsonElement root, string mangaId)
-    {
-        if (!root.TryGetProperty("data", out var dataArray) || dataArray.ValueKind != JsonValueKind.Array || dataArray.GetArrayLength() == 0)
-            return null;
-
-        var chapter = dataArray[0];
-        if (!chapter.TryGetProperty("attributes", out var attrs))
-            return null;
-
-        var chapterNumber = GetString(attrs, "chapter");
-        var volume = GetString(attrs, "volume");
-        DateTimeOffset? publishAt = attrs.TryGetProperty("publishAt", out var pubEl) && pubEl.ValueKind == JsonValueKind.String &&
-                                     DateTimeOffset.TryParse(pubEl.GetString(), out var parsed)
-            ? parsed
-            : null;
-
-        return new LibraryReleaseInfo(chapterNumber, volume, publishAt, $"https://mangadex.org/title/{mangaId}");
     }
 
     public static LibraryEntryDto? MapManga(JsonElement item, string providerName)

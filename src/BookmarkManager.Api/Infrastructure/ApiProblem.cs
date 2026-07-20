@@ -5,10 +5,6 @@ namespace BookmarkManager.Api.Infrastructure;
 public static class ApiProblem
 {
     public const string ValidationCode = "VALIDATION";
-    public const string NotFoundCode = "NOT_FOUND";
-    public const string AuthRequiredCode = "AUTH_REQUIRED";
-    public const string ForbiddenCode = "AUTH_FORBIDDEN";
-    public const string ConflictCode = "CONFLICT";
     public const string InternalCode = "INTERNAL";
 
     private const string ProblemJsonContentType = "application/problem+json";

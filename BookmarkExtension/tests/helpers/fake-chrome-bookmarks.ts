@@ -69,6 +69,18 @@ export class FakeBookmarks {
     return node ? [this.deepClone(node)] : [];
   }
 
+  async search(query: { url?: string } | string): Promise<FakeBookmarkNode[]> {
+    this.calls.push({ method: "search", args: [query] });
+    const url = typeof query === "string" ? undefined : query.url;
+    const matches: FakeBookmarkNode[] = [];
+    for (const node of this.nodes.values()) {
+      if (url !== undefined && node.url === url) {
+        matches.push(this.deepClone(node));
+      }
+    }
+    return matches;
+  }
+
   async getSubTree(id: string): Promise<FakeBookmarkNode[]> {
     this.calls.push({ method: "getSubTree", args: [id] });
     const node = this.nodes.get(id);

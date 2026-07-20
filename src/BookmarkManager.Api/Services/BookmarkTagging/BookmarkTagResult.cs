@@ -29,11 +29,3 @@ public enum BookmarkTagResultState
     Fallback = 5
 }
 
-public sealed record BookmarkTagResult(
-    List<string> Tags,
-    BookmarkTagDomain Domain,
-    BookmarkTagSource Source,
-    BookmarkTagConfidence Confidence,
-    string Reason,
-    bool ProviderMatchedRequestedDomain,
-    BookmarkTagResultState State);

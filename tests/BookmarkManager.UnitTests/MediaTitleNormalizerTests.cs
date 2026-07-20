@@ -27,6 +27,9 @@ public sealed class MediaTitleNormalizerTests
     [InlineData("https://aniwatchtv.to/watch/eighty-six-2nd-season-17760?ep=88228", "eighty six 2nd season")]
     [InlineData("https://www4.gogoanime.pro/anime/noblesse-540q/ep-3", "noblesse")]
     [InlineData("https://zorox.to/watch/fruits-basket-2019-kn86/ep-1", "fruits basket 2019")]
+    [InlineData("https://zorox.to/watch/fruits-basket-2019/ep-1", "fruits basket 2019")]
+    [InlineData("https://9animetv.to/watch/solo-leveling.yqqv0/ep-1", "solo leveling")]
+    [InlineData("https://zorox.to/watch/yqqv0-fate-stay-night/ep-1", "fate stay night")]
     public void TryTitleFromStreamingUrl_ExtractsCleanTitle(string url, string expected)
     {
         Assert.Equal(expected, MediaTitleNormalizer.TryTitleFromStreamingUrl(url));
@@ -68,6 +71,24 @@ public sealed class MediaTitleNormalizerTests
         Assert.Equal(expected, result.Candidates[0].Query);
     }
 
+    // Fan translations disagree on contractions ("I'm a Behemoth" vs "I Am Behemoth") - the
+    // unambiguous ones expand so both spellings produce the same tokens. Possessive 's must
+    // NOT expand (stays folded: "Reader's" -> "readers").
+    [Theory]
+    [InlineData("I'm a Behemoth, an S-Ranked Monster", "i am a behemoth an s ranked monster")]
+    [InlineData("I’m not a Regressor", "i am not a regressor")]
+    [InlineData("The Hero Won't Die", "the hero will not die")]
+    [InlineData("I Can't Be a Villain", "i cannot be a villain")]
+    [InlineData("My Skills Don’t Work", "my skills do not work")]
+    [InlineData("You've Got Mail", "you have got mail")]
+    [InlineData("We're All Dead", "we are all dead")]
+    [InlineData("I'll Become a Villainess", "i will become a villainess")]
+    [InlineData("Omniscient Reader's Viewpoint", "omniscient readers viewpoint")]
+    public void NormalizeForSearch_ExpandsUnambiguousContractions(string input, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.NormalizeForSearch(input));
+    }
+
     [Theory]
     [InlineData("Soldier's Life", "soldiers life")]
     [InlineData("An Extra's POV", "an extras pov")]
@@ -107,9 +128,11 @@ public sealed class MediaTitleNormalizerTests
     [Fact]
     public void BuildLooseQuery_UsesFirstMeaningfulWords()
     {
+        // "A Monster Who Levels Up" has 5 real title tokens, which now fits within the
+        // default maxTokens (8), so nothing gets truncated.
         var query = MediaTitleNormalizer.BuildLooseQuery("A Monster Who Levels Up");
 
-        Assert.Equal("a monster who levels", query);
+        Assert.Equal("a monster who levels up", query);
     }
 
     [Fact]
@@ -205,5 +228,211 @@ public sealed class MediaTitleNormalizerTests
 
         Assert.False(features.IsBrand);
         Assert.True(features.LooksLikeTitle);
+    }
+
+    [Theory]
+    [InlineData("That Time I Got Reincarnated as a Slime Season 3", "Season 3")]
+    [InlineData("that time i got reincarnated as a slime season 3", "Season 3")]
+    public void ExtractSeasonMarker_ReturnsSeasonForSeasonNKeyword(string title, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.ExtractSeasonMarker(title));
+    }
+
+    [Fact]
+    public void ExtractSeasonMarker_ReturnsSeasonForOrdinalSeasonKeyword()
+    {
+        Assert.Equal("Season 3", MediaTitleNormalizer.ExtractSeasonMarker("Eighty Six 3rd Season"));
+    }
+
+    [Fact]
+    public void ExtractSeasonMarker_ReturnsPartForPartKeyword()
+    {
+        Assert.Equal("Part 2", MediaTitleNormalizer.ExtractSeasonMarker("Mushoku Tensei II Part 2"));
+    }
+
+    [Fact]
+    public void ExtractSeasonMarker_ReturnsNullWhenNoMarkerPresent()
+    {
+        Assert.Null(MediaTitleNormalizer.ExtractSeasonMarker("One Piece Episode 1092"));
+    }
+
+    [Fact]
+    public void BuildLooseQuery_ReproTitle_KeepsSeasonNumberPastTokenCap()
+    {
+        var query = MediaTitleNormalizer.BuildLooseQuery(
+            "That Time I Got Reincarnated as a Slime Season 3 English Sub/Dub online Free on Aniwatch.to");
+
+        Assert.Contains("reincarnated", query);
+        Assert.Contains("3", query.Split(' '));
+    }
+
+    [Fact]
+    public void BuildLooseQuery_ShortCandidateWithoutSeasonMarker_IsUnaffectedByDefaultChange()
+    {
+        var query = MediaTitleNormalizer.BuildLooseQuery("Solo Leveling");
+
+        Assert.Equal("solo leveling", query);
+    }
+
+    [Fact]
+    public void ExplainTokenSets_IdenticalSets_ScoresOneAndMatchesScoreTokenSets()
+    {
+        var query = new HashSet<string> { "max", "level", "player" };
+        var candidate = new HashSet<string> { "max", "level", "player" };
+
+        var breakdown = MediaTitleNormalizer.ExplainTokenSets(query, candidate);
+        var score = MediaTitleNormalizer.ScoreTokenSets(query, candidate);
+
+        Assert.Equal(1.0, breakdown.Score, precision: 4);
+        Assert.Equal(1.0, breakdown.Jaccard, precision: 4);
+        Assert.Equal(1.0, breakdown.QueryCoverage, precision: 4);
+        Assert.Equal(0.0, breakdown.LengthPenalty, precision: 4);
+        Assert.Equal(score, breakdown.Score, precision: 4);
+    }
+
+    [Fact]
+    public void ExplainTokenSets_DisjointSets_ScoresZeroAndMatchesScoreTokenSets()
+    {
+        var query = new HashSet<string> { "a", "b" };
+        var candidate = new HashSet<string> { "c", "d" };
+
+        var breakdown = MediaTitleNormalizer.ExplainTokenSets(query, candidate);
+        var score = MediaTitleNormalizer.ScoreTokenSets(query, candidate);
+
+        Assert.Equal(0.0, breakdown.Score, precision: 4);
+        Assert.Equal(0.0, score, precision: 4);
+    }
+
+    [Fact]
+    public void ExplainTokenSets_CandidateLargerThanQuery_AppliesLengthPenaltyAndMatchesScoreTokenSets()
+    {
+        // query: 2 tokens, candidate: 4 tokens -> intersection=2, union=4
+        // jaccard=0.5, coverage=2/2=1.0, penalty=min(0.20,(4-2)*0.04)=0.08
+        // score=(0.5+1.0)/2 - 0.08 = 0.67
+        var query = new HashSet<string> { "omniscient", "reader" };
+        var candidate = new HashSet<string> { "omniscient", "reader", "viewpoint", "the" };
+
+        var breakdown = MediaTitleNormalizer.ExplainTokenSets(query, candidate);
+        var score = MediaTitleNormalizer.ScoreTokenSets(query, candidate);
+
+        Assert.Equal(0.5, breakdown.Jaccard, precision: 4);
+        Assert.Equal(1.0, breakdown.QueryCoverage, precision: 4);
+        Assert.Equal(0.08, breakdown.LengthPenalty, precision: 4);
+        Assert.Equal(0.67, breakdown.Score, precision: 4);
+        Assert.Equal(score, breakdown.Score, precision: 4);
+
+        Assert.Equal(new[] { "omniscient", "reader" }, breakdown.SharedTokens);
+        Assert.Empty(breakdown.QueryOnlyTokens);
+        Assert.Equal(new[] { "the", "viewpoint" }, breakdown.CandidateOnlyTokens);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ExplainTokenSets_EitherSetEmpty_ScoresZeroWithZeroedBreakdown(bool queryEmpty)
+    {
+        var query = queryEmpty ? new HashSet<string>() : new HashSet<string> { "omniscient", "reader" };
+        var candidate = queryEmpty ? new HashSet<string> { "omniscient", "reader" } : new HashSet<string>();
+
+        var breakdown = MediaTitleNormalizer.ExplainTokenSets(query, candidate);
+        var score = MediaTitleNormalizer.ScoreTokenSets(query, candidate);
+
+        Assert.Equal(0.0, breakdown.Jaccard, precision: 4);
+        Assert.Equal(0.0, breakdown.QueryCoverage, precision: 4);
+        Assert.Equal(0.0, breakdown.LengthPenalty, precision: 4);
+        Assert.Equal(0.0, breakdown.Score, precision: 4);
+        Assert.Equal(0.0, score, precision: 4);
+    }
+
+    // F1: paired tilde subtitle groups ("~The Strongest Healer~") are JP-novel-site subtitle
+    // decoration and must be stripped like bracketed text, or they leak tokens that nearly match
+    // the wrong series. A single unpaired '~' is not a paired group and must survive untouched.
+    [Fact]
+    public void Normalize_StripsPairedTildeSubtitleGroup()
+    {
+        var result = MediaTitleNormalizer.Normalize(
+            "Shadow Slave ~The Strongest Healer~ - chapter 4", null, BookmarkTagDomain.Novel);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.Equal("Shadow Slave", result.Candidates[0].Query);
+    }
+
+    [Fact]
+    public void Normalize_UnpairedTilde_KeepsTitleTextIntact()
+    {
+        var result = MediaTitleNormalizer.Normalize("Shadow Slave ~Healer", null, BookmarkTagDomain.Novel);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.Contains(result.Candidates, candidate => candidate.Query == "Shadow Slave ~Healer");
+    }
+
+    // F2: underscore-delimited titles ("Mage Adam_Chapter 191_NovelHi") never split on the
+    // punctuated SegmentDelimiters - fold '_' into " - " up front so the rest of the pipeline
+    // (chapter-marker classification, brand/noise scoring) applies uniformly.
+    [Fact]
+    public void Normalize_UnderscoreDelimitedTitle_SplitsIntoSegments()
+    {
+        var result = MediaTitleNormalizer.Normalize("Mage Adam_Chapter 191_NovelHi", null, BookmarkTagDomain.Novel);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.Equal("Mage Adam", result.Candidates[0].Query);
+    }
+
+    // F3: generic /novel//series//book/ URL slug extraction for hosts we don't explicitly know
+    // about, plus the URL-as-title case where the bookmark's title field literally is the URL.
+    [Theory]
+    [InlineData("https://jadescrolls.com/novel/the-worlds-greatest-is-dead/chapter-259", "the worlds greatest is dead")]
+    [InlineData("jadescrolls.com/novel/the-worlds-greatest-is-dead/chapter-259", "the worlds greatest is dead")]
+    [InlineData("www.jadescrolls.com/novel/the-worlds-greatest-is-dead/chapter-259", "the worlds greatest is dead")]
+    public void TryTitleFromGenericNovelPath_ExtractsSlug(string value, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.TryTitleFromGenericNovelPath(value));
+    }
+
+    [Theory]
+    [InlineData("https://example.com/genre/fantasy")]
+    [InlineData("not-a-url")]
+    [InlineData(null)]
+    public void TryTitleFromGenericNovelPath_ReturnsNullForNonSeriesPaths(string? value)
+    {
+        Assert.Null(MediaTitleNormalizer.TryTitleFromGenericNovelPath(value));
+    }
+
+    [Fact]
+    public void Normalize_UrlAsTitle_UsesDeslugCandidateFirst()
+    {
+        var result = MediaTitleNormalizer.Normalize(
+            "jadescrolls.com/novel/the-worlds-greatest-is-dead/chapter-259", null, BookmarkTagDomain.Novel);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.Equal("the worlds greatest is dead", result.Candidates[0].Query);
+        Assert.Equal("generic novel URL slug", result.Candidates[0].Reason);
+    }
+
+    // F4: "Season N" is a chapter-marker-shaped qualifier that dilutes the scoring candidate the
+    // same way "Chapter N" does. ExtractSeasonMarker must keep working so season info stays
+    // extractable elsewhere - only the scoring candidate should drop it.
+    [Fact]
+    public void Normalize_StripsSeasonMarkerFromCandidate()
+    {
+        var result = MediaTitleNormalizer.Normalize("Reverend Insanity Season 2", null, BookmarkTagDomain.Novel);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.DoesNotContain("Season", result.Candidates[0].Query, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Reverend Insanity", result.Candidates[0].Query);
+        Assert.Equal("Season 2", MediaTitleNormalizer.ExtractSeasonMarker("Reverend Insanity Season 2"));
+    }
+
+    // F6: "Manga Rock Team" is a scanlation brand suffix, not part of the series title.
+    [Fact]
+    public void Normalize_MangaRockTeamBrandSegment_IsExcludedFromCandidates()
+    {
+        var result = MediaTitleNormalizer.Normalize(
+            "Peerless Alchemist - Chapter 121 - Manga Rock Team - Read Manga Online For Free",
+            null,
+            BookmarkTagDomain.Manga);
+
+        Assert.NotEmpty(result.Candidates);
+        Assert.DoesNotContain(result.Candidates, candidate => candidate.Query.Contains("Rock Team", StringComparison.OrdinalIgnoreCase));
     }
 }

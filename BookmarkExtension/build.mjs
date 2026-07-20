@@ -1,4 +1,5 @@
 import * as esbuild from "esbuild";
+import sveltePlugin from "esbuild-svelte";
 import { cpSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +19,12 @@ function copyStaticFiles() {
   cpSync(join(__dirname, "manifest.json"), join(distDir, "manifest.json"));
   cpSync(join(__dirname, "popup"), join(distDir, "popup"), { recursive: true });
   cpSync(join(__dirname, "palette-host.html"), join(distDir, "palette-host.html"));
+  cpSync(join(__dirname, "toast.html"), join(distDir, "toast.html"));
+  mkdirSync(join(distDir, "sidepanel"), { recursive: true });
+  cpSync(
+    join(__dirname, "src", "sidepanel", "index.html"),
+    join(distDir, "sidepanel", "index.html"),
+  );
 
   const iconsSrc = join(__dirname, "assets", "icons");
   const iconsDest = join(distDir, "assets", "icons");
@@ -33,6 +40,8 @@ const entrypoints = {
   "popup/popup": "src/popup/popup.ts",
   "palette-host": "src/palette/palette-host.ts",
   "palette-injector": "src/palette/palette-injector.ts",
+  "toast-page": "src/toast/toast-page.ts",
+  "sidepanel/sidepanel": "src/sidepanel/main.ts",
 };
 
 const commonOptions = {
@@ -43,9 +52,12 @@ const commonOptions = {
   sourcemap: false,
   legalComments: "none",
   logLevel: "info",
+  mainFields: ["svelte", "browser", "module", "main"],
+  conditions: ["svelte", "browser"],
   define: {
     "process.env.NODE_ENV": '"production"',
   },
+  plugins: [sveltePlugin({ compilerOptions: { css: "injected" } })],
 };
 
 async function build() {

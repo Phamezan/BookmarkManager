@@ -26,7 +26,8 @@ public sealed class TagExtractorTests
     public void GitHub_Repo_SurfacesBrandAndOwner()
     {
         var tags = _svc.ExtractTags("dotnet/aspnetcore", "https://github.com/dotnet/aspnetcore");
-        Assert.Contains("GitHub", tags, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("GitHub", tags);
+        Assert.DoesNotContain("Github", tags);
         Assert.Contains("Dotnet", tags, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -34,15 +35,16 @@ public sealed class TagExtractorTests
     public void YouTube_SurfacesYouTubeTag()
     {
         var tags = _svc.ExtractTags("Lofi beats", "https://www.youtube.com/watch?v=abc");
-        Assert.Contains("YouTube", tags, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("YouTube", tags);
+        Assert.DoesNotContain("Youtube", tags);
     }
 
     [Fact]
     public void Reddit_Subreddit_SurfacesSubredditTag()
     {
         var tags = _svc.ExtractTags("Discussion", "https://www.reddit.com/r/OnePiece/comments/abc/x");
-        Assert.Contains("Reddit", tags, StringComparer.OrdinalIgnoreCase);
-        Assert.Contains(tags, t => t.StartsWith("r/", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains("Reddit", tags);
+        Assert.Contains("r/OnePiece", tags);
     }
 
     [Fact]

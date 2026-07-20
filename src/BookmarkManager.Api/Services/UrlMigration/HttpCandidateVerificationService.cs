@@ -307,9 +307,14 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         if (string.IsNullOrWhiteSpace(seriesName) || string.IsNullOrWhiteSpace(pageText))
             return false;
 
-        var seriesTokens = MediaTitleNormalizer.NormalizeForSearch(seriesName)
+        var allTokens = MediaTitleNormalizer.NormalizeForSearch(seriesName)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Where(token => token.Length > 2)
+            .ToList();
+
+        // Drop noise short tokens, but keep honorifics / romanettes and the leading token so
+        // titles like "Dr Stone" and "Mr Villain" still score on both words.
+        var seriesTokens = allTokens
+            .Where((token, index) => token.Length > 2 || index == 0 || ShortSeriesTokens.Contains(token))
             .Distinct(StringComparer.Ordinal)
             .ToList();
 
@@ -325,13 +330,23 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         return ratio >= threshold;
     }
 
+    private static readonly HashSet<string> ShortSeriesTokens = new(StringComparer.Ordinal)
+    {
+        "dr", "mr", "ms", "mrs", "jr", "sr", "wo", "ii", "iv"
+    };
+
     private static bool IsChapterMatch(string? chapterNumber, Uri finalUri, string? pageText)
     {
         if (string.IsNullOrWhiteSpace(chapterNumber))
             return false;
 
         var escaped = Regex.Escape(chapterNumber);
-        var pathPattern = new Regex($@"(?:\b|[-/]){escaped}(?:\b|[-/])", RegexOptions.IgnoreCase);
+        // Require an explicit chapter/episode marker or a digit-only path segment.
+        // Do NOT treat bare hyphen boundaries as matches — that false-positives on
+        // paths like /season-1-cour-2 for chapter "1" or "2".
+        var pathPattern = new Regex(
+            $@"(?:^|/)(?:chapter|ch|episode|ep)[-_/. ]*{escaped}(?!\d)|(?:^|/)c0*{escaped}(?!\d)(?:/|$)|(?:^|/){escaped}(?:/|$)",
+            RegexOptions.IgnoreCase);
 
         if (pathPattern.IsMatch(finalUri.AbsolutePath))
             return true;

@@ -6,7 +6,6 @@ import type {
   CompletionRequest,
   ExtensionCommand,
   ExtensionEvent,
-  NodeMapping,
   StorageRepository,
 } from "../api/contracts";
 
@@ -239,5 +238,3 @@ export function matchEventToCorrelation(
   }
   return null;
 }
-
-export { type NodeMapping };

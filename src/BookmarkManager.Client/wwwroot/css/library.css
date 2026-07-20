@@ -951,6 +951,53 @@
     gap: var(--bm-space-6) var(--bm-space-5);
 }
 
+/* Virtualize row: fixed stride must match BrowseRowItemSizePx (340) in Library.razor.cs */
+.lib-browse-virtual {
+    min-height: 0;
+}
+
+.lib-grid.lib-grid-row {
+    grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
+    min-height: 340px;
+    height: 340px;
+    align-content: start;
+    box-sizing: border-box;
+    padding-bottom: var(--bm-space-6);
+    overflow: hidden;
+}
+
+.lib-grid.lib-grid-row .lib-card {
+    max-width: 176px;
+    width: 100%;
+    justify-self: center;
+}
+
+.lib-scroll-sentinel {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.lib-scroll-sentinel:has(.lib-scroll-sentinel-label) {
+    min-height: 48px;
+    height: auto;
+    padding: var(--bm-space-4) 0 var(--bm-space-8);
+}
+
+.lib-scroll-sentinel-label {
+    font-size: 0.8rem;
+    color: var(--bm-text-muted);
+}
+
+.lib-scroll-sentinel-label--quiet {
+    opacity: 0.55;
+}
+
 .lib-load-more {
     display: flex;
     justify-content: center;
@@ -990,6 +1037,15 @@
     min-width: 0;
     /* Reserve a consistent progress-rail so covers align whether or not a badge is shown. */
     padding-top: calc(var(--bm-space-4) + 2px);
+    will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .lib-browse .lib-card {
+        opacity: 1 !important;
+        transform: none !important;
+        will-change: auto;
+    }
 }
 
 .lib-card-progress {

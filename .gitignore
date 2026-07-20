@@ -3,6 +3,7 @@
 [Oo]bj/
 .vs/
 TestResults/
+artifacts/
 *.user
 *.suo
 *.nupkg
@@ -34,16 +35,12 @@ backups/
 .env.*
 !.env.example
 
-# AI assistants and local agent instructions
-setup.md
-AGENT.md
-AGENTS.md
-AGENTS/
-.agents/
+# AI assistants — local tool state only (canonical knowledge is tracked under .agents/)
+/setup.md
+/AGENT.md
 .codex/
 .codegraph/
 .claude/
-CLAUDE.md
 .cursor/
 .continue/
 .windsurf/
@@ -51,11 +48,17 @@ CLAUDE.md
 .cline/
 .opencode/
 .gemini/
-GEMINI.md
+/GEMINI.md
 .aider*
 kickbacks.vsix
-implementation.md
+/implementation.md
 .hermes
+
+# Shared agent knowledge is TRACKED — do not ignore:
+#   .agents/
+#   AGENTS.md
+#   CLAUDE.md
+# After clone: pwsh -File scripts/setup-agent-links.ps1
 
 # Playwright MCP debug dumps (console logs, page snapshots)
 .playwright-mcp/

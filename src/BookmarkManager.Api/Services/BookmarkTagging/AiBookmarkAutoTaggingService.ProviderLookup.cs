@@ -114,7 +114,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
             .Where(rp => !rp.Result.WasRejected)
             .SelectMany(rp => rp.Result.Tags
                 .Where(tag => !string.IsNullOrWhiteSpace(tag))
-                .Select(tag => new ProvenanceTagEntry(tag.Trim(), rp.ProviderName)))
+                .Select(tag => new ProvenanceTagEntry(tag.Trim(), rp.ProviderName, rp.Result.MatchScore, rp.Result.CanonicalTitle)))
             .DistinctBy(entry => entry.Tag, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }

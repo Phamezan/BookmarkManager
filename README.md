@@ -1,42 +1,106 @@
-# Project System Map & Agent Context Guide
+# Bookmark Manager
 
-This document provides a comprehensive technical overview of the Bookmark Manager project, designed to help AI coding agents quickly build context, locate key components, and understand the synchronization protocols and algorithms.
+I track every manga, anime, light novel, and web novel I'm reading or watching as browser bookmarks — dozens of ongoing series across a dozen different sites. Chrome/Brave's built-in bookmarking made that annoying: no real grouping beyond folders, no way to see what I'm following at a glance, no tagging, nothing built for "track dozens of ongoing series."
 
-## 🚀 Features Overview
+So this is a self-hosted bookmark manager built around that use case, plus a companion browser extension that fixes the annoyances I had with the native bookmarking flow — the extension keeps a Brave/Chrome bookmark folder in real-time two-way sync with a web dashboard, so I still bookmark the way I always did, but the bookmark manager is where I actually browse, organize, and tag everything and if I don't wanna go into the manager i can also browse with the built in command palette that is usable across sites.
 
-- **Brave Browser Sync**: Real-time two-way synchronization of selected bookmark folders using heartbeats, snapshot uploads, and client-claimed command queues.
-- **1:1 Sync Fidelity**: Automatic detection and soft-deletion of server-side orphan bookmarks and duplicate folders to match Brave's directory configuration.
-- **Global Undo Stack**: Stack-based undo mechanism with SnackBar triggers that revert deletes, moves, and drag-and-drop actions.
-- **Anime/Manga Episode Auto-Extraction**: Extension automatically parses episode/chapter values from query parameters (`?ep=10`), URL paths (`/chapter-5/`), or DOM elements and appends them to bookmark titles.
-- **Search Omnibox Integration**: Inline address-bar search from Brave by typing `bm` + space/tab to filter and launch bookmarks.
-- **Stale Bookmarks Review**: A `/stale` page to browse, Keep (refresh timestamp), Archive (move to dynamic Archive folder), or Delete untouched/old links.
-- **Broken Link Checker**: Background worker querying active URLs for DNS failures, timeouts, and 404s, moving them to a `"Broken Links"` folder with sync creation safeguards.
-- **AI Auto-Tagging**: Offline TF-IDF keywords and rule-based site categorization suggesting tags inside the bookmark editor.
-- **Database Backups**: Server-side SQLite snapshots via `VACUUM INTO` to `/data/backups/db`; create, download, delete, and restore from the `/backups` dashboard page (restore applies on next API restart).
-- **Safety Database Purging**: Scheduled daily purging of Recycle Bin items older than 30 days, backed by a separate safety JSON archive under `/data/backups/purged/` (not the same as DB snapshots).
-- **Library Discovery**: Browse and search a locally-cached catalog of anime, manga, and novels sourced from AniList, MangaDex, Kitsu, RanobeDB, Novelfire, RoyalRoad, and NovelUpdates, with a details popup per title (cover, synopsis, tags, source link).
+> **⚠️ Single-user, LAN-only by design.** There is no authentication or multi-tenancy. Run this on your home network or behind your own reverse proxy/VPN — never expose it directly to the public internet.
 
----
+**[Quickstart / installation →](Docs/quickstart.md)**
 
-## 🏗️ System Architecture & Sync Loop
+## Features
 
-The application consists of three main components: a **Brave/Chrome Sync Extension**, an **ASP.NET Core API Server**, and a **Blazor WebAssembly Dashboard**. The extension and server maintain a 1:1 state projection of tracked browser folders.
+- **Two-way browser sync** — real-time sync between a Brave/Chrome bookmark folder and the server via WebSocket heartbeats and a command queue.
+- **Global undo** — stack-based undo for deletes, moves, and drag-and-drop.
+- **Anime/manga episode auto-extraction** — the extension parses episode/chapter numbers from URLs and page content and appends them to bookmark titles.
+- **Address-bar search** — type `bm` + space in the browser omnibox to search and launch bookmarks.
+- **In-tab command palette** — the extension injects the same command palette (`Ctrl+P`) on top of any website, not just the dashboard.
+- **Broken link checker** — background scan flags dead links; the URL Migrator then searches for and proposes replacement URLs, so links get fixed instead of just filed away.
+- **URL Migrator** — reviews proposed replacement URLs for dead links (series/chapter-aware matching) and applies the ones you approve.
+- **AI auto-tagging** — matches bookmarks against AniList/Kitsu/MangaUpdates/NovelFull/Catalog to suggest tags.
+- **Database backups** — scheduled SQLite snapshots, downloadable/restorable from a dashboard page.
+- **Library catalog** — a browsable, locally-cached mirror of anime/manga/novel catalogs from several providers.
+- **Airing calendar** — tracks tagged anime/manga bookmarks against AniList release schedules and lays out upcoming episodes/chapters on a month view.
+- **Recycle Bin** — soft-deleted bookmarks stay recoverable for 30 days before purge.
+- **Keyboard-driven** — full keyboard navigation and shortcuts for working through bookmarks without touching the mouse (press `?` in the dashboard for the cheat sheet).
+- **Five built-in themes** — switchable instantly from Settings, no reload.
+
+## Screenshots
+
+<details>
+<summary><strong>Default</strong></summary>
+
+**Bookmarks**
+![Bookmarks](Docs/images/bookmarks-default.webp)
+
+**Library**
+![Library](Docs/images/library-default.webp)
+
+**Library, scrolled**
+![Library scrolled](Docs/images/library-scrolled-default.webp)
+
+**Command palette**
+![Command palette](Docs/images/palette-default.webp)
+
+**Auto Tagger**
+![Auto Tagger](Docs/images/autotag-default.webp)
+
+**Airing calendar**
+![Calendar](Docs/images/calendar-default.webp)
+
+**Recycle Bin**
+![Recycle Bin](Docs/images/recyclebin-default.webp)
+
+**Keyboard shortcuts**
+<img src="Docs/images/keyboard-navigation.webp" alt="Keyboard shortcuts cheat sheet" width="500">
+
+**Extension popup**
+<img src="Docs/images/bookmarkextension.webp" alt="Browser extension popup" width="320">
+
+</details>
+
+<details>
+<summary><strong>With theme — Anime Worlds</strong></summary>
+
+**Bookmarks**
+![Bookmarks — anime theme](Docs/images/bookmarks-anime.webp)
+
+**Library**
+![Library — anime theme](Docs/images/library-anime.webp)
+
+**Command palette**
+![Command palette — anime theme](Docs/images/palette-anime.webp)
+
+**Auto Tagger**
+![Auto Tagger — anime theme](Docs/images/autotag-anime.webp)
+
+**Airing calendar**
+![Calendar — anime theme](Docs/images/calendar-anime.webp)
+
+**Recycle Bin**
+![Recycle Bin — anime theme](Docs/images/recyclebin-anime.webp)
+
+</details>
+
+## Architecture
+
+Three pieces: a Manifest V3 browser extension, an ASP.NET Core API, and a Blazor WebAssembly dashboard. The extension and server maintain a 1:1 state projection of tracked browser folders.
 
 ```mermaid
 sequenceDiagram
     participant B as Brave Browser (Extension)
     participant S as ASP.NET Core API Server
     participant C as Blazor WASM Client
-    
+
     Note over B,S: Real-Time Connection
     B->>S: WebSocket Connection (api/sync/ws)
     C->>S: HTTP / WebSocket Connection
-    
+
     Note over C,S: User Actions
     C->>S: Create/Move/Delete Bookmark or Folder
     S->>S: Save to DB & Enqueue ExtensionCommandEntry (Pending)
     S-->>B: Broadcast WebSocket "sync" Event
-    
+
     Note over B,S: Command Execution & Confirmation
     B->>S: GET api/extension/commands (Claim Lease)
     S-->>B: Return claimed commands (Leased)
@@ -46,83 +110,27 @@ sequenceDiagram
     S-->>C: Client updates via polling/WebSocket
 ```
 
-### 1. Synchronization Protocol
-- **Extension Heartbeats**: The extension polls `POST api/extension/heartbeat` periodically, transmitting client status (Offline/Online), configuration versions, and claims pending sync actions.
-- **Snapshot Uploads**: If the server configuration changes (e.g., a new root folder is tracked), the extension uploads a complete snapshot tree of the tracked root folder (`POST api/extension/snapshots`).
-- **Command Leases**: Server-initiated edits (moves, deletes, creation) are enqueued in the `ExtensionCommands` table. The extension claims leases, executes the commands browser-side using `chrome.bookmarks` APIs, and reports success back via `/complete` along with browser-side ID mappings.
+See [Docs/system-map.md](Docs/system-map.md) for the full technical breakdown (sync protocol, schema, key files) — written for contributors and AI coding agents.
 
----
+## Documentation
 
-## 📁 Key File Map
+| Topic | Doc |
+|-------|-----|
+| Quickstart / installation | [Docs/quickstart.md](Docs/quickstart.md) |
+| System map (architecture, schema, sync protocol) | [Docs/system-map.md](Docs/system-map.md) |
+| Ubuntu deployment | [Docs/deployment-ubuntu.md](Docs/deployment-ubuntu.md) |
+| Browser extension | [BookmarkExtension/README.md](BookmarkExtension/README.md) |
 
-### Extension (TypeScript / Manifest V3)
-- 📄 [manifest.json](file:///c:/Users/Pham2/source/repos/BookmarkManager/BookmarkExtension/manifest.json) — Defines MV3 settings, quick-keys, scripting tab permissions, and the `bm` search omnibox keyword.
-- 📄 [service-worker.ts](file:///c:/Users/Pham2/source/repos/BookmarkManager/BookmarkExtension/src/background/service-worker.ts) — Background script orchestrating websocket loops, alarm tasks, heartbeat checks, quick-bookmark hotkeys, and address-bar search listeners.
-- 📄 [bookmark-adapter.ts](file:///c:/Users/Pham2/source/repos/BookmarkManager/BookmarkExtension/src/bookmarks/bookmark-adapter.ts) — Translates incoming server payloads into browser API calls (`chrome.bookmarks.create`, `move`, `remove`, `applyRestore` [recursive]).
+### Codebase knowledge graph (optional)
 
-### Server API (C# / .NET 10)
-- 📄 [Program.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Program.cs) — Services registration (SQLite connection, `LinkCheckerService`, design protection, WebSocket router).
-- 📄 [AppDbContext.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Data/AppDbContext.cs) — Configures EF Core models, index keys, and cascade/restrict deletes.
-- 📄 [BookmarksController.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Controllers/BookmarksController.cs) — Handles CRUD, favorites, batch-delete, stale bookmarks retrieval, and manual link checker execution triggers.
-- 📄 [ExtensionService.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Services/ExtensionService.cs) — Ingests snapshot uploads, compares state, and soft-deletes orphan records.
-- 📄 [LinkCheckerService.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Api/Services/LinkCheckerService.cs) — Background worker checking bookmarks for dead URLs.
+This repo can generate a queryable knowledge graph of its own architecture using [graphify](https://github.com/anthropics/claude-code) — useful for AI coding agents or anyone mapping the codebase. It's not tracked in git (output is large and changes every commit). To generate it locally:
 
-### Client UI (C# / Blazor WebAssembly)
-- 📄 [Bookmarks.razor.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/Pages/Bookmarks.razor.cs) — Main dashboard workspace controller (drag-drop, context menus, favorites pinning, search).
-- 📄 [Stale.razor](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/Pages/Stale.razor) — Shows unvisited/untouched links based on historical dates.
-- 📄 [BookmarkEditDialog.razor](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/Components/BookmarkEditDialog.razor) — Form for editing bookmarks with offline tag suggestions.
-- 📄 [UndoService.cs](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/Services/UndoService.cs) — Stack-based global undo manager.
+```bash
+graphify update .
+```
 
----
+This writes `graphify-out/` (graph, report, cache) to your working copy only.
 
-## 🗄️ Database Schema & Entities
+## License
 
-- **`BookmarkNode`**: Represents bookmarks and folders.
-  - Key columns: `Id`, `ParentId`, `Type` (Folder/Bookmark), `Title`, `Url`, `Position`, `IsDeleted`, `UpdatedAt`, `BrowserNodeId` (the browser-side ID string), `ParentBrowserNodeId`.
-  - Metadata columns: `Tags` (comma-separated string), `Category`, `Notes`, `IsFavorite`.
-- **`ExtensionCommandEntry`**: Stores queued sync actions.
-  - Columns: `Id`, `OperationId`, `CommandType` (Create/Move/Delete/Reorder/Restore), `BookmarkId`, `BrowserNodeId`, `PayloadJson`, `Status` (Pending/Leased/Succeeded/Failed).
-- **`TrackedRoot`**: Defines root folders sync scopes.
-  - Columns: `Id`, `Title`, `BrowserNodeId`, `LastSyncedAt`.
-- **`LibraryCatalogEntry`**: Local mirror of one provider title, populated by the catalog sync background service so the Library "Browse" view can page through the full catalog instead of a live top-N call.
-  - Columns: `Id`, `Provider`, `ProviderId` (unique together), `Title`, `AlternateTitles`, `Authors`, `MediaType`, `CoverImageUrl`, `Synopsis`, `Genres`, `Rating`, `Status`, `LatestChapter`, `LatestVolume`, `LastReleaseAt`, `SourceUrl`, `PopularityRank`, `FirstImportedAt`, `LastRefreshedAt`.
-- **`LibraryCatalogSyncQueueItem`**: Durable work queue (Queue-Based Load Leveling) — one row is one "fetch the next page" step of a provider crawl sequence, so a restart mid-crawl resumes instead of losing progress.
-  - Columns: `Id`, `Provider`, `MediaTypeQuery`, `ContinuationToken`, `RemainingPages`, `Status` (Pending/Processing/Done/Failed), `Attempts`, `LastError`, `CreatedAt`, `NextAttemptAt`.
-- **`TagProvenance`**: Records which source supplied each tag on a bookmark (cross-provider attribution for the tag tooltip and reruns panel). All rows for a bookmark are replaced as a unit on every tag write (auto-tag run, rerun, manual save) via `TagProvenanceWriter`.
-  - Columns: `Id`, `BookmarkId` (indexed; composite index with `Tag`), `Tag`, `Provider` (AniList/Kitsu/MangaUpdates/NovelFull/Catalog/DomainRoute/Manual), `Confidence` (AI series-identification confidence for the run, null for deterministic/manual), `CreatedAt`.
-
----
-
-## ⚙️ Core Algorithms & Safeguards
-
-### 1. 1:1 Sync Fidelity Comparison (ExtensionService)
-- Retrieves all currently active (non-deleted) database nodes under the uploaded tracked root.
-- Compares database nodes with incoming extension snapshot records.
-- Any database node missing from the snapshot is marked as soft-deleted (`IsDeleted = true`, `DeletedAt = UtcNow`, `PurgeAfter = UtcNow + 30 days`).
-
-### 2. Library Catalog Sync — Queue-Based Load Leveling (LibraryCatalogSyncBackgroundService)
-- Mirrors AniList/MangaDex/RanobeDB/Novelfire catalogs into `LibraryCatalogEntry` so Browse pages through thousands of titles instead of a 24-title live top-N call.
-- Each "fetch next page" step is a durable `LibraryCatalogSyncQueueItem` row, not in-memory state — a container restart mid-crawl resumes exactly where it left off.
-- One worker loop per bulk-capable provider, throttled by that provider's existing rate limiter (shared with live search/trending, so the crawl never starves interactive requests).
-- Failed pages get exponential backoff and a max attempt count before landing in a `Failed` state for inspection in Settings; a stalled sequence (next token == current token) self-terminates instead of looping forever.
-
-### 3. Safeguarded Folder Creation Deferral (LinkCheckerService)
-- When scanning, if a `"Broken Links"` folder doesn't exist, it is created in the DB and enqueued as a browser `Create` command.
-- Moving detected dead links to the `"Broken Links"` folder is **deferred** in the database until the browser confirms the folder's creation and reports its `BrowserNodeId` back to the server. This prevents out-of-order execution errors inside the extension command loop.
-
-### 4. Rule-Based Offline Tag Suggestion (TagExtractorService)
-- Strips standard English stop words from the bookmark title.
-- Maps titles containing signature substrings (like `"github"`, `"miruro"`, `"mangadex"`) to standard categories (`Development`, `Anime`, `Manga`, `News`, `Shopping`).
-- Selects the top 5 most common keywords and lists them as click-to-add chip suggestions.
-- Saves tags in the DB by serializing the list as a comma-separated string, mapped back via AutoMapper.
-
-### 5. Safety Purge Backup (PurgeBackgroundJob)
-- Database purge operations run daily, deleting nodes that have been in the Recycle Bin for more than 30 days.
-- Before removing records from the DB, the background job serializes the target records into a safety backup JSON file in `/data/backups/purged/` so that mistakes can be manually recovered if necessary. This is separate from full-database snapshots (see §6).
-
-### 6. Database Backup (BackupService / BackupBackgroundJob)
-- **Snapshots:** `BackupService` creates compact standalone `.db` files with SQLite `VACUUM INTO` under `/data/backups/db` (Docker volume `/data`, local-dev fallback under the app base directory). Never file-copy a live WAL database.
-- **Manifests:** Each run inserts a `BackupManifests` row (`Status`, `Trigger`, content stats, duration, error). `FilePath` is server-only and never returned to the client.
-- **Schedule:** `BackupBackgroundJob` runs nightly at `03:00` Europe/Berlin by default (override via `Backup:ScheduleTime` / `Backup:TimeZoneId` in `appsettings.json`). Manual **Back up now** from `/backups` uses the same pipeline. Retention defaults: 30 files / 60 days.
-- **Restore (restore-on-restart):** UI restore requires typing `RESTORE`. The API takes a pre-restore safety snapshot (`Trigger=PreRestore`), verifies the chosen snapshot, then stages `restore-pending.db` beside the live DB. On the next process start, `BackupPendingRestore.ApplyPendingRestoreIfAny` swaps the file **before** EF Core opens a connection. Startup bumps `ConfigVersion` and sets a repair marker so the extension uploads a full Repair snapshot and re-baselines sync.
-- **Extension HTML export:** `BookmarkExtension/src/backup/backup-manager.ts` still exports Netscape HTML to Downloads for browser import/interop. It is not the primary durability story — use the server `/backups` page for full SQLite recovery.
+[MIT](LICENSE)

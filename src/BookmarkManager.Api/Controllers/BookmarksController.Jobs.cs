@@ -126,17 +126,4 @@ public partial class BookmarksController
            uri.Host.EndsWith("." + deadHost, StringComparison.OrdinalIgnoreCase);
     }
 
-    [HttpPost("auto-tagger/run")]
-    public IActionResult TriggerAutoTagger([FromServices] BookmarkManager.Api.Services.AutoTaggerBackgroundJob autoTagger)
-    {
-    autoTagger.Trigger();
-    return Accepted(autoTagger.GetStatus());
-    }
-
-    [HttpGet("auto-tagger/status")]
-    public ActionResult<AutoTaggerStatusDto> GetAutoTaggerStatus([FromServices] BookmarkManager.Api.Services.AutoTaggerBackgroundJob autoTagger)
-    {
-    return Ok(autoTagger.GetStatus());
-    }
-
 }

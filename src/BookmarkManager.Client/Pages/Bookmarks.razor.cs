@@ -10,9 +10,6 @@ namespace BookmarkManager.Client.Pages;
 
 public partial class Bookmarks : IDisposable
 {
-    protected const string SortTitle = "Title";
-    protected const string SortUpdated = "Updated";
-
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
@@ -20,6 +17,7 @@ public partial class Bookmarks : IDisposable
     [Inject] private IExtensionConnectionService ExtensionConnectionService { get; set; } = default!;
     [Inject] private UndoService UndoService { get; set; } = default!;
     [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
+    [Inject] private NavHomeService NavHome { get; set; } = default!;
 
     private List<FolderTreeNodeDto> _folderTree = [];
     private List<BookmarkNodeDto> _items = [];
@@ -35,7 +33,6 @@ public partial class Bookmarks : IDisposable
     private readonly HashSet<Guid> _selectedBookmarkIds = [];
     private string _dragType = "";
     private Guid _draggedFolderId;
-    private string FavoritesDragOverStyle { get; set; } = "";
     private CancellationTokenSource? _wsCts;
     private bool _contextMenuOpen;
     private double _contextMenuX;
@@ -113,6 +110,12 @@ public partial class Bookmarks : IDisposable
                 else if (_typeFilter == "Favorites")
                 {
                     items = items.Where(i => i.Metadata?.IsFavorite == true);
+                }
+                else if (_typeFilter == "Later")
+                {
+                    items = items.Where(i =>
+                        i.Type == NodeType.Bookmark
+                        && string.Equals(i.Metadata?.Status, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal));
                 }
                 if (_activeTagFilters.Count > 0)
                 {

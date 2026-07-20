@@ -12,17 +12,15 @@ import { isProtectedNode } from "./browser-node-mapper";
  * segment stripped ({@link seriesKeyFromUrl}). URLs with no recognizable
  * chapter marker fall back to exact normalized-URL comparison.
  *
- * Notifications are deduplicated: a folder-duplicate group is only announced
+ * Alerts are deduplicated: a folder-duplicate group is only announced
  * once until it is resolved (renamed/merged/deleted), tracked in
  * `chrome.storage.local` under {@link DUPLICATE_NOTIFIED_KEY}.
  */
 
 export const DUPLICATE_NOTIFIED_KEY = "bm.dupFolderNotified";
 
-/** Cap notifications emitted by a single folder scan so a large import cannot spam. */
+/** Cap alerts emitted by a single folder scan so a large import cannot spam. */
 const MAX_FOLDER_NOTIFICATIONS_PER_SCAN = 3;
-/** Cap folder names listed inside a duplicate-bookmark notification. */
-const MAX_LOCATIONS_IN_MESSAGE = 3;
 
 export interface FolderDuplicateGroup {
   parentId: string;
@@ -31,11 +29,11 @@ export interface FolderDuplicateGroup {
   folderIds: string[];
 }
 
-interface NotificationOptions {
-  type: "basic";
-  iconUrl: string;
+interface AlertOptions {
   title: string;
   message: string;
+  /** When set, prefer injecting the alert into a tab matching this URL. */
+  url?: string | null;
 }
 
 interface DetectorStorage {
@@ -48,9 +46,8 @@ export interface DuplicateDetectorDeps {
     get(id: string): Promise<BraveBookmarkTreeNode[]>;
     getTree(): Promise<BraveBookmarkTreeNode[]>;
   };
-  notifications: {
-    create(options: NotificationOptions): Promise<string> | void;
-  };
+  /** In-page / Brave-popup alert surface (replaces chrome.notifications). */
+  showAlert: (options: AlertOptions) => void | Promise<void>;
   storage: DetectorStorage;
   now: () => Date;
 }
@@ -229,31 +226,18 @@ export class DuplicateDetector {
    * notification when one exists. Never throws — detection must not disturb
    * the sync event path.
    */
-  async checkNewBookmark(node: {
+  /**
+   * Series-duplicate check after a bookmark create. Intentionally silent:
+   * quick-bookmark already opens the extension popup confirm UI, and a second
+   * in-page overlay is redundant. Folder duplicates still alert via
+   * {@link scanFolders}.
+   */
+  async checkNewBookmark(_node: {
     id: string;
     title: string;
     url: string;
   }): Promise<void> {
-    try {
-      const duplicates = await this.getSeriesDuplicates(node.url, node.id);
-      if (duplicates.length === 0) return;
-
-      const existing = duplicates[0]!;
-      const locations = duplicates
-        .map((d) => d.parentTitle)
-        .filter((t): t is string => t !== null)
-        .filter((t, i, all) => all.indexOf(t) === i)
-        .slice(0, MAX_LOCATIONS_IN_MESSAGE)
-        .map((t) => `"${t}"`);
-      const where = locations.length > 0 ? ` in ${locations.join(", ")}` : "";
-      const others = duplicates.length > 1 ? ` (+${duplicates.length - 1} more)` : "";
-      this.notify(
-        "Series already bookmarked",
-        `"${existing.title}"${where} looks like the same series${others}.`,
-      );
-    } catch (e) {
-      console.warn("[dup] bookmark duplicate check failed:", e);
-    }
+    // no-op
   }
 
   /**
@@ -316,10 +300,10 @@ export class DuplicateDetector {
         emitted++;
         const parent =
           group.parentTitle.trim().length > 0 ? `"${group.parentTitle}"` : "the same folder";
-        this.notify(
-          "Duplicate folders",
-          `Folder "${group.title}" appears ${group.folderIds.length} times under ${parent}.`,
-        );
+        this.notify({
+          title: "Duplicate folders",
+          message: `Folder "${group.title}" appears ${group.folderIds.length} times under ${parent}.`,
+        });
       }
 
       await this.deps.storage.set({ [DUPLICATE_NOTIFIED_KEY]: next });
@@ -328,16 +312,11 @@ export class DuplicateDetector {
     }
   }
 
-  private notify(title: string, message: string): void {
+  private notify(options: AlertOptions): void {
     try {
-      void this.deps.notifications.create({
-        type: "basic",
-        iconUrl: "assets/icons/icon128.png",
-        title,
-        message,
-      });
+      void this.deps.showAlert(options);
     } catch (e) {
-      console.warn("[dup] notification failed:", e);
+      console.warn("[dup] alert failed:", e);
     }
   }
 }

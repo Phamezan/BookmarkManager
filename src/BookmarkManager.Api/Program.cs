@@ -5,7 +5,6 @@ using BookmarkManager.Api.Hosting;
 using BookmarkManager.Api.Infrastructure;
 using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.BookmarkTagging;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,9 +17,6 @@ builder.Services.AddHealthChecks();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")
         ?? "Data Source=bookmarks.db"));
-
-var dataProtectionKeys = ResolveDataProtectionKeysDirectory(builder.Environment.ContentRootPath);
-builder.Services.AddDataProtection().PersistKeysToFileSystem(dataProtectionKeys);
 
 builder.Services.Configure<HostOptions>(options =>
 {
@@ -62,9 +58,6 @@ builder.Services.AddSingleton<IDuckDuckGoSearchService, DuckDuckGoSearchService>
 builder.Services.AddScoped<AiSeriesIdentifierService>();
 builder.Services.AddScoped<AiBookmarkAutoTaggingService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.BookmarkTaggingService>();
-builder.Services.AddScoped<BookmarkManager.Api.Services.AutoTaggerService>();
-builder.Services.AddSingleton<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>();
-builder.Services.AddHostedService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AutoTaggerBackgroundJob>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.LinkCheckerService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.LinkCheckerService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.LinkCheckerService>());
 builder.Services.AddHttpClient("LinkChecker")
@@ -231,13 +224,5 @@ app.Lifetime.ApplicationStopping.Register(() =>
 });
 
 app.Run();
-
-static DirectoryInfo ResolveDataProtectionKeysDirectory(string contentRootPath)
-{
-    const string containerKeysPath = "/data";
-    return Directory.Exists(containerKeysPath)
-        ? new DirectoryInfo(containerKeysPath)
-        : Directory.CreateDirectory(Path.Combine(contentRootPath, ".dataprotection-keys"));
-}
 
 public partial class Program;

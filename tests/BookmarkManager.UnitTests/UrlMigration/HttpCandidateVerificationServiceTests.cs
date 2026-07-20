@@ -179,6 +179,44 @@ public class HttpCandidateVerificationServiceTests
             $"Expected at most 512KB read, but {trackingContent.TotalBytesRead} bytes were read across {callCount} handler call(s).");
     }
 
+    [Fact]
+    public async Task VerifyAsync_SeasonCourPath_DoesNotFalseMatchBareChapterDigits()
+    {
+        // Path has -1- and -2- but no chapter/episode marker — must not ChapterMatched for "1".
+        var html = "<html><head><title>Some Anime English Sub</title></head><body>Watch online</body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://hianime.to/watch/some-anime/season-1-cour-2"),
+            Extraction("Some Anime", "1"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.False(result.ChapterMatched);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ShortHonorificTokens_StillSeriesMatch()
+    {
+        var html = "<html><head><title>Dr Stone Chapter 10</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://asuracomic.net/series/dr-stone/chapter-10"),
+            Extraction("Dr Stone", "10"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.True(result.SeriesMatched);
+        Assert.True(result.ChapterMatched);
+    }
+
     /// <summary>
     /// Bypasses StreamContent's own internal read-stream wrapping (which can pre-buffer/peek)
     /// so the test can assert exactly how many bytes the service pulled from the stream.

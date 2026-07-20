@@ -13,18 +13,20 @@ using Microsoft.Extensions.Logging;
 namespace BookmarkManager.Api.Services;
 
 /// <summary>
-/// Shared "Broken Links" folder create/move logic, extracted from <see cref="LinkCheckerService"/>
-/// so the deferred-move invariant (folder create and bookmark moves must wait for the folder's
-/// <see cref="BookmarkNode.BrowserNodeId"/> to be confirmed by the extension) lives in one place.
-/// Used by <see cref="LinkCheckerService"/> and the slim ManualFolder triage endpoint.
+/// Shared "Broken Links" folder create/move logic. The background link checker no longer
+/// moves bookmarks — it only flags <see cref="BookmarkNode.IsLinkBroken"/> in place
+/// (see <see cref="LinkCheckerService"/>). Folder moves happen only through the manual
+/// ManualFolder triage endpoint, whose deferred-move invariant (folder create and bookmark
+/// moves must wait for the folder's <see cref="BookmarkNode.BrowserNodeId"/> to be confirmed
+/// by the extension) lives here.
 /// </summary>
 public static class BrokenLinksFolderHelper
 {
     public const string FolderName = "Broken Links";
 
     /// <summary>
-    /// Finds the existing "Broken Links" folder or creates it (under the tracked root folder)
-    /// if missing. When newly created, its <see cref="BookmarkNode.BrowserNodeId"/> is null until
+    /// Finds the existing "Broken Links" folder or creates it under the first root-level
+    /// folder found (falling back to any folder) if missing. When newly created, its <see cref="BookmarkNode.BrowserNodeId"/> is null until
     /// the extension confirms it — moves into it are enqueued Deferred and promoted on
     /// confirmation (see <see cref="MoveBookmarksIntoFolderAsync"/> and
     /// <see cref="DeferredCommandHelper"/>). Returns null when no root folder exists at all.

@@ -17,6 +17,10 @@ public static class BookmarkTitleSuggestionBuilder
         if (string.IsNullOrEmpty(canonical))
             return null;
 
+        var seasonMarker = MediaTitleNormalizer.ExtractSeasonMarker(originalTitle);
+        if (seasonMarker is not null && MediaTitleNormalizer.ExtractSeasonMarker(canonical) is null)
+            canonical = $"{canonical} {seasonMarker}";
+
         var ext = BookmarkProgressExtractor.Extract(originalTitle, url);
         if (ext.CurrentChapter is not { } chapter)
             return canonical;

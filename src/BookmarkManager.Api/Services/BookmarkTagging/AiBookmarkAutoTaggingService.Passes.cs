@@ -186,7 +186,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
         TagProvenanceWriter.Replace(
             _db,
             request.Candidate.Bookmark.Id,
-            finalTags.Select(entry => (entry.Tag, entry.Provider)),
+            finalTags.Select(entry => (entry.Tag, entry.Provider, entry.MatchScore, entry.MatchedTitle)),
             request.Confidence);
 
         summary.Tagged++;

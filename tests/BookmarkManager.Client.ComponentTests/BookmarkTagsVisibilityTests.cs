@@ -39,6 +39,7 @@ public sealed class BookmarkTagsVisibilityTests
 
         context.Services.AddMudServices();
         context.Services.AddTransient<SyncSocketListener>();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(bookmarkService);
         context.Services.AddSingleton<IExtensionConnectionService>(new ConnectedExtensionService());
         context.Services.AddSingleton<UndoService>();

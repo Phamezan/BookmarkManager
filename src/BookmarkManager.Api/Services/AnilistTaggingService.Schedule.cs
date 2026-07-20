@@ -179,7 +179,7 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
     // Slug-derived queries come straight from the streaming site's own canonical path, so the
     // top AniList result is almost always correct even when token-similarity is dragged down
     // by numeral/word differences - trust them with a looser bar than free-text page titles.
-    private const double SlugSimilarityThreshold = 0.34;
+    private const double SlugSimilarityThreshold = SimilarityThresholds.AniListSlug;
 
     private static AnimeMatchCandidateDto? ScoreBestCandidate(string query, bool fromSlug, List<AnimeMatchCandidateDto> candidates)
     {

@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Shipped. UrlMigrationProposal entity, UrlMigrationBackgroundJob, UrlMigrationApprovalService, BookmarksController.Migration.cs, and Pages/UrlMigrator.razor all live. Treat as history.
+---
+
 # URL Migrator v2 — Implementation Plan
 
 Replaces the `AutoSearch` path of the existing Domain Triage & URL Migrator with an
@@ -173,7 +179,7 @@ New partial: `Controllers/BookmarksController.Migration.cs`
 
 | Method & route | Purpose |
 |---|---|
-| `GET  api/bookmarks/url-migration/dead-domains` | Group bookmarks in "Broken Links" folder (plus any bookmark whose host resolves as unreachable if LinkChecker stored that) by host; return counts. Powers the detection panel. |
+| `GET  api/bookmarks/url-migration/dead-domains` | Group bookmarks flagged `IsLinkBroken` by the link checker (report-only since 2026-07-18 — no folder moves) by host; return counts. Powers the detection panel. |
 | `POST api/bookmarks/url-migration/run` | Body `StartUrlMigrationRequest`. 400 on empty/invalid host (must parse as hostname, no scheme/path). 409 if a run is active. Enqueues on the background job. |
 | `GET  api/bookmarks/url-migration/status` | `UrlMigrationStatusDto` for live progress. |
 | `GET  api/bookmarks/url-migration/proposals?runId=&status=` | List proposals, filterable. |
@@ -325,9 +331,10 @@ SaveChanges (single transaction) → SyncWebSocketManager.BroadcastSyncAsync() o
 ```
 
 Revert mirrors this with `Url ↔ PreviousUrl` swapped and status `Reverted`.
-Approved bookmarks are **not** moved between folders — they stay wherever they live (usually
-"Broken Links" if LinkChecker put them there; moving them back to their original folder is a
-follow-up feature, original parent is not currently recorded).
+Approved bookmarks are **not** moved between folders — they stay wherever they live.
+(2026-07-18: the link checker is now report-only — it flags `IsLinkBroken` on the node instead
+of moving bookmarks into a "Broken Links" folder. Bookmarks parked there by older runs keep
+their flag via the `AddLinkBrokenFlag` migration backfill; restoring them is manual.)
 
 ### 6.7 DI registration (`Program.cs`)
 

@@ -8,7 +8,7 @@ namespace BookmarkManager.Api.Data;
 /// <summary>One cached catalog entry mirrored from a bulk-import-capable provider (AniList, MangaDex)
 /// so the Library "Browse" view can page through thousands of titles without a live fan-out call on
 /// every page load. Populated/refreshed by <see cref="Services.Library.LibraryCatalogSyncBackgroundService"/>.
-/// RoyalRoad/NovelUpdates are intentionally excluded from bulk import (scraping ToS risk) - they stay
+/// RoyalRoad is intentionally excluded from bulk import (scraping ToS risk) - it stays
 /// search-time-only, matching the Library scope boundary in CLAUDE.md.</summary>
 public class LibraryCatalogEntry
 {

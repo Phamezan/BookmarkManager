@@ -217,6 +217,9 @@ public sealed partial class ExtensionService
                     ParentBrowserNodeId = parentBrowserNodeId
                 };
 
+                if (newNode.Type == NodeType.Bookmark)
+                    BookmarkPlanToReadHeuristic.ApplyAutoStatus(newNode);
+
                 if (newNode.Type == NodeType.Bookmark && string.IsNullOrEmpty(newNode.Tags))
                 {
                     // Auto-tagging is an external HTTP call — deferred until
@@ -256,7 +259,11 @@ public sealed partial class ExtensionService
                     if ((root.TryGetProperty("title", out var t) || root.TryGetProperty("Title", out t)) && t.ValueKind != JsonValueKind.Null)
                         existing.Title = t.GetString() ?? "";
                     if (root.TryGetProperty("url", out var u) || root.TryGetProperty("Url", out u))
+                    {
                         existing.Url = u.ValueKind == JsonValueKind.Null ? null : u.GetString();
+                        if (existing.Type == NodeType.Bookmark)
+                            BookmarkPlanToReadHeuristic.ApplyAutoStatus(existing);
+                    }
                     existing.UpdatedAt = now;
                     break;
 
@@ -350,10 +357,18 @@ public sealed partial class ExtensionService
             try
             {
                 var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
-                var autoTags = await bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
-                if (autoTags.Count > 0)
+                var outcome = await bookmarkTagging.GetTagsWithCoverAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
+                if (outcome.Tags.Count > 0)
                 {
-                    node.Tags = string.Join(",", autoTags);
+                    node.Tags = string.Join(",", outcome.Tags);
+                    changed = true;
+                }
+
+                // Prefer the matched provider's poster (AniList) over a later og:image
+                // scrape — only fill an empty cover so we never clobber an existing one.
+                if (!string.IsNullOrWhiteSpace(outcome.CoverImageUrl) && string.IsNullOrWhiteSpace(node.CoverImageUrl))
+                {
+                    node.CoverImageUrl = outcome.CoverImageUrl;
                     changed = true;
                 }
             }

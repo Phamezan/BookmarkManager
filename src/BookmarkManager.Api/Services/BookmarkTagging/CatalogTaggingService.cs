@@ -11,13 +11,15 @@ namespace BookmarkManager.Api.Services.BookmarkTagging;
 
 /// <summary>Offline Novel-domain tag lookup against the local <see cref="LibraryCatalogEntry"/> mirror
 /// (populated by <see cref="LibraryCatalogSyncBackgroundService"/> crawling Novelfire/RanobeDB etc.),
-/// so bookmarks matching a title already in the catalog get tagged without any live HTTP call. Runs
+/// indexing LightNovel/Webnovel/Manhwa rows (many KR webnovels exist in the catalog only as Manhwa
+/// rows with identical titles), so bookmarks matching a title already in the catalog get tagged
+/// without any live HTTP call. Runs
 /// as a singleton alongside the other tag providers, so DB access goes through a fresh scope per
 /// lookup instead of a directly injected (scoped) <see cref="AppDbContext"/> - same pattern as
 /// <see cref="Library.LibraryProviderRegistry"/>.</summary>
 public sealed class CatalogTaggingService : ICatalogTagProvider
 {
-    private const double SimilarityThreshold = 0.60;
+    private const double SimilarityThreshold = SimilarityThresholds.Catalog;
     private static readonly TimeSpan SuccessCacheDuration = TimeSpan.FromHours(12);
     private static readonly TimeSpan EmptyCacheDuration = TimeSpan.FromMinutes(30);
     internal static readonly TimeSpan DefaultIndexTtl = TimeSpan.FromHours(1);
@@ -39,6 +41,10 @@ public sealed class CatalogTaggingService : ICatalogTagProvider
     private sealed record CatalogIndexEntry(Guid Id, List<HashSet<string>> TitleTokenSets);
 
     private sealed record CatalogIndexSnapshot(IReadOnlyList<CatalogIndexEntry> Entries, DateTimeOffset BuiltAt);
+
+    /// <summary>Diagnostic result for <see cref="ExplainTopMatchesAsync"/>: one catalog entry's best
+    /// score against a query, with the full breakdown of how that score was computed.</summary>
+    internal sealed record CatalogMatchExplain(Guid EntryId, string Title, double Score, TokenSetScoreBreakdown Breakdown);
 
     public CatalogTaggingService(
         IServiceScopeFactory scopeFactory,
@@ -145,7 +151,7 @@ public sealed class CatalogTaggingService : ICatalogTagProvider
         var tags = new List<string> { "Novel" };
         tags.AddRange(genres);
         var canonical = string.IsNullOrWhiteSpace(best.Title) ? null : best.Title.Trim();
-        return new(tags, false, null, canonical);
+        return new(tags, false, null, canonical, bestScore);
     }
 
     /// <summary>Returns the cached in-memory title index, rebuilding it when missing or past its TTL.
@@ -187,9 +193,12 @@ public sealed class CatalogTaggingService : ICatalogTagProvider
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
+        // Include Manhwa rows: many KR webnovels exist in the catalog only as Manhwa rows with
+        // identical titles ("Omniscient Reader's Viewpoint" is MangaDex/Manhwa; the novel bookmark
+        // could otherwise never match). ~900 Manhwa rows - negligible index size impact.
         var rows = await db.LibraryCatalogEntries
             .AsNoTracking()
-            .Where(e => e.MediaType == LibraryMediaType.LightNovel || e.MediaType == LibraryMediaType.Webnovel)
+            .Where(e => e.MediaType == LibraryMediaType.LightNovel || e.MediaType == LibraryMediaType.Webnovel || e.MediaType == LibraryMediaType.Manhwa)
             .Select(e => new { e.Id, e.Title, e.AlternateTitles })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -197,9 +206,11 @@ public sealed class CatalogTaggingService : ICatalogTagProvider
         var entries = new List<CatalogIndexEntry>(rows.Count);
         foreach (var row in rows)
         {
+            var alternates = LibraryCatalogEntry.SplitList(row.AlternateTitles);
             var titleTokenSets = new List<HashSet<string>> { TokenizeTitle(row.Title) };
-            foreach (var alternateTitle in LibraryCatalogEntry.SplitList(row.AlternateTitles))
+            foreach (var alternateTitle in alternates)
                 titleTokenSets.Add(TokenizeTitle(alternateTitle));
+            AddRecombinedCommaFragments(titleTokenSets, alternates);
 
             titleTokenSets.RemoveAll(set => set.Count == 0);
             if (titleTokenSets.Count > 0)
@@ -209,10 +220,116 @@ public sealed class CatalogTaggingService : ICatalogTagProvider
         return new CatalogIndexSnapshot(entries, DateTimeOffset.UtcNow);
     }
 
+    // AlternateTitles is comma-joined, so an alternate title that itself CONTAINS commas
+    // ("Myst, Might, Mayhem") arrives shredded into single-token fragments that can never
+    // score above ~1/n against the full query. Heuristic repair: every run of >=2 consecutive
+    // short fragments (<=2 tokens each) also gets one combined token set representing the
+    // possibility that the run was originally a single comma-containing title. The individual
+    // fragments stay in the index, so genuinely separate one-word alternates keep matching.
+    private static void AddRecombinedCommaFragments(List<HashSet<string>> titleTokenSets, List<string> alternates)
+    {
+        const int maxFragmentTokens = 2;
+        const int maxCombinedTokens = 8;
+
+        var run = new HashSet<string>(StringComparer.Ordinal);
+        var runLength = 0;
+
+        void FlushRun()
+        {
+            if (runLength >= 2 && run.Count > 0 && run.Count <= maxCombinedTokens)
+                titleTokenSets.Add(new HashSet<string>(run, StringComparer.Ordinal));
+            run.Clear();
+            runLength = 0;
+        }
+
+        foreach (var alternate in alternates)
+        {
+            var tokens = TokenizeTitle(alternate);
+            if (tokens.Count is > 0 and <= maxFragmentTokens)
+            {
+                run.UnionWith(tokens);
+                runLength++;
+            }
+            else
+            {
+                FlushRun();
+            }
+        }
+
+        FlushRun();
+    }
+
     private static HashSet<string> TokenizeTitle(string title)
         => MediaTitleNormalizer.NormalizeForSearch(title)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries)
             .ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>Diagnostic-only counterpart to <see cref="LookupCatalogAsync"/>: instead of returning
+    /// only the single best-scoring entry, returns the full score breakdown for the top N entries so
+    /// callers can inspect why a match did or did not clear the similarity threshold. Reuses the same
+    /// in-memory index; does not read or write the per-title result <see cref="_cache"/>, since this
+    /// is not part of <see cref="GetTagsForTitleAsync"/>'s cache lifecycle.</summary>
+    internal async Task<List<CatalogMatchExplain>> ExplainTopMatchesAsync(string candidateQuery, int topN, CancellationToken cancellationToken)
+    {
+        topN = Math.Clamp(topN, 1, 25);
+
+        var queryTokens = MediaTitleNormalizer.NormalizeForSearch(candidateQuery)
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .ToHashSet(StringComparer.Ordinal);
+        if (queryTokens.Count == 0)
+            return [];
+
+        var index = await GetIndexAsync(cancellationToken).ConfigureAwait(false);
+        if (index.Entries.Count == 0)
+            return [];
+
+        var bestByEntry = new List<(Guid Id, TokenSetScoreBreakdown Breakdown)>();
+        foreach (var entry in index.Entries)
+        {
+            TokenSetScoreBreakdown? best = null;
+            foreach (var titleTokens in entry.TitleTokenSets)
+            {
+                var breakdown = MediaTitleNormalizer.ExplainTokenSets(queryTokens, titleTokens);
+                if (best is null || breakdown.Score > best.Score)
+                    best = breakdown;
+            }
+
+            if (best is not null)
+                bestByEntry.Add((entry.Id, best));
+        }
+
+        var top = bestByEntry
+            .OrderByDescending(e => e.Breakdown.Score)
+            .Take(topN)
+            .ToList();
+
+        var titlesById = new Dictionary<Guid, string>();
+        if (top.Count > 0)
+        {
+            try
+            {
+                var idsToFetch = top.Select(e => e.Id).ToList();
+                using var scope = _scopeFactory.CreateScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var titles = await db.LibraryCatalogEntries
+                    .AsNoTracking()
+                    .Where(e => idsToFetch.Contains(e.Id))
+                    .Select(e => new { e.Id, e.Title })
+                    .ToListAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var title in titles)
+                    titlesById[title.Id] = title.Title;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogWarning(ex, "Failed to fetch catalog titles for tag-explain diagnostics.");
+            }
+        }
+
+        return top
+            .Select(e => new CatalogMatchExplain(e.Id, titlesById.GetValueOrDefault(e.Id, string.Empty), e.Breakdown.Score, e.Breakdown))
+            .ToList();
+    }
 
     /// <summary>Mirrors <see cref="LibrarySearchService.EnrichEntryAsync"/>'s on-demand single-entry
     /// enrichment: fetch the provider's detail page for a catalog row the bulk crawl only had thin

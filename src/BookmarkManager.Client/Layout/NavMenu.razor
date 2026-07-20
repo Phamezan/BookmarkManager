@@ -1,5 +1,6 @@
 @implements IDisposable
 @inject NavigationManager Nav
+@inject NavHomeService NavHome
 @inject Microsoft.JSInterop.IJSRuntime JSRuntime
 
 <div class="nav-3d-stage">
@@ -7,7 +8,7 @@
     <div class="nav-active-indicator" aria-hidden="true">
         <div class="nav-active-indicator-disc"></div>
     </div>
-    <MudNavLink Href="bookmarks" Ripple="false">
+    <MudNavLink Href="bookmarks" Ripple="false" OnClick="@(() => OnNavClickAsync("bookmarks"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-bookmarks.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -16,7 +17,7 @@
             <span class="nav-link-text">Bookmarks</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="recommendations" Ripple="false">
+    <MudNavLink Href="recommendations" Ripple="false" OnClick="@(() => OnNavClickAsync("recommendations"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-recommendations.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -26,7 +27,7 @@
             <span class="nav-link-text">Recommendations</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="library" Ripple="false">
+    <MudNavLink Href="library" Ripple="false" OnClick="@(() => OnNavClickAsync("library"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-library.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -36,7 +37,7 @@
             <span class="nav-link-text">Library</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="anime-calendar" Ripple="false">
+    <MudNavLink Href="anime-calendar" Ripple="false" OnClick="@(() => OnNavClickAsync("anime-calendar"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-calendar.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -48,7 +49,7 @@
             <span class="nav-link-text">Calendar</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="recycle-bin" Ripple="false">
+    <MudNavLink Href="recycle-bin" Ripple="false" OnClick="@(() => OnNavClickAsync("recycle-bin"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-recycle.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -58,7 +59,7 @@
             <span class="nav-link-text">Recycle Bin</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="url-migrator" Ripple="false">
+    <MudNavLink Href="url-migrator" Ripple="false" OnClick="@(() => OnNavClickAsync("url-migrator"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-url.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -70,7 +71,7 @@
             <span class="nav-link-text">URL Migrator</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="backups" Ripple="false">
+    <MudNavLink Href="backups" Ripple="false" OnClick="@(() => OnNavClickAsync("backups"))">
         <span class="nav-link-inner">
             <img class="nav-mascot" src="assets/anime/nav/nav-backups.webp" alt="" aria-hidden="true" />
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -81,7 +82,7 @@
             <span class="nav-link-text">Backups</span>
         </span>
     </MudNavLink>
-    <MudNavLink Href="settings" Ripple="false">
+    <MudNavLink Href="settings" Ripple="false" OnClick="@(() => OnNavClickAsync("settings"))">
         <span class="nav-link-inner">
             <span class="nav-mascot-cycle" aria-hidden="true">
                 <img src="assets/anime/nav/nav-settings-a.webp" alt="" />
@@ -90,7 +91,7 @@
             </span>
             <svg class="nav-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06-.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
             </svg>
             <span class="nav-link-text">Settings</span>
         </span>
@@ -99,19 +100,6 @@
 </div>
 
 @code {
-    // Icons8 CDN trial. Change to try other looks: doodle, clouds, stickers, plasticine, bubbles, cute-clipart.
-    // Not every icon name exists in every style; second argument is the fallback name.
-    private const string IconStyle = "doodle";
-
-    private static readonly HashSet<string> MissingInDoodle = new() { "bookmark" };
-
-    private static string IconUrl(string name, string? fallback = null)
-    {
-        if (fallback is not null && IconStyle == "doodle" && MissingInDoodle.Contains(name))
-            name = fallback;
-        return $"https://img.icons8.com/{IconStyle}/96/{name}.png";
-    }
-
     protected override void OnInitialized()
     {
         Nav.LocationChanged += OnLocationChanged;
@@ -132,10 +120,40 @@
         }
     }
 
+    private async Task OnNavClickAsync(string routeKey)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("scrollAppContentToTop");
+        }
+        catch
+        {
+            // ignore
+        }
+
+        if (IsCurrentRoute(routeKey))
+            await NavHome.RequestHomeAsync(routeKey);
+    }
+
+    private bool IsCurrentRoute(string routeKey)
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Trim('/');
+        if (string.Equals(path, routeKey, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Bookmarks is also the landing route "/".
+        if (string.Equals(routeKey, "bookmarks", StringComparison.OrdinalIgnoreCase)
+            && (path.Length == 0 || path == "/"))
+            return true;
+
+        return false;
+    }
+
     private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
         try
         {
+            await JSRuntime.InvokeVoidAsync("scrollAppContentToTop");
             await JSRuntime.InvokeVoidAsync("repositionNavIndicator");
         }
         catch

@@ -46,4 +46,55 @@ public sealed partial class ExtensionService
         return config;
     }
 
+    public async Task<ExtensionBookmarkEnrichmentDto?> GetBookmarkEnrichmentByBrowserIdAsync(
+        string browserNodeId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(browserNodeId))
+            return null;
+
+        var node = await db.BookmarkNodes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(n => n.BrowserNodeId == browserNodeId && !n.IsDeleted, ct);
+        if (node is null || node.Type != NodeType.Bookmark)
+            return null;
+
+        var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
+        var tags = string.IsNullOrWhiteSpace(node.Tags)
+            ? Array.Empty<string>()
+            : node.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // Cover precedence mirrors BookmarksController.Queries.cs EnrichCoverImagesRecursive:
+        // catalog match cover wins when present, else fall back to the node's own stored cover.
+        var matches = await matchService.GetMatchesAsync(ct);
+        var matchedCover = matches.FirstOrDefault(m => m.BookmarkId == node.Id)?.CoverImageUrl;
+        var coverImageUrl = !string.IsNullOrWhiteSpace(matchedCover) ? matchedCover : node.CoverImageUrl;
+
+        return new ExtensionBookmarkEnrichmentDto(node.Id, node.Title, folderPath, tags, node.Status, coverImageUrl);
+    }
+
+    public async Task<bool> SetBookmarkCoverByBrowserIdAsync(
+        string browserNodeId,
+        string? coverImageUrl,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(browserNodeId))
+            return false;
+
+        var node = await db.BookmarkNodes
+            .FirstOrDefaultAsync(n => n.BrowserNodeId == browserNodeId && !n.IsDeleted, ct);
+        if (node is null || node.Type != NodeType.Bookmark)
+            return false;
+
+        // Don't clobber an existing cover — catalog/library covers win.
+        if (!string.IsNullOrWhiteSpace(node.CoverImageUrl))
+            return true;
+        if (string.IsNullOrWhiteSpace(coverImageUrl))
+            return false;
+
+        node.CoverImageUrl = coverImageUrl;
+        node.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
 }

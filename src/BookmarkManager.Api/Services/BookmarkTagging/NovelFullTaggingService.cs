@@ -118,9 +118,9 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
             }
         }
 
-        if (bestHref is null || bestScore < 0.60)
+        if (bestHref is null || bestScore < SimilarityThresholds.NovelFull)
         {
-            return new([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold 0.60.");
+            return new([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold {SimilarityThresholds.NovelFull:F2}.");
         }
 
         var detailsUrl = $"https://novelfull.com{bestHref}";
@@ -151,7 +151,7 @@ public sealed partial class NovelFullTaggingService : INovelFullTagProvider
             }
         }
 
-        return new(tags, false, null, bestTitle);
+        return new(tags, false, null, bestTitle, bestScore);
     }
 
     private double ScoreNovelFullCandidate(string candidateTitle, string cleanQuery)

@@ -788,7 +788,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     private static partial Regex SlugifyRegex();
 
     private static string NormalizeUrlForComparison(string url) =>
-        url.TrimEnd('/');
+        UrlComparisonNormalizer.Normalize(url);
 
     private static bool HostMatches(string url, string deadHost)
     {

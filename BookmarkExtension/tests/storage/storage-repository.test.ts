@@ -197,6 +197,7 @@ describe("ChromeStorageRepository", () => {
       url: "https://site.com/manga/solo-leveling/chapter-125",
       title: "Solo Leveling Ch 125",
       folderId: "50",
+      sourceTabId: 7,
       duplicates: [{ id: "10", title: "Solo Leveling Ch 124", parentTitle: "Manga" }],
       capturedAt: "2026-07-14T00:00:00Z",
     };
@@ -230,6 +231,7 @@ describe("ChromeStorageRepository", () => {
         url: "https://a.com/x/chapter-1",
         title: "x",
         folderId: "1",
+        sourceTabId: 1,
         duplicates: [],
         capturedAt: "2026-07-14T00:00:00Z",
       });

@@ -36,6 +36,92 @@ public sealed class CatalogTaggingServiceTests
         Assert.Equal("God of Fishing", result.CanonicalTitle);
     }
 
+    // F5: many KR webnovels exist in the catalog only as Manhwa rows (crawled from a manga site)
+    // with the same title as the novel bookmark - the index must include Manhwa rows or these can
+    // never match via the Catalog provider.
+    [Fact]
+    public async Task GetTagsForTitleAsync_ManhwaRow_Matches()
+    {
+        await using var fixture = await CatalogFixture.CreateAsync();
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "MangaDex",
+            ProviderId = "omniscient-readers-viewpoint",
+            Title = "Omniscient Reader's Viewpoint",
+            MediaType = LibraryMediaType.Manhwa,
+            Genres = "Fantasy,Action",
+            SourceUrl = "https://mangadex.org/title/omniscient-readers-viewpoint",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        var service = fixture.CreateService();
+
+        var result = await service.GetTagsForTitleAsync(Context("Omniscient Reader's Viewpoint"), CancellationToken.None);
+
+        Assert.False(result.WasRejected);
+        Assert.Equal(new[] { "Novel", "Fantasy", "Action" }, result.Tags);
+        Assert.Equal("Omniscient Reader's Viewpoint", result.CanonicalTitle);
+    }
+
+    // AlternateTitles is comma-joined storage, so an alternate that itself contains commas
+    // ("Myst, Might, Mayhem") arrives shredded into single-token fragments. The index must
+    // recombine runs of short fragments or the full query can never clear the threshold
+    // (real case: "Myst, Might, Mayhem" scored exactly 1/3 against its own row).
+    [Fact]
+    public async Task GetTagsForTitleAsync_CommaShreddedAlternateTitle_Matches()
+    {
+        await using var fixture = await CatalogFixture.CreateAsync();
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "AniList",
+            ProviderId = "goeryeok-nansin",
+            Title = "Goeryeok Nansin",
+            AlternateTitles = "Myst, Might, Mayhem,괴력 난신",
+            MediaType = LibraryMediaType.Manhwa,
+            Genres = "Action,Martial Arts",
+            SourceUrl = "https://anilist.co/manga/goeryeok-nansin",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        var service = fixture.CreateService();
+
+        var result = await service.GetTagsForTitleAsync(Context("Myst, Might, Mayhem"), CancellationToken.None);
+
+        Assert.False(result.WasRejected);
+        Assert.Equal(new[] { "Novel", "Action", "Martial Arts" }, result.Tags);
+        Assert.Equal("Goeryeok Nansin", result.CanonicalTitle);
+    }
+
+    // Guard: genuinely separate one-word alternates must still match individually after the
+    // comma-fragment recombination heuristic (it only ADDS a combined set, never removes).
+    [Fact]
+    public async Task GetTagsForTitleAsync_SeparateSingleWordAlternate_StillMatches()
+    {
+        await using var fixture = await CatalogFixture.CreateAsync();
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "Novelfire",
+            ProviderId = "overgeared",
+            Title = "Overgeared",
+            AlternateTitles = "Templar,Talleung",
+            MediaType = LibraryMediaType.Webnovel,
+            Genres = "Fantasy,Game",
+            SourceUrl = "https://novelfire.net/book/overgeared",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        var service = fixture.CreateService();
+
+        var result = await service.GetTagsForTitleAsync(Context("Templar"), CancellationToken.None);
+
+        Assert.False(result.WasRejected);
+        Assert.Equal(new[] { "Novel", "Fantasy", "Game" }, result.Tags);
+        Assert.Equal("Overgeared", result.CanonicalTitle);
+    }
+
     [Fact]
     public async Task GetTagsForTitleAsync_PunctuatedTitleWithHyphenAndColon_Matches()
     {
@@ -61,6 +147,34 @@ public sealed class CatalogTaggingServiceTests
         Assert.False(result.WasRejected);
         Assert.Equal(new[] { "Novel", "Fantasy", "Action" }, result.Tags);
         Assert.Equal("Max-Level Learning Ability: Facing The Cliff And Repenting For 80 Years", result.CanonicalTitle);
+    }
+
+    [Fact]
+    public async Task GetTagsForTitleAsync_GoodTitleMatch_PopulatesMatchScoreAboveThreshold()
+    {
+        await using var fixture = await CatalogFixture.CreateAsync();
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "Novelfire",
+            ProviderId = "max-level-player-100th-regression",
+            Title = "Max-Level Player's 100th Regression",
+            MediaType = LibraryMediaType.Webnovel,
+            Genres = "Fantasy,Action",
+            SourceUrl = "https://novelfire.net/book/max-level-player-100th-regression",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        var service = fixture.CreateService();
+
+        var result = await service.GetTagsForTitleAsync(
+            Context("Max-Level Player's 100th Regression"),
+            CancellationToken.None);
+
+        Assert.False(result.WasRejected);
+        Assert.NotNull(result.MatchScore);
+        Assert.True(result.MatchScore >= SimilarityThresholds.Catalog);
+        Assert.Equal("Max-Level Player's 100th Regression", result.CanonicalTitle);
     }
 
     [Fact]
@@ -264,6 +378,61 @@ public sealed class CatalogTaggingServiceTests
         var bypassContext = Context("God of Fishing") with { BypassCache = true };
         var fresh = await service.GetTagsForTitleAsync(bypassContext, CancellationToken.None);
         Assert.Equal(new[] { "Novel", "Action" }, fresh.Tags);
+    }
+
+    [Fact]
+    public async Task ExplainTopMatchesAsync_ReturnsOrderedBreakdownsAndRespectsTopN()
+    {
+        await using var fixture = await CatalogFixture.CreateAsync();
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "Novelfire",
+            ProviderId = "max-level-player-100th-regression",
+            Title = "Max-Level Player's 100th Regression",
+            MediaType = LibraryMediaType.Webnovel,
+            Genres = "Fantasy,Action",
+            SourceUrl = "https://novelfire.net/book/max-level-player-100th-regression",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "Novelfire",
+            ProviderId = "the-beginning-after-the-end",
+            Title = "The Beginning After the End",
+            MediaType = LibraryMediaType.Webnovel,
+            Genres = "Fantasy,Action",
+            SourceUrl = "https://novelfire.net/book/the-beginning-after-the-end",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        await fixture.SeedAsync(new LibraryCatalogEntry
+        {
+            Id = Guid.NewGuid(),
+            Provider = "Novelfire",
+            ProviderId = "omniscient-readers-viewpoint",
+            Title = "Omniscient Reader's Viewpoint",
+            MediaType = LibraryMediaType.Webnovel,
+            Genres = "Fantasy,Action",
+            SourceUrl = "https://novelfire.net/book/omniscient-readers-viewpoint",
+            FirstImportedAt = DateTimeOffset.UtcNow,
+            LastRefreshedAt = DateTimeOffset.UtcNow
+        });
+        var service = fixture.CreateService();
+
+        var results = await service.ExplainTopMatchesAsync("Omniscient Reader's Viewpoint", topN: 10, CancellationToken.None);
+
+        Assert.NotEmpty(results);
+        var ordered = results.OrderByDescending(r => r.Score).ToList();
+        Assert.Equal(ordered.Select(r => r.EntryId), results.Select(r => r.EntryId));
+        foreach (var result in results)
+            Assert.True(result.Breakdown.Score >= 0);
+        Assert.Equal("Omniscient Reader's Viewpoint", results[0].Title);
+
+        var limited = await service.ExplainTopMatchesAsync("Omniscient Reader's Viewpoint", topN: 2, CancellationToken.None);
+        Assert.True(limited.Count <= 2);
     }
 
     private static MediaTagLookupContext Context(string title) => new(

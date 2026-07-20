@@ -44,33 +44,6 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("ActivityLog");
                 });
 
-            modelBuilder.Entity("BookmarkManager.Api.Data.AdminAccount", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PasswordHash")
-                        .IsRequired()
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PasswordSalt")
-                        .IsRequired()
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("AdminAccounts");
-                });
-
             modelBuilder.Entity("BookmarkManager.Api.Data.AnimeScheduleCache", b =>
                 {
                     b.Property<int>("AniListId")
@@ -231,10 +204,16 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<bool>("IsFavorite")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("IsLinkBroken")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("IsProtected")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime?>("LastMatchAttemptAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LinkCheckedAt")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MediaStatus")
@@ -686,6 +665,12 @@ namespace BookmarkManager.Api.Migrations
                         .HasColumnType("REAL");
 
                     b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("MatchScore")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("MatchedTitle")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Provider")

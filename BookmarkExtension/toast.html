@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bookmark saved</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #121216;
+      color: #f4f4f5;
+      font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    #toast {
+      padding: 14px 16px;
+    }
+    #title {
+      font-weight: 650;
+      font-size: 15px;
+      letter-spacing: 0.01em;
+      margin-bottom: 8px;
+      word-break: break-word;
+    }
+    #folder-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    #folder-row[hidden] {
+      display: none;
+    }
+    #folder-row svg {
+      flex-shrink: 0;
+      fill: #a5b4fc;
+    }
+    #folder {
+      color: #c7d2fe;
+      font-size: 13px;
+      font-weight: 500;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .line-tags {
+      color: #fbbf24;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .line-later {
+      margin-top: 6px;
+      color: #7dd3fc;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .line {
+      color: rgba(244, 244, 245, 0.78);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="toast">
+    <div id="title"></div>
+    <div id="folder-row" hidden>
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+      </svg>
+      <div id="folder"></div>
+    </div>
+  </div>
+  <script type="module" src="toast-page.js"></script>
+</body>
+</html>

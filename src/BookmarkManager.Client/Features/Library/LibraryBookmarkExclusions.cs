@@ -159,9 +159,6 @@ internal static partial class LibrarySeriesKey
     [GeneratedRegex(@"(?i)^/book/(?<id>[^/]+)")]
     private static partial Regex BookSlugRegex();
 
-    [GeneratedRegex(@"(?i)^/series/(?<id>[^/]+)")]
-    private static partial Regex SeriesSlugRegex();
-
     [GeneratedRegex(@"(?i)^/fiction/(?<id>\d+)")]
     private static partial Regex FictionIdRegex();
 

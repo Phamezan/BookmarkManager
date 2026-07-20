@@ -6,6 +6,8 @@ public interface IBackupService
 {
     Task RecoverInterruptedBackupsAsync(CancellationToken ct = default);
 
+    Task PurgeLegacyManifestsAsync(CancellationToken ct = default);
+
     Task<BackupManifestDto> CreateBackupAsync(string trigger, CancellationToken ct = default);
 
     Task<BackupRestoreResultDto> ScheduleRestoreAsync(Guid id, string confirm, CancellationToken ct = default);

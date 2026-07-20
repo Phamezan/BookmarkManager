@@ -39,8 +39,8 @@ public static partial class BookmarkTagClassifier
             return new(BookmarkTagDomain.Manga, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "manga folder/host signal");
         }
 
-        if (HasNovelFolderSignal(folderText, folderTokens) || 
-            HasAnyUrlSignal(urlText, "novel", "royalroad", "scribblehub", "wuxiaworld", "/ln/", "/wn/") ||
+        if (HasNovelFolderSignal(folderText, folderTokens) ||
+            HasNovelUrlSignal(urlText) ||
             HasNovelTitleSignal(title))
         {
             return new(BookmarkTagDomain.Novel, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "novel folder/host/title signal");
@@ -94,6 +94,33 @@ public static partial class BookmarkTagClassifier
     private static bool HasAnyUrlSignal(string value, params string[] needles)
         => needles.Any(value.Contains);
 
+    // Host stems and path segments — never bare Contains("novel"), which false-positives on
+    // "novelty", "innovation", etc.
+    private static readonly string[] NovelHostStems =
+    [
+        "royalroad", "scribblehub", "wuxiaworld", "novelfire", "novelfull",
+        "novelcool", "novelupdates", "novelbin", "novelhall", "lightnovel",
+        "novelusb", "ranobedb"
+    ];
+
+    private static bool HasNovelUrlSignal(string urlText)
+    {
+        if (string.IsNullOrWhiteSpace(urlText))
+            return false;
+
+        if (HasAnyUrlSignal(urlText, "/ln/", "/wn/"))
+            return true;
+
+        if (NovelPathSegmentRegex().IsMatch(urlText))
+            return true;
+
+        var host = urlText;
+        if (Uri.TryCreate(urlText, UriKind.Absolute, out var uri))
+            host = uri.Host;
+
+        return NovelHostStems.Any(stem => host.Contains(stem, StringComparison.Ordinal));
+    }
+
     private static IReadOnlySet<string> Tokenize(string? value)
         => TokenRegex().Matches(value ?? string.Empty)
             .Select(match => match.Value.ToLowerInvariant())
@@ -101,83 +128,6 @@ public static partial class BookmarkTagClassifier
 
     private static string NormalizeForPhraseMatching(string? value)
         => WhitespaceRegex().Replace(TokenSeparatorRegex().Replace(value ?? string.Empty, " ").ToLowerInvariant(), " ").Trim();
-
-    private static readonly string[] SiteKeywords = new[]
-    {
-        "scans", "scan", "translations", "translation", "novel", "novels", "manga", "anime", 
-        "webtoon", "webtoons", "read", "watch", "official", "site", "cool", "usb", "hub", "full", 
-        "updates", "scanlation", "scanlations", "scantrad", "raw", "raws",
-        "ads", "ad", "popup", "popups", "pop-up", "pop-ups", "pop-ads"
-    };
-
-    private static bool IsSiteSegment(string segment, string? url)
-    {
-        var normalized = segment.ToLowerInvariant().Trim();
-        
-        if (normalized.EndsWith(".com") || normalized.EndsWith(".org") || normalized.EndsWith(".net") ||
-            normalized.EndsWith(".co") || normalized.EndsWith(".me") || normalized.EndsWith(".info") ||
-            normalized.EndsWith(".xyz") || normalized.EndsWith(".to") || normalized.EndsWith(".tv") ||
-            normalized.Contains(".com/") || normalized.Contains(".org/"))
-        {
-            return true;
-        }
-
-        var tokens = Tokenize(segment);
-        if (SiteKeywords.Any(tokens.Contains))
-        {
-            return true;
-        }
-
-        if (!string.IsNullOrEmpty(url))
-        {
-            try
-            {
-                var uri = new Uri(url);
-                var host = uri.Host.ToLowerInvariant();
-                var hostParts = host.Split('.');
-                foreach (var part in hostParts)
-                {
-                    if (part.Length > 3 && normalized.Contains(part))
-                    {
-                        return true;
-                    }
-                }
-            }
-            catch
-            {
-                // Ignore invalid URIs
-            }
-        }
-
-        return false;
-    }
-
-    private static string CleanInnerSegment(string segment)
-    {
-        var result = segment.Trim();
-        
-        if (result.StartsWith("read online ", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(12).Trim();
-        else if (result.StartsWith("watch online ", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(13).Trim();
-        else if (result.StartsWith("read ", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(5).Trim();
-        else if (result.StartsWith("watch ", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(6).Trim();
-
-        if (result.EndsWith(" online for free", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(0, result.Length - 16).Trim();
-        else if (result.EndsWith(" free online", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(0, result.Length - 12).Trim();
-        else if (result.EndsWith(" online", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(0, result.Length - 7).Trim();
-        else if (result.EndsWith(" for free", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(0, result.Length - 9).Trim();
-        else if (result.EndsWith(" free", StringComparison.OrdinalIgnoreCase))
-            result = result.Substring(0, result.Length - 5).Trim();
-
-        return result;
-    }
 
     public static string CleanTitle(string title, string? url = null)
     {
@@ -193,18 +143,6 @@ public static partial class BookmarkTagClassifier
                lower.Contains("scribblehub") || lower.Contains("novel-book");
     }
 
-    [GeneratedRegex(@"\[[^\]]*\]|\([^\)]*\)")]
-    private static partial Regex BracketedTextRegex();
-
-    [GeneratedRegex(@"(?i)\b(?:episode|ep|chapter|ch|vol|volume|season|s)\.?\s*\d+(?:\.\d+)?\b")]
-    private static partial Regex EpisodeChapterSuffixRegex();
-
-    [GeneratedRegex(@"(?i)\s+[-|:]\s+(?:novel updates|webtoon xyz|read online|official site|home)$")]
-    private static partial Regex SiteSuffixRegex();
-
-    [GeneratedRegex(@"\s+\d+(?:\.\d+)?$")]
-    private static partial Regex TrailingNumberRegex();
-
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
 
@@ -213,4 +151,8 @@ public static partial class BookmarkTagClassifier
 
     [GeneratedRegex(@"[^\p{L}\p{N}]+")]
     private static partial Regex TokenSeparatorRegex();
+
+    // Path segment /novel/ or /novels/ or /light-novel/ — not /novelty-...
+    [GeneratedRegex(@"/(?:light-?)?novels?(?:/|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex NovelPathSegmentRegex();
 }

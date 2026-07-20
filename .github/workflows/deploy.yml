@@ -1,3 +1,7 @@
+# NOTE: This deployment workflow is personal to the original author's server
+# setup (self-hosted runner, fixed path, own domain conventions). If you're
+# forking this repo, don't rely on this file as-is — write your own deploy
+# workflow for your own infrastructure.
 name: Deploy to Ubuntu Server
 
 on:

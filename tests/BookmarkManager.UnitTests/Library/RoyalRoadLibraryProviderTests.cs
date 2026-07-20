@@ -93,39 +93,4 @@ public sealed class RoyalRoadLibraryProviderTests
     {
         Assert.Null(RoyalRoadLibraryProvider.ParseFictionPage("<html><body>gone</body></html>", "1", "RoyalRoad"));
     }
-
-    [Fact]
-    public void ParseSyndicationFeed_ReadsFirstItem()
-    {
-        const string xml = """
-        <?xml version="1.0" encoding="UTF-8"?>
-        <rss version="2.0">
-          <channel>
-            <item>
-              <title>Chapter 120: The Reckoning</title>
-              <link>https://www.royalroad.com/fiction/21220/mother-of-learning/chapter/1234567/chapter-120</link>
-              <pubDate>Sat, 01 Jun 2024 12:00:00 GMT</pubDate>
-            </item>
-            <item>
-              <title>Chapter 119: Prelude</title>
-              <link>https://www.royalroad.com/fiction/21220/mother-of-learning/chapter/1234566/chapter-119</link>
-              <pubDate>Fri, 31 May 2024 12:00:00 GMT</pubDate>
-            </item>
-          </channel>
-        </rss>
-        """;
-
-        var release = RoyalRoadLibraryProvider.ParseSyndicationFeed(xml, "21220");
-
-        Assert.NotNull(release);
-        Assert.Equal("Chapter 120: The Reckoning", release!.LatestChapter);
-        Assert.Equal("https://www.royalroad.com/fiction/21220/mother-of-learning/chapter/1234567/chapter-120", release.SourceUrl);
-        Assert.NotNull(release.LastReleaseAt);
-    }
-
-    [Fact]
-    public void ParseSyndicationFeed_ReturnsNullWhenNoItems()
-    {
-        Assert.Null(RoyalRoadLibraryProvider.ParseSyndicationFeed("<rss><channel></channel></rss>", "21220"));
-    }
 }

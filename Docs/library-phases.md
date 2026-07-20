@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: Library feature shipped. Phases 1, 2, 7, 8, 9 = implemented. Phases 3–5 (tracking + release watcher + progress UX) were built then removed in Phase 8 — see Phase 8 entry. Phase 6 = implementation complete, manual E2E pending. Do not treat any phase as open work; this is history.
+---
+
 # Library — Unified Discovery Catalog & Latest Chapter Tracker
 
 Implementation phases. UI mock (Phase 0) already done on branch `Library`.
@@ -6,7 +12,7 @@ Implementation phases. UI mock (Phase 0) already done on branch `Library`.
 release checking (RoyalRoad, NovelUpdates). Product boundary in `CLAUDE.md` says "no
 auto-scraping" — this feature is an explicit scope change: outbound read-only HTTP to
 public catalog APIs/feeds, still LAN-only, single-user, SQLite. `CLAUDE.md` +
-`AGENTS/AGENT.md` must be updated in Phase 1.
+`.agents/AGENT.md` must be updated in Phase 1.
 
 ---
 

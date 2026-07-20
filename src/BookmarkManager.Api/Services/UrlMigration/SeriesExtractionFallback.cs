@@ -39,7 +39,31 @@ public static partial class SeriesExtractionFallback
 
     private static string TitleCase(string value) =>
         string.Join(' ', value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .Select(word => char.ToUpperInvariant(word[0]) + word[1..]));
+            .Select(TitleCaseWord));
+
+    private static string TitleCaseWord(string word)
+    {
+        // Slug tokens arrive lowercased. Preserve roman numerals (III) and rank-style
+        // acronyms (SSS, SS) as full uppercase instead of "Iii" / "Sss".
+        if (ShouldPreserveUpperToken(word))
+            return word.ToUpperInvariant();
+
+        return char.ToUpperInvariant(word[0]) + word[1..];
+    }
+
+    private static bool ShouldPreserveUpperToken(string word)
+    {
+        if (string.IsNullOrEmpty(word))
+            return false;
+
+        if (RomanNumeralRegex().IsMatch(word))
+            return true;
+
+        // Repeated single letter 2-5× (SSS-class, SS-rank) — not ordinary words.
+        return word.Length is >= 2 and <= 5
+               && word.All(char.IsLetter)
+               && word.ToLowerInvariant().Distinct().Count() == 1;
+    }
 
     private static string? ExtractChapterFromPath(string? url)
     {
@@ -58,6 +82,10 @@ public static partial class SeriesExtractionFallback
         return match.Success ? match.Groups[1].Value : null;
     }
 
-    [GeneratedRegex(@"(?:chapter|ch|ep|episode)[-_/. ]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
+    // Word boundary before the marker so "research42" does not yield chapter "42".
+    [GeneratedRegex(@"(?:^|[^\p{L}\p{N}])(?:chapter|episode|ch|ep)[-_/. ]*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
     private static partial Regex ChapterRegex();
+
+    [GeneratedRegex(@"^(?:x|ix|iv|v?i{0,3}|i{1,3})$", RegexOptions.IgnoreCase)]
+    private static partial Regex RomanNumeralRegex();
 }

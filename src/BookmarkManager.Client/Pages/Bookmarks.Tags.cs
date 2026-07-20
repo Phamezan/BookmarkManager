@@ -30,6 +30,11 @@ public partial class Bookmarks
         {
             query = query.Where(i => i.Metadata?.IsFavorite == true);
         }
+        else if (_typeFilter == "Later")
+        {
+            query = query.Where(i =>
+                string.Equals(i.Metadata?.Status, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal));
+        }
 
         if (!string.IsNullOrWhiteSpace(_searchQuery))
         {
@@ -154,7 +159,7 @@ public partial class Bookmarks
         var mediumTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Medium").ToList();
         var originTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Origin").ToList();
         var genreTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Genre").ToList();
-        var otherTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Other").Take(15).ToList();
+        var otherTags = tags.Where(t => TagCategorizer.GetCategory(t.Tag) == "Other").ToList();
 
         if (mediumTags.Count > 0)
             groups.Add(new TagGroup("Format", mediumTags));

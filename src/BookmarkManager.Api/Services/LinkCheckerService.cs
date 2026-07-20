@@ -133,6 +133,7 @@ public class LinkCheckerService : BackgroundService
         var httpClient = _httpClientFactory.CreateClient("LinkChecker");
         var semaphore = new SemaphoreSlim(5);
         var brokenIds = new List<Guid>();
+        var failedIds = new List<Guid>();
 
         var tasks = bookmarks.Select(async bm =>
         {
@@ -150,6 +151,12 @@ public class LinkCheckerService : BackgroundService
             }
             catch (Exception ex)
             {
+                // The check itself failed (our network, their timeout reset, etc.) —
+                // leave this bookmark's previous flag untouched rather than guess.
+                lock (failedIds)
+                {
+                    failedIds.Add(bm.Id);
+                }
                 _logger.LogWarning("Failed to check link {Url}: {Message}", bm.Url, ex.Message);
             }
             finally
@@ -162,16 +169,21 @@ public class LinkCheckerService : BackgroundService
 
         _logger.LogInformation("Finished checking links. Found {Count} broken links.", brokenIds.Count);
 
-        if (brokenIds.Count > 0)
+        // Report-only: flag bookmarks in place — no folder moves. The URL migrator
+        // reads IsLinkBroken for its dead-domain candidates.
+        var checkedAt = DateTime.UtcNow;
+        var brokenSet = brokenIds.ToHashSet();
+        var failedSet = failedIds.ToHashSet();
+        foreach (var bm in bookmarks)
         {
-            var brokenLinksFolder = await BrokenLinksFolderHelper.GetOrCreateFolderAsync(db, _logger, ct);
-            if (brokenLinksFolder == null)
+            if (failedSet.Contains(bm.Id))
             {
-                return;
+                continue;
             }
-
-            await BrokenLinksFolderHelper.MoveBookmarksIntoFolderAsync(db, brokenLinksFolder, brokenIds, _logger, ct);
+            bm.IsLinkBroken = brokenSet.Contains(bm.Id);
+            bm.LinkCheckedAt = checkedAt;
         }
+        await db.SaveChangesAsync(ct);
     }
 
     private async Task<bool> IsLinkBrokenAsync(HttpClient client, string url, CancellationToken ct)
@@ -183,7 +195,20 @@ public class LinkCheckerService : BackgroundService
 
             if (!response.IsSuccessStatusCode)
             {
-                return true;
+                var status = (int)response.StatusCode;
+                // Bot protection / auth walls / rate limits mean the site is alive.
+                if (status is 401 or 403 or 429)
+                {
+                    return false;
+                }
+                // Cloudflare (and compatible WAFs) answering with a challenge — alive.
+                if (response.Headers.Contains("cf-mitigated"))
+                {
+                    return false;
+                }
+                // Only confidently-dead statuses count as broken; 5xx and odd 4xx
+                // are "unknown" and never flagged.
+                return status is 404 or 410;
             }
 
             using var stream = await response.Content.ReadAsStreamAsync(ct);

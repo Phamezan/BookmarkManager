@@ -77,13 +77,13 @@ internal sealed partial class AiBookmarkAutoTaggingService
         var merged = new List<ProvenanceTagEntry>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        Add(mediaTypeTag, "DomainRoute");
+        Add(mediaTypeTag, "DomainRoute", null, null);
         foreach (var entry in sourceTags)
-            Add(entry.Tag, entry.Provider);
+            Add(entry.Tag, entry.Provider, entry.MatchScore, entry.MatchedTitle);
 
         return merged.Take(MaxTags).ToList();
 
-        void Add(string? tag, string provider)
+        void Add(string? tag, string provider, double? matchScore, string? matchedTitle)
         {
             var trimmed = tag?.Trim();
             if (string.IsNullOrWhiteSpace(trimmed))
@@ -93,7 +93,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
                 return;
 
             if (seen.Add(trimmed))
-                merged.Add(new ProvenanceTagEntry(trimmed, provider));
+                merged.Add(new ProvenanceTagEntry(trimmed, provider, matchScore, matchedTitle));
         }
     }
 

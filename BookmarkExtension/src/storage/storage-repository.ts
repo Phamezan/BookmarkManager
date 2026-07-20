@@ -5,6 +5,7 @@ import type {
   ExtensionEvent,
   ExtensionSettings,
   OutboxEntry,
+  PendingCreateDraft,
   PendingDuplicateState,
   ServerConfig,
   ShortcutEditorState,
@@ -20,13 +21,19 @@ type ChromeStorageLocal = {
   remove(keys: string | string[]): Promise<void>;
 };
 
-const OUTBOX_THRESHOLD = 5000;
-
 /** Bookmarks Bar node id used as the default quick-bookmark destination. */
 export const DEFAULT_FOLDER_ID = "1";
 const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
+const PENDING_CREATE_DRAFT_KEY = "bm.pendingCreateDraft";
 const PENDING_DUPLICATE_KEY = "bm.pendingDuplicateState";
 const LAST_ACTIVE_FOLDER_KEY = "bm.lastActiveFolderId";
+const COVER_STASH_KEY = "bm.coverStash";
+const COVER_STASH_TTL_MS = 10 * 60 * 1000;
+
+interface CoverStashEntry {
+  cover: string;
+  at: number;
+}
 const BACKUP_STATE_KEY = "bm.backupState";
 const BACKUP_SETTINGS_KEY = "bm.backupSettings";
 
@@ -68,6 +75,19 @@ export class ChromeStorageRepository implements StorageRepository {
     await this.storage.remove(SHORTCUT_EDITOR_KEY);
   }
 
+  async getPendingCreateDraft(): Promise<PendingCreateDraft | null> {
+    const result = await this.storage.get(PENDING_CREATE_DRAFT_KEY);
+    return (result[PENDING_CREATE_DRAFT_KEY] as PendingCreateDraft | undefined) ?? null;
+  }
+
+  async savePendingCreateDraft(draft: PendingCreateDraft): Promise<void> {
+    await this.storage.set({ [PENDING_CREATE_DRAFT_KEY]: draft });
+  }
+
+  async clearPendingCreateDraft(): Promise<void> {
+    await this.storage.remove(PENDING_CREATE_DRAFT_KEY);
+  }
+
   async getPendingDuplicateState(): Promise<PendingDuplicateState | null> {
     const result = await this.storage.get(PENDING_DUPLICATE_KEY);
     return (result[PENDING_DUPLICATE_KEY] as PendingDuplicateState | undefined) ?? null;
@@ -88,6 +108,30 @@ export class ChromeStorageRepository implements StorageRepository {
 
   async saveLastActiveFolder(folderId: string): Promise<void> {
     await this.storage.set({ [LAST_ACTIVE_FOLDER_KEY]: folderId });
+  }
+
+  async saveStashedCover(url: string, coverImageUrl: string): Promise<void> {
+    const now = Date.now();
+    const map = await this.readCoverStash();
+    const pruned: Record<string, CoverStashEntry> = {};
+    for (const [key, entry] of Object.entries(map)) {
+      if (now - entry.at <= COVER_STASH_TTL_MS) pruned[key] = entry;
+    }
+    pruned[url] = { cover: coverImageUrl, at: now };
+    await this.storage.set({ [COVER_STASH_KEY]: pruned });
+  }
+
+  async getStashedCover(url: string): Promise<string | null> {
+    const map = await this.readCoverStash();
+    const entry = map[url];
+    if (!entry) return null;
+    if (Date.now() - entry.at > COVER_STASH_TTL_MS) return null;
+    return entry.cover;
+  }
+
+  private async readCoverStash(): Promise<Record<string, CoverStashEntry>> {
+    const result = await this.storage.get(COVER_STASH_KEY);
+    return (result[COVER_STASH_KEY] as Record<string, CoverStashEntry> | undefined) ?? {};
   }
 
   async enqueueEvent(event: ExtensionEvent): Promise<void> {
@@ -133,16 +177,6 @@ export class ChromeStorageRepository implements StorageRepository {
       await this.storage.set({ "bm.outbox": outbox });
     });
     await this.outboxChain;
-  }
-
-  async getOutboxCount(): Promise<number> {
-    const result = await this.storage.get("bm.outbox");
-    const outbox = (result["bm.outbox"] as Record<string, OutboxEntry>) ?? {};
-    return Object.keys(outbox).length;
-  }
-
-  isAtThreshold(count: number): boolean {
-    return count >= OUTBOX_THRESHOLD;
   }
 
   async saveCorrelation(value: CommandCorrelation): Promise<void> {
@@ -251,6 +285,7 @@ export class ChromeStorageRepository implements StorageRepository {
       "bm.snapshotState",
       "bm.syncStatus",
       SHORTCUT_EDITOR_KEY,
+      PENDING_CREATE_DRAFT_KEY,
       PENDING_DUPLICATE_KEY,
       LAST_ACTIVE_FOLDER_KEY,
       BACKUP_STATE_KEY,

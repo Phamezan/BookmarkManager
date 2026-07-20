@@ -38,6 +38,10 @@ public class BookmarkNode
     public DateTime? AniListMatchedAt { get; set; }
     public string? MediaStatus { get; set; }
     public DateTime? LastMatchAttemptAt { get; set; }
+    // Set by the link checker: last scan result for this URL. Broken bookmarks stay in
+    // place (report-only) — the URL migrator reads this flag for its dead-domain list.
+    public bool IsLinkBroken { get; set; }
+    public DateTime? LinkCheckedAt { get; set; }
 
     // When AniList last confirmed this series (following any sequel chain) has NO upcoming
     // episodes. Lets the calendar skip re-querying finished/no-sequel series for days instead of

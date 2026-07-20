@@ -119,20 +119,8 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<TriageJobStatusDto>(HttpMethod.Post, "api/bookmarks/triage-domain", request, cancellationToken)
            ?? new TriageJobStatusDto();
 
-
-
-    public async Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default)
-        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/auto-tagger/run", cancellationToken));
-
-    public async Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<AutoTaggerStatusDto>("api/bookmarks/auto-tagger/status", cancellationToken)
-           ?? new AutoTaggerStatusDto();
-
     public async Task<List<string>> SuggestAiTagsAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<List<string>>(HttpMethod.Post, $"api/bookmarks/{bookmarkId}/ai-tags", cancellationToken: cancellationToken) ?? [];
-    public async Task<RetagAllResult> RetagAllAsync(bool overwrite, CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<RetagAllResult>(HttpMethod.Post, $"api/bookmarks/retag-all?overwrite={overwrite.ToString().ToLowerInvariant()}", null, cancellationToken)
-           ?? new RetagAllResult();
 
     public async Task<List<TagCountDto>> GetTagsAsync(Guid? folderId = null, CancellationToken cancellationToken = default)
     {
@@ -143,10 +131,6 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<BatchTagResponse>(HttpMethod.Post, "api/bookmarks/ai-tags/batch", request, cancellationToken)
            ?? new BatchTagResponse();
-
-    public async Task<AiAutoTagSummaryDto> AiAutoTagFolderAsync(Guid folderId, bool forceRefresh = false, CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<AiAutoTagSummaryDto>(HttpMethod.Post, $"api/bookmarks/{folderId}/ai-auto-tag?forceRefresh={forceRefresh.ToString().ToLowerInvariant()}", null, cancellationToken)
-           ?? new AiAutoTagSummaryDto();
 
     public async Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<AiAutoTagSummaryDto>(HttpMethod.Post, $"api/bookmarks/{folderId}/ai-auto-tag/batch", request, cancellationToken)
@@ -168,6 +152,10 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.GetAsync<Dictionary<Guid, int>>("api/bookmarks/untagged-counts", cancellationToken)
            ?? new Dictionary<Guid, int>();
 
+    public async Task<Dictionary<Guid, int>> GetFolderCountsAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<Dictionary<Guid, int>>("api/bookmarks/folder-counts", cancellationToken)
+           ?? new Dictionary<Guid, int>();
+
     public async Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default)
     {
         try
@@ -187,26 +175,6 @@ public sealed class HttpBookmarkService : IBookmarkService
 
     public async Task<List<TagProvenanceDto>> GetTagProvenanceAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<TagProvenanceDto>>($"api/bookmarks/{bookmarkId}/tag-provenance", cancellationToken) ?? [];
-
-    public async Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
-        => await _apiClient.GetAsync<List<AnimeMatchCandidateDto>>($"api/anime-calendar/candidates/{bookmarkId}", cancellationToken) ?? [];
-
-    public async Task<BookmarkNodeDto?> ConfirmAnimeMatchAsync(Guid bookmarkId, AnimeMatchCandidateDto candidate, CancellationToken cancellationToken = default)
-    {
-        var request = new ConfirmAnimeMatchRequest
-        {
-            BookmarkId = bookmarkId,
-            Source = candidate.Source,
-            AniListId = candidate.AniListId,
-            Status = candidate.Status
-        };
-        return await InvokeOrNullAsync<BookmarkNodeDto>(
-            () => _apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Post, "api/anime-calendar/match", request, cancellationToken));
-    }
-
-    public async Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
-        => await InvokeOrNullAsync<BookmarkNodeDto>(
-            () => _apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Delete, $"api/anime-calendar/match/{bookmarkId}", cancellationToken: cancellationToken));
 
     public async Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
     {

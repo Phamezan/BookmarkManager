@@ -14,19 +14,6 @@ public partial class Bookmarks
         return updatedAt.ToLocalTime().ToString("g");
     }
 
-    private static string RowClass(BookmarkNodeDto item)
-    {
-        var typeClass = item.Type == NodeType.Folder ? "is-folder" : "is-bookmark";
-        var state = item.SyncState switch
-        {
-            SyncState.Pending => "is-pending",
-            SyncState.Failed => "is-failed",
-            _ => "is-synced"
-        };
-
-        return $"bookmark-row {typeClass} {state}";
-    }
-
     private static string? GetFaviconUrl(string url)
     {
         try
@@ -40,26 +27,6 @@ public partial class Bookmarks
         {
             return null;
         }
-    }
-
-    protected static string GetRootIcon(string title)
-    {
-        var lower = title.ToLowerInvariant();
-        if (lower.Contains("mobile"))
-            return Icons.Material.Filled.PhoneAndroid;
-        if (lower.Contains("other"))
-            return Icons.Material.Filled.FolderOpen;
-        return Icons.Material.Filled.Folder;
-    }
-
-    protected static string GetRootPath(string title)
-    {
-        var lower = title.ToLowerInvariant();
-        if (lower.Contains("mobile"))
-            return "/root/mobile";
-        if (lower.Contains("other"))
-            return "/root/other";
-        return "/root/bar";
     }
 
 }

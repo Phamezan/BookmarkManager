@@ -2,7 +2,6 @@ namespace BookmarkManager.Contracts;
 
 public sealed class SnapshotRootPayloadDto
 {
-    public Guid TrackedRootId { get; set; }
     public BookmarkNodeDto Root { get; set; } = null!;
 }
 

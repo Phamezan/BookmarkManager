@@ -212,7 +212,7 @@ public partial class AnimeCalendar
     private void SetView(AnimeCalendarView view) => _view = view;
 
     // Prev/Next shift by a whole month for the Month view, otherwise by a week -
-    // Agenda/Week span a week and Day steps a day at a time.
+    // Week spans a week and Day steps a day at a time.
     private void GoPrev() => Shift(-1);
     private void GoNext() => Shift(1);
 

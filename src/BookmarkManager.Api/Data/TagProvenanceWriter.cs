@@ -10,7 +10,7 @@ internal static class TagProvenanceWriter
     public static void Replace(
         AppDbContext db,
         Guid bookmarkId,
-        IEnumerable<(string Tag, string Provider)> tags,
+        IEnumerable<(string Tag, string Provider, double? MatchScore, string? MatchedTitle)> tags,
         double? confidence)
     {
         // Remove rows added earlier in this unit of work (a delete query cannot
@@ -23,7 +23,7 @@ internal static class TagProvenanceWriter
 
         var now = DateTime.UtcNow;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (tag, provider) in tags)
+        foreach (var (tag, provider, matchScore, matchedTitle) in tags)
         {
             var trimmed = tag?.Trim();
             if (string.IsNullOrWhiteSpace(trimmed) || !seen.Add(trimmed))
@@ -35,6 +35,8 @@ internal static class TagProvenanceWriter
                 Tag = trimmed,
                 Provider = provider,
                 Confidence = confidence,
+                MatchScore = matchScore,
+                MatchedTitle = matchedTitle,
                 CreatedAt = now
             });
         }

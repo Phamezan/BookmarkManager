@@ -307,7 +307,7 @@
                 </MudButton>
             </MudStack>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Scan your active bookmarks for dead domains or 404 pages. Broken links will be moved automatically to the "Broken Links" folder.
+                Scan your active bookmarks for dead domains or 404 pages. Broken links are flagged in place (nothing is moved) and feed the URL Migrator's dead-domain list. Bot-protected sites (401/403/429, Cloudflare challenges) count as alive.
             </MudText>
             @if (_linkCheckerRunning)
             {

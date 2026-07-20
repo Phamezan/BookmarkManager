@@ -57,8 +57,8 @@ public sealed class BookmarkSidebarTests
         Assert.True(invoked);
     }
 
-    // The two icon buttons above only wire an EventCallback — the actual expand-all /
-    // collapse-all set computation lives in FolderExpansionHelper (used by Bookmarks.Tree.cs,
+    // The two icon buttons above only wire an EventCallback — the actual expand-all
+    // set computation lives in FolderExpansionHelper (used by Bookmarks.Tree.cs,
     // which owns folder-expansion state). Covered here directly since it's pure logic.
 
     private static List<FolderTreeNodeDto> BuildTree(out Guid rootId, out Guid childId, out Guid grandchildId, out Guid siblingId)
@@ -104,27 +104,5 @@ public sealed class BookmarkSidebarTests
         Assert.Contains(childId, ids);
         Assert.Contains(grandchildId, ids);
         Assert.Contains(siblingId, ids);
-    }
-
-    [Fact]
-    public void CollapseAll_AlwaysReturnsEmptySet()
-    {
-        var keep = FolderExpansionHelper.CollapseAll();
-
-        Assert.Empty(keep);
-    }
-
-    [Fact]
-    public void CollapseAll_IgnoringSelectionOrExpansionState_StillReturnsEmptySet()
-    {
-        // Regression guard for true collapse-all: previously this kept ancestors of the
-        // selected folder expanded. Now collapse-all always clears everything.
-        BuildTree(out _, out var childId, out var grandchildId, out _);
-
-        var keep = FolderExpansionHelper.CollapseAll();
-
-        Assert.DoesNotContain(childId, keep);
-        Assert.DoesNotContain(grandchildId, keep);
-        Assert.Empty(keep);
     }
 }

@@ -10,6 +10,7 @@ namespace BookmarkManager.Api.Services;
 public sealed partial class ExtensionService(
     AppDbContext db,
     BookmarkTaggingService bookmarkTagging,
+    BookmarkManager.Api.Services.Library.BookmarkSeriesMatchService matchService,
     ILogger<ExtensionService> logger) : IExtensionService
 {
     public async Task<HeartbeatResponse> HandleHeartbeatAsync(HeartbeatRequest request, CancellationToken ct)

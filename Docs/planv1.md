@@ -1,3 +1,9 @@
+---
+status: done
+last_verified: 2026-07-17
+note: MVP frontend revamp shipped. Kept as human entry point per AGENTS.md — historical intent only, not a TODO list. Treat all "planned" verbs as describing shipped state.
+---
+
 # Bookmark Manager MVP Frontend Plan v1
 
 ## Purpose

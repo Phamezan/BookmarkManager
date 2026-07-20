@@ -21,7 +21,6 @@ public class FakeBookmarkService : IBookmarkService
     public List<DeadDomainCandidateDto> DeadDomainCandidates { get; set; } = [];
     public List<UrlMigrationProposalDto> UrlMigrationProposals { get; set; } = [];
     public UrlMigrationStatusDto? UrlMigrationStatus { get; set; } = null;
-    public AutoTaggerStatusDto AutoTaggerStatus { get; set; } = new();
     public TriageJobStatusDto TriageStatus { get; set; } = new();
 
     public Func<Guid, string, string?, Task<BookmarkNodeDto>>? OnCreateBookmark { get; set; }
@@ -38,15 +37,10 @@ public class FakeBookmarkService : IBookmarkService
     public Func<Task<bool>>? OnTriggerLinkCheck { get; set; }
     public Func<Task<bool>>? OnIsLinkCheckRunning { get; set; }
     public Func<TriageDomainRequest, Task<TriageJobStatusDto>>? OnTriageDomain { get; set; }
-    public Func<Task<bool>>? OnTriggerAutoTagger { get; set; }
-    public Func<Guid, bool, Task<AiAutoTagSummaryDto>>? OnAiAutoTagFolder { get; set; }
     public Func<Guid, AiAutoTagBatchRequestDto, Task<AiAutoTagSummaryDto>>? OnAiAutoTagFolderBatch { get; set; }
     public Func<AiTaggingSettingsDto, Task<AiTaggingSettingsDto>>? OnSaveAiTaggingSettings { get; set; }
     public Func<TestAiKeyRequest, Task<TestAiKeyResponse>>? OnTestAiTaggingKey { get; set; }
     public Func<BulkSaveTagsRequest, Task<bool>>? OnBulkSaveTags { get; set; }
-    public Func<Guid, Task<List<AnimeMatchCandidateDto>>>? OnGetAnimeMatchCandidates { get; set; }
-    public Func<Guid, AnimeMatchCandidateDto, Task<BookmarkNodeDto?>>? OnConfirmAnimeMatch { get; set; }
-    public Func<Guid, Task<BookmarkNodeDto?>>? OnClearAnimeMatch { get; set; }
     public Func<List<Guid>, List<Guid>?, Task<AutoMatchAnimeResponse>>? OnAutoMatchAnime { get; set; }
     public Func<string, bool, string?, Task<bool>>? OnStartUrlMigration { get; set; }
     public Func<List<Guid>, Task<DecideProposalsResponse?>>? OnApproveProposals { get; set; }
@@ -120,12 +114,7 @@ public class FakeBookmarkService : IBookmarkService
     public Task<TriageJobStatusDto> TriageDomainAsync(TriageDomainRequest request, CancellationToken cancellationToken = default) 
         => OnTriageDomain != null ? OnTriageDomain(request) : Task.FromResult(TriageStatus);
 
-    public Task<bool> TriggerAutoTaggerAsync(CancellationToken cancellationToken = default) 
-        => OnTriggerAutoTagger != null ? OnTriggerAutoTagger() : Task.FromResult(false);
-
-    public Task<AutoTaggerStatusDto> GetAutoTaggerStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(AutoTaggerStatus);
     public Task<List<string>> SuggestAiTagsAsync(Guid bookmarkId, CancellationToken cancellationToken = default) => Task.FromResult(SuggestedAiTags);
-    public Task<RetagAllResult> RetagAllAsync(bool overwrite, CancellationToken cancellationToken = default) => Task.FromResult(new RetagAllResult());
 
     public Task<List<TagCountDto>> GetTagsAsync(Guid? folderId = null, CancellationToken cancellationToken = default)
     {
@@ -138,9 +127,6 @@ public class FakeBookmarkService : IBookmarkService
     public Task<BatchTagResponse> TagBatchAsync(BatchTagRequest request, CancellationToken cancellationToken = default)
         => OnTagBatch != null ? OnTagBatch(request) : Task.FromResult(TagBatchResponse);
     
-    public Task<AiAutoTagSummaryDto> AiAutoTagFolderAsync(Guid folderId, bool forceRefresh = false, CancellationToken cancellationToken = default) 
-        => OnAiAutoTagFolder != null ? OnAiAutoTagFolder(folderId, forceRefresh) : Task.FromResult(new AiAutoTagSummaryDto());
-
     public Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default) 
         => OnAiAutoTagFolderBatch != null ? OnAiAutoTagFolderBatch(folderId, request) : Task.FromResult(new AiAutoTagSummaryDto());
 
@@ -153,8 +139,10 @@ public class FakeBookmarkService : IBookmarkService
         => OnTestAiTaggingKey != null ? OnTestAiTaggingKey(request) : Task.FromResult(new TestAiKeyResponse { Success = true, Message = "fake" });
 
     public Dictionary<Guid, int> UntaggedCounts { get; set; } = new();
+    public Dictionary<Guid, int> FolderCounts { get; set; } = new();
 
     public Task<Dictionary<Guid, int>> GetUntaggedCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(UntaggedCounts);
+    public Task<Dictionary<Guid, int>> GetFolderCountsAsync(CancellationToken cancellationToken = default) => Task.FromResult(FolderCounts);
     
     public Task<bool> BulkSaveTagsAsync(BulkSaveTagsRequest request, CancellationToken cancellationToken = default) 
         => OnBulkSaveTags != null ? OnBulkSaveTags(request) : Task.FromResult(false);
@@ -164,15 +152,6 @@ public class FakeBookmarkService : IBookmarkService
 
     public Task<List<TagProvenanceDto>> GetTagProvenanceAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
         => Task.FromResult(new List<TagProvenanceDto>());
-
-    public Task<List<AnimeMatchCandidateDto>> GetAnimeMatchCandidatesAsync(Guid bookmarkId, CancellationToken cancellationToken = default) 
-        => OnGetAnimeMatchCandidates != null ? OnGetAnimeMatchCandidates(bookmarkId) : Task.FromResult(new List<AnimeMatchCandidateDto>());
-
-    public Task<BookmarkNodeDto?> ConfirmAnimeMatchAsync(Guid bookmarkId, AnimeMatchCandidateDto candidate, CancellationToken cancellationToken = default) 
-        => OnConfirmAnimeMatch != null ? OnConfirmAnimeMatch(bookmarkId, candidate) : Task.FromResult<BookmarkNodeDto?>(null);
-
-    public Task<BookmarkNodeDto?> ClearAnimeMatchAsync(Guid bookmarkId, CancellationToken cancellationToken = default) 
-        => OnClearAnimeMatch != null ? OnClearAnimeMatch(bookmarkId) : Task.FromResult<BookmarkNodeDto?>(null);
 
     public Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default)
         => OnAutoMatchAnime != null ? OnAutoMatchAnime(folderIds, bookmarkIds) : Task.FromResult(new AutoMatchAnimeResponse());

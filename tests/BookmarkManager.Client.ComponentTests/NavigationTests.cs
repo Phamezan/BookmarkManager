@@ -1,7 +1,9 @@
 using BookmarkManager.Client.Layout;
 using BookmarkManager.Client.Pages;
+using BookmarkManager.Client.Services;
 using Bunit;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BookmarkManager.Client.ComponentTests;
 
@@ -10,6 +12,7 @@ public sealed class NavigationTests : BunitContext
     [Fact]
     public void EveryNavigationTargetHasARoutableComponent()
     {
+        Services.AddSingleton(new NavHomeService());
         var navigation = Render<NavMenu>();
         var routePaths = typeof(Bookmarks).Assembly.ExportedTypes
             .SelectMany(type => type.GetCustomAttributes(typeof(RouteAttribute), inherit: false))
