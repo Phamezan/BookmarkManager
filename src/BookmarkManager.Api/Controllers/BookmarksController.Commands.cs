@@ -1,5 +1,6 @@
 using AutoMapper;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
@@ -50,6 +51,7 @@ public partial class BookmarksController
     // Auto-tag new bookmarks created through the web UI/API.
     if (node.Type == NodeType.Bookmark)
     {
+        BookmarkPlanToReadHeuristic.ApplyAutoStatus(node);
         var folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, parentNode?.Id, ct);
         var autoTags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
         if (autoTags.Count > 0)
@@ -130,7 +132,11 @@ public partial class BookmarksController
 
     node.Title = title;
     if (url is not null)
+    {
         node.Url = url;
+        if (node.Type == NodeType.Bookmark)
+            BookmarkPlanToReadHeuristic.ApplyAutoStatus(node);
+    }
     node.Version++;
     node.UpdatedAt = DateTime.UtcNow;
     node.SyncState = SyncState.Pending;

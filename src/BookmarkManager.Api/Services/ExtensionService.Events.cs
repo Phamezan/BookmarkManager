@@ -217,6 +217,9 @@ public sealed partial class ExtensionService
                     ParentBrowserNodeId = parentBrowserNodeId
                 };
 
+                if (newNode.Type == NodeType.Bookmark)
+                    BookmarkPlanToReadHeuristic.ApplyAutoStatus(newNode);
+
                 if (newNode.Type == NodeType.Bookmark && string.IsNullOrEmpty(newNode.Tags))
                 {
                     // Auto-tagging is an external HTTP call — deferred until
@@ -256,7 +259,11 @@ public sealed partial class ExtensionService
                     if ((root.TryGetProperty("title", out var t) || root.TryGetProperty("Title", out t)) && t.ValueKind != JsonValueKind.Null)
                         existing.Title = t.GetString() ?? "";
                     if (root.TryGetProperty("url", out var u) || root.TryGetProperty("Url", out u))
+                    {
                         existing.Url = u.ValueKind == JsonValueKind.Null ? null : u.GetString();
+                        if (existing.Type == NodeType.Bookmark)
+                            BookmarkPlanToReadHeuristic.ApplyAutoStatus(existing);
+                    }
                     existing.UpdatedAt = now;
                     break;
 
