@@ -6,7 +6,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
 {
     private sealed record SourceTagLookupKey(BookmarkTagDomain Domain, string CanonicalTitle);
 
-    internal sealed record ProvenanceTagEntry(string Tag, string Provider);
+    internal sealed record ProvenanceTagEntry(string Tag, string Provider, double? MatchScore = null, string? MatchedTitle = null);
 
     private sealed record SourceTagLookupRequest(
         SourceTagLookupKey Key,

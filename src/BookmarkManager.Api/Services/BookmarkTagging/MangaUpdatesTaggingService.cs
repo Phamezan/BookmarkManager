@@ -100,7 +100,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             if (_tagsCache.TryGetValue((context.Domain, cachedSeries.SeriesId.Value), out var cachedTags) && cachedTags.ExpiresAt > now)
             {
                 ProviderAutoTagTelemetry.RecordCacheHit("MangaUpdates", "lookup");
-                return new(cachedTags.Tags.ToList(), cachedTags.WasRejected, cachedTags.RejectionReason, cachedTags.CanonicalTitle);
+                return new(cachedTags.Tags.ToList(), cachedTags.WasRejected, cachedTags.RejectionReason, cachedTags.CanonicalTitle, cachedTags.MatchScore);
             }
         }
 
@@ -116,7 +116,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                 return new([], false, null);
 
             if (!context.BypassCache && _tagsCache.TryGetValue((context.Domain, seriesId.Value), out var freshTags) && freshTags.ExpiresAt > now)
-                return new(freshTags.Tags.ToList(), freshTags.WasRejected, freshTags.RejectionReason, freshTags.CanonicalTitle);
+                return new(freshTags.Tags.ToList(), freshTags.WasRejected, freshTags.RejectionReason, freshTags.CanonicalTitle, freshTags.MatchScore);
 
             MangaUpdatesTagResult result;
             string? canonicalTitle = ExtractSeriesTitle(searchMatch?.SearchRecord);
@@ -137,6 +137,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             
             var wasRejected = !result.MatchesRequestedDomain && !result.Reason.StartsWith("Series lookup returned");
             var rejectionReason = wasRejected ? result.Reason : null;
+            var matchScore = wasRejected ? null : searchMatch?.Score;
             if (wasRejected)
                 canonicalTitle = null;
 
@@ -145,6 +146,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                 wasRejected,
                 rejectionReason,
                 canonicalTitle,
+                matchScore,
                 now.Add(result.Tags.Count == 0 ? EmptyCacheDuration : SuccessCacheDuration));
 
             if (wasRejected)
@@ -157,7 +159,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
                     result.Reason);
             }
 
-            return new(result.Tags.ToList(), wasRejected, rejectionReason, canonicalTitle);
+            return new(result.Tags.ToList(), wasRejected, rejectionReason, canonicalTitle, matchScore);
         }
         catch (Exception ex)
         {
@@ -186,7 +188,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             return null;
 
         var match = TryExtractBestSearchRecord(doc.RootElement, scoreQuery, requestedDomain, folderPath, url);
-        return match is null ? null : new SearchMatch(match.Value.SeriesId, match.Value.Record);
+        return match is null ? null : new SearchMatch(match.Value.SeriesId, match.Value.Record, match.Value.Score);
     }
 
     private async Task<MangaUpdatesTagResult> FetchSeriesTagsAsync(long seriesId, BookmarkTagDomain requestedDomain, CancellationToken cancellationToken)
@@ -281,7 +283,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
     public static long? TryExtractBestSeriesId(JsonElement root, string cleanQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url)
         => TryExtractBestSearchRecord(root, cleanQuery, requestedDomain, folderPath, url)?.SeriesId;
 
-    public static (long SeriesId, JsonElement Record)? TryExtractBestSearchRecord(JsonElement root, string cleanQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url)
+    public static (long SeriesId, JsonElement Record, double Score)? TryExtractBestSearchRecord(JsonElement root, string cleanQuery, BookmarkTagDomain requestedDomain, string? folderPath, string? url)
     {
         if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array)
             return null;
@@ -319,8 +321,8 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             }
         }
 
-        return bestScore >= 0.60 && bestId is not null && bestRecord is not null
-            ? (bestId.Value, bestRecord.Value)
+        return bestScore >= SimilarityThresholds.MangaUpdates && bestId is not null && bestRecord is not null
+            ? (bestId.Value, bestRecord.Value, bestScore)
             : null;
     }
 
@@ -580,7 +582,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         string Reason,
         string? SeriesTitle = null);
 
-    private sealed record SearchMatch(long SeriesId, JsonElement? SearchRecord);
+    private sealed record SearchMatch(long SeriesId, JsonElement? SearchRecord, double? Score = null);
 
     private sealed record SeriesCacheEntry(long? SeriesId, DateTimeOffset ExpiresAt);
     private sealed record TagsCacheEntry(
@@ -588,5 +590,6 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
         bool WasRejected,
         string? RejectionReason,
         string? CanonicalTitle,
+        double? MatchScore,
         DateTimeOffset ExpiresAt);
 }

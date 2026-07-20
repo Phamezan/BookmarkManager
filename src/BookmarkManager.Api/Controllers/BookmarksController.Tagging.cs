@@ -84,7 +84,7 @@ public partial class BookmarksController
         var source = request.ManuallyEditedTagIds is null || request.ManuallyEditedTagIds.Contains(bookmarkId)
             ? "Manual"
             : "Suggested";
-        TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, source)), confidence: null);
+        TagProvenanceWriter.Replace(_db, node.Id, tags.Select(t => (t, source, (double?)null, (string?)null)), confidence: null);
         anyChange = true;
     }
 
@@ -273,6 +273,8 @@ public partial class BookmarksController
         Tag = p.Tag,
         Provider = p.Provider,
         Confidence = p.Confidence,
+        MatchScore = p.MatchScore,
+        MatchedTitle = p.MatchedTitle,
         CreatedAt = p.CreatedAt
     }).ToList());
     }

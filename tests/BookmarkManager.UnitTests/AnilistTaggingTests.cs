@@ -81,10 +81,11 @@ public sealed class AnilistTaggingTests
         """;
         using var doc = JsonDocument.Parse(json);
 
-        var (tags, wasRejected, rejectionReason, canonicalTitle) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
+        var (tags, wasRejected, rejectionReason, canonicalTitle, matchScore) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
 
         Assert.False(wasRejected);
         Assert.Null(rejectionReason);
+        Assert.NotNull(matchScore);
         Assert.Contains("Adventure", tags);
         Assert.Contains("Pirates", tags);
         Assert.Equal("One Piece", canonicalTitle);
@@ -110,7 +111,7 @@ public sealed class AnilistTaggingTests
         """;
         using var doc = JsonDocument.Parse(json);
 
-        var (_, _, _, canonicalTitle) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "Attack on Titan");
+        var (_, _, _, canonicalTitle, _) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "Attack on Titan");
 
         Assert.Equal("Attack on Titan", canonicalTitle);
     }
@@ -135,10 +136,11 @@ public sealed class AnilistTaggingTests
         """;
         using var doc = JsonDocument.Parse(json);
 
-        var (tags, wasRejected, rejectionReason, canonicalTitle) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
+        var (tags, wasRejected, rejectionReason, canonicalTitle, matchScore) = AnilistTaggingService.ProcessCandidates(doc.RootElement, "One Piece");
 
         Assert.False(wasRejected);
         Assert.NotNull(rejectionReason);
+        Assert.Null(matchScore);
         Assert.Empty(tags);
         Assert.Null(canonicalTitle);
     }

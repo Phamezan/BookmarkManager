@@ -6,7 +6,8 @@ public record ProviderTagResult(
     List<string> Tags,
     bool WasRejected,
     string? RejectionReason,
-    string? CanonicalTitle = null);
+    string? CanonicalTitle = null,
+    double? MatchScore = null);
 
 public record AnimeScheduleEpisode(int EpisodeNumber, DateTimeOffset AiringAtUtc);
 

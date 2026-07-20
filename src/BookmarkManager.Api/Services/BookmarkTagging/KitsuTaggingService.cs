@@ -123,9 +123,9 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
             }
         }
 
-        if (bestId is null || bestScore < 0.55)
+        if (bestId is null || bestScore < SimilarityThresholds.Kitsu)
         {
-            return new([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold 0.55.");
+            return new([], false, $"Best candidate similarity ({bestScore:F4}) was below similarity threshold {SimilarityThresholds.Kitsu:F2}.");
         }
 
         // Fetch categories for the best candidate
@@ -177,7 +177,7 @@ public sealed partial class KitsuTaggingService : IKitsuTagProvider
             }
         }
 
-        return new(tags, false, null, bestCanonicalTitle);
+        return new(tags, false, null, bestCanonicalTitle, bestScore);
     }
 
     private double ScoreKitsuCandidate(JsonElement item, string cleanQuery)
