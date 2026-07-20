@@ -113,4 +113,26 @@ public sealed class SeriesExtractionFallbackTests
         var result = SeriesExtractionFallback.Extract("Some Series", "https://example.com/some-series", null);
         Assert.True(result.UsedFallback);
     }
+
+    [Fact]
+    public void Extract_DoesNotMatchChapterMarkerEmbeddedInWord()
+    {
+        var result = SeriesExtractionFallback.Extract(
+            "Research Paper",
+            "https://example.com/research42",
+            category: null);
+
+        Assert.Null(result.ChapterNumber);
+    }
+
+    [Fact]
+    public void Extract_StreamingSlug_PreservesAcronymAndRomanNumeralCasing()
+    {
+        var result = SeriesExtractionFallback.Extract(
+            "Watch junk title",
+            "https://hianime.to/watch/sss-class-suicide-hunter-iii-yqqv0",
+            category: "Anime");
+
+        Assert.Equal("SSS Class Suicide Hunter III", result.SeriesName);
+    }
 }

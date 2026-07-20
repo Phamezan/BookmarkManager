@@ -39,8 +39,8 @@ public static partial class BookmarkTagClassifier
             return new(BookmarkTagDomain.Manga, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "manga folder/host signal");
         }
 
-        if (HasNovelFolderSignal(folderText, folderTokens) || 
-            HasAnyUrlSignal(urlText, "novel", "royalroad", "scribblehub", "wuxiaworld", "/ln/", "/wn/") ||
+        if (HasNovelFolderSignal(folderText, folderTokens) ||
+            HasNovelUrlSignal(urlText) ||
             HasNovelTitleSignal(title))
         {
             return new(BookmarkTagDomain.Novel, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "novel folder/host/title signal");
@@ -94,6 +94,33 @@ public static partial class BookmarkTagClassifier
     private static bool HasAnyUrlSignal(string value, params string[] needles)
         => needles.Any(value.Contains);
 
+    // Host stems and path segments — never bare Contains("novel"), which false-positives on
+    // "novelty", "innovation", etc.
+    private static readonly string[] NovelHostStems =
+    [
+        "royalroad", "scribblehub", "wuxiaworld", "novelfire", "novelfull",
+        "novelcool", "novelupdates", "novelbin", "novelhall", "lightnovel",
+        "novelusb", "ranobedb"
+    ];
+
+    private static bool HasNovelUrlSignal(string urlText)
+    {
+        if (string.IsNullOrWhiteSpace(urlText))
+            return false;
+
+        if (HasAnyUrlSignal(urlText, "/ln/", "/wn/"))
+            return true;
+
+        if (NovelPathSegmentRegex().IsMatch(urlText))
+            return true;
+
+        var host = urlText;
+        if (Uri.TryCreate(urlText, UriKind.Absolute, out var uri))
+            host = uri.Host;
+
+        return NovelHostStems.Any(stem => host.Contains(stem, StringComparison.Ordinal));
+    }
+
     private static IReadOnlySet<string> Tokenize(string? value)
         => TokenRegex().Matches(value ?? string.Empty)
             .Select(match => match.Value.ToLowerInvariant())
@@ -124,4 +151,8 @@ public static partial class BookmarkTagClassifier
 
     [GeneratedRegex(@"[^\p{L}\p{N}]+")]
     private static partial Regex TokenSeparatorRegex();
+
+    // Path segment /novel/ or /novels/ or /light-novel/ — not /novelty-...
+    [GeneratedRegex(@"/(?:light-?)?novels?(?:/|$)", RegexOptions.IgnoreCase)]
+    private static partial Regex NovelPathSegmentRegex();
 }

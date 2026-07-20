@@ -56,6 +56,29 @@ public sealed class BookmarkTagClassifierTests
         Assert.False(result.ShouldUseMangaUpdates);
     }
 
+    [Fact]
+    public void Classify_DoesNotUseNovelSubstringInUrlPath()
+    {
+        var result = BookmarkTagClassifier.Classify(
+            "Example",
+            "https://example.com/novelty-items",
+            folderPath: null,
+            BookmarkTagDomainDto.Auto);
+
+        Assert.Equal(BookmarkTagDomain.General, result.Domain);
+    }
+
+    [Theory]
+    [InlineData("https://www.novelcool.com/chapter/Player/9775214/")]
+    [InlineData("https://novelfire.net/book/solo-leveling")]
+    [InlineData("https://example.com/novel/some-series/chapter-1")]
+    public void Classify_RecognizesRealNovelUrlSignals(string url)
+    {
+        var result = BookmarkTagClassifier.Classify("Some Series Chapter 1", url, folderPath: null, BookmarkTagDomainDto.Auto);
+
+        Assert.Equal(BookmarkTagDomain.Novel, result.Domain);
+    }
+
     [Theory]
     [InlineData("Development", "dotnet aspnetcore", "https://github.com/dotnet/aspnetcore")]
     [InlineData("Music", "Lofi hip hop radio", "https://www.youtube.com/watch?v=abc")]
