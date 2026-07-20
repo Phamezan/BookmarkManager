@@ -68,6 +68,24 @@ public sealed class MediaTitleNormalizerTests
         Assert.Equal(expected, result.Candidates[0].Query);
     }
 
+    // Fan translations disagree on contractions ("I'm a Behemoth" vs "I Am Behemoth") - the
+    // unambiguous ones expand so both spellings produce the same tokens. Possessive 's must
+    // NOT expand (stays folded: "Reader's" -> "readers").
+    [Theory]
+    [InlineData("I'm a Behemoth, an S-Ranked Monster", "i am a behemoth an s ranked monster")]
+    [InlineData("I’m not a Regressor", "i am not a regressor")]
+    [InlineData("The Hero Won't Die", "the hero will not die")]
+    [InlineData("I Can't Be a Villain", "i cannot be a villain")]
+    [InlineData("My Skills Don’t Work", "my skills do not work")]
+    [InlineData("You've Got Mail", "you have got mail")]
+    [InlineData("We're All Dead", "we are all dead")]
+    [InlineData("I'll Become a Villainess", "i will become a villainess")]
+    [InlineData("Omniscient Reader's Viewpoint", "omniscient readers viewpoint")]
+    public void NormalizeForSearch_ExpandsUnambiguousContractions(string input, string expected)
+    {
+        Assert.Equal(expected, MediaTitleNormalizer.NormalizeForSearch(input));
+    }
+
     [Theory]
     [InlineData("Soldier's Life", "soldiers life")]
     [InlineData("An Extra's POV", "an extras pov")]

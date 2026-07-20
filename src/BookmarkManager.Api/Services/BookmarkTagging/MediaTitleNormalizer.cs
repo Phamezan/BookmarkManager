@@ -330,12 +330,35 @@ public static partial class MediaTitleNormalizer
             return string.Empty;
 
         var cleaned = value.ToLowerInvariant();
+        // Fan translations disagree on contractions ("I'm a Behemoth" vs "I Am Behemoth"), and
+        // apostrophe stripping alone turns "i'm" into the unshared token "im". Expand the
+        // unambiguous contractions first - both the query and the stored title pass through
+        // here, so the two sides stay symmetric. Possessive/'d/'s stay untouched (ambiguous).
+        cleaned = ExpandContractions(cleaned);
         // Strip apostrophes/quotes before punctuation removal so "soldier's" becomes
         // "soldiers" instead of being split into "soldier" + "s".
         cleaned = ApostropheRegex().Replace(cleaned, string.Empty);
         cleaned = ChapterMarkerRegex().Replace(cleaned, " ");
         cleaned = SearchPunctuationRegex().Replace(cleaned, " ");
         return WhitespaceRegex().Replace(cleaned, " ").Trim();
+    }
+
+    // Only unambiguous expansions: "won't"/"can't" are irregular, generic "n't" covers the rest
+    // (don't/isn't/hasn't/...). 'm/'re/'ve/'ll are unique; 's (is/possessive) and 'd (would/had)
+    // are ambiguous and deliberately left for the apostrophe strip to fold.
+    private static string ExpandContractions(string lowercased)
+    {
+        var expanded = ImContractionRegex().Replace(lowercased, "i am");
+        expanded = WontContractionRegex().Replace(expanded, "will not");
+        expanded = CantContractionRegex().Replace(expanded, "cannot");
+        expanded = NtContractionRegex().Replace(expanded, "$1 not");
+        expanded = ReVeLlContractionRegex().Replace(expanded, match => match.Groups[1].Value switch
+        {
+            "re" => " are",
+            "ve" => " have",
+            _ => " will"
+        });
+        return expanded;
     }
 
     public static double ScoreTitleSimilarity(string queryTitle, IEnumerable<string> candidateTitles)
@@ -670,6 +693,22 @@ public static partial class MediaTitleNormalizer
     // used to detect bookmarks whose title IS the raw URL string, before prefixing "https://".
     [GeneratedRegex(@"(?i)^(?:[a-z0-9][a-z0-9-]*\.)+[a-z]{2,}(?=/|$)")]
     private static partial Regex GenericDomainPrefixRegex();
+
+    // Contraction expansion (input is already lowercased; both straight and curly apostrophes).
+    [GeneratedRegex(@"\bi['’]m\b")]
+    private static partial Regex ImContractionRegex();
+
+    [GeneratedRegex(@"\bwon['’]t\b")]
+    private static partial Regex WontContractionRegex();
+
+    [GeneratedRegex(@"\bcan['’]t\b")]
+    private static partial Regex CantContractionRegex();
+
+    [GeneratedRegex(@"\b(\w+)n['’]t\b")]
+    private static partial Regex NtContractionRegex();
+
+    [GeneratedRegex(@"['’](re|ve|ll)\b")]
+    private static partial Regex ReVeLlContractionRegex();
 
     // A trailing slug id/hash: pure digits ("15516") or a short mixed alphanumeric token
     // that has both a letter and a digit ("yqqv0", "540q", "kn86"). Pure-letter tokens
