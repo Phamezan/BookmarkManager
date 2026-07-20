@@ -42,8 +42,9 @@ public partial class BookmarksController
 
     /// <summary>
     /// Saves tag edits and (optionally) title edits from the auto-tagger review page in
-    /// one request. Tag-only saves stay manager-only metadata (no sync command, no
-    /// broadcast). Title changes MUST go through <see cref="ApplyBookmarkProjectionUpdate"/>
+    /// one request. Tag-only saves stay manager-only metadata (no Brave sync command).
+    /// They still broadcast over the sync websocket so the client refreshes filter chips.
+    /// Title changes MUST go through <see cref="ApplyBookmarkProjectionUpdate"/>
     /// so they never diverge from Brave (see .cursor/commands/review-sync-change.md) —
     /// one SaveChanges + one broadcast for the whole batch either way.
     /// </summary>
@@ -68,7 +69,6 @@ public partial class BookmarksController
     var nodesById = nodes.ToDictionary(n => n.Id);
 
     var anyChange = false;
-    var anyTitleChange = false;
 
     foreach (var (bookmarkId, tags) in request.Tags)
     {
@@ -101,15 +101,17 @@ public partial class BookmarksController
 
             ApplyBookmarkProjectionUpdate(node, trimmed, url: null);
             anyChange = true;
-            anyTitleChange = true;
         }
     }
 
     if (anyChange)
     {
         await _db.SaveChangesAsync(ct);
-        if (anyTitleChange)
-            await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
+        // Tags are manager-only metadata (no Brave extension command). Still broadcast so
+        // the Blazor client reloads folder items and rebuilds filter chips — otherwise
+        // ManualEdit/bulk-save tags appear on the bookmark but stay invisible in filters
+        // until a full navigation/refresh.
+        await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
     }
 
     return Ok();

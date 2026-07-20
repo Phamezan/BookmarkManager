@@ -38,13 +38,25 @@ public partial class AutoTaggerDialog
 
     private IReadOnlyList<string> RerunStatusOptions =>
         new[] { "All" }
-            .Concat(_runResults.Select(r => r.Status).Distinct().OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
+            .Concat(_runResults.Select(r => r.Status).Distinct().OrderBy(s => StatusSortKey(s)))
             .ToList();
 
-    private List<AiAutoTagBookmarkStatusDto> FilteredRunResults =>
-        _rerunStatusFilter == "All"
-            ? _runResults
-            : _runResults.Where(r => r.Status == _rerunStatusFilter).ToList();
+    private List<AiAutoTagBookmarkStatusDto> FilteredRunResults
+    {
+        get
+        {
+            IEnumerable<AiAutoTagBookmarkStatusDto> items = _rerunStatusFilter == "All"
+                ? _runResults
+                : _runResults.Where(r => r.Status == _rerunStatusFilter);
+
+            // Group by status so NoSourceTags / DeterministicClassified sit in contiguous blocks
+            // (problems first), then alphabetically within each status.
+            return items
+                .OrderBy(r => StatusSortKey(r.Status))
+                .ThenBy(r => r.Title, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
 
     private string GetSuggestionDraft(AiAutoTagBookmarkStatusDto item)
     {
@@ -56,12 +68,35 @@ public partial class AutoTaggerDialog
     private void SetSuggestionDraft(Guid bookmarkId, string? value)
         => _suggestionDrafts[bookmarkId] = value ?? string.Empty;
 
+    private static int StatusSortKey(string status) => status switch
+    {
+        "NoSourceTags" => 0,
+        "LowConfidence" => 1,
+        "ProviderFailed" => 2,
+        "RateLimited" => 3,
+        "AiInvalidResponse" => 4,
+        "AiPendingRetry" => 5,
+        "DeterministicClassified" => 10,
+        "AiIdentified" => 11,
+        "ManualEdit" => 12,
+        _ => 50
+    };
+
     private static Color GetStatusColor(string status) => status switch
     {
-        "DeterministicClassified" or "AiIdentified" or "ManualEdit" => Color.Success,
-        "LowConfidence" or "NoSourceTags" or "AiPendingRetry" => Color.Warning,
+        "DeterministicClassified" => Color.Success,
+        "AiIdentified" => Color.Info,
+        "ManualEdit" => Color.Secondary,
+        "LowConfidence" or "AiPendingRetry" => Color.Warning,
+        "NoSourceTags" => Color.Warning,
         "ProviderFailed" or "RateLimited" or "AiInvalidResponse" => Color.Error,
         _ => Color.Default
+    };
+
+    private static Color GetTagChipColor(string tag) => tag.Trim().ToLowerInvariant() switch
+    {
+        "novel" or "manga" or "anime" or "manhwa" or "manhua" or "webtoon" => Color.Secondary,
+        _ => Color.Primary
     };
 
     private void GoToReruns()

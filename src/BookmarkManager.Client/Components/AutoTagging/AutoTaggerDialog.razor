@@ -7,7 +7,6 @@
 <MudDialog Class="auto-tagger-dialog">
     <TitleContent>
         <div class="d-flex align-center gap-2">
-            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
             <MudText Typo="Typo.h6">Auto Tagger</MudText>
         </div>
     </TitleContent>
@@ -118,7 +117,7 @@
                     }
 
                     <div id="tagger-terminal-log"
-                                 style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
+                         style="height: 200px; background-color: #0b0f19; color: #a5b4fc; font-family: 'JetBrains Mono', Consolas, monospace; font-size: 0.8rem; border-radius: 4px; padding: 10px; overflow-y: auto; line-height: 1.4;">
                         @foreach (var log in _logs)
                         {
                             <div style="margin-bottom: 2px;">
@@ -152,11 +151,8 @@
                         <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">REVIEW & ADJUST TAGS</MudText>
                         @if (_reviewItems.Any(i => i.HasSuggestion))
                         {
-                            <MudButton Variant="Variant.Outlined"
-                                       Size="Size.Small"
-                                       Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.DoneAll"
-                                       OnClick="AcceptAllSuggestions">
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.DoneAll" OnClick="AcceptAllSuggestions">
                                 Accept all suggestions
                             </MudButton>
                         }
@@ -164,277 +160,274 @@
                     <MudText Typo="Typo.body2" Class="mud-text-secondary">Review the generated suggestions. Click 'x' to
                         delete, or add tags manually before saving.</MudText>
 
-                    <div
-                        style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
-                        <MudStack Spacing="3">
-                            @foreach (var item in _reviewItems)
+                        <div
+                            style="max-height: 300px; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px; padding: 8px;">
+                            <MudStack Spacing="3">
+                                @foreach (var item in _reviewItems)
+                                {
+                                    <AutoTaggerReviewRow Item="item" />
+                                }
+                            </MudStack>
+                        </div>
+                    </MudStack>
+                }
+            else if (_currentState == TaggerState.Reruns)
+                {
+                    <!-- Reruns Screen -->
+                    <MudStack Spacing="2">
+                        <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                            <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">RESULTS & RERUNS</MudText>
+                            <MudSelect T="string" Label="Filter" Variant="Variant.Outlined" Dense="true"
+                                       @bind-Value="_rerunStatusFilter" Style="min-width: 160px;">
+                                @foreach (var opt in RerunStatusOptions)
+                                {
+                                    <MudSelectItem Value="@opt">@opt</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </div>
+
+                        @if (_rerunsLoading)
+                        {
+                            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                        }
+
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                            @FilteredRunResults.Count of @_runResults.Count bookmark(s) shown.
+                            Selected: @_selectedResultIds.Count
+                        </MudText>
+
+                        <div class="d-flex gap-2 flex-wrap mb-1">
+                            <MudCheckBox T="bool" Label="Select All (filtered)"
+                                         Value="FilteredRunResults.Count > 0 && FilteredRunResults.All(r => _selectedResultIds.Contains(r.BookmarkId))"
+                                         ValueChanged="@(val => ToggleSelectAllFiltered(val))" Color="Color.Primary" Dense="true" />
+                        </div>
+
+                        <div
+                            style="max-height: 58vh; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px;">
+                            <MudTable Dense="true" Hover="true" Items="FilteredRunResults" T="AiAutoTagBookmarkStatusDto">
+                                <HeaderContent>
+                                    <MudTh></MudTh>
+                                    <MudTh Style="min-width: 260px;">Title</MudTh>
+                                    <MudTh>Status</MudTh>
+                                    <MudTh>Tags</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    @{
+                                        var item = context;
+                                        var isSelected = _selectedResultIds.Contains(item.BookmarkId);
+                                        var statusColor = GetStatusColor(item.Status);
+                                        var itemTags = (item.Tags ?? string.Empty)
+                                            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                                    }
+                                    <MudTd>
+                                        <MudCheckBox T="bool" Value="isSelected"
+                                                     ValueChanged="@(val => ToggleResultSelection(item.BookmarkId, val))"
+                                                     Color="Color.Primary" Dense="true" />
+                                    </MudTd>
+                                    <MudTd Style="min-width: 260px;">
+                                        <div>@item.Title</div>
+                                        @if (_pendingTitleEdits.TryGetValue(item.BookmarkId, out var pendingTitle))
+                                        {
+                                            <div class="suggested-title-chip suggested-title-chip--pending">
+                                                <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small"
+                                                         Class="flex-shrink-0" />
+                                                <span class="suggested-title-chip-label">Pending apply: @pendingTitle</span>
+                                                <MudButton Variant="Variant.Text" Size="Size.Small"
+                                                           aria-label="@($"Undo pending title change for {item.Title}")"
+                                                           OnClick="@(() => RevertPendingTitle(item.BookmarkId))">
+                                                    Undo
+                                                </MudButton>
+                                            </div>
+                                        }
+                                        else if (!string.IsNullOrWhiteSpace(item.SuggestedTitle)
+                                             && !string.Equals(item.SuggestedTitle.Trim(), item.Title.Trim(),
+                                    StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <div class="suggested-title-chip">
+                                                <span class="suggested-title-chip-prefix">Suggested:</span>
+                                                <MudTextField T="string" Value="@GetSuggestionDraft(item)"
+                                                              ValueChanged="@(v => SetSuggestionDraft(item.BookmarkId, v))"
+                                                              Variant="Variant.Text" Margin="Margin.Dense" Immediate="true"
+                                                              Class="suggested-title-chip-input"
+                                                              aria-label="@($"Edit suggested title for {item.Title}")" />
+                                                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
+                                                           aria-label="@($"Accept suggested title for {item.Title}")"
+                                                           OnClick="@(() => AcceptSuggestedTitle(item))">
+                                                    Accept
+                                                </MudButton>
+                                            </div>
+                                        }
+                                    </MudTd>
+                                    <MudTd>
+                                        <MudChip T="string" Color="statusColor" Size="Size.Small" Variant="Variant.Filled">
+                                            @item.Status</MudChip>
+                                        </MudTd>
+                                        <MudTd>
+                                            @if (_isEditingTags && _editTagsBuffer.ContainsKey(item.BookmarkId))
+                                            {
+                                                <MudTextField T="string" Value="_editTagsBuffer[item.BookmarkId]"
+                                                              ValueChanged="@(val => _editTagsBuffer[item.BookmarkId] = val)"
+                                                              Variant="Variant.Text" Adornment="Adornment.Start" AdornmentText="#"
+                                                              Style="min-width: 200px;" />
+                                            }
+                                            else if (itemTags.Length > 0)
+                                            {
+                                                <div class="d-flex flex-wrap gap-1">
+                                                    @foreach (var tag in itemTags)
+                                                    {
+                                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined"
+                                                                 Color="@GetTagChipColor(tag)">@tag</MudChip>
+                                                    }
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="mud-text-secondary" style="font-size: 0.8rem;">—</span>
+                                            }
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </div>
+
+                            @if (_isEditingTags)
                             {
-                                <AutoTaggerReviewRow Item="item" />
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
+                                           OnClick="SaveEditedTagsAsync" Disabled="@(_editTagsBuffer.Count == 0)">
+                                    Save Edited Tags
+                                </MudButton>
+                            }
+
+                            @if (_pendingTitleEdits.Count > 0)
+                            {
+                                <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check"
+                                           OnClick="ApplyPendingTitleChangesAsync" Disabled="@_rerunsLoading">
+                                    Apply @_pendingTitleEdits.Count title@(_pendingTitleEdits.Count == 1 ? "" : "s")
+                                </MudButton>
+                            }
+
+                            @if (_providerTimings.Count > 0)
+                            {
+                                <MudExpansionPanels Elevation="0" Dense="true">
+                                    <MudExpansionPanel Text="Provider timings (this run)">
+                                        <MudSimpleTable Dense="true">
+                                            <thead>
+                                                <tr>
+                                                    <th>Provider</th>
+                                                    <th>Operation</th>
+                                                    <th>Network calls</th>
+                                                    <th>Cache hits</th>
+                                                    <th>Limiter (ms)</th>
+                                                    <th>HTTP (ms)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (var timing in _providerTimings)
+                                                {
+                                                    <tr>
+                                                        <td>@timing.Provider</td>
+                                                        <td>@timing.Operation</td>
+                                                        <td>@timing.NetworkCalls</td>
+                                                        <td>@timing.CacheHits</td>
+                                                        <td>@timing.LimiterMs</td>
+                                                        <td>@timing.HttpMs</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudExpansionPanel>
+                                </MudExpansionPanels>
                             }
                         </MudStack>
-                    </div>
-                </MudStack>
-            }
-            else if (_currentState == TaggerState.Reruns)
-            {
-                <!-- Reruns Screen -->
-                <MudStack Spacing="2">
-                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
-                        <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">RESULTS & RERUNS</MudText>
-                        <MudSelect T="string" Label="Filter" Variant="Variant.Outlined" Dense="true"
-                                   @bind-Value="_rerunStatusFilter" Style="min-width: 160px;">
-                            @foreach (var opt in RerunStatusOptions)
-                            {
-                                <MudSelectItem Value="@opt">@opt</MudSelectItem>
-                            }
-                        </MudSelect>
-                    </div>
-
-                    @if (_rerunsLoading)
-                    {
-                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
                     }
+                </MudStack>
+            </DialogContent>
 
-                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                        @FilteredRunResults.Count of @_runResults.Count bookmark(s) shown.
-                        Selected: @_selectedResultIds.Count
-                    </MudText>
-
-                    <div class="d-flex gap-2 flex-wrap mb-1">
-                        <MudCheckBox T="bool" Label="Select All (filtered)"
-                                     Value="FilteredRunResults.Count > 0 && FilteredRunResults.All(r => _selectedResultIds.Contains(r.BookmarkId))"
-                                     ValueChanged="@(val => ToggleSelectAllFiltered(val))"
-                                     Color="Color.Primary" Dense="true" />
-                    </div>
-
-                    <div style="max-height: 58vh; overflow-y: auto; border: 1px solid var(--mud-palette-divider); border-radius: 4px;">
-                        <MudTable Dense="true" Hover="true" Items="FilteredRunResults" T="AiAutoTagBookmarkStatusDto">
-                            <HeaderContent>
-                                <MudTh></MudTh>
-                                <MudTh Style="min-width: 260px;">Title</MudTh>
-                                <MudTh>Status</MudTh>
-                                <MudTh>Tags</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                @{
-                                    var item = context;
-                                    var isSelected = _selectedResultIds.Contains(item.BookmarkId);
-                                    var statusColor = GetStatusColor(item.Status);
-                                    var itemTags = (item.Tags ?? string.Empty)
-                                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-                                }
-                                <MudTd>
-                                    <MudCheckBox T="bool" Value="isSelected"
-                                                 ValueChanged="@(val => ToggleResultSelection(item.BookmarkId, val))"
-                                                 Color="Color.Primary" Dense="true" />
-                                </MudTd>
-                                <MudTd Style="min-width: 260px;">
-                                    <div>@item.Title</div>
-                                    @if (_pendingTitleEdits.TryGetValue(item.BookmarkId, out var pendingTitle))
-                                    {
-                                        <div class="suggested-title-chip suggested-title-chip--pending">
-                                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Small" Class="flex-shrink-0" />
-                                            <span class="suggested-title-chip-label">Pending apply: @pendingTitle</span>
-                                            <MudButton Variant="Variant.Text" Size="Size.Small"
-                                                       aria-label="@($"Undo pending title change for {item.Title}")"
-                                                       OnClick="@(() => RevertPendingTitle(item.BookmarkId))">
-                                                Undo
-                                            </MudButton>
-                                        </div>
-                                    }
-                                    else if (!string.IsNullOrWhiteSpace(item.SuggestedTitle)
-                                         && !string.Equals(item.SuggestedTitle.Trim(), item.Title.Trim(), StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        <div class="suggested-title-chip">
-                                            <span class="suggested-title-chip-prefix">Suggested:</span>
-                                            <MudTextField T="string"
-                                                          Value="@GetSuggestionDraft(item)"
-                                                          ValueChanged="@(v => SetSuggestionDraft(item.BookmarkId, v))"
-                                                          Variant="Variant.Text"
-                                                          Margin="Margin.Dense"
-                                                          Immediate="true"
-                                                          Class="suggested-title-chip-input"
-                                                          aria-label="@($"Edit suggested title for {item.Title}")" />
-                                            <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Primary"
-                                                       aria-label="@($"Accept suggested title for {item.Title}")"
-                                                       OnClick="@(() => AcceptSuggestedTitle(item))">
-                                                Accept
-                                            </MudButton>
-                                        </div>
-                                    }
-                                </MudTd>
-                                <MudTd>
-                                    <MudChip T="string" Color="statusColor" Size="Size.Small" Variant="Variant.Text">@item.Status</MudChip>
-                                </MudTd>
-                                <MudTd>
-                                    @if (_isEditingTags && _editTagsBuffer.ContainsKey(item.BookmarkId))
-                                    {
-                                        <MudTextField T="string" Value="_editTagsBuffer[item.BookmarkId]"
-                                                      ValueChanged="@(val => _editTagsBuffer[item.BookmarkId] = val)"
-                                                      Variant="Variant.Text" Adornment="Adornment.Start"
-                                                      AdornmentText="#" Style="min-width: 200px;" />
-                                    }
-                                    else if (itemTags.Length > 0)
-                                    {
-                                        <div class="d-flex flex-wrap gap-1">
-                                            @foreach (var tag in itemTags)
-                                            {
-                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@tag</MudChip>
-                                            }
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        <span class="mud-text-secondary" style="font-size: 0.8rem;">—</span>
-                                    }
-                                </MudTd>
-                            </RowTemplate>
-                        </MudTable>
-                    </div>
-
+            <DialogActions>
+                @if (_currentState == TaggerState.Selection)
+                {
+                    <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+                    <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                               StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="StartTaggingAsync"
+                               Disabled="@(_loading || _selectedFolderIds.Count == 0)">
+                        Start Tagging
+                    </MudButton>
+                }
+                else if (_currentState == TaggerState.Tagging)
+                {
+                    @if (!_taggingFinished)
+                    {
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
+                                   OnClick="StopTagging">Stop Tagging</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+                        @if (_useAiSeriesAutoTagging)
+                        {
+                            @if (_runResults.Count > 0)
+                            {
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.ChecklistRtl"
+                                           OnClick="GoToReruns">
+                                    Results &amp; Reruns
+                                </MudButton>
+                            }
+                            <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                                       StartIcon="@Icons.Material.Filled.Check" OnClick="Cancel">
+                                Close
+                            </MudButton>
+                        }
+                        else
+                        {
+                            <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                                       StartIcon="@Icons.Material.Filled.ArrowForward" OnClick="GoToReview">
+                                Next
+                            </MudButton>
+                        }
+                    }
+                }
+                else if (_currentState == TaggerState.Review)
+                {
+                    <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+                    <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
+                               StartIcon="@Icons.Material.Filled.Check" OnClick="ConfirmAndSaveAsync">
+                        Apply & Save
+                    </MudButton>
+                }
+                else if (_currentState == TaggerState.Reruns)
+                {
+                    @if (_selectedResultIds.Count > 0 && !_isEditingTags)
+                    {
+                        <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.Undo"
+                                   OnClick="CancelSelectedResultsAsync" Disabled="@_rerunsLoading">
+                            Cancel @_selectedResultIds.Count Selected
+                        </MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Text" OnClick="Cancel">Close</MudButton>
+                    }
                     @if (_isEditingTags)
                     {
+                        <MudButton Variant="Variant.Text" OnClick="CancelEditTags">Cancel Edit</MudButton>
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Save"
                                    OnClick="SaveEditedTagsAsync" Disabled="@(_editTagsBuffer.Count == 0)">
-                            Save Edited Tags
+                            Save Tags
                         </MudButton>
                     }
-
-                    @if (_pendingTitleEdits.Count > 0)
+                    else
                     {
-                        <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check"
-                                   OnClick="ApplyPendingTitleChangesAsync" Disabled="@_rerunsLoading">
-                            Apply @_pendingTitleEdits.Count title@(_pendingTitleEdits.Count == 1 ? "" : "s")
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Edit"
+                                   OnClick="StartEditTags" Disabled="@(_selectedResultIds.Count == 0)">
+                            Edit Tags
+                        </MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh"
+                                   OnClick="RerunSelectedAsync" Disabled="@(_selectedResultIds.Count == 0 || _rerunsLoading)">
+                            Rerun Selected
                         </MudButton>
                     }
-
-                    @if (_providerTimings.Count > 0)
-                    {
-                        <MudExpansionPanels Elevation="0" Dense="true">
-                            <MudExpansionPanel Text="Provider timings (this run)">
-                                <MudSimpleTable Dense="true">
-                                    <thead>
-                                        <tr>
-                                            <th>Provider</th>
-                                            <th>Operation</th>
-                                            <th>Network calls</th>
-                                            <th>Cache hits</th>
-                                            <th>Limiter (ms)</th>
-                                            <th>HTTP (ms)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var timing in _providerTimings)
-                                        {
-                                            <tr>
-                                                <td>@timing.Provider</td>
-                                                <td>@timing.Operation</td>
-                                                <td>@timing.NetworkCalls</td>
-                                                <td>@timing.CacheHits</td>
-                                                <td>@timing.LimiterMs</td>
-                                                <td>@timing.HttpMs</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </MudSimpleTable>
-                            </MudExpansionPanel>
-                        </MudExpansionPanels>
-                    }
-                </MudStack>
-            }
-        </MudStack>
-    </DialogContent>
-
-                <DialogActions>
-                    @if (_currentState == TaggerState.Selection)
-                    {
-                        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-                        <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
-                                   StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="StartTaggingAsync"
-                                   Disabled="@(_loading || _selectedFolderIds.Count == 0)">
-                            Start Tagging
-                        </MudButton>
-                    }
-                    else if (_currentState == TaggerState.Tagging)
-                    {
-                        @if (!_taggingFinished)
-                        {
-                            <MudButton Variant="Variant.Filled" Color="Color.Error" StartIcon="@Icons.Material.Filled.Stop"
-                                       OnClick="StopTagging">Stop Tagging</MudButton>
-                        }
-                        else
-                        {
-                            <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-                            @if (_useAiSeriesAutoTagging)
-                            {
-                                @if (_runResults.Count > 0)
-                                {
-                                    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.ChecklistRtl" OnClick="GoToReruns">
-                                        Results &amp; Reruns
-                                    </MudButton>
-                                }
-                                <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
-                                           StartIcon="@Icons.Material.Filled.Check" OnClick="Cancel">
-                                    Close
-                                </MudButton>
-                            }
-                            else
-                            {
-                                <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
-                                           StartIcon="@Icons.Material.Filled.ArrowForward" OnClick="GoToReview">
-                                    Next
-                                </MudButton>
-                            }
-                        }
-                    }
-                    else if (_currentState == TaggerState.Review)
-                    {
-                        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
-                        <MudButton Variant="Variant.Filled" Style="background-color: #10b981; color: white;"
-                                   StartIcon="@Icons.Material.Filled.Check" OnClick="ConfirmAndSaveAsync">
-                            Apply & Save
-                        </MudButton>
-                    }
-                    else if (_currentState == TaggerState.Reruns)
-                    {
-                        @if (_selectedResultIds.Count > 0 && !_isEditingTags)
-                        {
-                            <MudButton Variant="Variant.Text" Color="Color.Error"
-                                       StartIcon="@Icons.Material.Filled.Undo"
-                                       OnClick="CancelSelectedResultsAsync" Disabled="@_rerunsLoading">
-                                Cancel @_selectedResultIds.Count Selected
-                            </MudButton>
-                        }
-                        else
-                        {
-                            <MudButton Variant="Variant.Text" OnClick="Cancel">Close</MudButton>
-                        }
-                        @if (_isEditingTags)
-                        {
-                            <MudButton Variant="Variant.Text" OnClick="CancelEditTags">Cancel Edit</MudButton>
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Save" OnClick="SaveEditedTagsAsync"
-                                       Disabled="@(_editTagsBuffer.Count == 0)">
-                                Save Tags
-                            </MudButton>
-                        }
-                        else
-                        {
-                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Edit" OnClick="StartEditTags"
-                                       Disabled="@(_selectedResultIds.Count == 0)">
-                                Edit Tags
-                            </MudButton>
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Refresh" OnClick="RerunSelectedAsync"
-                                       Disabled="@(_selectedResultIds.Count == 0 || _rerunsLoading)">
-                                Rerun Selected
-                            </MudButton>
-                        }
-                    }
-                </DialogActions>
-            </MudDialog>
+                }
+            </DialogActions>
+        </MudDialog>
 
 @code {
     private enum TaggerState

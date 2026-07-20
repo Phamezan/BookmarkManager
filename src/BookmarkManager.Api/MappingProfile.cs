@@ -16,7 +16,9 @@ public class MappingProfile : Profile
                 Status = s.Status,
                 CurrentProgress = s.CurrentProgress,
                 TotalProgress = s.TotalProgress,
-                Tags = s.Tags != null ? s.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries).ToList() : new List<string>(),
+                Tags = s.Tags != null
+                    ? s.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList()
+                    : new List<string>(),
                 Rating = s.Rating,
                 Notes = s.Notes,
                 IsFavorite = s.IsFavorite,

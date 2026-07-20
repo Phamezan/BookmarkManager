@@ -1263,17 +1263,52 @@
     border: 1px solid var(--arc-line);
 }
 
-/* chips → silver-gray glyph plaques */
+/* chips — default silver plaques; status/semantic colors keep distinct tints */
 [data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip {
-    background: var(--arc-ghost);
-    border: 1px solid var(--arc-faint);
-    color: var(--arc);
     border-radius: 4px;
 }
 
-[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-primary {
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-default,
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip:not([class*="mud-chip-color-"]) {
     background: var(--arc-ghost);
+    border: 1px solid var(--arc-faint);
     color: var(--arc);
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-primary {
+    background: rgba(129, 140, 248, .16);
+    border: 1px solid rgba(129, 140, 248, .4);
+    color: #a5b4fc;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-secondary {
+    background: rgba(167, 139, 250, .16);
+    border: 1px solid rgba(167, 139, 250, .4);
+    color: #c4b5fd;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-success {
+    background: rgba(16, 185, 129, .16);
+    border: 1px solid rgba(16, 185, 129, .42);
+    color: #6ee7b7;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-info {
+    background: rgba(56, 189, 248, .16);
+    border: 1px solid rgba(56, 189, 248, .42);
+    color: #7dd3fc;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-warning {
+    background: rgba(245, 158, 11, .16);
+    border: 1px solid rgba(245, 158, 11, .45);
+    color: #fbbf24;
+}
+
+[data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip.mud-chip-color-error {
+    background: rgba(239, 68, 68, .16);
+    border: 1px solid rgba(239, 68, 68, .45);
+    color: #fca5a5;
 }
 
 [data-theme="anime"] .mud-dialog.auto-tagger-dialog .mud-chip .mud-chip-close-button {
