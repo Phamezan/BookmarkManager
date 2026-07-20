@@ -1,6 +1,6 @@
 ---
 status: live
-last_verified: 2026-07-18
+last_verified: 2026-07-20
 note: Technical system map for AI agents and contributors. Formerly the repo root README; moved here so the root README could become a human-facing project page.
 ---
 
@@ -93,7 +93,7 @@ sequenceDiagram
 - **`LibraryCatalogSyncQueueItem`**: Durable work queue (Queue-Based Load Leveling) — one row is one "fetch the next page" step of a provider crawl sequence, so a restart mid-crawl resumes instead of losing progress.
   - Columns: `Id`, `Provider`, `MediaTypeQuery`, `ContinuationToken`, `RemainingPages`, `Status` (Pending/Processing/Done/Failed), `Attempts`, `LastError`, `CreatedAt`, `NextAttemptAt`.
 - **`TagProvenance`**: Records which source supplied each tag on a bookmark (cross-provider attribution for the tag tooltip and reruns panel). All rows for a bookmark are replaced as a unit on every tag write (auto-tag run, rerun, manual save) via `TagProvenanceWriter`.
-  - Columns: `Id`, `BookmarkId` (indexed; composite index with `Tag`), `Tag`, `Provider` (AniList/Kitsu/MangaUpdates/NovelFull/Catalog/DomainRoute/Manual), `Confidence` (AI series-identification confidence for the run, null for deterministic/manual), `CreatedAt`.
+  - Columns: `Id`, `BookmarkId` (indexed; composite index with `Tag`), `Tag`, `Provider` (AniList/Kitsu/MangaUpdates/NovelFull/Catalog/DomainRoute/Manual), `Confidence` (AI series-identification confidence for the run, null for deterministic/manual), `MatchScore` + `MatchedTitle` (provider's winning similarity score and the title it matched — nullable, null for deterministic/DomainRoute/manual writes), `CreatedAt`.
 
 ---
 
