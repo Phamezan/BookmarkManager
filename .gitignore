@@ -3,6 +3,7 @@
 [Oo]bj/
 .vs/
 TestResults/
+artifacts/
 *.user
 *.suo
 *.nupkg
