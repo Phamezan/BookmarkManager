@@ -76,6 +76,35 @@ public class SearchCandidateFilterTests
     }
 
     [Fact]
+    public void Filter_DeduplicatesSchemeWwwTrailingSlashAndFragmentVariants()
+    {
+        var candidates = new List<SearchCandidate>
+        {
+            new("http://www.asuracomic.net/series/solo-leveling/chapter-112/", null, null),
+            new("https://asuracomic.net/series/solo-leveling/chapter-112#top", null, null),
+            new("https://Asuracomic.net/Series/solo-leveling/chapter-112", null, null),
+        };
+
+        var result = SearchCandidateFilter.Filter(candidates, "flamecomics.xyz");
+
+        Assert.Single(result);
+    }
+
+    [Fact]
+    public void Filter_KeepsDistinctQueryStrings()
+    {
+        var candidates = new List<SearchCandidate>
+        {
+            new("https://miruro.tv/watch/123/slug?ep=11", null, null),
+            new("https://miruro.tv/watch/123/slug?ep=12", null, null),
+        };
+
+        var result = SearchCandidateFilter.Filter(candidates, "flamecomics.xyz");
+
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
     public void Filter_KeepsLegitimateReaderHost()
     {
         var candidates = new List<SearchCandidate>
@@ -86,5 +115,18 @@ public class SearchCandidateFilterTests
         var result = SearchCandidateFilter.Filter(candidates, "flamecomics.xyz");
 
         Assert.Single(result);
+    }
+}
+
+public class UrlComparisonNormalizerTests
+{
+    [Theory]
+    [InlineData("http://www.Example.com/path/", "https://example.com/path")]
+    [InlineData("https://example.com/path#frag", "https://example.com/path")]
+    [InlineData("https://example.com/Path", "https://example.com/path")]
+    [InlineData("https://example.com/path?ep=11", "https://example.com/path?ep=11")]
+    public void Normalize_CollapsesSchemeWwwSlashFragmentAndCase(string input, string expected)
+    {
+        Assert.Equal(expected, UrlComparisonNormalizer.Normalize(input));
     }
 }

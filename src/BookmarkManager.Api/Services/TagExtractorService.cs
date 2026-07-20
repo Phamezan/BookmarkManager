@@ -127,7 +127,7 @@ public sealed class TagExtractorService
         return queryableScores
             .OrderByDescending(kv => kv.Value)
             .ThenBy(kv => kv.Key)
-            .Select(kv => ToTitleCase(kv.Key))
+            .Select(kv => FormatTagDisplay(kv.Key))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(MaxTags)
             .ToList();
@@ -382,6 +382,32 @@ public sealed class TagExtractorService
         }
         // Treat "ABC123" style or "FooBar" style as multi-case signal.
         return (hasUpper && hasLower) || (hasUpper && hasDigit);
+    }
+
+    private static readonly string[] KnownBrandTags =
+    [
+        "YouTube", "GitHub", "GitLab", "Bitbucket", "Reddit"
+    ];
+
+    /// <summary>
+    /// Preserves intentional brand / subreddit casing. Blind <see cref="ToTitleCase"/> turns
+    /// "YouTube"→"Youtube", "GitHub"→"Github", and "r/dotnet"→"R/Dotnet".
+    /// </summary>
+    private static string FormatTagDisplay(string key)
+    {
+        if (string.IsNullOrEmpty(key))
+            return key;
+
+        if (key.StartsWith("r/", StringComparison.OrdinalIgnoreCase))
+            return "r/" + key[2..];
+
+        foreach (var brand in KnownBrandTags)
+        {
+            if (string.Equals(key, brand, StringComparison.OrdinalIgnoreCase))
+                return brand;
+        }
+
+        return ToTitleCase(key);
     }
 
     private static string ToTitleCase(string word)

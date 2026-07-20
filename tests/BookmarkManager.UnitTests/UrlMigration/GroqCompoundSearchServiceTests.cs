@@ -42,6 +42,20 @@ public class GroqCompoundSearchServiceTests
     }
 
     [Fact]
+    public void ParseCandidatesJson_UsesFirstCompleteObjectWhenMultiplePresent()
+    {
+        var content =
+            "{\"candidates\": [{\"url\": \"https://asuracomic.net/series/solo-leveling/chapter-112\", \"why\": \"best\"}]}\n" +
+            "Also consider:\n" +
+            "{\"candidates\": [{\"url\": \"https://mangadex.org/title/other\", \"why\": \"alt\"}]}";
+
+        var result = GroqCompoundSearchService.ParseCandidatesJson(content);
+
+        var candidate = Assert.Single(result);
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", candidate.Url);
+    }
+
+    [Fact]
     public void ParseCandidatesJson_ReturnsEmptyOnMalformedJson()
     {
         var content = "not json at all, sorry";

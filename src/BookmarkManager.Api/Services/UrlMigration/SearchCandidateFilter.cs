@@ -65,7 +65,7 @@ public static class SearchCandidateFilter
                 continue;
             }
 
-            if (!seenUrls.Add(uri.AbsoluteUri))
+            if (!seenUrls.Add(UrlComparisonNormalizer.Normalize(candidate.Url)))
             {
                 continue;
             }

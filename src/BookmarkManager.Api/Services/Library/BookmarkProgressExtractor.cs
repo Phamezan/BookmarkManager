@@ -77,14 +77,24 @@ public static partial class BookmarkProgressExtractor
         double? bestChapter = null;
         string? bestRawText = null;
 
+        // Webtoon arc slugs encode arc as chapter-N and real progress as ep-M. Prefer the
+        // episode and do not let "highest wins" promote the arc chapter over it.
+        var arcMatched = false;
         foreach (Match match in WebtoonArcEpisodeSlugRegex().Matches(path))
+        {
             ConsiderSlugMatch(match, "ep", "Episode", ref best, ref bestChapter, ref bestRawText);
+            if (bestChapter is not null)
+                arcMatched = true;
+        }
 
-        foreach (Match match in SlugEpisodeRegex().Matches(path))
-            ConsiderSlugMatch(match, "1", "Episode", ref best, ref bestChapter, ref bestRawText);
+        if (!arcMatched)
+        {
+            foreach (Match match in SlugEpisodeRegex().Matches(path))
+                ConsiderSlugMatch(match, "1", "Episode", ref best, ref bestChapter, ref bestRawText);
 
-        foreach (Match match in SlugChapterRegex().Matches(path))
-            ConsiderSlugMatch(match, "1", "Chapter", ref best, ref bestChapter, ref bestRawText);
+            foreach (Match match in SlugChapterRegex().Matches(path))
+                ConsiderSlugMatch(match, "1", "Chapter", ref best, ref bestChapter, ref bestRawText);
+        }
 
         var host = uri.Host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? uri.Host[4..] : uri.Host;
         if (!OpaqueEpisodeQueryHosts.Contains(host))

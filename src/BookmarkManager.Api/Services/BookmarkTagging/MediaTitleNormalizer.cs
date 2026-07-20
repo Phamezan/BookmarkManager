@@ -161,11 +161,7 @@ public static partial class MediaTitleNormalizer
         if (string.IsNullOrWhiteSpace(slug))
             return null;
 
-        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries).ToList();
-        // Drop a trailing site id/hash ("15516", "yqqv0", "540q") but keep meaningful
-        // numeric tokens that are part of the title (e.g. "fruits-basket-2019").
-        if (tokens.Count > 1 && SlugIdTokenRegex().IsMatch(tokens[^1]))
-            tokens.RemoveAt(tokens.Count - 1);
+        var tokens = SplitAndCleanSlugTokens(slug);
 
         var query = string.Join(' ', tokens).Trim();
         return query.Length >= 2 ? query : null;
@@ -219,9 +215,11 @@ public static partial class MediaTitleNormalizer
             || NonTitlePathSegments.Contains(slug))
             return null;
 
-        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries)
+        var tokens = SplitAndCleanSlugTokens(slug)
             .Where(token => !token.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
             .ToList();
+        if (tokens.Count == 0)
+            return null;
 
         var query = string.Join(' ', tokens).Trim();
         return query.Length >= 2 ? query : null;
@@ -260,11 +258,11 @@ public static partial class MediaTitleNormalizer
         if (string.IsNullOrWhiteSpace(slug) || NonTitlePathSegments.Contains(slug))
             return null;
 
-        var tokens = slug.Split('-', StringSplitOptions.RemoveEmptyEntries)
+        var tokens = SplitAndCleanSlugTokens(slug)
             .Where(token => !token.StartsWith("chapter", StringComparison.OrdinalIgnoreCase))
             .ToList();
-        if (tokens.Count > 1 && SlugIdTokenRegex().IsMatch(tokens[^1]))
-            tokens.RemoveAt(tokens.Count - 1);
+        if (tokens.Count == 0)
+            return null;
 
         var query = string.Join(' ', tokens).Trim();
         return query.Length >= 2 ? query : null;
@@ -712,9 +710,63 @@ public static partial class MediaTitleNormalizer
 
     // A trailing slug id/hash: pure digits ("15516") or a short mixed alphanumeric token
     // that has both a letter and a digit ("yqqv0", "540q", "kn86"). Pure-letter tokens
-    // (real title words like "atelier") are intentionally excluded.
+    // (real title words like "atelier") are intentionally excluded. Four-digit years
+    // (1900-2099) are kept by <see cref="IsRemovableSlugIdToken"/>.
     [GeneratedRegex(@"(?i)^(?:\d+|(?=[a-z0-9]{3,7}$)(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]+)$")]
-    private static partial Regex SlugIdTokenRegex();
+    private static partial Regex SoftSlugIdTokenRegex();
+
+    /// <summary>
+    /// Splits a URL slug on '-' and '.' so hashes glued with a dot ("leveling.yqqv0")
+    /// become separate tokens, then strips removable site-id hashes from the trailing
+    /// position and from the middle of the token list. Keeps title years like "2019".
+    /// </summary>
+    private static List<string> SplitAndCleanSlugTokens(string slug)
+    {
+        var tokens = slug.Split(['-', '.'], StringSplitOptions.RemoveEmptyEntries).ToList();
+        StripRemovableSlugIdTokens(tokens);
+        return tokens;
+    }
+
+    private static void StripRemovableSlugIdTokens(List<string> tokens)
+    {
+        // Trailing: site ids are often pure digits ("15516") or short hashes ("yqqv0").
+        while (tokens.Count > 1 && IsRemovableSlugIdToken(tokens[^1], allowPureDigits: true))
+            tokens.RemoveAt(tokens.Count - 1);
+
+        // Leading hashes ("yqqv0-fate-stay") — mixed alnum only, never pure digits.
+        while (tokens.Count > 1 && IsRemovableSlugIdToken(tokens[0], allowPureDigits: false))
+            tokens.RemoveAt(0);
+
+        // Middle mixed hashes — never pure digits ("mob-psycho-100-iii").
+        for (var i = tokens.Count - 2; i >= 1; i--)
+        {
+            if (IsRemovableSlugIdToken(tokens[i], allowPureDigits: false))
+                tokens.RemoveAt(i);
+        }
+    }
+
+    private static bool IsRemovableSlugIdToken(string token, bool allowPureDigits)
+    {
+        if (IsTitleYearToken(token))
+            return false;
+
+        // "2nd"/"3rd" season markers look like short mixed hashes but are title words.
+        if (OrdinalSlugTokenRegex().IsMatch(token))
+            return false;
+
+        if (!allowPureDigits && token.Length > 0 && token.All(char.IsDigit))
+            return false;
+
+        return SoftSlugIdTokenRegex().IsMatch(token);
+    }
+
+    private static bool IsTitleYearToken(string token) =>
+        token.Length == 4
+        && int.TryParse(token, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var year)
+        && year is >= 1900 and <= 2099;
+
+    [GeneratedRegex(@"^\d+(?:st|nd|rd|th)$", RegexOptions.IgnoreCase)]
+    private static partial Regex OrdinalSlugTokenRegex();
 
     [GeneratedRegex(@"[\u0027\u2019\u2018`'""]")]
     private static partial Regex ApostropheRegex();

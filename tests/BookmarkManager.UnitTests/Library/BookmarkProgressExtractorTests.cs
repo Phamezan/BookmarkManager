@@ -92,6 +92,17 @@ public sealed class BookmarkProgressExtractorTests
     }
 
     [Fact]
+    public void Extract_WebtoonArcSlug_PrefersEpisodeWhenChapterNumberIsHigher()
+    {
+        var result = BookmarkProgressExtractor.Extract(
+            "Some Series",
+            "https://www.webtoons.com/en/action/foo/chapter-12-ep-5/viewer");
+
+        Assert.Equal(5, result.CurrentChapter);
+        Assert.Equal("Episode 5", result.RawProgressText);
+    }
+
+    [Fact]
     public void Extract_WebtoonBookmarkTitleAndUrl_UsesEpisodeFromTitle()
     {
         var result = BookmarkProgressExtractor.Extract(

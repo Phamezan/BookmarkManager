@@ -297,7 +297,8 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     }
 
     // LLMs frequently wrap JSON in markdown code fences or add a sentence before/after it.
-    // Strip fences, then take the substring between the first '{' and the matching last '}'.
+    // Strip fences, then take the first complete `{...}` object (brace-matched). Spanning from
+    // the first '{' to the last '}' silently breaks when the model emits two objects.
     internal static string? ExtractJsonObject(string? content)
     {
         if (string.IsNullOrWhiteSpace(content))
@@ -324,13 +325,53 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         }
 
         var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end < 0 || end < start)
+        if (start < 0)
         {
             return null;
         }
 
-        return text.Substring(start, end - start + 1);
+        var depth = 0;
+        var inString = false;
+        var escape = false;
+        for (var i = start; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (inString)
+            {
+                if (escape)
+                {
+                    escape = false;
+                    continue;
+                }
+
+                if (c == '\\')
+                {
+                    escape = true;
+                    continue;
+                }
+
+                if (c == '"')
+                    inString = false;
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    inString = true;
+                    break;
+                case '{':
+                    depth++;
+                    break;
+                case '}':
+                    depth--;
+                    if (depth == 0)
+                        return text.Substring(start, i - start + 1);
+                    break;
+            }
+        }
+
+        return null;
     }
 
     private static string BuildSearchPrompt(SeriesExtraction extraction, string deadHost, string? preferredHost, bool restrictToPreferredHost)
