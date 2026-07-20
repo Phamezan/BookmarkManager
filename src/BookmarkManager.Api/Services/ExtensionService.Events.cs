@@ -357,10 +357,18 @@ public sealed partial class ExtensionService
             try
             {
                 var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
-                var autoTags = await bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
-                if (autoTags.Count > 0)
+                var outcome = await bookmarkTagging.GetTagsWithCoverAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
+                if (outcome.Tags.Count > 0)
                 {
-                    node.Tags = string.Join(",", autoTags);
+                    node.Tags = string.Join(",", outcome.Tags);
+                    changed = true;
+                }
+
+                // Prefer the matched provider's poster (AniList) over a later og:image
+                // scrape — only fill an empty cover so we never clobber an existing one.
+                if (!string.IsNullOrWhiteSpace(outcome.CoverImageUrl) && string.IsNullOrWhiteSpace(node.CoverImageUrl))
+                {
+                    node.CoverImageUrl = outcome.CoverImageUrl;
                     changed = true;
                 }
             }

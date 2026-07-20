@@ -22,7 +22,7 @@
       "suggested_key": {
         "default": "Ctrl+Shift+F"
       },
-      "description": "Quick-bookmark current page, or close the extension popup if it is already open"
+      "description": "Quick-bookmark current page; press twice quickly on an already-bookmarked page to remove it"
     },
     "toggle-palette": {
       "suggested_key": {

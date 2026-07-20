@@ -274,6 +274,11 @@ export interface ApiClient {
   getBookmarkEnrichmentByBrowserId(
     browserNodeId: string,
   ): Promise<ExtensionBookmarkEnrichment | null>;
+  /** Persists a client-captured cover (e.g. og:image) on a synced bookmark. */
+  setBookmarkCoverByBrowserId(
+    browserNodeId: string,
+    coverImageUrl: string,
+  ): Promise<void>;
   getTags(): Promise<TagCount[]>;
   bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void>;
   /** Suggest-only: returns AI-suggested tags without persisting anything. */
@@ -317,6 +322,9 @@ export interface StorageRepository {
   clearPendingDuplicateState(): Promise<void>;
   getLastActiveFolder(): Promise<string>;
   saveLastActiveFolder(folderId: string): Promise<void>;
+  /** Short-lived stash of a client-captured cover, keyed by page URL. */
+  saveStashedCover(url: string, coverImageUrl: string): Promise<void>;
+  getStashedCover(url: string): Promise<string | null>;
   enqueueEvent(event: ExtensionEvent): Promise<void>;
   getReadyEvents(limit: number, now: Date): Promise<OutboxEntry[]>;
   acknowledgeEvents(eventIds: string[]): Promise<void>;

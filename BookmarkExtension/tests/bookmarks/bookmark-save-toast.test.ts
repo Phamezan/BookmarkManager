@@ -300,4 +300,85 @@ describe("BookmarkSaveToast", () => {
       toast.run({ browserNodeId: "1", title: "A", parentId: "1" }),
     ).resolves.toBeUndefined();
   });
+
+  it("persists and shows a stashed cover when the server node has none", async () => {
+    const persistCover = vi.fn().mockResolvedValue(undefined);
+    let shownCover: string | null | undefined;
+    const toast = new BookmarkSaveToast({
+      getEnrichment: async () => ({
+        id: "srv-1",
+        title: "Demon King",
+        folderPath: "Bookmarks Bar / Novels",
+        tags: ["Novel"],
+        status: null,
+        coverImageUrl: null,
+      }),
+      getFolderTitle: async () => null,
+      resolveTabId: async () => 7,
+      showInPage: async (_tabId, payload) => {
+        shownCover = payload.coverImageUrl;
+      },
+      showFallbackWindow: async () => {
+        throw new Error("should not fallback");
+      },
+      sleep: async () => undefined,
+      now: () => 1_000,
+      initialDelayMs: 0,
+      retryDelayMs: 0,
+      debounceMs: 0,
+      getStashedCover: async (url) =>
+        url === "https://novelfire.net/x" ? "https://cdn.example/x.jpg" : null,
+      persistCover,
+    });
+
+    await toast.run({
+      browserNodeId: "42",
+      title: "Demon King",
+      parentId: "1",
+      url: "https://novelfire.net/x",
+    });
+
+    expect(shownCover).toBe("https://cdn.example/x.jpg");
+    expect(persistCover).toHaveBeenCalledWith("42", "https://cdn.example/x.jpg");
+  });
+
+  it("prefers the server cover over a stashed one and does not persist", async () => {
+    const persistCover = vi.fn();
+    let shownCover: string | null | undefined;
+    const toast = new BookmarkSaveToast({
+      getEnrichment: async () => ({
+        id: "srv-1",
+        title: "Demon King",
+        folderPath: "Bookmarks Bar / Novels",
+        tags: ["Novel"],
+        status: null,
+        coverImageUrl: "https://server/cover.jpg",
+      }),
+      getFolderTitle: async () => null,
+      resolveTabId: async () => 7,
+      showInPage: async (_tabId, payload) => {
+        shownCover = payload.coverImageUrl;
+      },
+      showFallbackWindow: async () => {
+        throw new Error("should not fallback");
+      },
+      sleep: async () => undefined,
+      now: () => 1_000,
+      initialDelayMs: 0,
+      retryDelayMs: 0,
+      debounceMs: 0,
+      getStashedCover: async () => "https://cdn.example/x.jpg",
+      persistCover,
+    });
+
+    await toast.run({
+      browserNodeId: "42",
+      title: "Demon King",
+      parentId: "1",
+      url: "https://novelfire.net/x",
+    });
+
+    expect(shownCover).toBe("https://server/cover.jpg");
+    expect(persistCover).not.toHaveBeenCalled();
+  });
 });

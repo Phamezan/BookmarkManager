@@ -70,6 +70,20 @@ export class SidePanelPresence {
     }
     return true;
   }
+
+  /** Tells any open panel to re-fetch (e.g. a new bookmark was just saved). */
+  requestRefresh(): boolean {
+    if (this.ports.size === 0) return false;
+    for (const port of [...this.ports]) {
+      try {
+        port.postMessage({ type: "refresh" });
+      } catch (e) {
+        console.warn("[worker] sidepanel refresh failed:", e);
+        this.ports.delete(port);
+      }
+    }
+    return true;
+  }
 }
 
 /** The side panel may only be opened within this many ms of the toast being shown. */
@@ -121,6 +135,21 @@ export class SidePanelController {
 
     await this.deps.session.remove(ARMING_KEY);
     return true;
+  }
+
+  /**
+   * Repoints the panel at a specific bookmark (or clears it → empty state).
+   * Unlike `arm`, this does NOT touch the one-shot arming window, so it is
+   * safe to call for a plain "show me this tab's bookmark" toggle. Callers
+   * must invoke this only AFTER `chrome.sidePanel.open()` — the awaited
+   * storage write would otherwise void the opening user gesture.
+   */
+  async setCurrent(current: CurrentBookmarkState | null): Promise<void> {
+    if (current) {
+      await this.deps.session.set({ [CURRENT_KEY]: current });
+    } else {
+      await this.deps.session.remove(CURRENT_KEY);
+    }
   }
 
   /** Fresh enrichment for the bookmark the panel should currently show. */

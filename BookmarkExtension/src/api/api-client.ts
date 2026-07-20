@@ -169,6 +169,17 @@ export class HttpApiClient implements ApiClient {
     }
   }
 
+  async setBookmarkCoverByBrowserId(
+    browserNodeId: string,
+    coverImageUrl: string,
+  ): Promise<void> {
+    await this.request<void>(
+      "PUT",
+      `/api/extension/bookmarks/by-browser-id/${encodeURIComponent(browserNodeId)}/cover`,
+      { coverImageUrl },
+    );
+  }
+
   getTags(): Promise<TagCount[]> {
     return this.request<TagCount[]>("GET", "/api/bookmarks/tags");
   }

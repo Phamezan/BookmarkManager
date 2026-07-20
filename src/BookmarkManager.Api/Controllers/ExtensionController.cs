@@ -81,4 +81,16 @@ public class ExtensionController(IExtensionService extensionService) : Controlle
         var dto = await extensionService.GetBookmarkEnrichmentByBrowserIdAsync(browserNodeId, ct);
         return dto is null ? NotFound() : Ok(dto);
     }
+
+    /// <summary>Sets a cover image captured client-side (e.g. og:image) on a synced bookmark.</summary>
+    [HttpPut("bookmarks/by-browser-id/{browserNodeId}/cover")]
+    public async Task<IActionResult> SetCoverByBrowserIdAsync(
+        string browserNodeId,
+        [FromBody] SetBookmarkCoverRequest request,
+        CancellationToken ct)
+    {
+        var updated = await extensionService.SetBookmarkCoverByBrowserIdAsync(
+            browserNodeId, request.CoverImageUrl, ct);
+        return updated ? NoContent() : NotFound();
+    }
 }

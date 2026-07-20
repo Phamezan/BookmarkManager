@@ -28,20 +28,29 @@ export class QuickBookmarkHandler {
    * user-edited title once the popup's `commitDraft` actually creates it.
    * Series-duplicate creation is deferred the same way, unchanged. Caller
    * handles the "popup already open → close" toggle.
+   *
+   * Returns the http(s) URL it acted on (so the caller can track it for the
+   * double-tap-to-remove gesture), or `null` when nothing actionable ran.
    */
-  async run(): Promise<void> {
+  async run(): Promise<string | null> {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       if (!tab || !tab.url || !tab.title) {
         console.warn("[worker] quick-bookmark: no active tab or missing URL/title");
-        return;
+        return null;
       }
       const url = tab.url;
       let title = tab.title;
 
       if (!url.startsWith("http://") && !url.startsWith("https://")) {
         console.warn("[worker] quick-bookmark: non-http URL, skipping:", url);
-        return;
+        return null;
+      }
+
+      // Capture the page's social-share image (og:image etc.) while the tab is
+      // live, so a cover survives to the server even for sites we don't catalog.
+      if (typeof tab.id === "number") {
+        await this.stashCoverImage(tab.id, url);
       }
 
       let extractedEpisodeOrChapter: string | null = null;
@@ -90,7 +99,7 @@ export class QuickBookmarkHandler {
       const folderId = await this.resolveTargetFolder();
       if (folderId === null) {
         console.warn("[worker] quick-bookmark: no valid target folder available");
-        return;
+        return null;
       }
 
       if (
@@ -110,7 +119,7 @@ export class QuickBookmarkHandler {
             capturedAt: this.deps.now().toISOString(),
           });
           await openPopupOrBadge();
-          return;
+          return url;
         }
       }
 
@@ -138,9 +147,11 @@ export class QuickBookmarkHandler {
       }
 
       await openPopupOrBadge();
+      return url;
     } catch (e) {
       console.error("[worker] quick-bookmark failed:", e);
       showBadge("X", "#EF4444");
+      return null;
     }
   }
 
@@ -169,6 +180,48 @@ export class QuickBookmarkHandler {
       wasCreated: true,
     });
     return { success: true };
+  }
+
+  /**
+   * Reads the page's cover image (og:image → twitter:image → link[rel=image_src]),
+   * resolved to an absolute URL, and stashes it keyed by page URL for the save
+   * toast to persist server-side. Best-effort — never throws into the save path.
+   */
+  private async stashCoverImage(tabId: number, url: string): Promise<void> {
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          const abs = (value: string): string => {
+            try {
+              return new URL(value, document.baseURI).href;
+            } catch {
+              return value;
+            }
+          };
+          const pick = (selector: string, attr: string): string | null => {
+            const el = document.querySelector(selector);
+            const value = el?.getAttribute(attr);
+            return value && value.trim() ? abs(value.trim()) : null;
+          };
+          return (
+            pick('meta[property="og:image"]', "content") ||
+            pick('meta[property="og:image:url"]', "content") ||
+            pick('meta[property="og:image:secure_url"]', "content") ||
+            pick('meta[name="twitter:image"]', "content") ||
+            pick('meta[name="twitter:image:src"]', "content") ||
+            pick('link[rel="image_src"]', "href") ||
+            null
+          );
+        },
+      });
+      const cover = results?.[0]?.result;
+      if (typeof cover === "string" && cover) {
+        await this.deps.storage.saveStashedCover(url, cover);
+      }
+    } catch (e) {
+      console.warn("[worker] quick-bookmark: cover capture failed:", e);
+    }
   }
 
   private async hasExactBookmark(url: string): Promise<boolean> {

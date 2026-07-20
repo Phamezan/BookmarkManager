@@ -14,7 +14,6 @@
   let enrichment = $state(null);
   let allTags = $state([]);
   let saveState = $state("idle"); // idle | saving | saved | error
-  let autotagState = $state("idle"); // idle | busy | error
   let shortcutLabel = $state("");
 
   let pollTimer = null;
@@ -101,38 +100,18 @@
     }
   }
 
-  /** Case-insensitive union that keeps existing chip order and appends any
-   *  genuinely new suggestions in the order the server returned them. */
-  function mergeTags(current, suggested) {
-    const seen = new Set(current.map((t) => t.toLowerCase()));
-    const merged = [...current];
-    for (const tag of suggested) {
-      const key = tag.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(tag);
-    }
-    return merged;
-  }
-
-  async function handleAutotag() {
-    if (!enrichment?.id || autotagState === "busy") return;
-    autotagState = "busy";
-    try {
-      const suggestions = await sendMessage({
-        type: "sidepanel/aiRetag",
-        serverId: enrichment.id,
-      });
-      const merged = mergeTags(enrichment.tags ?? [], suggestions ?? []);
-      autotagState = "idle";
-      await handleTagsChange(merged);
-    } catch {
-      autotagState = "error";
-    }
-  }
-
   function closePanel() {
     window.close();
+  }
+
+  /** Reloads the panel for whichever bookmark the worker now points at.
+   *  Used on mount and when the worker signals a new save while open. */
+  async function reload() {
+    stopPolling();
+    loading = true;
+    await refreshCurrent();
+    await loadTags();
+    if (stillIncomplete()) startPolling();
   }
 
   onMount(async () => {
@@ -140,6 +119,8 @@
     port.onMessage.addListener((message) => {
       if (message?.type === "close") {
         window.close();
+      } else if (message?.type === "refresh") {
+        void reload();
       }
     });
 
@@ -156,15 +137,18 @@
 
 <main>
   <div class="panel-header">
-    <span class="panel-header-label">Bookmark saved</span>
+    <span class="eyebrow">
+      <span class="eyebrow-dot" aria-hidden="true"></span>
+      Bookmark saved
+    </span>
     <button
       type="button"
       class="close-btn"
       aria-label="Close panel"
       onclick={closePanel}
     >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M4 4l16 16M20 4L4 20" />
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+        <path d="M5 5l14 14M19 5L5 19" />
       </svg>
     </button>
   </div>
@@ -179,88 +163,122 @@
     <p class="empty-state">{loadError ?? "No bookmark to show yet."}</p>
   {:else}
     <div class="bookmark">
-      {#if enrichment.coverImageUrl}
-        <div class="cover-frame">
-          <img class="cover" src={enrichment.coverImageUrl} alt="" />
-          <div class="cover-fade"></div>
-        </div>
-      {/if}
+      <div class="card hero">
+        <span class="hero-glow" aria-hidden="true"></span>
+        {#if enrichment.coverImageUrl}
+          <div class="cover-frame">
+            <img class="cover" src={enrichment.coverImageUrl} alt="" />
+            <div class="cover-fade"></div>
+          </div>
+        {/if}
 
-      <h1 class="title">{enrichment.title}</h1>
+        <div class="hero-body">
+          <h1 class="title">{enrichment.title}</h1>
 
-      {#if enrichment.url}
-        <a class="url" href={enrichment.url} target="_blank" rel="noopener noreferrer">
-          {enrichment.url}
-        </a>
-      {/if}
+          {#if enrichment.url}
+            <a class="url-pill" href={enrichment.url} target="_blank" rel="noopener noreferrer">
+              <span class="url-dot" aria-hidden="true"></span>
+              <span class="url-text">{enrichment.url}</span>
+            </a>
+          {/if}
 
-      {#if enrichment.folderPath || enrichment.status === PLAN_TO_READ_STATUS}
-        <div class="meta-row">
-          {#if enrichment.folderPath}
-            <div class="folder">
-              <svg class="folder-icon" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
-                <path d={FOLDER_ICON_PATH} />
-              </svg>
-              <span>{enrichment.folderPath}</span>
+          {#if enrichment.folderPath || enrichment.status === PLAN_TO_READ_STATUS}
+            <div class="meta-row">
+              {#if enrichment.folderPath}
+                <div class="folder">
+                  <svg class="folder-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  </svg>
+                  <span>{enrichment.folderPath}</span>
+                </div>
+              {/if}
+              {#if enrichment.status === PLAN_TO_READ_STATUS}
+                <span class="status-pill">Saved for later</span>
+              {/if}
             </div>
           {/if}
-          {#if enrichment.status === PLAN_TO_READ_STATUS}
-            <span class="status-pill">Saved for later</span>
-          {/if}
         </div>
-      {/if}
+      </div>
 
-      <section class="tags-section">
+      <section class="card tags-section">
         <div class="tags-header">
           <label for="tags">Tags</label>
-          <button
-            type="button"
-            class="btn-primary autotag-btn"
-            disabled={!enrichment.id || autotagState === "busy"}
-            onclick={handleAutotag}
-          >
-            {autotagState === "busy" ? "Autotagging…" : "Autotag"}
-          </button>
         </div>
-        <TagEditor
-          tags={enrichment.tags ?? []}
-          {allTags}
-          disabled={!enrichment.id}
-          onChange={handleTagsChange}
-        />
-        {#if !enrichment.id}
-          <p class="hint">Tag editing unlocks once the bookmark finishes syncing.</p>
-        {:else if saveState === "saving"}
-          <p class="hint saving">Saving…</p>
-        {:else if saveState === "saved"}
-          <p class="hint saved">Saved</p>
-        {:else if saveState === "error"}
-          <p class="hint error">Failed to save — try again.</p>
-        {:else if autotagState === "error"}
-          <p class="hint error">Autotag failed — try again.</p>
-        {/if}
+        <div class="tags-core">
+          <TagEditor
+            tags={enrichment.tags ?? []}
+            {allTags}
+            disabled={!enrichment.id}
+            onChange={handleTagsChange}
+          />
+          {#if !enrichment.id}
+            <p class="hint">Tag editing unlocks once the bookmark finishes syncing.</p>
+          {:else if saveState === "saving"}
+            <p class="hint saving">Saving…</p>
+          {:else if saveState === "saved"}
+            <p class="hint saved">Saved</p>
+          {:else if saveState === "error"}
+            <p class="hint error">Failed to save — try again.</p>
+          {/if}
+        </div>
       </section>
     </div>
   {/if}
 
   <footer class="panel-footer">
-    <p>Toggle panel: {shortcutLabel}</p>
-    <p>Change at brave://extensions/shortcuts</p>
+    <p>Toggle panel <kbd class="kbd">{shortcutLabel}</kbd></p>
+    <p class="footer-dim">Change at brave://extensions/shortcuts</p>
   </footer>
 </main>
 
 <style>
+  :global(:root) {
+    --bg: #060608;
+    --card-shell: hsl(250 20% 100% / 0.03);
+    --card-core: hsl(250 22% 9% / 0.72);
+    --hairline: hsl(250 40% 100% / 0.08);
+    --hairline-strong: hsl(250 40% 100% / 0.14);
+    --inner-glow: inset 0 1px 0 hsl(0 0% 100% / 0.06);
+    --text: hsl(250 22% 96%);
+    --text-muted: hsl(250 12% 62%);
+    --text-dim: hsl(250 10% 44%);
+    --violet: hsl(258 90% 74%);
+    --violet-deep: hsl(262 84% 62%);
+    --emerald: hsl(162 72% 60%);
+    --ease-fluid: cubic-bezier(0.32, 0.72, 0, 1);
+    --radius-shell: 22px;
+    --radius-core: 16px;
+  }
+
   :global(html),
   :global(body) {
     margin: 0;
-    background: hsl(220 16% 10%);
-    color: hsl(220 15% 92%);
-    font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Geist", "Plus Jakarta Sans", "Space Grotesk", ui-sans-serif,
+      system-ui, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Fixed radial-mesh ambient orbs — GPU-cheap, never scrolls */
+  :global(body)::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(52% 34% at 82% -4%, hsl(262 84% 58% / 0.28), transparent 60%),
+      radial-gradient(46% 30% at 6% 8%, hsl(200 90% 55% / 0.14), transparent 60%),
+      radial-gradient(60% 40% at 50% 108%, hsl(280 80% 55% / 0.12), transparent 62%);
   }
 
   main {
-    padding: 16px;
-    min-height: 100vh;
+    position: relative;
+    z-index: 1;
+    padding: 18px 16px 16px;
+    min-height: 100dvh;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -270,117 +288,220 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 14px;
+    margin-bottom: 18px;
   }
 
-  .panel-header-label {
-    font-size: 11px;
-    font-weight: 500;
-    color: hsl(220 10% 55%);
+  /* Eyebrow tag */
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.2em;
+    background: var(--card-shell);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    padding: 5px 11px 5px 9px;
+  }
+
+  .eyebrow-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--emerald);
+    box-shadow: 0 0 8px 1px hsl(162 72% 60% / 0.8);
+    animation: breathe 2.6s var(--ease-fluid) infinite;
+  }
+
+  @keyframes breathe {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
   }
 
   .close-btn {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    color: hsl(220 10% 55%);
+    width: 30px;
+    height: 30px;
+    background: var(--card-shell);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    color: var(--text-muted);
     cursor: pointer;
-    transition: color 0.18s ease, background 0.18s ease;
+    transition: color 0.4s var(--ease-fluid), background 0.4s var(--ease-fluid),
+      transform 0.4s var(--ease-fluid);
   }
 
   .close-btn:hover {
-    color: hsl(220 15% 92%);
-    background: hsl(220 14% 17%);
+    color: var(--text);
+    background: hsl(250 40% 100% / 0.08);
+    transform: rotate(90deg);
+  }
+
+  .close-btn:active {
+    transform: rotate(90deg) scale(0.92);
+  }
+
+  /* Double-bezel card: outer shell + inner core */
+  .card {
+    background: var(--card-shell);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-shell);
+    padding: 6px;
   }
 
   .skeleton {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 12px;
+    padding: 6px;
   }
 
   .skel-cover {
     width: 100%;
-    height: 160px;
-    border-radius: 12px;
-    background: hsl(220 14% 17%);
-    animation: pulse 1.4s ease-in-out infinite;
+    height: 150px;
+    border-radius: var(--radius-core);
+    background: linear-gradient(100deg, hsl(250 20% 12%) 30%, hsl(250 18% 18%) 50%, hsl(250 20% 12%) 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s var(--ease-fluid) infinite;
   }
 
   .skel-line {
     height: 12px;
     border-radius: 6px;
-    background: hsl(220 14% 17%);
-    animation: pulse 1.4s ease-in-out infinite;
+    background: linear-gradient(100deg, hsl(250 20% 12%) 30%, hsl(250 18% 18%) 50%, hsl(250 20% 12%) 70%);
+    background-size: 200% 100%;
+    animation: shimmer 1.6s var(--ease-fluid) infinite;
   }
 
-  @keyframes pulse {
-    0%, 100% { opacity: 0.6; }
-    50% { opacity: 1; }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 
   .empty-state {
-    color: hsl(220 10% 55%);
+    color: var(--text-muted);
     font-size: 13px;
+    text-align: center;
+    padding: 36px 16px;
+    background: var(--card-core);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-shell);
   }
 
   .bookmark {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    animation: rise 0.7s var(--ease-fluid) both;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(16px); filter: blur(6px); }
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+
+  /* HERO card */
+  .hero {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-glow {
+    position: absolute;
+    top: -60px;
+    right: -40px;
+    width: 180px;
+    height: 140px;
+    background: radial-gradient(closest-side, hsl(262 84% 60% / 0.55), transparent);
+    filter: blur(8px);
+    pointer-events: none;
+  }
+
+  .hero-body {
+    position: relative;
+    background: var(--card-core);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-core);
+    box-shadow: var(--inner-glow);
+    padding: 16px 15px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
   }
 
   .cover-frame {
     position: relative;
     width: 100%;
-    max-height: 260px;
-    border-radius: 12px;
+    max-height: 240px;
+    border-radius: var(--radius-core);
     overflow: hidden;
+    margin-bottom: 12px;
   }
 
   .cover {
     display: block;
     width: 100%;
     max-width: 100%;
-    max-height: 260px;
+    max-height: 240px;
     object-fit: cover;
   }
 
   .cover-fade {
     position: absolute;
     inset: 0;
-    background: linear-gradient(transparent 60%, hsl(220 16% 10% / 0.85));
+    background: linear-gradient(transparent 55%, hsl(250 22% 6% / 0.8));
     pointer-events: none;
   }
 
   .title {
-    font-size: 18px;
-    line-height: 1.3;
-    font-weight: 650;
-    letter-spacing: -0.01em;
+    font-size: 20px;
+    line-height: 1.25;
+    font-weight: 640;
+    letter-spacing: -0.02em;
     margin: 0;
     word-break: break-word;
   }
 
-  .url {
-    display: block;
-    font-size: 12px;
-    color: hsl(212 80% 68%);
+  /* URL as an inset pill */
+  .url-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    font-size: 11.5px;
+    color: var(--violet);
     text-decoration: none;
+    background: hsl(258 80% 66% / 0.1);
+    border: 1px solid hsl(258 80% 66% / 0.22);
+    border-radius: 999px;
+    padding: 5px 12px 5px 10px;
+    width: fit-content;
+    transition: background 0.4s var(--ease-fluid), border-color 0.4s var(--ease-fluid);
+  }
+
+  .url-pill:hover {
+    background: hsl(258 80% 66% / 0.18);
+    border-color: hsl(258 80% 66% / 0.4);
+  }
+
+  .url-dot {
+    flex-shrink: 0;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--violet);
+    box-shadow: 0 0 7px 0 var(--violet);
+  }
+
+  .url-text {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .url:hover {
-    text-decoration: underline;
   }
 
   .meta-row {
@@ -393,40 +514,39 @@
   .folder {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: hsl(220 10% 55%);
-    background: hsl(220 14% 14%);
-    border: 1px solid hsl(220 12% 22%);
-    border-radius: 8px;
-    padding: 6px 10px;
+    gap: 7px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    background: hsl(250 20% 100% / 0.03);
+    border: 1px solid var(--hairline);
+    border-radius: 999px;
+    padding: 5px 11px;
     width: fit-content;
   }
 
   .folder-icon {
     flex-shrink: 0;
-    fill: #a5b4fc;
+    color: var(--violet);
   }
 
   .status-pill {
     display: inline-flex;
     align-items: center;
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 600;
-    color: #7dd3fc;
-    background: hsl(199 89% 64% / 0.14);
+    letter-spacing: 0.02em;
+    color: var(--emerald);
+    background: hsl(162 72% 55% / 0.12);
+    border: 1px solid hsl(162 72% 55% / 0.28);
     border-radius: 999px;
-    padding: 4px 10px;
+    padding: 5px 11px;
     width: fit-content;
   }
 
+  /* TAGS card */
   .tags-section {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-top: 0;
-    padding-top: 14px;
-    border-top: 1px solid hsl(220 12% 22%);
   }
 
   .tags-header {
@@ -434,67 +554,80 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    padding: 6px 8px 12px 10px;
+  }
+
+  .tags-core {
+    background: var(--card-core);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-core);
+    box-shadow: var(--inner-glow);
+    padding: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
   }
 
   .tags-header label {
-    font-size: 11px;
-    font-weight: 500;
-    color: hsl(220 10% 55%);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .btn-primary {
-    background: hsl(212 80% 58%);
-    border: none;
-    border-radius: 8px;
-    color: #fff;
-    font-family: inherit;
-    font-size: 12px;
+    font-size: 10px;
     font-weight: 600;
-    padding: 6px 12px;
-    cursor: pointer;
-    transition: background 0.18s ease, box-shadow 0.18s ease;
-  }
-
-  .btn-primary:hover:not(:disabled) {
-    background: hsl(212 60% 45%);
-    box-shadow: 0 2px 8px hsl(212 80% 58% / 0.25);
-  }
-
-  .btn-primary:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    box-shadow: none;
-  }
-
-  .autotag-btn {
-    flex-shrink: 0;
-    white-space: nowrap;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
   }
 
   .hint {
     font-size: 11.5px;
-    color: hsl(220 8% 40%);
-    margin: 2px 0 0;
+    color: var(--text-dim);
+    margin: 0;
   }
 
-  .hint.saving { color: hsl(38 90% 55%); }
-  .hint.saved { color: hsl(145 60% 45%); }
-  .hint.error { color: hsl(0 65% 55%); }
+  .hint.saving { color: hsl(40 92% 66%); }
+  .hint.saved { color: var(--emerald); }
+  .hint.error { color: hsl(2 80% 70%); }
 
   .panel-footer {
-    margin-top: 14px;
-    padding-top: 12px;
-    border-top: 1px solid hsl(220 12% 22%);
+    margin-top: 18px;
+    padding: 14px 6px 4px;
+    border-top: 1px solid var(--hairline);
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    align-items: center;
+    gap: 6px;
+    text-align: center;
   }
 
   .panel-footer p {
     margin: 0;
-    font-size: 11px;
-    color: hsl(220 8% 40%);
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .footer-dim {
+    color: var(--text-dim) !important;
+  }
+
+  .kbd {
+    font-family: ui-monospace, "SFMono-Regular", "Cascadia Code", monospace;
+    font-size: 10px;
+    color: var(--text);
+    background: hsl(250 20% 100% / 0.05);
+    border: 1px solid var(--hairline-strong);
+    border-bottom-width: 2px;
+    border-radius: 7px;
+    padding: 2px 7px;
+    line-height: 1.4;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 </style>

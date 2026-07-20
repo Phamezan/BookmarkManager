@@ -764,3 +764,144 @@ describe("ServiceWorker WebSocket", () => {
     expect(result).toEqual({ success: true, filename: "f.html", error: null });
   });
 });
+
+const bookmarkedTree: FakeBookmarkNode[] = [
+  {
+    id: "0",
+    title: "",
+    children: [
+      {
+        id: "1",
+        title: "Bookmarks bar",
+        index: 0,
+        children: [
+          { id: "10", title: "Demon King", url: "https://novelfire.net/x", index: 0 },
+        ],
+      },
+    ],
+  },
+];
+
+async function buildWorkerWithExtras(
+  chromeStub: ReturnType<typeof makeChromeStub>,
+  extras: Record<string, unknown>,
+) {
+  vi.stubGlobal("chrome", chromeStub);
+  const { ServiceWorker } = await import("../../src/background/service-worker");
+  const { SettingsAwareApiClient } = await import("../../src/api/settings-aware-client");
+  const { ChromeStorageRepository } = await import("../../src/storage/storage-repository");
+  const { ChromeBookmarkAdapter } = await import("../../src/bookmarks/bookmark-adapter");
+  const { BackupManager } = await import("../../src/backup/backup-manager");
+
+  const repo = new ChromeStorageRepository(chrome.storage.local);
+  return new ServiceWorker({
+    api: new SettingsAwareApiClient(repo),
+    adapter: new ChromeBookmarkAdapter(chrome.bookmarks as never),
+    storage: repo,
+    backupManager: new BackupManager({
+      storage: repo,
+      downloads: { download: () => Promise.resolve(0), removeFile: () => Promise.resolve() },
+      getTree: async () => [],
+      now: () => new Date(),
+    }),
+    getExtensionVersion: () => "0.1.0",
+    getBraveVersion: () => "unknown",
+    now: () => new Date(),
+    ...extras,
+  } as never);
+}
+
+describe("ServiceWorker quick-bookmark double-tap remove", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  it("removes the active tab's bookmark on a second rapid press and toasts", async () => {
+    const bookmarks = new FakeBookmarks(bookmarkedTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    chromeStub.tabs.query = vi
+      .fn()
+      .mockResolvedValue([
+        { id: 7, url: "https://novelfire.net/x", title: "Demon King", windowId: 1 },
+      ]);
+    const showRemovedToast = vi.fn().mockResolvedValue(undefined);
+    const worker = await buildWorkerWithExtras(chromeStub, { showRemovedToast });
+
+    await worker.handleQuickBookmark(); // 1st press: opens editor, arms the gesture
+    await worker.handleQuickBookmark(); // 2nd press: removes
+
+    expect(bookmarks.calls.some((c) => c.method === "remove" && c.args[0] === "10")).toBe(true);
+    expect(showRemovedToast).toHaveBeenCalledWith({
+      title: "Demon King",
+      url: "https://novelfire.net/x",
+    });
+  });
+
+  it("does not remove on a single press", async () => {
+    const bookmarks = new FakeBookmarks(bookmarkedTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    chromeStub.tabs.query = vi
+      .fn()
+      .mockResolvedValue([
+        { id: 7, url: "https://novelfire.net/x", title: "Demon King", windowId: 1 },
+      ]);
+    const showRemovedToast = vi.fn().mockResolvedValue(undefined);
+    const worker = await buildWorkerWithExtras(chromeStub, { showRemovedToast });
+
+    await worker.handleQuickBookmark();
+
+    expect(bookmarks.calls.some((c) => c.method === "remove")).toBe(false);
+    expect(showRemovedToast).not.toHaveBeenCalled();
+  });
+});
+
+describe("ServiceWorker toggle-sidepanel points at active tab", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  function fakeSidePanel() {
+    return {
+      setCurrent: vi.fn().mockResolvedValue(undefined),
+      tryOpen: vi.fn(),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+  }
+
+  it("shows the current tab's bookmark when it is bookmarked", async () => {
+    const bookmarks = new FakeBookmarks(bookmarkedTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    chromeStub.tabs.query = vi
+      .fn()
+      .mockResolvedValue([{ id: 7, url: "https://novelfire.net/x", windowId: 1 }]);
+    const sidePanel = fakeSidePanel();
+    const worker = await buildWorkerWithExtras(chromeStub, { sidePanel: sidePanel as never });
+
+    await worker.handleToggleSidePanel({ id: 7 } as chrome.tabs.Tab);
+
+    expect(chromeStub.sidePanel.open).toHaveBeenCalledWith({ tabId: 7 });
+    expect(sidePanel.setCurrent).toHaveBeenCalledWith({
+      browserNodeId: "10",
+      url: "https://novelfire.net/x",
+    });
+  });
+
+  it("clears to the empty state when the current tab is not bookmarked", async () => {
+    const bookmarks = new FakeBookmarks(bookmarkedTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    chromeStub.tabs.query = vi
+      .fn()
+      .mockResolvedValue([{ id: 7, url: "https://example.com/not-saved", windowId: 1 }]);
+    const sidePanel = fakeSidePanel();
+    const worker = await buildWorkerWithExtras(chromeStub, { sidePanel: sidePanel as never });
+
+    await worker.handleToggleSidePanel({ id: 7 } as chrome.tabs.Tab);
+
+    expect(sidePanel.setCurrent).toHaveBeenCalledWith(null);
+  });
+});

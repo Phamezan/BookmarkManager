@@ -27,6 +27,13 @@ const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
 const PENDING_CREATE_DRAFT_KEY = "bm.pendingCreateDraft";
 const PENDING_DUPLICATE_KEY = "bm.pendingDuplicateState";
 const LAST_ACTIVE_FOLDER_KEY = "bm.lastActiveFolderId";
+const COVER_STASH_KEY = "bm.coverStash";
+const COVER_STASH_TTL_MS = 10 * 60 * 1000;
+
+interface CoverStashEntry {
+  cover: string;
+  at: number;
+}
 const BACKUP_STATE_KEY = "bm.backupState";
 const BACKUP_SETTINGS_KEY = "bm.backupSettings";
 
@@ -101,6 +108,30 @@ export class ChromeStorageRepository implements StorageRepository {
 
   async saveLastActiveFolder(folderId: string): Promise<void> {
     await this.storage.set({ [LAST_ACTIVE_FOLDER_KEY]: folderId });
+  }
+
+  async saveStashedCover(url: string, coverImageUrl: string): Promise<void> {
+    const now = Date.now();
+    const map = await this.readCoverStash();
+    const pruned: Record<string, CoverStashEntry> = {};
+    for (const [key, entry] of Object.entries(map)) {
+      if (now - entry.at <= COVER_STASH_TTL_MS) pruned[key] = entry;
+    }
+    pruned[url] = { cover: coverImageUrl, at: now };
+    await this.storage.set({ [COVER_STASH_KEY]: pruned });
+  }
+
+  async getStashedCover(url: string): Promise<string | null> {
+    const map = await this.readCoverStash();
+    const entry = map[url];
+    if (!entry) return null;
+    if (Date.now() - entry.at > COVER_STASH_TTL_MS) return null;
+    return entry.cover;
+  }
+
+  private async readCoverStash(): Promise<Record<string, CoverStashEntry>> {
+    const result = await this.storage.get(COVER_STASH_KEY);
+    return (result[COVER_STASH_KEY] as Record<string, CoverStashEntry> | undefined) ?? {};
   }
 
   async enqueueEvent(event: ExtensionEvent): Promise<void> {

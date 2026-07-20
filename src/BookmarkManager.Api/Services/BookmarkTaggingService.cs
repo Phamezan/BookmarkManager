@@ -3,6 +3,9 @@ using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Services;
 
+/// <summary>Auto-tag result plus the matched provider's cover art, when one was found.</summary>
+public sealed record AutoTagOutcome(List<string> Tags, string? CoverImageUrl);
+
 public sealed class BookmarkTaggingService
 {
     private readonly IAnilistTagProvider _anilist;
@@ -17,7 +20,7 @@ public sealed class BookmarkTaggingService
         Dictionary<Guid, List<string>> Tags,
         Dictionary<Guid, string?> SuggestedTitles);
 
-    private sealed record TagLookupResult(List<string> Tags, string? CanonicalTitle);
+    private sealed record TagLookupResult(List<string> Tags, string? CanonicalTitle, string? CoverImageUrl = null);
 
     public BookmarkTaggingService(
         IAnilistTagProvider anilist,
@@ -47,6 +50,23 @@ public sealed class BookmarkTaggingService
         var result = await GetTagsWithCanonicalAsync(title, url, folderPath, requestedDomain, cancellationToken)
             .ConfigureAwait(false);
         return result.Tags;
+    }
+
+    /// <summary>
+    /// Same as <see cref="GetTagsAsync"/> but also surfaces the matched provider's
+    /// cover art (currently AniList) so callers can persist a real poster instead of
+    /// relying on a page-scraped og:image.
+    /// </summary>
+    public async Task<AutoTagOutcome> GetTagsWithCoverAsync(
+        string title,
+        string? url,
+        string? folderPath,
+        BookmarkTagDomainDto requestedDomain,
+        CancellationToken cancellationToken)
+    {
+        var result = await GetTagsWithCanonicalAsync(title, url, folderPath, requestedDomain, cancellationToken)
+            .ConfigureAwait(false);
+        return new AutoTagOutcome(result.Tags, result.CoverImageUrl);
     }
 
     public async Task<BatchTagLookupResult> GetTagsForBatchAsync(
@@ -113,7 +133,7 @@ public sealed class BookmarkTaggingService
             classification.Reason,
             string.Join(" | ", normalizedTitle.Candidates.Select(candidate => candidate.Query)));
 
-        var (provider, tags, wasRejected, rejectionReason, canonicalTitle) = await QueryProvidersAsync(
+        var (provider, tags, wasRejected, rejectionReason, canonicalTitle, coverImageUrl) = await QueryProvidersAsync(
             title,
             url,
             folderPath,
@@ -141,6 +161,7 @@ public sealed class BookmarkTaggingService
             state = BookmarkTagResultState.ProviderNoMatch;
             reason = $"Provider rejected query. {rejectionReason}";
             canonicalTitle = null;
+            coverImageUrl = null;
         }
         else if (tags.Count == 0)
         {
@@ -150,14 +171,15 @@ public sealed class BookmarkTaggingService
             state = tags.Count == 0 ? BookmarkTagResultState.ProviderNoMatch : BookmarkTagResultState.Fallback;
             reason = tags.Count == 0 ? "No provider or local tags found." : "Provider returned no tags; used low-confidence local fallback.";
             canonicalTitle = null;
+            coverImageUrl = null;
         }
 
         LogTagDecision(title, url, folderPath, requestedDomain, classification, provider, source, confidence, state, tags, reason);
 
-        return new TagLookupResult(tags, canonicalTitle);
+        return new TagLookupResult(tags, canonicalTitle, coverImageUrl);
     }
 
-    private async Task<(BookmarkTagSource Source, List<string> Tags, bool WasRejected, string? RejectionReason, string? CanonicalTitle)> QueryProvidersAsync(
+    private async Task<(BookmarkTagSource Source, List<string> Tags, bool WasRejected, string? RejectionReason, string? CanonicalTitle, string? CoverImageUrl)> QueryProvidersAsync(
         string title,
         string? url,
         string? folderPath,
@@ -207,7 +229,7 @@ public sealed class BookmarkTaggingService
 
         if (tasks.Count == 0)
         {
-            return (BookmarkTagSource.None, [], false, null, null);
+            return (BookmarkTagSource.None, [], false, null, null, null);
         }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -227,9 +249,9 @@ public sealed class BookmarkTaggingService
             var rejected = tasks.Select(t => t.Result).FirstOrDefault(r => r.Result != null && r.Result.WasRejected);
             if (rejected.Result != null)
             {
-                return (rejected.Source, [], true, rejected.Result.RejectionReason, null);
+                return (rejected.Source, [], true, rejected.Result.RejectionReason, null, null);
             }
-            return (BookmarkTagSource.None, [], false, null, null);
+            return (BookmarkTagSource.None, [], false, null, null, null);
         }
 
         var sortedResults = validResults.OrderBy(r =>
@@ -269,6 +291,11 @@ public sealed class BookmarkTaggingService
 
         var canonicalTitle = SelectCanonicalTitle(sortedResults, lookupContext, classification);
 
+        // Take the poster from the highest-priority result that carries one (AniList first).
+        var coverImageUrl = sortedResults
+            .Select(r => r.Result.CoverImageUrl)
+            .FirstOrDefault(cover => !string.IsNullOrWhiteSpace(cover));
+
         string? domainTag = classification.Domain switch
         {
             BookmarkTagDomain.Anime => "Anime",
@@ -299,7 +326,7 @@ public sealed class BookmarkTaggingService
             }
         }
 
-        return (primarySource, combinedTags, false, null, canonicalTitle);
+        return (primarySource, combinedTags, false, null, canonicalTitle, coverImageUrl);
     }
 
     private const double MinCanonicalTitleSimilarity = 0.40;

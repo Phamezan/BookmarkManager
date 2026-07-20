@@ -249,4 +249,18 @@ describe("SidePanelPresence", () => {
     expect(presence.isOpen()).toBe(false);
     expect(presence.requestClose()).toBe(false);
   });
+
+  it("signals a connected panel to refresh", () => {
+    const presence = new SidePanelPresence();
+    const port = fakePort(SIDEPANEL_PORT_NAME);
+    presence.handleConnect(port);
+
+    expect(presence.requestRefresh()).toBe(true);
+    expect(port.postMessage).toHaveBeenCalledWith({ type: "refresh" });
+  });
+
+  it("returns false from requestRefresh when no panel is open", () => {
+    const presence = new SidePanelPresence();
+    expect(presence.requestRefresh()).toBe(false);
+  });
 });

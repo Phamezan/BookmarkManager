@@ -66,6 +66,15 @@ export class SettingsAwareApiClient implements ApiClient {
     );
   }
 
+  setBookmarkCoverByBrowserId(
+    browserNodeId: string,
+    coverImageUrl: string,
+  ): Promise<void> {
+    return this.getClient().then((c) =>
+      c.setBookmarkCoverByBrowserId(browserNodeId, coverImageUrl),
+    );
+  }
+
   getTags(): Promise<TagCount[]> {
     return this.getClient().then((c) => c.getTags());
   }

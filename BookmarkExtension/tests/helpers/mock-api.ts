@@ -213,6 +213,17 @@ export class MockApiServer implements ApiClient {
     return this.enrichmentByBrowserId.get(browserNodeId) ?? null;
   }
 
+  readonly coverByBrowserId = new Map<string, string>();
+
+  async setBookmarkCoverByBrowserId(
+    browserNodeId: string,
+    coverImageUrl: string,
+  ): Promise<void> {
+    this.log("setBookmarkCoverByBrowserId", browserNodeId);
+    await this.delay();
+    this.coverByBrowserId.set(browserNodeId, coverImageUrl);
+  }
+
   private tags: TagCount[] = [];
   private savedTags: Record<string, string[]> = {};
 

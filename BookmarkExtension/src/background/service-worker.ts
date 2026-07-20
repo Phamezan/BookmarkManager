@@ -24,6 +24,10 @@ const POLL_INTERVAL_MINUTES = 1.0;
 const DUPLICATE_SCAN_ALARM_NAME = "duplicate-scan";
 const DUPLICATE_SCAN_INTERVAL_MINUTES = 5;
 
+/** Second quick-bookmark press within this window on the same already-bookmarked
+ *  page removes the bookmark instead of re-opening the editor. */
+const QUICK_BOOKMARK_DOUBLE_TAP_MS = 600;
+
 export { POPUP_PORT_NAME };
 
 export interface ServiceWorkerDeps {
@@ -36,6 +40,8 @@ export interface ServiceWorkerDeps {
   sidePanel?: SidePanelController;
   openSidePanel?: (tabId: number) => Promise<void>;
   configureSidePanel?: () => Promise<void>;
+  /** Shows a "bookmark removed" confirmation toast (double-tap-to-remove gesture). */
+  showRemovedToast?: (input: { title: string; url: string | null }) => Promise<void>;
   getExtensionVersion: () => string;
   getBraveVersion: () => string;
   now: () => Date;
@@ -46,6 +52,10 @@ export class ServiceWorker {
   private deps: ServiceWorkerDeps;
   private importInProgress = false;
   private confirmedDuplicateUrls = new Set<string>();
+
+  /** URL the last quick-bookmark press acted on + when, for double-tap-to-remove. */
+  private lastQuickTapUrl: string | null = null;
+  private lastQuickTapAt = 0;
 
   private popupPresence = new PopupPresence();
   private sidePanelPresence = new SidePanelPresence();
@@ -121,6 +131,11 @@ export class ServiceWorker {
     return this.sidePanelPresence.isOpen();
   }
 
+  /** Signals an already-open panel to re-fetch (new bookmark just armed). */
+  notifySidePanelRefresh(): void {
+    this.sidePanelPresence.requestRefresh();
+  }
+
   async initialize(): Promise<void> {
     try {
       await migrate(chrome.storage.local);
@@ -172,11 +187,70 @@ export class ServiceWorker {
    * - Popup closed → resolve/stash bookmark state and open popup.
    */
   async handleQuickBookmark(): Promise<void> {
+    const now = this.deps.now().getTime();
+
+    // Second press within the window → remove the bookmark for the active tab.
+    // The active-tab lookup only happens on this rapid-second-press path, so the
+    // normal single-press flow (and its "popup open → commit, no query" contract)
+    // is untouched.
+    if (this.lastQuickTapUrl !== null && now - this.lastQuickTapAt <= QUICK_BOOKMARK_DOUBLE_TAP_MS) {
+      const expectedUrl = this.lastQuickTapUrl;
+      this.clearQuickTap();
+      if (await this.tryDoubleTapRemove(expectedUrl)) return;
+      // Nothing removable (e.g. a brand-new, not-yet-created page) → fall through
+      // and let the normal flow commit/create as before.
+    }
+
     if (this.popupPresence.isOpen()) {
       const asked = this.popupPresence.requestCommitNow();
-      if (asked) return;
+      if (asked) {
+        this.clearQuickTap();
+        return;
+      }
     }
-    await this.quickBookmark.run();
+
+    const actedUrl = await this.quickBookmark.run();
+    if (actedUrl) {
+      this.lastQuickTapUrl = actedUrl;
+      this.lastQuickTapAt = now;
+    } else {
+      this.clearQuickTap();
+    }
+  }
+
+  private clearQuickTap(): void {
+    this.lastQuickTapUrl = null;
+    this.lastQuickTapAt = 0;
+  }
+
+  /**
+   * Removes the bookmark(s) for `expectedUrl` iff the active tab is still that
+   * URL and it is genuinely bookmarked. `chrome.bookmarks.remove` fans out to
+   * the `onRemoved` pipeline, which propagates the soft-delete to the server.
+   * Returns true when a bookmark was removed.
+   */
+  private async tryDoubleTapRemove(expectedUrl: string): Promise<boolean> {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const url = tab?.url ?? null;
+    if (url !== expectedUrl) return false;
+
+    const results = await chrome.bookmarks.search({ url });
+    const matches = results.filter((n) => n.url === url);
+    if (matches.length === 0) return false;
+
+    const removedTitle = matches[0]?.title ?? "Bookmark";
+    for (const node of matches) {
+      try {
+        await chrome.bookmarks.remove(node.id);
+      } catch (e) {
+        console.warn("[worker] quick-bookmark double-tap remove failed:", node.id, e);
+      }
+    }
+
+    await this.deps.storage.clearShortcutEditorState();
+    this.popupPresence.requestClose();
+    await this.deps.showRemovedToast?.({ title: removedTitle, url });
+    return true;
   }
 
   async handleTogglePalette(): Promise<void> {
@@ -197,18 +271,44 @@ export class ServiceWorker {
     }
 
     const tabId = tab?.id;
+    const windowId = tab?.windowId;
     if (tabId != null) {
       await chrome.sidePanel.open({ tabId });
-      return;
-    }
-
-    const windowId = tab?.windowId;
-    if (windowId != null) {
+    } else if (windowId != null) {
       await chrome.sidePanel.open({ windowId });
+    } else {
+      console.warn("[worker] toggle-sidepanel: no tab or window id available");
       return;
     }
 
-    console.warn("[worker] toggle-sidepanel: no tab or window id available");
+    // Gesture already consumed by open() above — now safe to await storage.
+    // Point the freshly-opened panel at THIS tab's bookmark (or empty state),
+    // so the shortcut surfaces the current page like the save toast does.
+    await this.pointPanelAtActiveTab();
+  }
+
+  /**
+   * Resolves the active tab's bookmark and tells the side panel to render it
+   * (or clears it → empty state when the page is not bookmarked). No-op when
+   * no side-panel controller is wired.
+   */
+  private async pointPanelAtActiveTab(): Promise<void> {
+    if (!this.deps.sidePanel) return;
+    try {
+      const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const url = active?.url ?? null;
+      if (!url || !(url.startsWith("http://") || url.startsWith("https://"))) {
+        await this.deps.sidePanel.setCurrent(null);
+        return;
+      }
+      const results = await chrome.bookmarks.search({ url });
+      const match = results.find((n) => n.url === url) ?? null;
+      await this.deps.sidePanel.setCurrent(
+        match ? { browserNodeId: match.id, url } : null,
+      );
+    } catch (e) {
+      console.error("[worker] toggle-sidepanel: point-at-active-tab failed:", e);
+    }
   }
 
   async scheduleSync(): Promise<void> {
@@ -361,10 +461,14 @@ const saveToast = new BookmarkSaveToast({
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => Date.now(),
   onToastShown: (info) => {
-    void sidePanelController.arm(info).catch((e) =>
-      console.error("[worker] side panel arm failed:", e),
-    );
+    void sidePanelController
+      .arm(info)
+      .then(() => worker.notifySidePanelRefresh())
+      .catch((e) => console.error("[worker] side panel arm failed:", e));
   },
+  getStashedCover: (url) => storage.getStashedCover(url),
+  persistCover: (browserNodeId, cover) =>
+    api.setBookmarkCoverByBrowserId(browserNodeId, cover),
 });
 
 const worker = new ServiceWorker({
@@ -384,6 +488,12 @@ const worker = new ServiceWorker({
       enabled: true,
     });
   },
+  showRemovedToast: (input) =>
+    presentInPageAlert(
+      alertUi,
+      { title: input.title, lines: ["Removed from bookmarks"] },
+      input.url,
+    ),
   getExtensionVersion: () => chrome.runtime.getManifest().version,
   getBraveVersion: () => {
     const match = navigator.userAgent.match(/Brave\/(\S+)/);

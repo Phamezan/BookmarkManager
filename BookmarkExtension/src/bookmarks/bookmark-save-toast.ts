@@ -47,6 +47,10 @@ export interface BookmarkSaveToastDeps {
     serverId: string | null;
     url: string | null;
   }) => void;
+  /** Reads a client-captured cover (og:image) stashed at save time for this url. */
+  getStashedCover?: (url: string) => Promise<string | null>;
+  /** Persists a captured cover onto the synced node (keyed by browser node id). */
+  persistCover?: (browserNodeId: string, coverImageUrl: string) => Promise<void>;
 }
 
 export class BookmarkSaveToast {
@@ -113,11 +117,17 @@ export class BookmarkSaveToast {
       lines.push("Saved for later");
     }
 
+    const coverImageUrl = await this.resolveCover(
+      input.browserNodeId,
+      input.url ?? null,
+      enrichment,
+    );
+
     const payload: SaveToastPayload = {
       title,
       folderName,
       lines,
-      coverImageUrl: enrichment?.coverImageUrl ?? null,
+      coverImageUrl,
       interactive: true,
     };
 
@@ -128,6 +138,32 @@ export class BookmarkSaveToast {
       url: input.url ?? null,
     });
     await presentInPageAlert(this.deps, payload, input.url);
+  }
+
+  /**
+   * Server cover wins (catalog/library covers). Otherwise fall back to a
+   * client-captured cover stashed at save time; when the node has already
+   * synced, persist it so it sticks (side panel, Blazor library, restarts).
+   */
+  private async resolveCover(
+    browserNodeId: string,
+    url: string | null,
+    enrichment: BookmarkEnrichment | null,
+  ): Promise<string | null> {
+    if (enrichment?.coverImageUrl) return enrichment.coverImageUrl;
+    if (!url || !this.deps.getStashedCover) return null;
+
+    const stashed = await this.deps.getStashedCover(url);
+    if (!stashed) return null;
+
+    if (enrichment?.id && this.deps.persistCover) {
+      try {
+        await this.deps.persistCover(browserNodeId, stashed);
+      } catch (e) {
+        console.warn("[save-toast] persist cover failed:", e);
+      }
+    }
+    return stashed;
   }
 
   private async safeEnrichment(

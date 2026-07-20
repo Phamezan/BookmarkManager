@@ -72,4 +72,29 @@ public sealed partial class ExtensionService
 
         return new ExtensionBookmarkEnrichmentDto(node.Id, node.Title, folderPath, tags, node.Status, coverImageUrl);
     }
+
+    public async Task<bool> SetBookmarkCoverByBrowserIdAsync(
+        string browserNodeId,
+        string? coverImageUrl,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(browserNodeId))
+            return false;
+
+        var node = await db.BookmarkNodes
+            .FirstOrDefaultAsync(n => n.BrowserNodeId == browserNodeId && !n.IsDeleted, ct);
+        if (node is null || node.Type != NodeType.Bookmark)
+            return false;
+
+        // Don't clobber an existing cover — catalog/library covers win.
+        if (!string.IsNullOrWhiteSpace(node.CoverImageUrl))
+            return true;
+        if (string.IsNullOrWhiteSpace(coverImageUrl))
+            return false;
+
+        node.CoverImageUrl = coverImageUrl;
+        node.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
 }

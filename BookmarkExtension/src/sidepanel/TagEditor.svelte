@@ -68,83 +68,116 @@
   .tag-editor {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
   }
 
   .chips {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 7px;
   }
 
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    background: hsl(212 80% 58% / 0.14);
-    color: hsl(212 80% 72%);
-    border: 1px solid hsl(212 80% 58% / 0.3);
+    gap: 2px;
+    background: hsl(258 80% 66% / 0.12);
+    color: hsl(258 90% 84%);
+    border: 1px solid hsl(258 80% 66% / 0.3);
     border-radius: 999px;
-    padding: 3px 6px 3px 10px;
+    padding: 4px 6px 4px 11px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 550;
+    transition: background 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+      border-color 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+      transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .chip:hover {
+    background: hsl(258 80% 66% / 0.2);
+    border-color: hsl(258 80% 66% / 0.48);
+    transform: translateY(-1px);
   }
 
   .chip-empty {
     font-size: 12px;
-    color: hsl(220 8% 40%);
+    color: hsl(250 10% 44%);
+    font-style: italic;
   }
 
   .chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
     background: none;
     border: none;
     color: inherit;
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
-    padding: 0 2px;
-    opacity: 0.75;
+    border-radius: 999px;
+    opacity: 0.65;
+    transition: opacity 0.3s ease, background 0.3s ease;
   }
 
   .chip-remove:hover {
     opacity: 1;
+    background: hsl(258 80% 66% / 0.32);
   }
 
   .tag-input-row {
     display: flex;
-    gap: 6px;
+    gap: 7px;
   }
 
   .tag-input-row input {
     flex: 1;
-    background: hsl(220 16% 10%);
-    border: 1px solid hsl(220 12% 22%);
-    border-radius: 6px;
-    color: hsl(220 15% 92%);
+    min-width: 0;
+    background: hsl(250 22% 5% / 0.6);
+    border: 1px solid hsl(250 40% 100% / 0.08);
+    border-radius: 999px;
+    color: hsl(250 22% 96%);
     font-family: inherit;
     font-size: 12.5px;
-    padding: 7px 10px;
+    padding: 8px 13px;
     outline: none;
+    transition: border-color 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+      box-shadow 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .tag-input-row input::placeholder {
+    color: hsl(250 10% 44%);
   }
 
   .tag-input-row input:focus {
-    border-color: hsl(212 80% 58%);
-    box-shadow: 0 0 0 3px hsl(212 80% 58% / 0.25);
+    border-color: hsl(258 88% 66% / 0.6);
+    box-shadow: 0 0 0 3px hsl(258 88% 66% / 0.18);
   }
 
   .add-btn {
-    background: hsl(212 80% 58%);
-    border: none;
-    border-radius: 6px;
-    color: #fff;
+    flex-shrink: 0;
+    background: hsl(250 40% 100% / 0.06);
+    border: 1px solid hsl(250 40% 100% / 0.14);
+    border-radius: 999px;
+    color: hsl(250 22% 96%);
     font-family: inherit;
     font-size: 12.5px;
     font-weight: 600;
-    padding: 0 12px;
+    padding: 0 16px;
     cursor: pointer;
+    transition: background 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+      border-color 0.4s cubic-bezier(0.32, 0.72, 0, 1),
+      transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   .add-btn:hover {
-    background: hsl(212 60% 45%);
+    background: hsl(258 80% 66% / 0.18);
+    border-color: hsl(258 80% 66% / 0.42);
+  }
+
+  .add-btn:active {
+    transform: scale(0.96);
   }
 </style>

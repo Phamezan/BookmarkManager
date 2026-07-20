@@ -117,4 +117,91 @@ public sealed class ExtensionEndpointsTests : IntegrationTestBase
         Assert.Equal("https://example.com/covers/some-series.jpg", dto.CoverImageUrl);
     }
 
+    [Fact]
+    public async Task SetCoverByBrowserIdStoresCoverWhenNodeHasNone()
+    {
+        // Arrange
+        using var extension = CreateExtensionClient();
+        const string browserNodeId = "brave-node-cover-1";
+        var nodeId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BookmarkManager.Api.Data.AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkManager.Api.Data.BookmarkNode
+            {
+                Id = nodeId,
+                Title = "Uncovered Novel",
+                Type = BookmarkManager.Contracts.NodeType.Bookmark,
+                Url = "https://novelfire.net/book/uncovered",
+                BrowserNodeId = browserNodeId,
+                SyncState = BookmarkManager.Contracts.SyncState.Synced,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Act
+        using var put = await extension.PutAsJsonAsync(
+            $"/api/extension/bookmarks/by-browser-id/{browserNodeId}/cover",
+            new SetBookmarkCoverRequest("https://cdn.novelfire.net/uncovered.jpg"));
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+
+        using var response = await extension.GetAsync($"/api/extension/bookmarks/by-browser-id/{browserNodeId}");
+        var dto = (await response.Content.ReadFromJsonAsync<ExtensionBookmarkEnrichmentDto>())!;
+        Assert.Equal("https://cdn.novelfire.net/uncovered.jpg", dto.CoverImageUrl);
+    }
+
+    [Fact]
+    public async Task SetCoverByBrowserIdDoesNotClobberExistingCover()
+    {
+        // Arrange
+        using var extension = CreateExtensionClient();
+        const string browserNodeId = "brave-node-cover-2";
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BookmarkManager.Api.Data.AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkManager.Api.Data.BookmarkNode
+            {
+                Id = Guid.NewGuid(),
+                Title = "Already Covered",
+                Type = BookmarkManager.Contracts.NodeType.Bookmark,
+                Url = "https://novelfire.net/book/covered",
+                BrowserNodeId = browserNodeId,
+                CoverImageUrl = "https://original/cover.jpg",
+                SyncState = BookmarkManager.Contracts.SyncState.Synced,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Act
+        using var put = await extension.PutAsJsonAsync(
+            $"/api/extension/bookmarks/by-browser-id/{browserNodeId}/cover",
+            new SetBookmarkCoverRequest("https://new/cover.jpg"));
+
+        // Assert
+        Assert.Equal(HttpStatusCode.NoContent, put.StatusCode);
+
+        using var response = await extension.GetAsync($"/api/extension/bookmarks/by-browser-id/{browserNodeId}");
+        var dto = (await response.Content.ReadFromJsonAsync<ExtensionBookmarkEnrichmentDto>())!;
+        Assert.Equal("https://original/cover.jpg", dto.CoverImageUrl);
+    }
+
+    [Fact]
+    public async Task SetCoverByBrowserIdReturnsNotFoundForUnknownNode()
+    {
+        using var extension = CreateExtensionClient();
+
+        using var put = await extension.PutAsJsonAsync(
+            "/api/extension/bookmarks/by-browser-id/no-such-node/cover",
+            new SetBookmarkCoverRequest("https://cdn/x.jpg"));
+
+        Assert.Equal(HttpStatusCode.NotFound, put.StatusCode);
+    }
 }
