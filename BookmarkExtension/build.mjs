@@ -18,6 +18,7 @@ function copyStaticFiles() {
   cpSync(join(__dirname, "manifest.json"), join(distDir, "manifest.json"));
   cpSync(join(__dirname, "popup"), join(distDir, "popup"), { recursive: true });
   cpSync(join(__dirname, "palette-host.html"), join(distDir, "palette-host.html"));
+  cpSync(join(__dirname, "toast.html"), join(distDir, "toast.html"));
 
   const iconsSrc = join(__dirname, "assets", "icons");
   const iconsDest = join(distDir, "assets", "icons");
@@ -33,6 +34,7 @@ const entrypoints = {
   "popup/popup": "src/popup/popup.ts",
   "palette-host": "src/palette/palette-host.ts",
   "palette-injector": "src/palette/palette-injector.ts",
+  "toast-page": "src/toast/toast-page.ts",
 };
 
 const commonOptions = {

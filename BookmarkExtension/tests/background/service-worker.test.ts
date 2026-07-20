@@ -32,9 +32,11 @@ function makeChromeStub(bookmarks: FakeBookmarks, storage: FakeStorage) {
     storage: { local: storage },
     runtime: {
       getManifest: () => ({ version: "0.1.0" }),
+      getURL: (p: string) => p,
       onInstalled: { addListener: vi.fn() },
       onStartup: { addListener: vi.fn() },
       onMessage: { addListener: vi.fn() },
+      onConnect: { addListener: vi.fn() },
     },
     alarms: {
       create: vi.fn().mockResolvedValue(undefined),
@@ -55,6 +57,8 @@ function makeChromeStub(bookmarks: FakeBookmarks, storage: FakeStorage) {
       onActivated: { addListener: vi.fn() },
     },
     scripting: { executeScript: vi.fn() },
+    downloads: { download: vi.fn(), removeFile: vi.fn() },
+    windows: { create: vi.fn() },
     omnibox: {
       onInputChanged: { addListener: vi.fn() },
       onInputEntered: { addListener: vi.fn() },

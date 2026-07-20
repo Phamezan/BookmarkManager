@@ -19,7 +19,7 @@
       "suggested_key": {
         "default": "Ctrl+Shift+F"
       },
-      "description": "Bookmark current page in the last remembered folder context"
+      "description": "Quick-bookmark current page, or close the extension popup if it is already open"
     },
     "toggle-palette": {
       "suggested_key": {

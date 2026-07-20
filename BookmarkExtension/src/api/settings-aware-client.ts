@@ -5,6 +5,7 @@ import type {
   CompletionRequest,
   EventBatchRequest,
   EventBatchResponse,
+  ExtensionBookmarkEnrichment,
   ExtensionConfig,
   HeartbeatRequest,
   HeartbeatResponse,
@@ -53,6 +54,14 @@ export class SettingsAwareApiClient implements ApiClient {
   ): Promise<void> {
     return this.getClient().then((c) =>
       c.completeCommand(operationId, input),
+    );
+  }
+
+  getBookmarkEnrichmentByBrowserId(
+    browserNodeId: string,
+  ): Promise<ExtensionBookmarkEnrichment | null> {
+    return this.getClient().then((c) =>
+      c.getBookmarkEnrichmentByBrowserId(browserNodeId),
     );
   }
 }

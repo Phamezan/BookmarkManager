@@ -256,6 +256,17 @@ export interface ApiClient {
     operationId: string,
     input: CompletionRequest,
   ): Promise<void>;
+  getBookmarkEnrichmentByBrowserId(
+    browserNodeId: string,
+  ): Promise<ExtensionBookmarkEnrichment | null>;
+}
+
+/** Toast enrichment after a Brave create syncs (GET by-browser-id). */
+export interface ExtensionBookmarkEnrichment {
+  title: string;
+  folderPath: string | null;
+  tags: string[];
+  status: string | null;
 }
 
 export interface BookmarkAdapter {

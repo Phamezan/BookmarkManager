@@ -5,6 +5,7 @@ import type {
   CompletionRequest,
   EventBatchRequest,
   EventBatchResponse,
+  ExtensionBookmarkEnrichment,
   ExtensionConfig,
   HeartbeatRequest,
   HeartbeatResponse,
@@ -149,5 +150,21 @@ export class HttpApiClient implements ApiClient {
       `/api/extension/commands/${operationId}/complete`,
       input,
     );
+  }
+
+  async getBookmarkEnrichmentByBrowserId(
+    browserNodeId: string,
+  ): Promise<ExtensionBookmarkEnrichment | null> {
+    try {
+      return await this.request<ExtensionBookmarkEnrichment>(
+        "GET",
+        `/api/extension/bookmarks/by-browser-id/${encodeURIComponent(browserNodeId)}`,
+      );
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 404) {
+        return null;
+      }
+      throw error;
+    }
   }
 }
