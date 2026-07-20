@@ -68,6 +68,10 @@
                     {
                         <span class="status-badge @GetMediaStatusClass(Item.MediaStatus)" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;">@GetMediaStatusLabel(Item.MediaStatus)</span>
                     }
+                    @if (string.Equals(Item.Metadata?.Status, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal))
+                    {
+                        <span class="status-badge status-badge--active" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;">Later</span>
+                    }
                     @if (Item.Metadata?.Category != null)
                     {
                         <span class="tag-badge">@Item.Metadata.Category</span>

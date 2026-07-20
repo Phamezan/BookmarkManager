@@ -66,9 +66,13 @@ public partial class Bookmarks
         try
         {
             var created = await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url);
-            if (data.Tags != null && data.Tags.Count > 0)
+            if ((data.Tags != null && data.Tags.Count > 0) || !string.IsNullOrWhiteSpace(data.Status))
             {
-                var metadata = new BookmarkMetadataDto { Tags = data.Tags };
+                var metadata = new BookmarkMetadataDto
+                {
+                    Tags = data.Tags ?? [],
+                    Status = data.Status
+                };
                 await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
             }
 
@@ -100,6 +104,7 @@ public partial class Bookmarks
             await BookmarkService.UpdateBookmarkAsync(item.Id, data.Title, data.Url);
             var metadata = item.Metadata ?? new BookmarkMetadataDto();
             metadata.Tags = data.Tags;
+            metadata.Status = data.Status;
             await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
 
             if (_selectedFolderId.HasValue)
@@ -290,9 +295,13 @@ public partial class Bookmarks
         try
         {
             var created = await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url);
-            if (data.Tags != null && data.Tags.Count > 0)
+            if ((data.Tags != null && data.Tags.Count > 0) || !string.IsNullOrWhiteSpace(data.Status))
             {
-                var metadata = new BookmarkMetadataDto { Tags = data.Tags };
+                var metadata = new BookmarkMetadataDto
+                {
+                    Tags = data.Tags ?? [],
+                    Status = data.Status
+                };
                 await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
             }
 

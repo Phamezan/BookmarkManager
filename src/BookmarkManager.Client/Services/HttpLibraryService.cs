@@ -58,6 +58,11 @@ public sealed class HttpLibraryService(IBookmarkManagerApiClient apiClient) : IL
         return await apiClient.GetAsync<List<LibraryEntryDto>>("api/library/my-bookmarks", cancellationToken) ?? [];
     }
 
+    public async Task<List<LibraryEntryDto>> GetSavedForLaterAsync(CancellationToken cancellationToken = default)
+    {
+        return await apiClient.GetAsync<List<LibraryEntryDto>>("api/library/saved-for-later", cancellationToken) ?? [];
+    }
+
     private static string TypeQuery(LibraryMediaType? mediaType) =>
         mediaType is { } type ? $"&type={type}" : string.Empty;
 }

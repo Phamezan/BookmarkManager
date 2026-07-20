@@ -28,4 +28,5 @@ builder.Services.AddScoped<PaletteFrecencyService>();
 builder.Services.AddScoped<PaletteSearchHistoryService>();
 builder.Services.AddTransient<SyncSocketListener>();
 builder.Services.AddTransient<FolderSelectionPersistence>();
+builder.Services.AddScoped<NavHomeService>();
 await builder.Build().RunAsync();

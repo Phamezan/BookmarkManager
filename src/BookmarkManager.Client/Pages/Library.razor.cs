@@ -2,11 +2,12 @@ using BookmarkManager.Client.Features.Library;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using MudBlazor;
 
 namespace BookmarkManager.Client.Pages;
 
-public partial class Library : IDisposable
+public partial class Library : IAsyncDisposable
 {
     private const string SortNewTrending = "trending";
     private const string SortRating = "rating";
@@ -15,6 +16,11 @@ public partial class Library : IDisposable
     private const int SearchDebounceMs = 400;
     private const int MinQueryLength = 2;
     private const int CollapsedGenreGroupLimit = 3;
+
+    /// <summary>Matches .lib-grid-row height in library.css (cover capped + foot + gaps).</summary>
+    private const float BrowseRowItemSizePx = 340f;
+    private const int BrowseMinCardWidthPx = 152;
+    private const int BrowseGapPx = 16;
 
     private static readonly (string Key, string Label)[] SortOptions =
     {
@@ -61,6 +67,7 @@ public partial class Library : IDisposable
     private readonly HashSet<string> _selectedGenres = new(StringComparer.OrdinalIgnoreCase);
     private string _sort = SortNewTrending;
     private bool _myBookmarksOnly;
+    private bool _savedForLaterOnly;
     private HeroSlide _heroSlide = HeroSlide.Trending;
     private int _featuredIndex;
     private int _recommendsSeed = 1;
@@ -72,14 +79,65 @@ public partial class Library : IDisposable
     private LibraryBookmarkExclusions _bookmarkExclusions = LibraryBookmarkExclusions.Empty;
     private Dictionary<string, LibraryReadingProgressDto> _readingProgress = new();
     private List<LibraryItem> _myBookmarksItems = new();
+    private List<LibraryItem> _savedForLaterItems = new();
+
+    private ElementReference _browseContainerRef;
+    private ElementReference _browseSentinelRef;
+    private DotNetObjectReference<Library>? _browseDotNetRef;
+    private IJSObjectReference? _browseResizeObserver;
+    private bool _browseInteropReady;
+    private int _browseColumns = 4;
+    private List<LibraryItem[]> _browseRows = [];
+    private string? _browseRowsKey;
+    private bool _scrubNeedsReset;
+    private bool _infiniteNeedsSync;
 
     protected override async Task OnInitializedAsync()
     {
+        NavHome.HomeRequested += OnNavHomeRequestedAsync;
         await Task.WhenAll(
             LoadTrendingAsync(),
             LoadRecommendsPoolAsync(),
             LoadBookmarkExclusionsAsync(),
             LoadReadingProgressAndMatchedSeriesAsync());
+        SyncBrowseRows();
+    }
+
+    private Task OnNavHomeRequestedAsync(string routeKey)
+    {
+        if (!string.Equals(routeKey, "library", StringComparison.OrdinalIgnoreCase))
+            return Task.CompletedTask;
+
+        return InvokeAsync(ResetToDefaultViewAsync);
+    }
+
+    /// <summary>Nav re-click / home: clear filters, first trending page, scroll top.</summary>
+    private async Task ResetToDefaultViewAsync()
+    {
+        _search = string.Empty;
+        _selectedType = null;
+        _selectedGenres.Clear();
+        _myBookmarksOnly = false;
+        _savedForLaterOnly = false;
+        _sort = SortNewTrending;
+        _heroSlide = HeroSlide.Trending;
+        _featuredIndex = 0;
+        _genresExpanded = false;
+        _browseRowsKey = null;
+        _scrubNeedsReset = true;
+
+        await ReloadAsync();
+        SyncBrowseRows();
+        StateHasChanged();
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("scrollAppContentToTop");
+        }
+        catch
+        {
+            // ignore
+        }
     }
 
     private LibraryReadingProgressDto? ProgressFor(LibraryItem item)
@@ -116,12 +174,16 @@ public partial class Library : IDisposable
         {
             var progressTask = LibraryService.GetReadingProgressAsync(cancellationToken);
             var matchedSeriesTask = LibraryService.GetMyBookmarkedSeriesAsync(cancellationToken);
-            await Task.WhenAll(progressTask, matchedSeriesTask);
+            var savedLaterTask = LibraryService.GetSavedForLaterAsync(cancellationToken);
+            await Task.WhenAll(progressTask, matchedSeriesTask, savedLaterTask);
             if (cancellationToken.IsCancellationRequested)
                 return;
 
             _readingProgress = progressTask.Result.ToDictionary(p => LibraryReadingProgressKey.Build(p.Provider, p.ProviderId));
             _myBookmarksItems = matchedSeriesTask.Result.Select(dto => LibraryItem.FromDto(dto)).ToList();
+            _savedForLaterItems = savedLaterTask.Result.Select(dto => LibraryItem.FromDto(dto)).ToList();
+            _browseRowsKey = null;
+            SyncBrowseRows();
             StateHasChanged();
         }
         catch (OperationCanceledException)
@@ -131,6 +193,7 @@ public partial class Library : IDisposable
         {
             _readingProgress = new Dictionary<string, LibraryReadingProgressDto>();
             _myBookmarksItems = new List<LibraryItem>();
+            _savedForLaterItems = new List<LibraryItem>();
         }
     }
 
@@ -180,7 +243,7 @@ public partial class Library : IDisposable
     private void ToggleGenresExpanded() => _genresExpanded = !_genresExpanded;
 
     private bool HasActiveFilters =>
-        IsSearchActive || _selectedType is not null || _selectedGenres.Count > 0 || _myBookmarksOnly;
+        IsSearchActive || _selectedType is not null || _selectedGenres.Count > 0 || _myBookmarksOnly || _savedForLaterOnly;
 
     private IReadOnlyList<string> AllGenres =>
         ActiveItems.SelectMany(item => item.Genres)
@@ -215,7 +278,66 @@ public partial class Library : IDisposable
 
     private IReadOnlyList<LibraryItem> TrendingItems => _hero;
 
-    private bool CanLoadMore => !IsSearchActive && !_myBookmarksOnly && _trendingHasMore;
+    private bool CanLoadMore => !IsSearchActive && !_myBookmarksOnly && !_savedForLaterOnly && _trendingHasMore;
+
+    /// <summary>
+    /// Rebuild Virtualize rows when filter/sort/column/data signature changes.
+    /// </summary>
+    private void SyncBrowseRows()
+    {
+        var items = FilteredItems;
+        var key = BuildBrowseRowsKey(items.Count);
+        if (key == _browseRowsKey)
+            return;
+
+        _browseRowsKey = key;
+        _browseRows = items
+            .Chunk(Math.Max(1, _browseColumns))
+            .Select(chunk => chunk.ToArray())
+            .ToList();
+        _scrubNeedsReset = true;
+    }
+
+    /// <summary>
+    /// Append-only for LoadMore. Never mutates an existing row array (that remounts
+    /// visible cards and feels like a scroll hitch). Incomplete last rows stay short.
+    /// </summary>
+    private void AppendBrowseItems(IReadOnlyList<LibraryItem> newItems)
+    {
+        if (newItems.Count == 0)
+            return;
+
+        var cols = Math.Max(1, _browseColumns);
+        foreach (var chunk in newItems.Chunk(cols))
+            _browseRows.Add(chunk.ToArray());
+
+        _browseRowsKey = BuildBrowseRowsKey(_browseRows.Sum(r => r.Length));
+        // No scrub refresh on append — scroll listener binds new cards idle; avoids hitch.
+    }
+
+    private string BuildBrowseRowsKey(int itemCount)
+    {
+        var genreKey = string.Join('\u001f', _selectedGenres.OrderBy(g => g, StringComparer.OrdinalIgnoreCase));
+        return string.Join('|',
+            _browseColumns,
+            itemCount,
+            _sort,
+            _myBookmarksOnly,
+            _savedForLaterOnly,
+            _search.Trim(),
+            _selectedType?.ToString() ?? "",
+            genreKey,
+            _trending.Count,
+            _searchResults.Count,
+            _myBookmarksItems.Count,
+            _savedForLaterItems.Count);
+    }
+
+    /// <summary>Stable per first card — length omitted so rows aren't remounted.</summary>
+    private static string BrowseRowKey(LibraryItem[] row) =>
+        row.Length == 0
+            ? "empty"
+            : $"{row[0].Provider}:{row[0].ProviderId}";
 
     private IReadOnlyList<LibraryItem> FilteredItems =>
         _myBookmarksOnly
@@ -224,10 +346,13 @@ public partial class Library : IDisposable
 
     private IEnumerable<LibraryItem> FilterItems()
     {
-        // The "My bookmarks" filter has its own item source (server-matched series, independent
-        // of pagination) rather than narrowing whatever's currently loaded in ActiveItems -
-        // matched series are frequently not on the currently loaded trending/search page at all.
-        var query = (_myBookmarksOnly ? _myBookmarksItems : ActiveItems).AsEnumerable();
+        // "My bookmarks" / "Saved for later" use their own server lists (independent of
+        // trending pagination) — matched series are often not on the current page.
+        IEnumerable<LibraryItem> query = _savedForLaterOnly
+            ? _savedForLaterItems
+            : _myBookmarksOnly
+                ? _myBookmarksItems
+                : ActiveItems;
 
         if (_selectedGenres.Count > 0)
         {
@@ -248,8 +373,6 @@ public partial class Library : IDisposable
             : null;
     }
 
-    private void ToggleMyBookmarksOnly() => _myBookmarksOnly = !_myBookmarksOnly;
-
     private IEnumerable<LibraryItem> SortItems(IEnumerable<LibraryItem> items) =>
         _sort switch
         {
@@ -260,6 +383,16 @@ public partial class Library : IDisposable
                       .ThenByDescending(item => item.Rating ?? -1)
                       .ThenByDescending(item => item.IsTrending)
         };
+
+    private void SetSort(string sort)
+    {
+        if (_sort == sort)
+            return;
+
+        _sort = sort;
+        _browseRowsKey = null;
+        SyncBrowseRows();
+    }
 
     private static string TypeLabel(LibraryMediaType type) =>
         type == LibraryMediaType.LightNovel ? "Light Novel" : type.ToString();
@@ -279,6 +412,27 @@ public partial class Library : IDisposable
         {
             _selectedGenres.Add(genre);
         }
+
+        _browseRowsKey = null;
+        SyncBrowseRows();
+    }
+
+    private void ToggleMyBookmarksOnly()
+    {
+        _myBookmarksOnly = !_myBookmarksOnly;
+        if (_myBookmarksOnly)
+            _savedForLaterOnly = false;
+        _browseRowsKey = null;
+        SyncBrowseRows();
+    }
+
+    private void ToggleSavedForLaterOnly()
+    {
+        _savedForLaterOnly = !_savedForLaterOnly;
+        if (_savedForLaterOnly)
+            _myBookmarksOnly = false;
+        _browseRowsKey = null;
+        SyncBrowseRows();
     }
 
     private Task ClearFilters()
@@ -287,6 +441,7 @@ public partial class Library : IDisposable
         _selectedType = null;
         _selectedGenres.Clear();
         _myBookmarksOnly = false;
+        _savedForLaterOnly = false;
         return ReloadAsync();
     }
 
@@ -367,6 +522,8 @@ public partial class Library : IDisposable
             if (!cancellationToken.IsCancellationRequested)
             {
                 _loading = false;
+                _browseRowsKey = null;
+                SyncBrowseRows();
                 StateHasChanged();
             }
         }
@@ -404,6 +561,8 @@ public partial class Library : IDisposable
             if (!cancellationToken.IsCancellationRequested)
             {
                 _loading = false;
+                _browseRowsKey = null;
+                SyncBrowseRows();
                 StateHasChanged();
             }
         }
@@ -501,16 +660,23 @@ public partial class Library : IDisposable
         // instead of letting stale trending rows land under the new UI state.
         var cancellationToken = (_searchCts ??= new CancellationTokenSource()).Token;
         _loadingMore = true;
-        StateHasChanged();
+        // Do not StateHasChanged here — an extra render mid-scroll + scrub refresh blinks the grid.
 
+        List<LibraryItem>? loaded = null;
         try
         {
             var response = await LibraryService.GetTrendingAsync(_selectedType, skip: _trending.Count, take: TrendingPageSize, cancellationToken);
             if (cancellationToken.IsCancellationRequested)
                 return;
 
-            var items = response.Items.Select(dto => LibraryItem.FromDto(dto, isTrending: true)).ToList();
-            _trending = _trending.Concat(items).ToList();
+            loaded = response.Items.Select(dto => LibraryItem.FromDto(dto, isTrending: true)).ToList();
+            if (loaded.Count == 0)
+            {
+                _trendingHasMore = false;
+                return;
+            }
+
+            _trending = _trending.Concat(loaded).ToList();
             _trendingTotalCount = response.TotalCount;
             _trendingHasMore = response.HasMore;
             WarnOnProviderFailures(response);
@@ -527,7 +693,137 @@ public partial class Library : IDisposable
         finally
         {
             _loadingMore = false;
+            if (loaded is { Count: > 0 })
+            {
+                // Genre filter can hide some of the new page — full rebuild then.
+                if (_selectedGenres.Count > 0)
+                {
+                    _browseRowsKey = null;
+                    SyncBrowseRows();
+                }
+                else
+                {
+                    AppendBrowseItems(loaded);
+                }
+            }
+
+            _infiniteNeedsSync = true;
             StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task OnBrowseNearEnd() => LoadMoreAsync();
+
+    [JSInvokable]
+    public async Task OnColumnsChanged(int columns)
+    {
+        try
+        {
+            var busy = false;
+            try
+            {
+                busy = await JSRuntime.InvokeAsync<bool>("bmIsLayoutBusy");
+            }
+            catch
+            {
+                // Older cached JS without the helper — treat as not busy.
+            }
+
+            if (busy)
+                return;
+
+            columns = Math.Clamp(columns, 1, 12);
+            if (columns == _browseColumns)
+                return;
+
+            _browseColumns = columns;
+            _browseRowsKey = null;
+            SyncBrowseRows();
+            StateHasChanged();
+        }
+        catch
+        {
+            // Safe fallback during unmount
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_browseInteropReady && !_loading && _browseRows.Count > 0)
+        {
+            try
+            {
+                _browseDotNetRef ??= DotNetObjectReference.Create(this);
+                var rawCols = await JSRuntime.InvokeAsync<int>(
+                    "BookmarkGridInterop.getColumnCount",
+                    _browseContainerRef,
+                    BrowseMinCardWidthPx,
+                    BrowseGapPx);
+                var cols = Math.Clamp(rawCols, 1, 12);
+                if (cols != _browseColumns)
+                {
+                    _browseColumns = cols;
+                    _browseRowsKey = null;
+                    SyncBrowseRows();
+                    StateHasChanged();
+                    return;
+                }
+
+                await JSRuntime.InvokeVoidAsync(
+                    "attachLibraryInfiniteScroll",
+                    _browseSentinelRef,
+                    _browseDotNetRef);
+                _browseResizeObserver = await JSRuntime.InvokeAsync<IJSObjectReference>(
+                    "BookmarkGridInterop.observeResize",
+                    _browseContainerRef,
+                    _browseDotNetRef,
+                    BrowseMinCardWidthPx,
+                    BrowseGapPx);
+                _browseInteropReady = true;
+                _infiniteNeedsSync = true;
+                await SyncBrowseInfiniteEnabledAsync();
+                _infiniteNeedsSync = false;
+            }
+            catch
+            {
+                // Safe fallback during unmounting / empty browse (refs unset)
+            }
+        }
+
+        try
+        {
+            if (_scrubNeedsReset)
+            {
+                _scrubNeedsReset = false;
+                await JSRuntime.InvokeVoidAsync("resetLibraryScrub", ".lib-browse");
+            }
+
+            // Only sync infinite-scroll gate after load-more / first attach — not every render.
+            if (_infiniteNeedsSync && _browseInteropReady)
+            {
+                _infiniteNeedsSync = false;
+                await SyncBrowseInfiniteEnabledAsync();
+            }
+        }
+        catch
+        {
+            // Safe fallback during unmounting
+        }
+    }
+
+    private async Task SyncBrowseInfiniteEnabledAsync()
+    {
+        if (!_browseInteropReady)
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("setLibraryInfiniteScrollEnabled", CanLoadMore && !_loadingMore);
+        }
+        catch
+        {
+            // Safe fallback
         }
     }
 
@@ -606,7 +902,7 @@ public partial class Library : IDisposable
             list[index] = enriched;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _searchCts?.Cancel();
         _searchCts?.Dispose();
@@ -614,5 +910,34 @@ public partial class Library : IDisposable
         _recommendsCts?.Cancel();
         _recommendsCts?.Dispose();
         _recommendsCts = null;
+
+        if (_browseResizeObserver is not null)
+        {
+            try
+            {
+                await _browseResizeObserver.InvokeVoidAsync("disconnect");
+                await _browseResizeObserver.DisposeAsync();
+            }
+            catch
+            {
+                // Safe fallback during dispose
+            }
+
+            _browseResizeObserver = null;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("disposeLibraryBrowse");
+        }
+        catch
+        {
+            // Safe fallback during dispose
+        }
+
+        NavHome.HomeRequested -= OnNavHomeRequestedAsync;
+        _browseDotNetRef?.Dispose();
+        _browseDotNetRef = null;
+        _browseInteropReady = false;
     }
 }

@@ -75,6 +75,12 @@
                                     @if (TypeFilter == "Favorites") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
                                 </div>
                             </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Later"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Later</span>
+                                    @if (TypeFilter == "Later") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
                         </MudMenu>
                     </MudTooltip>
                     <div class="toolbar-action-divider" aria-hidden="true"></div>

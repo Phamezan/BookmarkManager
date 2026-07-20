@@ -8,7 +8,7 @@
 
 @inject NavigationManager NavigationManager
 
-<article class="@($"lib-card {Item.TypeClass}")">
+<article class="@($"lib-card {Item.TypeClass}")" data-lib-key="@($"{Item.Provider}:{Item.ProviderId}")">
     @if (ProgressBadgeText is { } progressBadgeText)
     {
         @if (Progress?.BookmarkId is not null)

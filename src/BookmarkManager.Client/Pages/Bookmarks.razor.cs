@@ -17,6 +17,7 @@ public partial class Bookmarks : IDisposable
     [Inject] private IExtensionConnectionService ExtensionConnectionService { get; set; } = default!;
     [Inject] private UndoService UndoService { get; set; } = default!;
     [Inject] private Microsoft.JSInterop.IJSRuntime JSRuntime { get; set; } = default!;
+    [Inject] private NavHomeService NavHome { get; set; } = default!;
 
     private List<FolderTreeNodeDto> _folderTree = [];
     private List<BookmarkNodeDto> _items = [];
@@ -109,6 +110,12 @@ public partial class Bookmarks : IDisposable
                 else if (_typeFilter == "Favorites")
                 {
                     items = items.Where(i => i.Metadata?.IsFavorite == true);
+                }
+                else if (_typeFilter == "Later")
+                {
+                    items = items.Where(i =>
+                        i.Type == NodeType.Bookmark
+                        && string.Equals(i.Metadata?.Status, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal));
                 }
                 if (_activeTagFilters.Count > 0)
                 {

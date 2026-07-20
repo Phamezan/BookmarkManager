@@ -168,3 +168,9 @@ window.initNavIndicator = function() {
         });
     }
 };
+
+/** Scroll the layout content pane to top (shared across pages). */
+window.scrollAppContentToTop = function () {
+    var el = document.querySelector('.app-content');
+    if (el) el.scrollTop = 0;
+};

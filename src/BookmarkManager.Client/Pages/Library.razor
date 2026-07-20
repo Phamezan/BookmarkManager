@@ -8,6 +8,9 @@
 @inject IBookmarkService BookmarkService
 @inject IDialogService DialogService
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+@inject NavHomeService NavHome
+@implements IAsyncDisposable
 
 <PageTitle>Library</PageTitle>
 
@@ -23,7 +26,11 @@
         <div class="lib-heading">
             <h1 class="lib-title">Library</h1>
             <span class="lib-subtitle">
-                @(IsSearchActive ? ActiveItems.Count : _trendingTotalCount) titles
+                @(_savedForLaterOnly
+                    ? _savedForLaterItems.Count
+                    : _myBookmarksOnly
+                        ? _myBookmarksItems.Count
+                        : IsSearchActive ? ActiveItems.Count : _trendingTotalCount) titles
             </span>
         </div>
     </header>
@@ -45,6 +52,11 @@
                 aria-pressed="@_myBookmarksOnly" class="@($"lib-tab lib-bookmarks-tab{(_myBookmarksOnly ? " is-active" : "")}")"
                 @onclick="ToggleMyBookmarksOnly">
             My bookmarks
+        </button>
+        <button type="button" role="tab" aria-selected="@_savedForLaterOnly"
+                aria-pressed="@_savedForLaterOnly" class="@($"lib-tab lib-bookmarks-tab{(_savedForLaterOnly ? " is-active" : "")}")"
+                @onclick="ToggleSavedForLaterOnly">
+            Saved for later
         </button>
         <div class="lib-search">
             <svg class="lib-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -84,7 +96,7 @@
                 {
                     var current = key;
                     <MudMenuItem Class="@($"lib-sort-item{(_sort == current ? " is-active" : "")}")"
-                                 OnClick="@(() => _sort = current)">
+                                 OnClick="@(() => SetSort(current))">
                         <span class="lib-sort-item-label">@label</span>
                         @if (_sort == current)
                         {
@@ -325,20 +337,25 @@
         }
         else
         {
-            <div class="lib-grid">
-                @foreach (var item in FilteredItems)
-                {
-                    <MediaCard Item="item" Progress="ProgressFor(item)" OnMore="ShowDetailsAsync" />
-                }
-            </div>
-            @if (CanLoadMore)
-            {
-                <div class="lib-load-more">
-                    <button type="button" class="lib-load-more-btn" disabled="@_loadingMore" @onclick="LoadMoreAsync">
-                        @(_loadingMore ? "Loading…" : $"Load more ({_trendingTotalCount - _trending.Count} remaining)")
-                    </button>
+            <div class="lib-browse-virtual" @ref="_browseContainerRef">
+                <Virtualize Items="_browseRows" Context="row" ItemSize="BrowseRowItemSizePx" OverscanCount="6">
+                    <div @key="BrowseRowKey(row)"
+                         class="lib-grid lib-grid-row"
+                         style="grid-template-columns: repeat(@_browseColumns, minmax(0, 1fr));">
+                        @foreach (var item in row)
+                        {
+                            <MediaCard @key="@($"{item.Provider}:{item.ProviderId}")"
+                                       Item="item" Progress="ProgressFor(item)" OnMore="ShowDetailsAsync" />
+                        }
+                    </div>
+                </Virtualize>
+                <div class="lib-scroll-sentinel" @ref="_browseSentinelRef" aria-hidden="true">
+                    @if (_loadingMore)
+                    {
+                        <span class="lib-scroll-sentinel-label">Loading more…</span>
+                    }
                 </div>
-            }
+            </div>
         }
     </section>
 </div>

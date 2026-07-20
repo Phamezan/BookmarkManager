@@ -84,11 +84,13 @@
         } catch (_) { /* ignore */ }
     };
 
-    // One-shot consume after a display-repair reload (or any reload while a folder was set).
+    // One-shot consume only after a display-repair reload. Normal visits should land on
+    // the default Bookmarks Bar — not the last folder the user happened to leave on.
     window.bmConsumeBookmarksFolder = function () {
         try {
-            var id = sessionStorage.getItem(FOLDER_KEY);
-            return id || null;
+            var pending = sessionStorage.getItem('bm-display-reload-pending');
+            if (pending !== '1') return null;
+            return sessionStorage.getItem(FOLDER_KEY) || null;
         } catch (_) {
             return null;
         }

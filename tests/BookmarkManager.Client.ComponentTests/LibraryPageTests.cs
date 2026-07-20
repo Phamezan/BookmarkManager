@@ -37,6 +37,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -56,6 +57,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -79,6 +81,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -100,6 +103,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -126,6 +130,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -165,6 +170,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -190,6 +196,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -216,6 +223,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -246,6 +254,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -266,6 +275,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -295,6 +305,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -318,6 +329,7 @@ public sealed class LibraryPageTests
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
         context.Services.AddMudServices();
+        context.Services.AddSingleton(new NavHomeService());
         context.Services.AddSingleton<IBookmarkService>(new FakeBookmarkService());
 
         var fake = new FakeLibraryService();
@@ -401,5 +413,10 @@ public sealed class LibraryPageTests
 
         public Task<List<LibraryEntryDto>> GetMyBookmarkedSeriesAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(MyBookmarkedSeries);
+
+        public List<LibraryEntryDto> SavedForLater { get; } = [];
+
+        public Task<List<LibraryEntryDto>> GetSavedForLaterAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(SavedForLater);
     }
 }
