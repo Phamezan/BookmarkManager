@@ -71,4 +71,14 @@ public class ExtensionController(IExtensionService extensionService) : Controlle
         await extensionService.ResetDatabaseAsync(ct);
         return Ok();
     }
+
+    /// <summary>Lookup synced bookmark metadata for the Brave create confirmation toast.</summary>
+    [HttpGet("bookmarks/by-browser-id/{browserNodeId}")]
+    public async Task<ActionResult<ExtensionBookmarkEnrichmentDto>> GetByBrowserIdAsync(
+        string browserNodeId,
+        CancellationToken ct)
+    {
+        var dto = await extensionService.GetBookmarkEnrichmentByBrowserIdAsync(browserNodeId, ct);
+        return dto is null ? NotFound() : Ok(dto);
+    }
 }

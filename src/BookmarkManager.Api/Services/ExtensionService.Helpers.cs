@@ -46,4 +46,24 @@ public sealed partial class ExtensionService
         return config;
     }
 
+    public async Task<ExtensionBookmarkEnrichmentDto?> GetBookmarkEnrichmentByBrowserIdAsync(
+        string browserNodeId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(browserNodeId))
+            return null;
+
+        var node = await db.BookmarkNodes
+            .AsNoTracking()
+            .FirstOrDefaultAsync(n => n.BrowserNodeId == browserNodeId && !n.IsDeleted, ct);
+        if (node is null || node.Type != NodeType.Bookmark)
+            return null;
+
+        var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
+        var tags = string.IsNullOrWhiteSpace(node.Tags)
+            ? Array.Empty<string>()
+            : node.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return new ExtensionBookmarkEnrichmentDto(node.Title, folderPath, tags, node.Status);
+    }
 }

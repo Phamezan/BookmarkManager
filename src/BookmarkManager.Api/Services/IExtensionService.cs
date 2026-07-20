@@ -12,4 +12,5 @@ public interface IExtensionService
     Task<SnapshotResponseDto> UploadSnapshotAsync(SnapshotRequestPayloadDto request, CancellationToken ct);
     Task CompleteCommandAsync(Guid operationId, CompletionRequest request, CancellationToken ct);
     Task ResetDatabaseAsync(CancellationToken ct);
+    Task<ExtensionBookmarkEnrichmentDto?> GetBookmarkEnrichmentByBrowserIdAsync(string browserNodeId, CancellationToken ct);
 }
