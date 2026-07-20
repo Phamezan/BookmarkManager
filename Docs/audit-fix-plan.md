@@ -258,4 +258,4 @@ Phases 1 and 3 additionally require the manual sync scenarios from `Docs/planv1.
 
 - EF migration needed only for Phase 3.5 (`SnapshotNodeMapping.SourceCommandId`) — new migration, never rewrite applied ones.
 - Projection update + command enqueue stay in one transaction everywhere touched.
-- No new features, no scope change; all fixes inside the documented product boundary in `CLAUDE.md`/`AGENTS/AGENT.md`.
+- No new features, no scope change; all fixes inside the documented product boundary in `CLAUDE.md`/`.agents/AGENT.md`.

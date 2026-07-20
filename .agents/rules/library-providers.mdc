@@ -1,0 +1,27 @@
+---
+description: "Library feature — media provider rules, catalog crawl, per-provider constraints"
+globs: src/BookmarkManager.Api/Services/Library/**
+alwaysApply: false
+---
+
+# Library Provider Rules (`Services/Library/`)
+
+Discovery/browse only — Library NEVER writes to the bookmark tree; no bookmark-creation or release-watcher subsystem. Read-only outbound HTTP to public catalogs; no credentials stored for these sites. Full spec: `Docs/library-phases.md`.
+
+## Provider abstraction
+
+All providers implement `IMediaProvider` — one provider's outage or removal never blocks the others. Track success/failure metrics, request budget/cache hits; provider toggles via AppConfig.
+
+## Per-provider constraints
+
+- **AniList, MangaDex, Kitsu, RanobeDB** — public APIs. RanobeDB covers Japanese light novels (official releases) only, NOT raw web novels.
+- **Novelfire** — raw/fan-translated web novels, **bulk-catalog-only**: robots.txt disallows `/search?keyword=*` and `/api/*`. Never implement live search against those endpoints; only genre-listing/novel-detail crawling (allowed).
+- **RoyalRoad** — never bulk-import (no bulk API, scraping ToS risk); search-time-only.
+
+## Catalog crawl
+
+Populate `LibraryCatalogEntry` (Browse view source) only from providers implementing `IBulkCatalogProvider`. Drive the crawl exclusively off the durable `LibraryCatalogSyncQueueItem` table (Queue-Based Load Leveling), never in-memory state — restart mid-crawl must resume without loss.
+
+## Titles
+
+Prefer English title when provider exposes localized titles (AniList `title.english`, Kitsu `titles.en`); fall back to native/romanized only when no English title exists.

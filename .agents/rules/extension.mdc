@@ -1,0 +1,38 @@
+---
+description: "Browser extension conventions — Manifest V3, sync loop, chapter-centric UX"
+globs: BookmarkExtension/**
+alwaysApply: false
+---
+
+# Extension Rules (`BookmarkExtension/`)
+
+Manifest V3 TypeScript extension for Brave. Built with esbuild (`npm run build` via `build.mjs`), tested with vitest (tests live alongside source), `npm run typecheck` + `npm run lint` before done.
+
+## Purpose — chaptered/episodic content only
+
+Exists purely to make bookmarking manga, manhwa, manhua, webnovels, light novels, anime a better experience. Bookmark URLs are chapter/episode pages of a series. Quick-bookmark extracts chapter/episode numbers into titles. Duplicate detection is series-level via `seriesKeyFromUrl` in `src/bookmarks/duplicate-detector.ts` — chapter 124 and 125 of the same series ARE duplicates; exact-URL comparison only fallback for URLs with no chapter marker. **Do not generalize UX toward generic bookmarking.**
+
+## Key files
+
+- `src/background/service-worker.ts` — websocket loop, alarms, heartbeats, hotkeys, omnibox search.
+- `src/bookmarks/bookmark-adapter.ts` — translates server commands into `chrome.bookmarks` calls. Only this extension may call `chrome.bookmarks`.
+
+## Sync loop invariants
+
+- Command lifecycle: claim lease (`POST api/extension/commands/claim`), execute via `chrome.bookmarks`, report `POST api/extension/commands/{opId}/complete` with browser-side ID mappings. Acknowledgements must be idempotent.
+- Persist correctness-critical state in the API or `chrome.storage.local`, NEVER only in service-worker memory (MV3 workers die at any time).
+- Keep Brave root and managed bookmark nodes protected.
+- Auth: none — the app has no authentication (LAN-only, single-user).
+
+## In-Tab Command Palette
+
+`toggle-palette` command injects full-viewport `palette-host.html` extension iframe into active tab via `activeTab` + `chrome.scripting` (no broad host permissions), framing Blazor `/palette` over https. Invariants:
+- Read-only page UI: never touch host page DOM beyond own iframe insert/remove; never write bookmarks from the overlay.
+- Palette origin resolved from extension storage only, never page-supplied params.
+- All cross-frame postMessage origin-checked; relayed URLs restricted to `http`/`https`.
+- Palette iframes kept alive per tab (hidden, not destroyed) to skip repeat Blazor WASM boot.
+- Requires dual Kestrel TLS binding (`docker-compose.tls.yml` prod / `https` launch profile dev, mkcert cert in gitignored `certs/`) — extension pages block active mixed content.
+
+## Verification beyond green build
+
+Two-way sync changes require verifying duplicate event delivery, repeated acknowledgement, offline replay, restart behavior; UI-facing sync changes need an unpacked-extension run against a disposable Brave profile per `Docs/planv1.md` scenarios.

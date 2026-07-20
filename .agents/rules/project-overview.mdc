@@ -1,0 +1,93 @@
+---
+description: "BookmarkManager product boundary, architecture, and commands — always in context"
+alwaysApply: true
+---
+
+# BookmarkManager — Project Overview
+
+LAN-only bookmark manager for ONE administrator, ONE desktop Brave profile, ONE extension install, ONE API container, ONE SQLite database. Do NOT add multi-user support, public hosting, Postgres, mobile clients, auto-scraping, or other-browser support without an explicit scope change (and doc update).
+
+## Components
+
+- `BookmarkExtension/` — Manifest V3 TypeScript extension. `src/background/service-worker.ts` runs the websocket loop, alarms, heartbeats, hotkeys, omnibox search. `src/bookmarks/bookmark-adapter.ts` translates server commands into `chrome.bookmarks` calls. **Only the extension may call `chrome.bookmarks`.**
+- `src/BookmarkManager.Api/` — ASP.NET Core server, **sole writer of SQLite** (only one instance ever runs). Controllers and services split into partial classes by concern.
+- `src/BookmarkManager.Client/` — Blazor **WebAssembly** + MudBlazor dashboard, served by the API under one origin.
+- `src/BookmarkManager.Contracts/` — shared request/response DTOs between client and API. All cross-boundary DTOs live here — never duplicate types in Client and Api.
+
+EF Core entities/migrations stay server-side — never referenced from the client.
+
+## Sync model (1:1 state projection)
+
+Extension polls `POST api/extension/heartbeat`; uploads full snapshot to `POST api/extension/snapshot` when tracked-root config changes; server enqueues moves/deletes/creates as `ExtensionCommandEntry` rows; extension claims leases via `POST api/extension/commands/claim`, executes with `chrome.bookmarks`, reports back via `POST api/extension/commands/{opId}/complete` with browser-side ID mappings. Server pushes to client + extension over raw WebSocket (`SyncWebSocketManager`, `api/sync/ws`) — **no SignalR anywhere, don't introduce it**.
+
+Manager-only metadata (category/status/progress/tags/rating/notes/favorite/cover-image) is NEVER pushed to Brave. Soft-delete for 30 days with JSON backup before purge/repair/restore.
+
+## Core invariants (breaking these causes sync storms or data loss)
+
+- Update the desired bookmark projection and enqueue its command in the SAME database transaction.
+- Preserve stable operation/event IDs, command leases, idempotent acknowledgements.
+- **Never turn a Brave-originated event into a command back to Brave.**
+- Folder-creation-then-move sequences must defer the move in the DB until the browser confirms the folder's `BrowserNodeId`.
+- Add an EF Core migration for every model change; never rewrite an applied migration.
+- Bookmark URLs restricted to absolute `http`/`https`.
+- Persist correctness-critical extension state in the API or `chrome.storage.local`, never only in service-worker memory.
+- Initial selected-root snapshot and explicit repair resync = Brave wins.
+
+## Scope-change features (allowed, bounded)
+
+- **Library** (`Docs/library-phases.md`): outbound read-only HTTP to public catalog APIs (AniList, MangaDex, Kitsu, RanobeDB, RoyalRoad, Novelfire) for discovery/browse only. Providers behind `IMediaProvider` in `src/BookmarkManager.Api/Services/Library/`. Novelfire is bulk-catalog-only — robots.txt disallows its search/API endpoints; never add live search against them. Library never writes to the bookmark tree.
+- **In-Tab Command Palette**: extension `toggle-palette` command injects a `palette-host.html` iframe (via `activeTab` + `chrome.scripting`) framing the Blazor `/palette` page over https. Read-only page UI: never touches host page DOM beyond its own iframe, never writes bookmarks; palette origin comes from extension storage, never page-supplied params; cross-frame postMessage is origin-checked; relayed URLs restricted to `http`/`https`.
+
+## Extension purpose
+
+`BookmarkExtension/` exists purely for chaptered/episodic content — manga, manhwa, manhua, webnovels, light novels, anime. Bookmark URLs are chapter/episode pages of a series; duplicate detection is series-level via `seriesKeyFromUrl` in `src/bookmarks/duplicate-detector.ts` (chapter 124 and 125 of the same series ARE duplicates). Do not generalize extension UX toward generic bookmarking.
+
+## Commands
+
+.NET (.NET 10):
+```powershell
+dotnet restore BookmarkManager.sln
+dotnet build BookmarkManager.sln --no-restore
+dotnet test BookmarkManager.sln --no-build
+```
+
+**Do not run the full solution test suite while developing a feature** (~3 min; CI runs it on PR). Scope to the touched project or `dotnet test --filter "FullyQualifiedName~Name"`.
+
+Extension:
+```powershell
+cd BookmarkExtension
+npm ci
+npm run typecheck
+npm run lint
+npm test          # vitest
+npm run build     # esbuild via build.mjs
+```
+
+## Docs (hierarchy)
+
+| Role | Location |
+|------|----------|
+| Canonical agent tree | `.agents/` (see `.agents/README.md`) |
+| Always-on summary | `.agents/rules/project-overview.mdc` |
+| Area rules (glob-loaded) | `.agents/rules/*.mdc` |
+| Full invariants + checklist | `.agents/AGENT.md` |
+| Thin root pointers | `AGENTS.md`, `CLAUDE.md` |
+
+**Create all new skills / agent docs / rules / commands / subagents only under `.agents/`.** Never under `.claude/`, `.cursor/`, or `.opencode/`.
+
+`README.md` — system map. `Docs/planv1.md` — implementation plan. `Docs/library-phases.md` — Library. `Docs/deployment-ubuntu.md` — deployment.
+
+## graphify
+
+Knowledge graph at `graphify-out/`. Post-commit hook keeps `graph.json` current.
+
+- Codebase questions: `graphify query "<question>"` before wide grep when `graphify-out/graph.json` exists.
+- Relationships: `graphify path "<A>" "<B>"`. Concepts: `graphify explain "<concept>"`.
+- Broad nav: `graphify-out/wiki/index.md` if present.
+- After code changes: `graphify update .` if hook has not run.
+
+## Agent commands (`.agents/commands/`)
+
+- `scoped-test` — narrow test run for touched project
+- `review-sync-change` — sync-protocol checklist
+- `review-autotagging-change` — auto-tagging checklist

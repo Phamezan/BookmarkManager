@@ -1,0 +1,35 @@
+---
+description: "Blazor WASM client conventions — MudBlazor, partial-class splits, component folders"
+globs: src/BookmarkManager.Client/**
+alwaysApply: false
+---
+
+# Blazor Client Rules (`src/BookmarkManager.Client/`)
+
+Blazor **WebAssembly hosted** (standalone WASM served by ASP.NET Core host) — NOT Server, NOT Hybrid, NOT Auto. Never suggest `InteractiveServer` render modes or Server-specific circuit APIs. MudBlazor 9.5.0, .NET 10.
+
+## Communication
+
+- Request/response: typed `HttpClient` (`Services/BookmarkManagerApiClient.cs`).
+- Server push: raw WebSocket (`api/sync/ws`). **No SignalR — don't reach for it.**
+- Shared DTOs go in `BookmarkManager.Contracts`, never duplicated client-side.
+- Never reference EF Core entities or migrations from the client.
+
+## File organization — split by concern, not by layer
+
+Large Razor pages split into `PageName.Concern.cs` partial-class siblings; the original `.razor.cs` stays a thin init/DI shell. Example: `Pages/Bookmarks.razor.cs` + `.ContextMenu.cs` / `.Crud.cs` / `.DragDrop.cs` / `.Favorites.cs` / `.Formatters.cs` / `.Lifecycle.cs` / `.Selection.cs` / `.Sync.cs` / `.Tags.cs` / `.Tree.cs` / `.Undo.cs`. Follow this pattern for new work.
+
+Component folder conventions (two coexist — pick correctly):
+- Reusable widgets used across pages → `Components/<Theme>/` (e.g. `AutoTagging/`, `Backups/`, `Dialogs/`, `Shared/`)
+- Sub-components owned by one page → `Features/<PageName>/Components/` (e.g. `Features/Bookmarks/Components/BookmarkCard.razor`), namespace `BookmarkManager.Client.Features.<PageName>.Components`
+
+## UI conventions
+
+- Prefer `Mud*` components (`MudTreeView`, dialogs via `IDialogService`, etc.) over hand-rolled markup.
+- Keep components thin: UI state belongs in client services (e.g. `Services/UndoService.cs` — stack-based global undo), business rules in API services.
+
+## Notable features
+
+Auto-tagging (TF-IDF + site-specific taggers: AniList, Kitsu, MangaUpdates, NovelFull, Catalog, OpenRouter, search fallback), `/recommendations` page, broken-link checker, Recycle Bin (30-day soft delete with JSON backups), global undo stack, `/palette` command palette (also framed by extension in-tab overlay).
+
+**Auto-tagging UI:** heavy dialog logic in `ComponentName.razor.cs` partials; reusable progress/ETA/filter/heartbeat in `Services/AutoTagging/` (e.g. `AutoTaggerAiBatchHeartbeat`, `AutoTagProgressEstimator`). See `.agents/rules/autotagging.mdc`.

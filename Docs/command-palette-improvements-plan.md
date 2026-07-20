@@ -11,7 +11,7 @@ Target component: `src/BookmarkManager.Client/Components/CommandPalette/`
 `wwwroot/js/command-palette.js`. Tests live in
 `tests/BookmarkManager.Client.ComponentTests` (bunit + xUnit).
 
-Read `AGENTS/AGENT.md` before starting. Do NOT touch sync protocol, the API,
+Read `.agents/AGENT.md` before starting. Do NOT touch sync protocol, the API,
 or `BookmarkManager.Contracts` — every feature below is client-only by design.
 Do not run the full solution test suite while developing; use scoped test runs
 (`dotnet test tests/BookmarkManager.Client.ComponentTests`).

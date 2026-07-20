@@ -1,0 +1,38 @@
+---
+description: "AI + deterministic auto-tagging — telemetry, partials, cancel semantics"
+globs: src/BookmarkManager.Api/Services/BookmarkTagging/**,src/BookmarkManager.Api/Services/*TaggingService.cs,src/BookmarkManager.Client/Components/AutoTagging/**,src/BookmarkManager.Client/Services/AutoTagging/**
+alwaysApply: false
+---
+
+# Auto-Tagging Rules
+
+AI series matching (OpenRouter) + deterministic classification. Tags save directly to `BookmarkNode.Tags` (manager-only metadata — never synced to Brave).
+
+## Server (`Services/BookmarkTagging/`)
+
+- Split large services into `TypeName.Concern.cs` partials (e.g. `AiBookmarkAutoTaggingService.Passes.cs`, `.ProviderLookup.cs`, `.RunContext.cs`). Keep each file under ~800 lines; prefer methods under ~50 lines.
+- Shared tag apply: `ApplyCachedTagsAsync` + `TagApplyRequest` — do not duplicate deterministic/AI apply blocks.
+- **Prefetch:** parallel provider lookups (`Task.WhenAll` + semaphore); on cancel, swallow `OperationCanceledException` and keep partial cache.
+- **Apply on cancel:** finish current bookmark apply, then `break` — do not `ThrowIfCancellationRequested` mid-loop after partial prefetch.
+- **Telemetry:** `ProviderAutoTagTelemetry` → `AutoTagRunTelemetry` (`ConcurrentBag`). HTTP duration via `TimeSpan` / `TotalMilliseconds` — **never** `httpDuration.Milliseconds` (0–999 component). Cache hits and MangaUpdates search-inline reuse → `RecordCacheHit`. HTTP exceptions → `RecordFailure`.
+- **Thresholds:** all similarity thresholds are constants in `SimilarityThresholds.cs` — never add a new hardcoded literal in a provider.
+- **Provenance:** write via `TagProvenanceWriter.Replace` with `(Tag, Provider, MatchScore, MatchedTitle)` tuples — thread the provider's winning score/title through (nulls where unavailable), never insert rows directly.
+- **Diagnostics:** `GET api/tag-explain` (`TagExplainController`) explains normalization + catalog scoring for a title/bookmark; extend it (and `CatalogTaggingService.ExplainTopMatchesAsync`) when adding matching behavior instead of ad-hoc debug endpoints.
+- **Incremental save:** `TagSaveBatchSize` (10); `TagsPendingSave` resets after flush; cancel path in `TagFolderAsync` flushes pending saves with `CancellationToken.None`.
+
+## Client (`Components/AutoTagging/`, `Services/AutoTagging/`)
+
+- Dialog orchestration in `AutoTaggerDialog.razor.cs`; `.razor` stays markup + light `@code`.
+- Batch HTTP: `CancellationToken.None` on `AiAutoTagFolderBatchAsync` — user stop only between batches (`CancellationTokenSource` on dialog).
+- Heartbeat: `AutoTaggerAiBatchHeartbeat.WaitForCompletionAsync` — pass real elapsed `TimeSpan` to tick callback.
+- ETA: run-wide `AutoTagProgressEstimator` (`_totalCount` = sum across folders); do not use per-folder `RemainingCandidates` for ETA.
+- Summary filter: `AiAutoTagSummaryMessageFilter` — prefix `"Provider timing"` (no colon); suppress `"Run "` server cancel-flush messages on client.
+
+## Tests (no mocking libraries)
+
+- `AiBookmarkAutoTaggingServiceTests`, `MangaUpdatesTaggingTests`
+- `AutoTagRunTelemetryTests` (concurrency + `TotalMilliseconds`)
+- `AutoTagProgressEstimatorTests`, `AiAutoTagSummaryMessageFilterTests`
+- Scope: `dotnet test --filter "FullyQualifiedName~AutoTag|FullyQualifiedName~MangaUpdatesTagging|FullyQualifiedName~AiBookmark"`
+
+Full checklist: `.agents/commands/review-autotagging-change.md`

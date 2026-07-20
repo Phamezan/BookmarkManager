@@ -12,7 +12,7 @@ Implementation phases. UI mock (Phase 0) already done on branch `Library`.
 release checking (RoyalRoad, NovelUpdates). Product boundary in `CLAUDE.md` says "no
 auto-scraping" — this feature is an explicit scope change: outbound read-only HTTP to
 public catalog APIs/feeds, still LAN-only, single-user, SQLite. `CLAUDE.md` +
-`AGENTS/AGENT.md` must be updated in Phase 1.
+`.agents/AGENT.md` must be updated in Phase 1.
 
 ---
 

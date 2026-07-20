@@ -1,0 +1,42 @@
+---
+description: "ASP.NET Core API conventions — controllers, services, EF Core, security"
+globs: src/BookmarkManager.Api/**
+alwaysApply: false
+---
+
+# API Server Rules (`src/BookmarkManager.Api/`)
+
+Sole writer of SQLite; run only one instance. .NET 10, nullable reference types + implicit usings enabled.
+
+## Structure
+
+- `Controllers/` — `BookmarksController.cs` split into partials by concern: `.Commands.cs`, `.Jobs.cs`, `.Migration.cs`, `.Queries.cs`, `.Tagging.cs`. Follow this `TypeName.Concern.cs` partial-class pattern when a controller/service grows — do not grow one file or invent a different layering.
+- `Services/` — `ExtensionService.cs` split into `.Commands.cs`, `.Events.cs`, `.Helpers.cs`, `.Reset.cs`, `.Snapshots.cs` (+ `IExtensionService.cs`). `LinkCheckerService.cs` handles broken links. Library providers in `Services/Library/` behind `IMediaProvider`. Auto-tagging in `Services/BookmarkTagging/` — see `.agents/rules/autotagging.mdc` when editing.
+- `Data/AppDbContext.cs` — EF Core models. `Migrations/` — never rewrite an applied migration; add a new one for every model change.
+
+## Core entities
+
+`BookmarkNode` (bookmarks/folders: `ParentId`/`Position`/`IsDeleted`/`BrowserNodeId`), `ExtensionCommandEntry` (`OperationId`/`CommandType`/`Status`: Pending/Leased/Succeeded/Failed). No `TrackedRoot` table — sync roots live only in extension-config DTOs (`ExtensionTrackedRootDto`).
+
+## Sync invariants (see project-overview for full list)
+
+- Projection update + command enqueue in ONE DB transaction.
+- Snapshot diff soft-deletes nodes missing from snapshot — never hard-delete.
+- If touching `ExtensionService.Events.cs` or `.Commands.cs`: verify the server never echoes a Brave-originated event back as a command. Breaking this causes sync storms.
+- Folder-create-then-move: defer the move in DB until browser confirms `BrowserNodeId` (see `Services/BrokenLinksFolderHelper.cs` — "Broken Links" folder handling used by the ManualFolder triage endpoint in `Controllers/BookmarksController.Jobs.cs`).
+
+## Conventions
+
+- Async APIs with `CancellationToken` at I/O boundaries.
+- UTC timestamps; `Guid` application IDs; Brave node IDs remain strings.
+- JSON camelCase; enums as strings.
+- API errors: RFC 7807 `ProblemDetails`; never leak exception details.
+- Validate complete inputs before changing the bookmark projection or queue.
+- Business rules in application services; persistence rules in infrastructure code.
+
+## Security
+
+- No authentication anywhere — single-user, LAN-only; never expose beyond the LAN.
+- Never log passwords, cookies, tokens, authorization headers, secrets.
+- Bookmark URLs: absolute `http`/`https` only.
+- Data-protection keys live in the persistent `/data` volume.
