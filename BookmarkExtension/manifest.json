@@ -3,12 +3,15 @@
   "name": "Bookmark Manager Sync",
   "version": "0.1.0",
   "description": "Synchronizes selected Brave bookmark folders with Bookmark Manager.",
-  "permissions": ["bookmarks", "storage", "alarms", "tabs", "scripting", "activeTab", "downloads", "notifications"],
+  "permissions": ["bookmarks", "storage", "alarms", "tabs", "scripting", "activeTab", "downloads", "notifications", "sidePanel"],
   "omnibox": { "keyword": "bm" },
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": {
     "service_worker": "service-worker.js",
     "type": "module"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
   },
   "action": {
     "default_popup": "popup/index.html",
@@ -26,6 +29,12 @@
         "default": "Ctrl+Shift+P"
       },
       "description": "Toggle the in-tab command palette (rebind to Ctrl+P at brave://extensions/shortcuts to override print)"
+    },
+    "toggle-sidepanel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E"
+      },
+      "description": "Toggle the bookmark side panel"
     }
   },
   "web_accessible_resources": [

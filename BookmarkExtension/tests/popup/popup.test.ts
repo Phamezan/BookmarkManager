@@ -267,4 +267,118 @@ describe("PopupController", () => {
       expect(messages).toEqual([]);
     });
   });
+
+  describe("pending create draft", () => {
+    const draft = {
+      url: "https://example.com/some-series",
+      title: "Some Series",
+      folderId: "1",
+      capturedAt: "2026-07-20T00:00:00.000Z",
+    };
+
+    it("loadDraft returns null and an empty catalog when nothing is pending", async () => {
+      const result = await controller.loadDraft();
+      expect(result.draft).toBeNull();
+      expect(result.catalog).toEqual([]);
+    });
+
+    it("loadDraft returns the pending draft and the folder catalog", async () => {
+      await repo.savePendingCreateDraft(draft);
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async () => ({ id: "new-id" }),
+          getFolders: async () => [
+            { browserNodeId: "1", parentBrowserNodeId: null, title: "Bookmarks Bar" },
+          ],
+        },
+      });
+
+      const result = await controller.loadDraft();
+      expect(result.draft).toEqual(draft);
+      expect(result.catalog).toEqual([
+        { browserNodeId: "1", parentBrowserNodeId: null, title: "Bookmarks Bar" },
+      ]);
+    });
+
+    it("commitDraft creates the bookmark with the given title/folder and clears the draft", async () => {
+      await repo.savePendingCreateDraft(draft);
+      const created: { parentId: string; title: string; url: string }[] = [];
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async (input) => {
+            created.push(input);
+            return { id: "new-id" };
+          },
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitDraft({
+        url: draft.url,
+        title: "  Edited Title  ",
+        folderId: "9",
+      });
+
+      expect(result).toEqual({ success: true, error: null });
+      expect(created).toEqual([{ parentId: "9", title: "Edited Title", url: draft.url }]);
+      expect(await repo.getPendingCreateDraft()).toBeNull();
+      expect(await repo.getLastActiveFolder()).toBe("9");
+    });
+
+    it("commitDraft rejects an empty title without creating anything", async () => {
+      await repo.savePendingCreateDraft(draft);
+      const created: unknown[] = [];
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async (input) => {
+            created.push(input);
+            return { id: "new-id" };
+          },
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitDraft({ url: draft.url, title: "   ", folderId: "9" });
+
+      expect(result).toEqual({ success: false, error: "Name cannot be empty" });
+      expect(created).toEqual([]);
+      expect(await repo.getPendingCreateDraft()).not.toBeNull();
+    });
+
+    it("commitDraft reports failure when the bookmark API is unavailable", async () => {
+      await repo.savePendingCreateDraft(draft);
+      const result = await controller.commitDraft({ url: draft.url, title: "Title", folderId: "9" });
+      expect(result).toEqual({ success: false, error: "Bookmark API unavailable" });
+    });
+
+    it("dismissDraft clears the pending draft without creating anything", async () => {
+      await repo.savePendingCreateDraft(draft);
+      await controller.dismissDraft();
+      expect(await controller.loadDraft()).toEqual({ draft: null, catalog: [] });
+    });
+  });
 });

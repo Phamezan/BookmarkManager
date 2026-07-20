@@ -64,6 +64,12 @@ public sealed partial class ExtensionService
             ? Array.Empty<string>()
             : node.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        return new ExtensionBookmarkEnrichmentDto(node.Title, folderPath, tags, node.Status);
+        // Cover precedence mirrors BookmarksController.Queries.cs EnrichCoverImagesRecursive:
+        // catalog match cover wins when present, else fall back to the node's own stored cover.
+        var matches = await matchService.GetMatchesAsync(ct);
+        var matchedCover = matches.FirstOrDefault(m => m.BookmarkId == node.Id)?.CoverImageUrl;
+        var coverImageUrl = !string.IsNullOrWhiteSpace(matchedCover) ? matchedCover : node.CoverImageUrl;
+
+        return new ExtensionBookmarkEnrichmentDto(node.Id, node.Title, folderPath, tags, node.Status, coverImageUrl);
     }
 }

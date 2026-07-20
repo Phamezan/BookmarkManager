@@ -22,8 +22,12 @@ export class QuickBookmarkHandler {
   constructor(private deps: QuickBookmarkDeps) {}
 
   /**
-   * Popup closed path: resolve/create bookmark (or stash pending duplicate) and open popup.
-   * Caller handles the "popup already open → close" toggle.
+   * Popup closed path: resolve an exact-URL match (reuse, no creation) or
+   * stash a pending create draft — nothing is created here for a genuinely
+   * new bookmark, so autotagging (fired by `onCreated`) only sees the
+   * user-edited title once the popup's `commitDraft` actually creates it.
+   * Series-duplicate creation is deferred the same way, unchanged. Caller
+   * handles the "popup already open → close" toggle.
    */
   async run(): Promise<void> {
     try {
@@ -110,16 +114,28 @@ export class QuickBookmarkHandler {
         }
       }
 
-      const target = await this.resolveOrCreateBookmark(url, title, folderId);
-
-      await this.deps.storage.saveShortcutEditorState({
-        bookmarkId: target.id,
-        url,
-        title: target.title,
-        parentId: target.parentId,
-        capturedAt: this.deps.now().toISOString(),
-        wasCreated: target.wasCreated,
-      });
+      const match = await this.findExactMatch(url, folderId);
+      if (match) {
+        await this.deps.storage.saveShortcutEditorState({
+          bookmarkId: match.id,
+          url,
+          title: match.title,
+          parentId: match.parentId,
+          capturedAt: this.deps.now().toISOString(),
+          wasCreated: false,
+        });
+      } else {
+        // Genuinely new bookmark: defer creation to `commitDraft` so
+        // autotagging (triggered by onCreated) sees the user-edited title
+        // instead of the raw tab title.
+        await this.deps.storage.clearShortcutEditorState();
+        await this.deps.storage.savePendingCreateDraft({
+          url,
+          title,
+          folderId,
+          capturedAt: this.deps.now().toISOString(),
+        });
+      }
 
       await openPopupOrBadge();
     } catch (e) {
@@ -180,33 +196,23 @@ export class QuickBookmarkHandler {
     }
   }
 
-  private async resolveOrCreateBookmark(
+  /** Exact-URL search, preferring a match already in the target folder. */
+  private async findExactMatch(
     url: string,
-    title: string,
     folderId: string,
-  ): Promise<{ id: string; title: string; parentId: string; wasCreated: boolean }> {
+  ): Promise<{ id: string; title: string; parentId: string } | null> {
     const results = await chrome.bookmarks.search({ url });
     const exact = results.filter((n) => n.url === url);
+    if (exact.length === 0) return null;
 
-    if (exact.length > 0) {
-      const inFolder = exact.find((n) => n.parentId === folderId);
-      const chosen = inFolder ?? exact[0];
-      if (chosen) {
-        return {
-          id: chosen.id,
-          title: chosen.title,
-          parentId: chosen.parentId ?? folderId,
-          wasCreated: false,
-        };
-      }
-    }
+    const inFolder = exact.find((n) => n.parentId === folderId);
+    const chosen = inFolder ?? exact[0];
+    if (!chosen) return null;
 
-    const created = await chrome.bookmarks.create({
-      parentId: folderId,
-      title,
-      url,
-    });
-    console.log("[worker] quick-bookmark: bookmark created:", created.id);
-    return { id: created.id, title, parentId: folderId, wasCreated: true };
+    return {
+      id: chosen.id,
+      title: chosen.title,
+      parentId: chosen.parentId ?? folderId,
+    };
   }
 }

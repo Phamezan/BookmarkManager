@@ -1,4 +1,4 @@
-import type { PendingDuplicateState, ShortcutEditorState } from "../api/contracts";
+import type { PendingCreateDraft, PendingDuplicateState, ShortcutEditorState } from "../api/contracts";
 import { ChromeStorageRepository } from "../storage/storage-repository";
 import {
   DEFAULT_API_BASE_URL,
@@ -9,6 +9,9 @@ import { POPUP_PORT_NAME } from "./popup-port";
 
 
 const isBrowser = typeof chrome !== "undefined" && typeof document !== "undefined";
+
+/** Which pending state the shared `#editor-mode` markup is currently showing. */
+type ActiveMode = "draft" | "editor" | null;
 
 if (isBrowser) {
   const storage = new ChromeStorageRepository(chrome.storage.local);
@@ -52,6 +55,10 @@ if (isBrowser) {
       },
       remove: async (id) => {
         await chrome.bookmarks.remove(id);
+      },
+      create: async (input) => {
+        const created = await chrome.bookmarks.create(input);
+        return { id: created.id };
       },
       getFolders: async () => {
         const tree = await chrome.bookmarks.getTree();
@@ -110,6 +117,12 @@ if (isBrowser) {
     editorDoneBtn: document.getElementById("editor-done-btn") as HTMLButtonElement | null,
     editorRemoveBtn: document.getElementById("editor-remove-btn") as HTMLButtonElement | null,
   };
+
+  // Shared #editor-mode markup renders either a pending create draft or the
+  // post-create editor; this tracks which one, and caches the draft's URL
+  // (drafts have no bookmarkId to key off of, unlike the editor).
+  let activeMode: ActiveMode = null;
+  let currentDraftUrl: string | null = null;
 
   // ── Status helpers ──────────────────────────────────────────────────────────
 
@@ -322,6 +335,11 @@ if (isBrowser) {
       // keep raw url as host fallback
     }
 
+    // The draft path hides Remove (nothing exists yet to remove); always
+    // unhide it here since this markup is shared and the draft render
+    // leaves it hidden otherwise.
+    if (els.editorRemoveBtn) els.editorRemoveBtn.hidden = false;
+
     if (els.editorFavicon) {
       els.editorFavicon.onerror = () => {
         if (els.editorFavicon) els.editorFavicon.style.visibility = "hidden";
@@ -352,8 +370,109 @@ if (isBrowser) {
     setEditorMsg("");
   }
 
+  /**
+   * Renders a pending create draft into the shared `#editor-mode` markup.
+   * There is only ever one draft at a time, so repopulate unconditionally
+   * (unlike `renderEditor`, which guards against clobbering in-progress
+   * typing on storage-driven re-renders keyed by bookmarkId).
+   */
+  function renderDraft(draft: PendingCreateDraft, catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[]): void {
+    let host = draft.url;
+    try {
+      host = new URL(draft.url).hostname;
+    } catch {
+      // keep raw url as host fallback
+    }
+
+    currentDraftUrl = draft.url;
+
+    if (els.editorFavicon) {
+      els.editorFavicon.onerror = () => {
+        if (els.editorFavicon) els.editorFavicon.style.visibility = "hidden";
+      };
+      els.editorFavicon.onload = () => {
+        if (els.editorFavicon) els.editorFavicon.style.visibility = "";
+      };
+      els.editorFavicon.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
+      els.editorFavicon.alt = host;
+    }
+    if (els.editorHost) els.editorHost.textContent = host;
+    if (els.editorModeLabel) els.editorModeLabel.textContent = "New bookmark";
+    if (els.editorTitle) {
+      els.editorTitle.value = draft.title;
+      delete els.editorTitle.dataset.bookmarkId;
+    }
+    if (els.editorFolder) {
+      populateFolderSelect(els.editorFolder, catalog, draft.folderId);
+    }
+    // Nothing exists yet to remove.
+    if (els.editorRemoveBtn) els.editorRemoveBtn.hidden = true;
+    setEditorMsg("");
+  }
+
+  /** Shared by the Done button click and the `quickBookmark/commitNow` port message. */
+  async function submitActiveMode(): Promise<void> {
+    if (activeMode === "draft") {
+      const btn = els.editorDoneBtn;
+      const title = els.editorTitle?.value?.trim() ?? "";
+      const folderId = els.editorFolder?.value ?? "";
+      if (title.length === 0) {
+        setEditorMsg("Name cannot be empty", "error");
+        return;
+      }
+      if (!currentDraftUrl) {
+        await refreshUI();
+        return;
+      }
+      if (btn) btn.disabled = true;
+      setEditorMsg("Saving…", "info");
+      const result = await controller.commitDraft({ url: currentDraftUrl, title, folderId });
+      if (btn) btn.disabled = false;
+      if (result.success) {
+        window.close();
+      } else {
+        setEditorMsg(result.error ?? "Failed to create", "error");
+      }
+      return;
+    }
+
+    if (activeMode === "editor") {
+      const btn = els.editorDoneBtn;
+      const { editor } = await controller.loadEditorState();
+      if (!editor) {
+        await refreshUI();
+        return;
+      }
+      const title = els.editorTitle?.value?.trim() ?? "";
+      const folderId = els.editorFolder?.value ?? editor.parentId;
+      if (title.length === 0) {
+        setEditorMsg("Name cannot be empty", "error");
+        return;
+      }
+      if (btn) btn.disabled = true;
+      setEditorMsg("Saving…", "info");
+      const result = await controller.commitEditor({
+        bookmarkId: editor.bookmarkId,
+        title,
+        folderId,
+        currentParentId: editor.parentId,
+      });
+      if (btn) btn.disabled = false;
+      if (result.success) {
+        // State is cleared; storage.onChanged will re-render to normal mode.
+        window.close();
+      } else {
+        setEditorMsg(result.error ?? "Failed to update", "error");
+      }
+      return;
+    }
+
+    // Nothing pending — fall back to the old toggle-close behavior.
+    window.close();
+  }
+
   async function refreshUI(): Promise<void> {
-    // Pending duplicate confirmation outranks the editor: quick-bookmark
+    // Pending duplicate confirmation outranks everything else: quick-bookmark
     // writes it instead of creating, so nothing exists to edit yet.
     const pending = await controller.loadPendingDuplicate();
     if (pending) {
@@ -363,12 +482,27 @@ if (isBrowser) {
       return;
     }
     showDuplicateMode(false);
+
+    // Pending create draft outranks the post-create editor: they are
+    // mutually exclusive states of the same shared markup.
+    const { draft, catalog: draftCatalog } = await controller.loadDraft();
+    if (draft) {
+      renderDraft(draft, draftCatalog);
+      showEditorMode(true);
+      activeMode = "draft";
+      await refreshNormalStatus();
+      return;
+    }
+    activeMode = null;
+
     const { editor, catalog } = await controller.loadEditorState();
     if (editor) {
       renderEditor(editor, catalog);
       showEditorMode(true);
+      activeMode = "editor";
     } else {
       showEditorMode(false);
+      activeMode = null;
     }
     // Keep normal-mode status fresh for when the editor is dismissed.
     await refreshNormalStatus();
@@ -438,37 +572,12 @@ if (isBrowser) {
   // ── Editor event listeners ──────────────────────────────────────────────────
 
   els.editorDoneBtn?.addEventListener("click", async () => {
-    const btn = els.editorDoneBtn;
-    if (!btn) return;
-    const { editor } = await controller.loadEditorState();
-    if (!editor) {
-      await refreshUI();
-      return;
-    }
-    const title = els.editorTitle?.value?.trim() ?? "";
-    const folderId = els.editorFolder?.value ?? editor.parentId;
-    if (title.length === 0) {
-      setEditorMsg("Name cannot be empty", "error");
-      return;
-    }
-    btn.disabled = true;
-    setEditorMsg("Saving…", "info");
-    const result = await controller.commitEditor({
-      bookmarkId: editor.bookmarkId,
-      title,
-      folderId,
-      currentParentId: editor.parentId,
-    });
-    btn.disabled = false;
-    if (result.success) {
-      // State is cleared; storage.onChanged will re-render to normal mode.
-      window.close();
-    } else {
-      setEditorMsg(result.error ?? "Failed to update", "error");
-    }
+    await submitActiveMode();
   });
 
   els.editorRemoveBtn?.addEventListener("click", async () => {
+    // Hidden (and thus unclickable) in draft mode, but guard defensively.
+    if (activeMode !== "editor") return;
     const btn = els.editorRemoveBtn;
     if (!btn) return;
     const { editor } = await controller.loadEditorState();
@@ -490,7 +599,11 @@ if (isBrowser) {
   });
 
   els.editorCloseBtn?.addEventListener("click", async () => {
-    await controller.dismissEditor();
+    if (activeMode === "draft") {
+      await controller.dismissDraft();
+    } else {
+      await controller.dismissEditor();
+    }
   });
 
   // ── Duplicate confirmation listeners ────────────────────────────────────────
@@ -530,7 +643,11 @@ if (isBrowser) {
       const editorVisible = els.editorMode?.hidden === false;
       if (editorVisible) {
         e.preventDefault();
-        controller.dismissEditor();
+        if (activeMode === "draft") {
+          controller.dismissDraft();
+        } else {
+          controller.dismissEditor();
+        }
         return;
       }
     }
@@ -558,6 +675,8 @@ if (isBrowser) {
   popupPort.onMessage.addListener((message: { type?: string } | undefined) => {
     if (message?.type === "popup/close") {
       window.close();
+    } else if (message?.type === "quickBookmark/commitNow") {
+      void submitActiveMode();
     }
   });
 

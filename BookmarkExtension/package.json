@@ -19,8 +19,10 @@
     "@typescript-eslint/eslint-plugin": "^8.18.0",
     "@typescript-eslint/parser": "^8.18.0",
     "esbuild": "^0.24.0",
+    "esbuild-svelte": "^0.9.5",
     "eslint": "^9.16.0",
     "rimraf": "^6.0.1",
+    "svelte": "^5.56.6",
     "typescript": "^5.9.3",
     "typescript-7": "npm:typescript@^7.0.1-rc",
     "vitest": "^2.1.8"

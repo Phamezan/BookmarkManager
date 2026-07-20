@@ -5,6 +5,7 @@ import type {
   ExtensionEvent,
   ExtensionSettings,
   OutboxEntry,
+  PendingCreateDraft,
   PendingDuplicateState,
   ServerConfig,
   ShortcutEditorState,
@@ -23,6 +24,7 @@ type ChromeStorageLocal = {
 /** Bookmarks Bar node id used as the default quick-bookmark destination. */
 export const DEFAULT_FOLDER_ID = "1";
 const SHORTCUT_EDITOR_KEY = "bm.shortcutEditorState";
+const PENDING_CREATE_DRAFT_KEY = "bm.pendingCreateDraft";
 const PENDING_DUPLICATE_KEY = "bm.pendingDuplicateState";
 const LAST_ACTIVE_FOLDER_KEY = "bm.lastActiveFolderId";
 const BACKUP_STATE_KEY = "bm.backupState";
@@ -64,6 +66,19 @@ export class ChromeStorageRepository implements StorageRepository {
 
   async clearShortcutEditorState(): Promise<void> {
     await this.storage.remove(SHORTCUT_EDITOR_KEY);
+  }
+
+  async getPendingCreateDraft(): Promise<PendingCreateDraft | null> {
+    const result = await this.storage.get(PENDING_CREATE_DRAFT_KEY);
+    return (result[PENDING_CREATE_DRAFT_KEY] as PendingCreateDraft | undefined) ?? null;
+  }
+
+  async savePendingCreateDraft(draft: PendingCreateDraft): Promise<void> {
+    await this.storage.set({ [PENDING_CREATE_DRAFT_KEY]: draft });
+  }
+
+  async clearPendingCreateDraft(): Promise<void> {
+    await this.storage.remove(PENDING_CREATE_DRAFT_KEY);
   }
 
   async getPendingDuplicateState(): Promise<PendingDuplicateState | null> {
@@ -239,6 +254,7 @@ export class ChromeStorageRepository implements StorageRepository {
       "bm.snapshotState",
       "bm.syncStatus",
       SHORTCUT_EDITOR_KEY,
+      PENDING_CREATE_DRAFT_KEY,
       PENDING_DUPLICATE_KEY,
       LAST_ACTIVE_FOLDER_KEY,
       BACKUP_STATE_KEY,

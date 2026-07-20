@@ -32,4 +32,22 @@ export class PopupPresence {
     }
     return true;
   }
+
+  /**
+   * Asks open popup(s) to commit whatever is currently pending (draft or
+   * post-create editor), or just close if nothing is pending. Returns true
+   * if any were signaled.
+   */
+  requestCommitNow(): boolean {
+    if (this.ports.size === 0) return false;
+    for (const port of [...this.ports]) {
+      try {
+        port.postMessage({ type: "quickBookmark/commitNow" });
+      } catch (e) {
+        console.warn("[worker] quickBookmark/commitNow failed:", e);
+        this.ports.delete(port);
+      }
+    }
+    return true;
+  }
 }

@@ -7,10 +7,12 @@
 export const PLAN_TO_READ_STATUS = "PlanToRead";
 
 export interface BookmarkEnrichment {
+  id?: string;
   title: string;
   folderPath: string | null;
   tags: string[];
   status: string | null;
+  coverImageUrl?: string | null;
 }
 
 export interface SaveToastPayload {
@@ -19,6 +21,10 @@ export interface SaveToastPayload {
   /** Folder row under the title; omit / empty to hide the folder row. */
   folderName?: string;
   lines: string[];
+  /** Cover thumbnail shown on hover-expand; omit / null to hide it. */
+  coverImageUrl?: string | null;
+  /** True for the save-confirm toast: hover expands + click opens the side panel. */
+  interactive?: boolean;
 }
 
 export interface BookmarkSaveToastDeps {
@@ -35,6 +41,12 @@ export interface BookmarkSaveToastDeps {
   initialDelayMs?: number;
   retryDelayMs?: number;
   debounceMs?: number;
+  /** Called right before the toast is shown, so the side panel can be armed. */
+  onToastShown?: (info: {
+    browserNodeId: string;
+    serverId: string | null;
+    url: string | null;
+  }) => void;
 }
 
 export class BookmarkSaveToast {
@@ -105,9 +117,16 @@ export class BookmarkSaveToast {
       title,
       folderName,
       lines,
+      coverImageUrl: enrichment?.coverImageUrl ?? null,
+      interactive: true,
     };
 
     this.lastToastAt = this.deps.now();
+    this.deps.onToastShown?.({
+      browserNodeId: input.browserNodeId,
+      serverId: enrichment?.id ?? null,
+      url: input.url ?? null,
+    });
     await presentInPageAlert(this.deps, payload, input.url);
   }
 
@@ -148,14 +167,26 @@ export function folderLeafName(folderPath: string | null): string | null {
 /**
  * Injected into the page (must stay serializable — no outer closures).
  * Layout: title, optional folder icon + name, then detail lines.
+ * When `interactive` is true (save-confirm toast only): hovering freezes
+ * auto-dismiss and expands to show a cover thumbnail + "click to open"
+ * hint; leaving restarts a short dismiss timer; clicking asks the worker
+ * to open the side panel (armed only while this toast is alive).
  */
 export function injectSaveToastOverlay(
   title: string,
   folderName: string,
   lines: string[],
+  coverImageUrl: string | null,
+  interactive: boolean,
 ): void {
   const ID = "__bm-save-toast";
   const HOLD_MS = 5200;
+  const EXPANDED_DISMISS_MS = 2000;
+  // Client-side twin of ARMING_WINDOW_MS (side-panel.ts). The gesture that
+  // opens the side panel cannot survive a storage read in the worker, so the
+  // 10s one-shot window is enforced here, where the clock started.
+  const SIDE_PANEL_CLICK_WINDOW_MS = 10_000;
+  const sidePanelArmedUntil = Date.now() + SIDE_PANEL_CLICK_WINDOW_MS;
   document.getElementById(ID)?.remove();
 
   const root = document.createElement("div");
@@ -176,7 +207,8 @@ export function injectSaveToastOverlay(
     lineHeight: "1.45",
     boxShadow: "0 12px 40px rgba(0,0,0,0.4)",
     border: "1px solid rgba(255,255,255,0.14)",
-    pointerEvents: "none",
+    pointerEvents: interactive ? "auto" : "none",
+    cursor: interactive ? "pointer" : "default",
     opacity: "0",
     transform: "translateY(-8px)",
     transition: "opacity 180ms ease, transform 180ms ease",
@@ -261,17 +293,84 @@ export function injectSaveToastOverlay(
     root.appendChild(lineEl);
   }
 
+  let expandSection: HTMLDivElement | null = null;
+  if (interactive) {
+    expandSection = document.createElement("div");
+    expandSection.hidden = true;
+    Object.assign(expandSection.style, {
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      marginTop: "10px",
+      paddingTop: "10px",
+      borderTop: "1px solid rgba(255,255,255,0.12)",
+    });
+
+    if (coverImageUrl) {
+      const img = document.createElement("img");
+      img.src = coverImageUrl;
+      img.alt = "";
+      Object.assign(img.style, {
+        width: "72px",
+        height: "72px",
+        objectFit: "cover",
+        borderRadius: "8px",
+        flexShrink: "0",
+        background: "rgba(255,255,255,0.06)",
+      });
+      expandSection.appendChild(img);
+    }
+
+    const hint = document.createElement("div");
+    hint.textContent = "Click to open panel";
+    Object.assign(hint.style, {
+      color: "#a5b4fc",
+      fontSize: "12px",
+      fontWeight: "600",
+    });
+    expandSection.appendChild(hint);
+
+    root.appendChild(expandSection);
+  }
+
   (document.body ?? document.documentElement).appendChild(root);
   requestAnimationFrame(() => {
     root.style.opacity = "1";
     root.style.transform = "translateY(0)";
   });
 
-  window.setTimeout(() => {
+  let dismissTimer: number | null = null;
+  const dismiss = () => {
     root.style.opacity = "0";
     root.style.transform = "translateY(-8px)";
     window.setTimeout(() => root.remove(), 200);
-  }, HOLD_MS);
+  };
+  const scheduleDismiss = (ms: number) => {
+    if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+    dismissTimer = window.setTimeout(dismiss, ms);
+  };
+
+  scheduleDismiss(HOLD_MS);
+
+  if (interactive) {
+    root.addEventListener("mouseenter", () => {
+      if (dismissTimer !== null) window.clearTimeout(dismissTimer);
+      dismissTimer = null;
+      if (expandSection) expandSection.hidden = false;
+    });
+    root.addEventListener("mouseleave", () => {
+      scheduleDismiss(EXPANDED_DISMISS_MS);
+    });
+    root.addEventListener("click", () => {
+      if (Date.now() > sidePanelArmedUntil) return;
+      try {
+        chrome.runtime.sendMessage({ type: "sidepanel/open" });
+      } catch {
+        // Extension context may be gone; nothing else to do.
+      }
+      root.remove();
+    });
+  }
 }
 
 /** Build chrome.windows.create URL for the fallback toast page. */

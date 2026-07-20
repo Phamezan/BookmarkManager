@@ -173,6 +173,8 @@ describe("BookmarkSaveToast", () => {
       title: "Mother of Learning",
       folderName: "Web Novels",
       lines: ["Tags: —"],
+      coverImageUrl: null,
+      interactive: true,
     });
   });
 
@@ -202,5 +204,100 @@ describe("BookmarkSaveToast", () => {
     await toast.run({ browserNodeId: "2", title: "B", parentId: "1" });
 
     expect(showInPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes coverImageUrl and marks the payload interactive", async () => {
+    const shown: { coverImageUrl?: string | null; interactive?: boolean }[] = [];
+    const toast = new BookmarkSaveToast({
+      getEnrichment: async () => ({
+        title: "Solo Leveling",
+        folderPath: "Novels",
+        tags: ["Novel"],
+        status: null,
+        coverImageUrl: "https://example.com/cover.jpg",
+      }),
+      getFolderTitle: async () => null,
+      resolveTabId: async () => 7,
+      showInPage: async (_tabId, payload) => {
+        shown.push({
+          coverImageUrl: payload.coverImageUrl ?? null,
+          interactive: payload.interactive ?? false,
+        });
+      },
+      showFallbackWindow: async () => undefined,
+      sleep: async () => undefined,
+      now: () => 1_000,
+      initialDelayMs: 0,
+      retryDelayMs: 0,
+      debounceMs: 0,
+    });
+
+    await toast.run({ browserNodeId: "42", title: "Fallback", parentId: "1" });
+
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.coverImageUrl).toBe("https://example.com/cover.jpg");
+    expect(shown[0]!.interactive).toBe(true);
+  });
+
+  it("calls onToastShown with the bookmark's browser id, server id, and url before presenting", async () => {
+    const shownInfo: {
+      browserNodeId: string;
+      serverId: string | null;
+      url: string | null;
+    }[] = [];
+    const toast = new BookmarkSaveToast({
+      getEnrichment: async () => ({
+        id: "server-guid-1",
+        title: "Solo Leveling",
+        folderPath: "Novels",
+        tags: ["Novel"],
+        status: null,
+        coverImageUrl: null,
+      }),
+      getFolderTitle: async () => null,
+      resolveTabId: async () => 7,
+      showInPage: async () => undefined,
+      showFallbackWindow: async () => undefined,
+      sleep: async () => undefined,
+      now: () => 1_000,
+      initialDelayMs: 0,
+      retryDelayMs: 0,
+      debounceMs: 0,
+      onToastShown: (info) => shownInfo.push(info),
+    });
+
+    await toast.run({
+      browserNodeId: "42",
+      title: "Fallback",
+      parentId: "1",
+      url: "https://novelfire.net/book/solo-leveling",
+    });
+
+    expect(shownInfo).toEqual([
+      {
+        browserNodeId: "42",
+        serverId: "server-guid-1",
+        url: "https://novelfire.net/book/solo-leveling",
+      },
+    ]);
+  });
+
+  it("does not throw when onToastShown is not provided", async () => {
+    const toast = new BookmarkSaveToast({
+      getEnrichment: async () => null,
+      getFolderTitle: async () => null,
+      resolveTabId: async () => null,
+      showInPage: async () => undefined,
+      showFallbackWindow: async () => undefined,
+      sleep: async () => undefined,
+      now: () => 1_000,
+      initialDelayMs: 0,
+      retryDelayMs: 0,
+      debounceMs: 0,
+    });
+
+    await expect(
+      toast.run({ browserNodeId: "1", title: "A", parentId: "1" }),
+    ).resolves.toBeUndefined();
   });
 });

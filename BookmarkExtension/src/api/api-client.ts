@@ -11,6 +11,7 @@ import type {
   HeartbeatResponse,
   SnapshotRequestPayload,
   SnapshotResponse,
+  TagCount,
 } from "./contracts";
 import { ApiError } from "./errors";
 
@@ -166,5 +167,23 @@ export class HttpApiClient implements ApiClient {
       }
       throw error;
     }
+  }
+
+  getTags(): Promise<TagCount[]> {
+    return this.request<TagCount[]>("GET", "/api/bookmarks/tags");
+  }
+
+  bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void> {
+    return this.request<void>("POST", "/api/bookmarks/tags/bulk-save", {
+      tags: tagsByBookmarkId,
+      manuallyEditedTagIds: Object.keys(tagsByBookmarkId),
+    });
+  }
+
+  aiRetag(serverId: string): Promise<string[]> {
+    return this.request<string[]>(
+      "POST",
+      `/api/bookmarks/${encodeURIComponent(serverId)}/ai-tags`,
+    );
   }
 }

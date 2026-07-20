@@ -13,6 +13,7 @@ import type {
   SnapshotResponse,
   SnapshotRequest,
   ExtensionBookmarkEnrichment,
+  TagCount,
 } from "../../src/api/contracts";
 import { ApiError } from "../../src/api/errors";
 
@@ -72,6 +73,9 @@ export class MockApiServer implements ApiClient {
     this.delayMs = 0;
     this.commands = [];
     this.completionResults.clear();
+    this.tags = [];
+    this.savedTags = {};
+    this.aiTagSuggestions = [];
   }
 
   setConfigVersion(version: number): void {
@@ -207,6 +211,41 @@ export class MockApiServer implements ApiClient {
     this.log("getBookmarkEnrichmentByBrowserId", browserNodeId);
     await this.delay();
     return this.enrichmentByBrowserId.get(browserNodeId) ?? null;
+  }
+
+  private tags: TagCount[] = [];
+  private savedTags: Record<string, string[]> = {};
+
+  setTags(tags: TagCount[]): void {
+    this.tags = tags;
+  }
+
+  getSavedTags(): Record<string, string[]> {
+    return { ...this.savedTags };
+  }
+
+  async getTags(): Promise<TagCount[]> {
+    this.log("getTags", null);
+    await this.delay();
+    return [...this.tags];
+  }
+
+  async bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void> {
+    this.log("bulkSaveTags", tagsByBookmarkId);
+    await this.delay();
+    this.savedTags = { ...this.savedTags, ...tagsByBookmarkId };
+  }
+
+  private aiTagSuggestions: string[] = [];
+
+  setAiTagSuggestions(tags: string[]): void {
+    this.aiTagSuggestions = tags;
+  }
+
+  async aiRetag(serverId: string): Promise<string[]> {
+    this.log("aiRetag", serverId);
+    await this.delay();
+    return [...this.aiTagSuggestions];
   }
 }
 

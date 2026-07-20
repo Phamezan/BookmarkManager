@@ -59,6 +59,7 @@ function makeChromeStub(bookmarks: FakeBookmarks, storage: FakeStorage) {
     scripting: { executeScript: vi.fn() },
     downloads: { download: vi.fn(), removeFile: vi.fn() },
     windows: { create: vi.fn() },
+    sidePanel: { open: vi.fn().mockResolvedValue(undefined) },
     omnibox: {
       onInputChanged: { addListener: vi.fn() },
       onInputEntered: { addListener: vi.fn() },
@@ -209,6 +210,336 @@ describe("ServiceWorker", () => {
     const events = Object.values(outbox ?? {}).map((entry) => entry.event);
     expect(events).toHaveLength(1);
     expect(events[0]?.causedByOperationId).toBeNull();
+  });
+});
+
+describe("ServiceWorker sidepanel messaging", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  let ServiceWorkerCtor: typeof import("../../src/background/service-worker").ServiceWorker;
+  let realStorage: import("../../src/storage/storage-repository").ChromeStorageRepository;
+
+  function makeWorker(sidePanel: {
+    tryOpen: ReturnType<typeof vi.fn>;
+    getCurrent: ReturnType<typeof vi.fn>;
+    getTags: ReturnType<typeof vi.fn>;
+    saveTags: ReturnType<typeof vi.fn>;
+    aiRetag: ReturnType<typeof vi.fn>;
+  }) {
+    const openSidePanel = vi.fn().mockResolvedValue(undefined);
+    const worker = new ServiceWorkerCtor({
+      api: {
+        heartbeat: vi.fn(),
+        getConfig: vi.fn(),
+        uploadSnapshot: vi.fn(),
+        sendEvents: vi.fn(),
+        claimCommands: vi.fn(),
+        completeCommand: vi.fn(),
+      } as never,
+      adapter: { getSubtree: vi.fn(), apply: vi.fn() } as never,
+      storage: realStorage,
+      backupManager: { runAutoBackupIfDue: vi.fn(), runManualBackup: vi.fn() } as never,
+      sidePanel: sidePanel as never,
+      openSidePanel,
+      getExtensionVersion: () => "0.1.0",
+      getBraveVersion: () => "1.0",
+      now: () => new Date(),
+    });
+    return { worker, openSidePanel };
+  }
+
+  beforeEach(async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const fakeStorage = new FakeStorage();
+    vi.stubGlobal("chrome", makeChromeStub(bookmarks, fakeStorage));
+    const { ServiceWorker } = await import("../../src/background/service-worker");
+    ServiceWorkerCtor = ServiceWorker;
+    const { ChromeStorageRepository } = await import("../../src/storage/storage-repository");
+    realStorage = new ChromeStorageRepository(fakeStorage);
+  });
+
+  it("opens the panel before consuming arming — the gesture cannot survive a storage await", async () => {
+    const callOrder: string[] = [];
+    const sidePanel = {
+      tryOpen: vi.fn().mockImplementation(async () => {
+        callOrder.push("tryOpen");
+        return true;
+      }),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+    const { worker, openSidePanel } = makeWorker(sidePanel);
+    openSidePanel.mockImplementation(async () => {
+      callOrder.push("open");
+    });
+
+    const result = await worker.handleMessage(
+      { type: "sidepanel/open" },
+      { tab: { id: 5 } } as chrome.runtime.MessageSender,
+    );
+
+    expect(callOrder).toEqual(["open", "tryOpen"]);
+    expect(openSidePanel).toHaveBeenCalledWith(5);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("still succeeds when arming was already consumed (toast enforces the window)", async () => {
+    const sidePanel = {
+      tryOpen: vi.fn().mockResolvedValue(false),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+    const { worker, openSidePanel } = makeWorker(sidePanel);
+
+    const result = await worker.handleMessage(
+      { type: "sidepanel/open" },
+      { tab: { id: 5 } } as chrome.runtime.MessageSender,
+    );
+
+    expect(openSidePanel).toHaveBeenCalledWith(5);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("reports failure when chrome.sidePanel.open rejects", async () => {
+    const sidePanel = {
+      tryOpen: vi.fn().mockResolvedValue(true),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+    const { worker, openSidePanel } = makeWorker(sidePanel);
+    openSidePanel.mockRejectedValue(new Error("no gesture"));
+
+    const result = await worker.handleMessage(
+      { type: "sidepanel/open" },
+      { tab: { id: 5 } } as chrome.runtime.MessageSender,
+    );
+
+    expect(result).toEqual({ success: false });
+  });
+
+  it("refuses sidepanel/open when the sender has no tab id", async () => {
+    const sidePanel = {
+      tryOpen: vi.fn().mockResolvedValue(true),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+    const { worker, openSidePanel } = makeWorker(sidePanel);
+
+    const result = await worker.handleMessage({ type: "sidepanel/open" }, undefined);
+
+    expect(result).toEqual({ success: false });
+    expect(sidePanel.tryOpen).not.toHaveBeenCalled();
+    expect(openSidePanel).not.toHaveBeenCalled();
+  });
+
+  it("delegates sidepanel/getCurrent to the controller", async () => {
+    const enrichment = { id: "1", title: "T", folderPath: null, tags: [], status: null, coverImageUrl: null, url: null };
+    const sidePanel = {
+      tryOpen: vi.fn(),
+      getCurrent: vi.fn().mockResolvedValue(enrichment),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+    const { worker } = makeWorker(sidePanel);
+
+    const result = await worker.handleMessage({ type: "sidepanel/getCurrent" });
+
+    expect(result).toEqual(enrichment);
+  });
+
+  it("delegates sidepanel/getTags to the controller", async () => {
+    const tags = [{ tag: "action", count: 3 }];
+    const sidePanel = {
+      tryOpen: vi.fn(),
+      getCurrent: vi.fn(),
+      getTags: vi.fn().mockResolvedValue(tags),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn(),
+    };
+    const { worker } = makeWorker(sidePanel);
+
+    const result = await worker.handleMessage({ type: "sidepanel/getTags" });
+
+    expect(result).toEqual(tags);
+  });
+
+  it("delegates sidepanel/saveTags to the controller with serverId and tags", async () => {
+    const sidePanel = {
+      tryOpen: vi.fn(),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn().mockResolvedValue(undefined),
+      aiRetag: vi.fn(),
+    };
+    const { worker } = makeWorker(sidePanel);
+
+    const result = await worker.handleMessage({
+      type: "sidepanel/saveTags",
+      serverId: "srv-1",
+      tags: ["action", "isekai"],
+    });
+
+    expect(sidePanel.saveTags).toHaveBeenCalledWith({
+      serverId: "srv-1",
+      tags: ["action", "isekai"],
+    });
+    expect(result).toEqual({ success: true });
+  });
+
+  it("delegates sidepanel/aiRetag to the controller with serverId and returns suggestions", async () => {
+    const sidePanel = {
+      tryOpen: vi.fn(),
+      getCurrent: vi.fn(),
+      getTags: vi.fn(),
+      saveTags: vi.fn(),
+      aiRetag: vi.fn().mockResolvedValue(["action", "isekai"]),
+    };
+    const { worker } = makeWorker(sidePanel);
+
+    const result = await worker.handleMessage({
+      type: "sidepanel/aiRetag",
+      serverId: "srv-1",
+    });
+
+    expect(sidePanel.aiRetag).toHaveBeenCalledWith("srv-1");
+    expect(result).toEqual(["action", "isekai"]);
+  });
+
+  it("returns an empty array for sidepanel/aiRetag when no controller is wired", async () => {
+    const worker = new ServiceWorkerCtor({
+      api: {
+        heartbeat: vi.fn(),
+        getConfig: vi.fn(),
+        uploadSnapshot: vi.fn(),
+        sendEvents: vi.fn(),
+        claimCommands: vi.fn(),
+        completeCommand: vi.fn(),
+      } as never,
+      adapter: { getSubtree: vi.fn(), apply: vi.fn() } as never,
+      storage: realStorage,
+      backupManager: { runAutoBackupIfDue: vi.fn(), runManualBackup: vi.fn() } as never,
+      getExtensionVersion: () => "0.1.0",
+      getBraveVersion: () => "1.0",
+      now: () => new Date(),
+    });
+
+    const result = await worker.handleMessage({
+      type: "sidepanel/aiRetag",
+      serverId: "srv-1",
+    });
+
+    expect(result).toEqual([]);
+  });
+});
+
+describe("ServiceWorker toggle-sidepanel command", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllGlobals();
+  });
+
+  function fakeSidePanelPort(portName: string): chrome.runtime.Port {
+    const disconnectListeners: Array<() => void> = [];
+    return {
+      name: portName,
+      postMessage: vi.fn(),
+      onDisconnect: {
+        addListener: (cb: () => void) => {
+          disconnectListeners.push(cb);
+        },
+      },
+      disconnect: () => {
+        for (const cb of disconnectListeners) cb();
+      },
+    } as unknown as chrome.runtime.Port;
+  }
+
+  async function buildWorker(chromeStub: ReturnType<typeof makeChromeStub>) {
+    vi.stubGlobal("chrome", chromeStub);
+    const { ServiceWorker } = await import("../../src/background/service-worker");
+    const { SettingsAwareApiClient } = await import("../../src/api/settings-aware-client");
+    const { ChromeStorageRepository } = await import("../../src/storage/storage-repository");
+    const { ChromeBookmarkAdapter } = await import("../../src/bookmarks/bookmark-adapter");
+    const { BackupManager } = await import("../../src/backup/backup-manager");
+
+    const repo = new ChromeStorageRepository(chrome.storage.local);
+    return new ServiceWorker({
+      api: new SettingsAwareApiClient(repo),
+      adapter: new ChromeBookmarkAdapter(chrome.bookmarks as never),
+      storage: repo,
+      backupManager: new BackupManager({
+        storage: repo,
+        downloads: {
+          download: () => Promise.resolve(0),
+          removeFile: () => Promise.resolve(),
+        },
+        getTree: async () => [],
+        now: () => new Date(),
+      }),
+      getExtensionVersion: () => "0.1.0",
+      getBraveVersion: () => "unknown",
+      now: () => new Date(),
+    });
+  }
+
+  it("opens the panel against the active tab's id when no panel is connected", async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    const worker = await buildWorker(chromeStub);
+
+    await worker.handleToggleSidePanel({ id: 7 } as chrome.tabs.Tab);
+
+    expect(chromeStub.sidePanel.open).toHaveBeenCalledWith({ tabId: 7 });
+  });
+
+  it("closes an already-connected panel instead of reopening it", async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    const worker = await buildWorker(chromeStub);
+    const { SIDEPANEL_PORT_NAME } = await import("../../src/background/side-panel");
+    const port = fakeSidePanelPort(SIDEPANEL_PORT_NAME);
+    worker.handleConnect(port);
+    expect(worker.isSidePanelOpen()).toBe(true);
+
+    await worker.handleToggleSidePanel({ id: 7 } as chrome.tabs.Tab);
+
+    expect(port.postMessage).toHaveBeenCalledWith({ type: "close" });
+    expect(chromeStub.sidePanel.open).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the tab's windowId when no tab id is available", async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    const worker = await buildWorker(chromeStub);
+
+    await worker.handleToggleSidePanel({ windowId: 42 } as chrome.tabs.Tab);
+
+    expect(chromeStub.sidePanel.open).toHaveBeenCalledWith({ windowId: 42 });
+  });
+
+  it("warns and does not call sidePanel.open when neither tab id nor window id is available", async () => {
+    const bookmarks = new FakeBookmarks(fixtureTree);
+    const chromeStub = makeChromeStub(bookmarks, new FakeStorage());
+    const worker = await buildWorker(chromeStub);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    await worker.handleToggleSidePanel(undefined);
+
+    expect(chromeStub.sidePanel.open).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });
 

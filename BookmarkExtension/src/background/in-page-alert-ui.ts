@@ -59,7 +59,13 @@ export function createInPageAlertUi(): InPageAlertUi {
       await chrome.scripting.executeScript({
         target: { tabId },
         func: injectSaveToastOverlay,
-        args: [payload.title, payload.folderName ?? "", payload.lines],
+        args: [
+          payload.title,
+          payload.folderName ?? "",
+          payload.lines,
+          payload.coverImageUrl ?? null,
+          payload.interactive ?? false,
+        ],
       });
     },
     showFallbackWindow: async (payload) => {

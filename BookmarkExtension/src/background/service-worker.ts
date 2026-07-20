@@ -16,6 +16,7 @@ import { PaletteCommands } from "./palette-commands";
 import { BookmarkEventPipeline } from "./bookmark-event-pipeline";
 import { createInPageAlertUi } from "./in-page-alert-ui";
 import { registerOmnibox } from "./omnibox";
+import { SidePanelController, SidePanelPresence } from "./side-panel";
 
 const ALARM_NAME = "bookmark-sync";
 const POLL_INTERVAL_MINUTES = 1.0;
@@ -32,6 +33,9 @@ export interface ServiceWorkerDeps {
   backupManager: BackupManager;
   duplicateDetector?: DuplicateDetector;
   saveToast?: BookmarkSaveToast;
+  sidePanel?: SidePanelController;
+  openSidePanel?: (tabId: number) => Promise<void>;
+  configureSidePanel?: () => Promise<void>;
   getExtensionVersion: () => string;
   getBraveVersion: () => string;
   now: () => Date;
@@ -44,6 +48,7 @@ export class ServiceWorker {
   private confirmedDuplicateUrls = new Set<string>();
 
   private popupPresence = new PopupPresence();
+  private sidePanelPresence = new SidePanelPresence();
   private pendingDuplicateGuards: PendingDuplicateGuards;
   private quickBookmark: QuickBookmarkHandler;
   private syncSocket: SyncWebSocket;
@@ -105,10 +110,15 @@ export class ServiceWorker {
 
   handleConnect(port: chrome.runtime.Port): void {
     this.popupPresence.handleConnect(port);
+    this.sidePanelPresence.handleConnect(port);
   }
 
   isPopupOpen(): boolean {
     return this.popupPresence.isOpen();
+  }
+
+  isSidePanelOpen(): boolean {
+    return this.sidePanelPresence.isOpen();
   }
 
   async initialize(): Promise<void> {
@@ -129,6 +139,11 @@ export class ServiceWorker {
     this.pendingDuplicateGuards.register();
     await this.scheduleSync();
     void this.syncSocket.connect();
+    try {
+      await this.deps.configureSidePanel?.();
+    } catch (e) {
+      console.error("[worker] configureSidePanel failed:", e);
+    }
   }
 
   /** @internal exposed for tests */
@@ -147,19 +162,53 @@ export class ServiceWorker {
   }
 
   /**
-   * - Popup already open → close it (toggle off); no new bookmark work.
-   * - Popup closed → resolve/create bookmark and open popup.
+   * - Popup already open → ask it to commit whatever is pending (draft or
+   *   post-create editor), rather than just closing. The popup itself
+   *   decides what "commit now" means: submit the pending draft if one
+   *   exists, otherwise submit the post-create editor if one exists,
+   *   otherwise just close. This keeps the worker simple and puts the
+   *   branching where the state already lives (the popup, via
+   *   `chrome.storage`).
+   * - Popup closed → resolve/stash bookmark state and open popup.
    */
   async handleQuickBookmark(): Promise<void> {
-    if (this.popupPresence.requestClose()) {
-      console.log("[worker] quick-bookmark: popup was open — closed");
-      return;
+    if (this.popupPresence.isOpen()) {
+      const asked = this.popupPresence.requestCommitNow();
+      if (asked) return;
     }
     await this.quickBookmark.run();
   }
 
   async handleTogglePalette(): Promise<void> {
     await this.palette.toggle();
+  }
+
+  /**
+   * Panel-open → close (no `chrome.sidePanel.close()` API, so the panel
+   * page closes itself on a port message). Panel-closed → open it against
+   * the active tab from the command listener. CRITICAL: mirrors
+   * `handleSidePanelOpen` — no awaits happen before `chrome.sidePanel.open()`
+   * is reached, since `requestClose()` is synchronous.
+   */
+  async handleToggleSidePanel(tab?: chrome.tabs.Tab): Promise<void> {
+    if (this.sidePanelPresence.requestClose()) {
+      console.log("[worker] toggle-sidepanel: panel was open — closed");
+      return;
+    }
+
+    const tabId = tab?.id;
+    if (tabId != null) {
+      await chrome.sidePanel.open({ tabId });
+      return;
+    }
+
+    const windowId = tab?.windowId;
+    if (windowId != null) {
+      await chrome.sidePanel.open({ windowId });
+      return;
+    }
+
+    console.warn("[worker] toggle-sidepanel: no tab or window id available");
   }
 
   async scheduleSync(): Promise<void> {
@@ -182,7 +231,10 @@ export class ServiceWorker {
     }
   }
 
-  async handleMessage(message: { type: string; url?: unknown }): Promise<unknown> {
+  async handleMessage(
+    message: { type: string; url?: unknown; serverId?: unknown; tags?: unknown },
+    sender?: chrome.runtime.MessageSender,
+  ): Promise<unknown> {
     switch (message.type) {
       case "palette/openTab":
         return await this.palette.openTab(message.url);
@@ -206,9 +258,54 @@ export class ServiceWorker {
         }
       case "manualBackup":
         return await this.deps.backupManager.runManualBackup();
+      case "sidepanel/open":
+        return await this.handleSidePanelOpen(sender);
+      case "sidepanel/getCurrent":
+        return (await this.deps.sidePanel?.getCurrent()) ?? null;
+      case "sidepanel/getTags":
+        return (await this.deps.sidePanel?.getTags()) ?? [];
+      case "sidepanel/saveTags":
+        await this.deps.sidePanel?.saveTags({
+          serverId: String(message.serverId ?? ""),
+          tags: Array.isArray(message.tags) ? (message.tags as string[]) : [],
+        });
+        return { success: true };
+      case "sidepanel/aiRetag":
+        return (
+          (await this.deps.sidePanel?.aiRetag(String(message.serverId ?? ""))) ?? []
+        );
       default:
         return { success: false, error: "Unknown message type" };
     }
+  }
+
+  /**
+   * CRITICAL: `chrome.sidePanel.open()` must be reached with NO awaits after
+   * the message arrives — the click-gesture that authorized it does not
+   * survive an async hop (even a storage.session read voids it). The 10s
+   * window is therefore enforced inside the toast before it ever sends this
+   * message; arming is consumed after the panel is already open.
+   */
+  private handleSidePanelOpen(
+    sender: chrome.runtime.MessageSender | undefined,
+  ): Promise<{ success: boolean }> {
+    const tabId = sender?.tab?.id;
+    if (tabId == null || !this.deps.openSidePanel) {
+      return Promise.resolve({ success: false });
+    }
+    return this.deps.openSidePanel(tabId).then(
+      async () => {
+        const wasArmed = await this.deps.sidePanel?.tryOpen(tabId);
+        if (!wasArmed) {
+          console.warn("[worker] side panel opened outside arming window");
+        }
+        return { success: true };
+      },
+      (e) => {
+        console.error("[worker] sidePanel.open failed:", e);
+        return { success: false };
+      },
+    );
   }
 }
 
@@ -228,6 +325,12 @@ const backupManager = new BackupManager({
 });
 
 const alertUi = createInPageAlertUi();
+
+const sidePanelController = new SidePanelController({
+  session: chrome.storage.session,
+  api,
+  now: () => Date.now(),
+});
 
 const duplicateDetector = new DuplicateDetector({
   bookmarks: {
@@ -257,6 +360,11 @@ const saveToast = new BookmarkSaveToast({
   ...alertUi,
   sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now: () => Date.now(),
+  onToastShown: (info) => {
+    void sidePanelController.arm(info).catch((e) =>
+      console.error("[worker] side panel arm failed:", e),
+    );
+  },
 });
 
 const worker = new ServiceWorker({
@@ -266,6 +374,16 @@ const worker = new ServiceWorker({
   backupManager,
   duplicateDetector,
   saveToast,
+  sidePanel: sidePanelController,
+  openSidePanel: async (tabId) => {
+    await chrome.sidePanel.open({ tabId });
+  },
+  configureSidePanel: async () => {
+    await chrome.sidePanel.setOptions({
+      path: "sidepanel/index.html",
+      enabled: true,
+    });
+  },
   getExtensionVersion: () => chrome.runtime.getManifest().version,
   getBraveVersion: () => {
     const match = navigator.userAgent.match(/Brave\/(\S+)/);
@@ -289,10 +407,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   void worker.handleAlarm(alarm);
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log("[worker] message received:", (message as { type: string })?.type);
   worker
-    .handleMessage(message as { type: string })
+    .handleMessage(message as { type: string }, sender)
     .then((result) => {
       sendResponse(result);
     })
@@ -307,7 +425,7 @@ chrome.runtime.onConnect.addListener((port) => {
   worker.handleConnect(port);
 });
 
-chrome.commands.onCommand.addListener((command) => {
+chrome.commands.onCommand.addListener((command, tab) => {
   console.log("[worker] command received:", command);
   if (command === "quick-bookmark") {
     worker.handleQuickBookmark().catch((e) =>
@@ -316,6 +434,10 @@ chrome.commands.onCommand.addListener((command) => {
   } else if (command === "toggle-palette") {
     worker.handleTogglePalette().catch((e) =>
       console.error("[worker] handleTogglePalette failed:", e),
+    );
+  } else if (command === "toggle-sidepanel") {
+    worker.handleToggleSidePanel(tab).catch((e) =>
+      console.error("[worker] handleToggleSidePanel failed:", e),
     );
   }
 });

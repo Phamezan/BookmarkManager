@@ -150,6 +150,76 @@ describe("HttpApiClient", () => {
     });
   });
 
+  describe("getTags", () => {
+    it("sends GET request and returns tag counts", async () => {
+      fakeFetch.setResponse("/api/bookmarks/tags", {
+        status: 200,
+        body: [
+          { tag: "action", count: 12 },
+          { tag: "isekai", count: 4 },
+        ],
+      });
+
+      const tags = await client.getTags();
+
+      expect(fakeFetch.calls[0]!.method).toBe("GET");
+      expect(fakeFetch.calls[0]!.url).toBe("http://localhost:8080/api/bookmarks/tags");
+      expect(tags).toEqual([
+        { tag: "action", count: 12 },
+        { tag: "isekai", count: 4 },
+      ]);
+    });
+  });
+
+  describe("bulkSaveTags", () => {
+    it("sends POST with tags and manuallyEditedTagIds derived from the keys", async () => {
+      fakeFetch.setResponse("/api/bookmarks/tags/bulk-save", { status: 204 });
+
+      await client.bulkSaveTags({
+        "guid-1": ["action", "isekai"],
+        "guid-2": ["romance"],
+      });
+
+      const call = fakeFetch.calls[0]!;
+      expect(call.method).toBe("POST");
+      expect(call.url).toBe("http://localhost:8080/api/bookmarks/tags/bulk-save");
+      expect(JSON.parse(call.body!)).toEqual({
+        tags: {
+          "guid-1": ["action", "isekai"],
+          "guid-2": ["romance"],
+        },
+        manuallyEditedTagIds: ["guid-1", "guid-2"],
+      });
+    });
+  });
+
+  describe("aiRetag", () => {
+    it("sends POST with an empty body to the ai-tags endpoint and returns suggestions", async () => {
+      fakeFetch.setResponse("/api/bookmarks/guid-1/ai-tags", {
+        status: 200,
+        body: ["action", "isekai"],
+      });
+
+      const suggestions = await client.aiRetag("guid-1");
+
+      const call = fakeFetch.calls[0]!;
+      expect(call.method).toBe("POST");
+      expect(call.url).toBe("http://localhost:8080/api/bookmarks/guid-1/ai-tags");
+      expect(call.body).toBeUndefined();
+      expect(suggestions).toEqual(["action", "isekai"]);
+    });
+
+    it("encodes the server id in the URL path", async () => {
+      fakeFetch.setResponse("/ai-tags", { status: 200, body: [] });
+
+      await client.aiRetag("guid with spaces");
+
+      expect(fakeFetch.calls[0]!.url).toBe(
+        "http://localhost:8080/api/bookmarks/guid%20with%20spaces/ai-tags",
+      );
+    });
+  });
+
   describe("network error", () => {
     it("throws ApiError with NETWORK_ERROR code", async () => {
       fakeFetch.setNetworkError("*");

@@ -27,6 +27,21 @@ export interface ShortcutEditorState {
 }
 
 /**
+ * Transient state written by the `quick-bookmark` command when no exact-URL
+ * match exists yet — nothing has been created in the browser. Consumed by the
+ * popup to render an editable draft; the bookmark is only actually created
+ * (via `commitDraft`) once the user finalizes the title, so autotagging sees
+ * the user's title rather than the raw tab title. Lives in
+ * `chrome.storage.local` under `bm.pendingCreateDraft`.
+ */
+export interface PendingCreateDraft {
+  url: string;
+  title: string;
+  folderId: string;
+  capturedAt: string;
+}
+
+/**
  * Transient state written by the `quick-bookmark` command when the page looks
  * like an already-bookmarked series. Consumed by the popup to ask the user to
  * confirm before the bookmark is actually created. Lives in
@@ -259,14 +274,26 @@ export interface ApiClient {
   getBookmarkEnrichmentByBrowserId(
     browserNodeId: string,
   ): Promise<ExtensionBookmarkEnrichment | null>;
+  getTags(): Promise<TagCount[]>;
+  bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void>;
+  /** Suggest-only: returns AI-suggested tags without persisting anything. */
+  aiRetag(serverId: string): Promise<string[]>;
 }
 
 /** Toast enrichment after a Brave create syncs (GET by-browser-id). */
 export interface ExtensionBookmarkEnrichment {
+  id: string;
   title: string;
   folderPath: string | null;
   tags: string[];
   status: string | null;
+  coverImageUrl: string | null;
+}
+
+/** Tag usage count, for autocomplete in the side panel tag editor. */
+export interface TagCount {
+  tag: string;
+  count: number;
 }
 
 export interface BookmarkAdapter {
@@ -282,6 +309,9 @@ export interface StorageRepository {
   getShortcutEditorState(): Promise<ShortcutEditorState | null>;
   saveShortcutEditorState(state: ShortcutEditorState): Promise<void>;
   clearShortcutEditorState(): Promise<void>;
+  getPendingCreateDraft(): Promise<PendingCreateDraft | null>;
+  savePendingCreateDraft(draft: PendingCreateDraft): Promise<void>;
+  clearPendingCreateDraft(): Promise<void>;
   getPendingDuplicateState(): Promise<PendingDuplicateState | null>;
   savePendingDuplicateState(state: PendingDuplicateState): Promise<void>;
   clearPendingDuplicateState(): Promise<void>;

@@ -1,4 +1,9 @@
-import type { PendingDuplicateState, ShortcutEditorState, StorageRepository } from "../api/contracts";
+import type {
+  PendingCreateDraft,
+  PendingDuplicateState,
+  ShortcutEditorState,
+  StorageRepository,
+} from "../api/contracts";
 import { normalizeBookmarkUrl } from "../bookmarks/duplicate-detector";
 import { validateApiBaseUrl } from "../storage/url-validator";
 
@@ -18,6 +23,7 @@ export interface PopupBookmarkApi {
   move(id: string, destination: { parentId: string }): Promise<void>;
   remove(id: string): Promise<void>;
   getFolders(): Promise<{ browserNodeId: string; parentBrowserNodeId: string | null; title: string }[]>;
+  create(input: { parentId: string; title: string; url: string }): Promise<{ id: string }>;
 }
 
 export interface PopupDeps {
@@ -200,6 +206,49 @@ export class PopupController {
   /** Clears only the transient editor state (cancel). Does not touch the bookmark. */
   async dismissEditor(): Promise<void> {
     await this.deps.storage.clearShortcutEditorState();
+  }
+
+  // ── Pending Create Draft ─────────────────────────────────────────────────
+
+  /** Loads the pending create draft (if any) and the folder catalog for the dropdown. */
+  async loadDraft(): Promise<{
+    draft: PendingCreateDraft | null;
+    catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[];
+  }> {
+    const draft = await this.deps.storage.getPendingCreateDraft();
+    const catalog = this.deps.bookmarks ? await this.deps.bookmarks.getFolders() : [];
+    return { draft, catalog };
+  }
+
+  /** Actually creates the bookmark with the (possibly edited) title, then clears the draft. */
+  async commitDraft(input: {
+    url: string;
+    title: string;
+    folderId: string;
+  }): Promise<{ success: boolean; error: string | null }> {
+    if (!this.deps.bookmarks) {
+      return { success: false, error: "Bookmark API unavailable" };
+    }
+    const title = input.title.trim();
+    if (title.length === 0) {
+      return { success: false, error: "Name cannot be empty" };
+    }
+    try {
+      await this.deps.bookmarks.create({ parentId: input.folderId, title, url: input.url });
+      await this.deps.storage.saveLastActiveFolder(input.folderId);
+      await this.deps.storage.clearPendingCreateDraft();
+      return { success: true, error: null };
+    } catch (e) {
+      return {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to create bookmark",
+      };
+    }
+  }
+
+  /** Clears the pending create draft without creating anything (cancel). */
+  async dismissDraft(): Promise<void> {
+    await this.deps.storage.clearPendingCreateDraft();
   }
 
   // ── Series-Duplicate Confirmation ─────────────────────────────────────────

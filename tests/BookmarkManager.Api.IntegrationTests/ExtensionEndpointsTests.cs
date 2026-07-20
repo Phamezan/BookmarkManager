@@ -75,4 +75,46 @@ public sealed class ExtensionEndpointsTests : IntegrationTestBase
         Assert.Null(config.SnapshotRequest);
     }
 
+    [Fact]
+    public async Task GetByBrowserIdReturnsIdAndStoredCoverWhenNoCatalogMatchExists()
+    {
+        // Arrange
+        using var extension = CreateExtensionClient();
+        var nodeId = Guid.NewGuid();
+        const string browserNodeId = "brave-node-42";
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<BookmarkManager.Api.Data.AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkManager.Api.Data.BookmarkNode
+            {
+                Id = nodeId,
+                Title = "Some Manga Series",
+                Type = BookmarkManager.Contracts.NodeType.Bookmark,
+                Url = "https://example.com/manga/some-series",
+                BrowserNodeId = browserNodeId,
+                Status = "Reading",
+                Tags = "manga, action",
+                CoverImageUrl = "https://example.com/covers/some-series.jpg",
+                SyncState = BookmarkManager.Contracts.SyncState.Synced,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Act
+        using var response = await extension.GetAsync($"/api/extension/bookmarks/by-browser-id/{browserNodeId}");
+
+        // Assert
+        response.EnsureSuccessStatusCode();
+        var dto = (await response.Content.ReadFromJsonAsync<ExtensionBookmarkEnrichmentDto>())!;
+
+        Assert.Equal(nodeId, dto.Id);
+        Assert.Equal("Some Manga Series", dto.Title);
+        Assert.Equal("Reading", dto.Status);
+        Assert.Equal(new[] { "manga", "action" }, dto.Tags);
+        Assert.Equal("https://example.com/covers/some-series.jpg", dto.CoverImageUrl);
+    }
+
 }

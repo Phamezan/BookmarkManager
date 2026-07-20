@@ -12,6 +12,7 @@ import type {
   SnapshotRequestPayload,
   SnapshotResponse,
   StorageRepository,
+  TagCount,
 } from "./contracts";
 import { HttpApiClient } from "./api-client";
 
@@ -63,5 +64,17 @@ export class SettingsAwareApiClient implements ApiClient {
     return this.getClient().then((c) =>
       c.getBookmarkEnrichmentByBrowserId(browserNodeId),
     );
+  }
+
+  getTags(): Promise<TagCount[]> {
+    return this.getClient().then((c) => c.getTags());
+  }
+
+  bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void> {
+    return this.getClient().then((c) => c.bulkSaveTags(tagsByBookmarkId));
+  }
+
+  aiRetag(serverId: string): Promise<string[]> {
+    return this.getClient().then((c) => c.aiRetag(serverId));
   }
 }
