@@ -20,6 +20,11 @@ public sealed class BackupService : IBackupService
     private readonly ILogger<BackupService> _logger;
     private readonly SemaphoreSlim _backupLock = new(1, 1);
 
+    // Test-only seam (via InternalsVisibleTo): awaited at the start of CreateBackupCoreAsync while
+    // _backupLock is held, so a test can hold a backup "in progress" deterministically and assert
+    // the concurrent-request 409 guard without racing wall-clock backup duration. Null in production.
+    internal Func<CancellationToken, Task>? BackupBarrierForTesting { get; set; }
+
     public BackupService(
         IServiceScopeFactory scopeFactory,
         IConfiguration configuration,
@@ -235,6 +240,11 @@ public sealed class BackupService : IBackupService
 
     private async Task<BackupManifestDto> CreateBackupCoreAsync(string trigger, CancellationToken ct)
     {
+        if (BackupBarrierForTesting is { } barrier)
+        {
+            await barrier(ct);
+        }
+
         var options = _options.Value;
         var backupDirectory = ResolveBackupDirectory(options);
         Directory.CreateDirectory(backupDirectory);

@@ -35,20 +35,35 @@ public sealed class BackupEndpointTests : IntegrationTestBase
     public async Task CreateBackup_ConcurrentRequestReturns409()
     {
         using var client = Factory.CreateClient();
-        var responses = await Task.WhenAll(Enumerable.Range(0, 6)
-            .Select(_ => client.PostAsync("/api/backups", content: null)));
+        var backupService = (BackupService)Factory.Services.GetRequiredService<IBackupService>();
+
+        // Hold the first backup open on a barrier instead of racing 6 parallel requests against
+        // millisecond-fast real backups: the second request now provably arrives while the backup
+        // lock is held, so the 409 assertion cannot flake on scheduling jitter.
+        var backupEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBackup = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        backupService.BackupBarrierForTesting = async _ =>
+        {
+            backupEntered.TrySetResult();
+            await releaseBackup.Task;
+        };
 
         try
         {
-            Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.Conflict);
-            Assert.Contains(responses, response => response.StatusCode == HttpStatusCode.Created);
+            var firstRequest = client.PostAsync("/api/backups", content: null);
+            await backupEntered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            using var conflictResponse = await client.PostAsync("/api/backups", content: null);
+            Assert.Equal(HttpStatusCode.Conflict, conflictResponse.StatusCode);
+
+            releaseBackup.TrySetResult();
+            using var firstResponse = await firstRequest;
+            Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
         }
         finally
         {
-            foreach (var response in responses)
-            {
-                response.Dispose();
-            }
+            releaseBackup.TrySetResult();
+            backupService.BackupBarrierForTesting = null;
         }
     }
 
