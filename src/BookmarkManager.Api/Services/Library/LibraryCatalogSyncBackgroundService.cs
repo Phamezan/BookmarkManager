@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.Embedding;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     private readonly ILogger<LibraryCatalogSyncBackgroundService> _logger;
     private readonly LibraryProviderRegistry _registry;
     private readonly BookmarkSeriesMatchService _matchService;
+    private readonly IEmbeddingService _embeddingService;
     private readonly Channel<bool> _resyncChannel = Channel.CreateUnbounded<bool>();
     private readonly object _statusLock = new();
     private bool _isCrawling;
@@ -41,12 +43,14 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         IServiceScopeFactory scopeFactory,
         ILogger<LibraryCatalogSyncBackgroundService> logger,
         LibraryProviderRegistry registry,
-        BookmarkSeriesMatchService matchService)
+        BookmarkSeriesMatchService matchService,
+        IEmbeddingService embeddingService)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _registry = registry;
         _matchService = matchService;
+        _embeddingService = embeddingService;
     }
 
     /// <summary>Forces a fresh, unbounded ground-up crawl of every sequence, ignoring any prior progress.</summary>
@@ -288,6 +292,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
 
         await UpsertEntriesAsync(db, provider.ProviderName, page.Entries, page.RankBase, ct).ConfigureAwait(false);
         await EnrichThinCatalogEntriesAsync(db, provider, page.Entries, ct).ConfigureAwait(false);
+        await EmbedUpsertedEntriesAsync(db, provider.ProviderName, page.Entries, ct).ConfigureAwait(false);
 
         var current = await db.LibraryCatalogSyncQueue.FirstAsync(q => q.Id == item.Id, ct).ConfigureAwait(false);
         current.Status = CatalogSyncQueueStatus.Done;
@@ -431,6 +436,65 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Re-embeds the just-upserted (and possibly detail-enriched) rows for this page whose
+    /// embed text changed since last time. Uses <see cref="LibraryEmbeddingText"/> so the sync path and
+    /// the backfill worker agree on "the current text", and re-embeds only when the SHA256 hash differs
+    /// (or no embedding exists yet). Embedding is best-effort: a model that isn't ready, or any embed
+    /// failure, logs and returns without touching the crawl - the catalog rows are already saved, and the
+    /// backfill worker will pick up any rows left without a current embedding. Cancellation propagates so
+    /// shutdown isn't swallowed.</summary>
+    private async Task EmbedUpsertedEntriesAsync(
+        AppDbContext db,
+        string provider,
+        IReadOnlyList<LibraryEntryDto> entries,
+        CancellationToken ct)
+    {
+        if (!_embeddingService.IsReady || entries.Count == 0)
+            return;
+
+        try
+        {
+            var providerIds = entries.Select(e => e.ProviderId).ToList();
+            var rows = await db.LibraryCatalogEntries
+                .Where(e => e.Provider == provider && providerIds.Contains(e.ProviderId))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var pending = new List<(LibraryCatalogEntry Row, string Hash)>();
+            var texts = new List<string>();
+            foreach (var row in rows)
+            {
+                var text = LibraryEmbeddingText.Build(row);
+                var hash = LibraryEmbeddingText.Hash(text);
+                if (row.Embedding is not null && string.Equals(row.EmbeddingSourceHash, hash, StringComparison.Ordinal))
+                    continue;
+
+                pending.Add((row, hash));
+                texts.Add(text);
+            }
+
+            if (pending.Count == 0)
+                return;
+
+            var vectors = await _embeddingService.EmbedBatchAsync(texts, ct).ConfigureAwait(false);
+            for (var i = 0; i < pending.Count; i++)
+            {
+                pending[i].Row.SetEmbeddingVector(vectors[i]);
+                pending[i].Row.EmbeddingSourceHash = pending[i].Hash;
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Embedding catalog entries for {Provider} failed; crawl continues, backfill will retry.", provider);
+        }
     }
 
     private static bool NeedsDetailEnrichment(string providerName) =>

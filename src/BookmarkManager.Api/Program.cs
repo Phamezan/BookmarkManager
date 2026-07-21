@@ -131,6 +131,10 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IEmbeddingS
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
 builder.Services.AddHostedService(
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
+
+// RAG / semantic embedding ingestion (Wave 2c). Backfill worker embeds catalog rows the interactive
+// sync path missed (crawled before the model loaded, or with a since-changed embed text).
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService>();
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));
