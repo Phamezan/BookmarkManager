@@ -131,6 +131,11 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IEmbeddingS
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
 builder.Services.AddHostedService(
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
+// Library RAG assistant (Wave 2b). Own named HttpClient for the OpenAI-compatible chat call; the
+// IVectorSearchService implementation is registered by Wave 2a, so /api/library/chat degrades until
+// that lands. Scoped because it depends on the scoped AppDbContext.
+builder.Services.AddHttpClient(BookmarkManager.Api.Services.Rag.LibraryRagService.HttpClientName);
+builder.Services.AddScoped<BookmarkManager.Api.Services.Rag.ILibraryRagService, BookmarkManager.Api.Services.Rag.LibraryRagService>();
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));
