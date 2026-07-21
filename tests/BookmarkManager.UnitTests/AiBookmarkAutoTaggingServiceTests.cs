@@ -90,7 +90,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         Assert.Null(bookmark.Tags);
         Assert.Equal(1, summary.TotalCandidates);
         Assert.Equal(1, summary.SkippedLowConfidence);
-        Assert.Equal(0, fixture.NovelFull.CallCount);
+        Assert.Equal(0, fixture.MangaUpdates.CallCount);
     }
 
     [Fact]
@@ -104,14 +104,14 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             Folder(folderId, null, "Light Novels"),
             Bookmark(firstId, folderId, "A Monster Who Levels Up Chapter 48", "https://lightnovels.me/a-monster-who-levels-up-48"),
             Bookmark(secondId, folderId, "A Monster Who Levels Up Chapter 49", "https://lightnovels.me/a-monster-who-levels-up-49"));
-        fixture.NovelFull.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
+        fixture.MangaUpdates.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
 
         var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, CancellationToken.None);
 
         var bookmarks = await fixture.Db.BookmarkNodes.Where(node => node.ParentId == folderId).OrderBy(node => node.Title).ToListAsync();
         Assert.All(bookmarks, bookmark => Assert.Equal("Novel,Fantasy,Level System", bookmark.Tags));
         Assert.Equal(2, summary.Tagged);
-        Assert.Equal(1, fixture.NovelFull.CallCount);
+        Assert.Equal(1, fixture.MangaUpdates.CallCount);
     }
 
     [Fact]
@@ -126,7 +126,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             var series = $"Unique Novel {i:D2}";
             var title = $"{series} Chapter 1";
             nodes.Add(Bookmark(id, folderId, title, $"https://lightnovels.me/unique-novel-{i}", position: i));
-            fixture.NovelFull.SetTags(series, ["Fantasy"]);
+            fixture.MangaUpdates.SetTags(series, ["Fantasy"]);
         }
 
         await fixture.SeedAsync(nodes.ToArray());
@@ -152,7 +152,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             var id = Guid.NewGuid();
             var series = $"Batch Novel {i:D2}";
             nodes.Add(Bookmark(id, folderId, $"{series} Chapter 1", $"https://lightnovels.me/batch-novel-{i}", position: i));
-            fixture.NovelFull.SetTags(series, ["Fantasy"]);
+            fixture.MangaUpdates.SetTags(series, ["Fantasy"]);
         }
 
         await fixture.SeedAsync(nodes.ToArray());
@@ -181,7 +181,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             var id = Guid.NewGuid();
             var series = $"Small Batch Novel {i:D2}";
             nodes.Add(Bookmark(id, folderId, $"{series} Chapter 1", $"https://lightnovels.me/small-batch-{i}", position: i));
-            fixture.NovelFull.SetTags(series, ["Fantasy"]);
+            fixture.MangaUpdates.SetTags(series, ["Fantasy"]);
         }
 
         await fixture.SeedAsync(nodes.ToArray());
@@ -211,13 +211,13 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             Bookmark(firstId, folderId, "Solo Leveling Chapter 1", "https://lightnovels.me/solo-leveling-1"),
             Bookmark(secondId, folderId, "Tower of God Chapter 1", "https://lightnovels.me/tower-of-god-1"),
             Bookmark(thirdId, folderId, "Noblesse Chapter 1", "https://lightnovels.me/noblesse-1"));
-        fixture.NovelFull.SetTags("Solo Leveling", ["Fantasy"]);
-        fixture.NovelFull.SetTags("Tower of God", ["Action"]);
-        fixture.NovelFull.SetTags("Noblesse", ["Drama"]);
+        fixture.MangaUpdates.SetTags("Solo Leveling", ["Fantasy"]);
+        fixture.MangaUpdates.SetTags("Tower of God", ["Action"]);
+        fixture.MangaUpdates.SetTags("Noblesse", ["Drama"]);
 
         using var cts = new CancellationTokenSource();
-        fixture.NovelFull.CancelAfterCalls = 3;
-        fixture.NovelFull.CancellationSource = cts;
+        fixture.MangaUpdates.CancelAfterCalls = 3;
+        fixture.MangaUpdates.CancellationSource = cts;
 
         var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, cts.Token);
 
@@ -332,7 +332,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         await fixture.SeedAsync(
             Folder(folderId, null, "Novels"),
             Bookmark(bookmarkId, folderId, "A Monster Who Levels Up Chapter 1", "https://example.com/novel"));
-        fixture.NovelFull.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
+        fixture.MangaUpdates.SetTags("A Monster Who Levels Up", ["Fantasy", "Level System"]);
 
         var summary = await fixture.Service.TagFolderAsync(folderId, forceRefresh: false, CancellationToken.None);
 
@@ -407,7 +407,6 @@ public sealed class AiBookmarkAutoTaggingServiceTests
             Anilist = new FakeProvider();
             MangaUpdates = new FakeProvider();
             Kitsu = new FakeProvider();
-            NovelFull = new FakeProvider();
             Catalog = new FakeProvider();
             var identifierService = new AiSeriesIdentifierService(new HttpClient(identifier), new Uri("https://ai.local/identify"));
             Service = new AiBookmarkAutoTaggingService(
@@ -416,7 +415,6 @@ public sealed class AiBookmarkAutoTaggingServiceTests
                 Anilist,
                 MangaUpdates,
                 Kitsu,
-                NovelFull,
                 Catalog,
                 NullLogger<AiBookmarkAutoTaggingService>.Instance);
         }
@@ -426,7 +424,6 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         public FakeProvider Anilist { get; }
         public FakeProvider MangaUpdates { get; }
         public FakeProvider Kitsu { get; }
-        public FakeProvider NovelFull { get; }
         public FakeProvider Catalog { get; }
         public AiBookmarkAutoTaggingService Service { get; }
 
@@ -453,7 +450,7 @@ public sealed class AiBookmarkAutoTaggingServiceTests
         }
     }
 
-    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, INovelFullTagProvider, ICatalogTagProvider
+    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, ICatalogTagProvider
     {
         private readonly Dictionary<string, List<string>> _tagsByTitle = new(StringComparer.OrdinalIgnoreCase);
 

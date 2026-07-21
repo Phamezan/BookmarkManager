@@ -7,7 +7,7 @@ public sealed class ProviderRateLimiter : IAsyncDisposable
 {
     private readonly TokenBucketRateLimiter _limiter;
 
-    public ProviderRateLimiter(int tokenLimit, int tokensPerPeriod, TimeSpan replenishmentPeriod)
+    public ProviderRateLimiter(int tokenLimit, int tokensPerPeriod, TimeSpan replenishmentPeriod, int? queueLimit = null)
     {
         _limiter = new TokenBucketRateLimiter(new TokenBucketRateLimiterOptions
         {
@@ -15,7 +15,7 @@ public sealed class ProviderRateLimiter : IAsyncDisposable
             TokensPerPeriod = tokensPerPeriod,
             ReplenishmentPeriod = replenishmentPeriod,
             AutoReplenishment = true,
-            QueueLimit = tokenLimit * 4,
+            QueueLimit = queueLimit ?? tokenLimit * 4,
             QueueProcessingOrder = QueueProcessingOrder.OldestFirst
         });
     }

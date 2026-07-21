@@ -20,11 +20,14 @@ public sealed record BookmarkSeriesMatch(
 /// <summary>
 /// Matches the user's bookmark tree against <see cref="LibraryCatalogEntry"/> rows so Library cards
 /// can show reading-progress badges. Read-only over bookmarks (never writes them) - see the Library
-/// scope boundary in CLAUDE.md. Caches the built match set and rebuilds it lazily: the bookmark side
-/// is detected automatically (a cheap fingerprint over non-deleted bookmark count + summed
-/// <see cref="BookmarkNode.Version"/> catches create/update/move/delete/restore), while catalog-side
-/// changes require an explicit <see cref="InvalidateCatalog"/> call from
-/// <see cref="LibraryCatalogSyncBackgroundService"/> after a sync completes.
+/// scope boundary in CLAUDE.md. Two caches with independent invalidation, because they have wildly
+/// different rebuild costs at real-world scale (tens of thousands of catalog rows, low thousands of
+/// bookmarks): the catalog token index (expensive - tokenizes every catalog title/alternate-title)
+/// only rebuilds on an explicit <see cref="InvalidateCatalog"/> call from
+/// <see cref="LibraryCatalogSyncBackgroundService"/> after a sync completes; the bookmark match pass
+/// (cheap - matches the much smaller bookmark set against the already-built index) rebuilds whenever
+/// a bookmark fingerprint (non-deleted bookmark count + summed <see cref="BookmarkNode.Version"/>)
+/// changes, without re-tokenizing the catalog.
 /// </summary>
 public sealed class BookmarkSeriesMatchService(
     IServiceScopeFactory scopeFactory,
@@ -34,10 +37,11 @@ public sealed class BookmarkSeriesMatchService(
 
     private readonly SemaphoreSlim _rebuildLock = new(1, 1);
     private IReadOnlyList<BookmarkSeriesMatch> _cachedMatches = [];
-    private (int Count, long VersionSum)? _cachedFingerprint;
+    private (int Count, long VersionSum)? _cachedBookmarkFingerprint;
+    private CatalogIndex? _cachedCatalogIndex;
     private volatile bool _catalogDirty = true;
 
-    /// <summary>Marks the cache stale after a catalog sync writes new/updated entries.</summary>
+    /// <summary>Marks the catalog token index stale after a catalog sync writes new/updated entries.</summary>
     public void InvalidateCatalog() => _catalogDirty = true;
 
     public async Task<IReadOnlyList<BookmarkSeriesMatch>> GetMatchesAsync(CancellationToken cancellationToken)
@@ -45,20 +49,29 @@ public sealed class BookmarkSeriesMatchService(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var fingerprint = await ComputeFingerprintAsync(db, cancellationToken).ConfigureAwait(false);
-        if (!_catalogDirty && _cachedFingerprint == fingerprint)
+        var fingerprint = await ComputeBookmarkFingerprintAsync(db, cancellationToken).ConfigureAwait(false);
+        if (!_catalogDirty && _cachedBookmarkFingerprint == fingerprint)
             return _cachedMatches;
 
         await _rebuildLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            fingerprint = await ComputeFingerprintAsync(db, cancellationToken).ConfigureAwait(false);
-            if (!_catalogDirty && _cachedFingerprint == fingerprint)
+            fingerprint = await ComputeBookmarkFingerprintAsync(db, cancellationToken).ConfigureAwait(false);
+            if (!_catalogDirty && _cachedBookmarkFingerprint == fingerprint)
                 return _cachedMatches;
 
-            _cachedMatches = await BuildMatchesAsync(db, cancellationToken).ConfigureAwait(false);
-            _cachedFingerprint = fingerprint;
-            _catalogDirty = false;
+            if (_catalogDirty || _cachedCatalogIndex is null)
+            {
+                _cachedCatalogIndex = await BuildCatalogIndexAsync(db, cancellationToken).ConfigureAwait(false);
+                _catalogDirty = false;
+                logger.LogInformation(
+                    "Rebuilt catalog token index: {Candidates} titles from {Entries} catalog entries.",
+                    _cachedCatalogIndex.Candidates.Count,
+                    _cachedCatalogIndex.EntryCount);
+            }
+
+            _cachedMatches = await BuildMatchesAsync(db, _cachedCatalogIndex, cancellationToken).ConfigureAwait(false);
+            _cachedBookmarkFingerprint = fingerprint;
             logger.LogInformation("Rebuilt bookmark/series match set: {Count} matches.", _cachedMatches.Count);
             return _cachedMatches;
         }
@@ -68,7 +81,7 @@ public sealed class BookmarkSeriesMatchService(
         }
     }
 
-    private static async Task<(int Count, long VersionSum)> ComputeFingerprintAsync(AppDbContext db, CancellationToken ct)
+    private static async Task<(int Count, long VersionSum)> ComputeBookmarkFingerprintAsync(AppDbContext db, CancellationToken ct)
     {
         var versions = await db.BookmarkNodes
             .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark)
@@ -86,14 +99,20 @@ public sealed class BookmarkSeriesMatchService(
 
     private readonly record struct CatalogCandidate(string Provider, string ProviderId, string? CoverImageUrl, HashSet<string> Tokens);
 
-    private static async Task<IReadOnlyList<BookmarkSeriesMatch>> BuildMatchesAsync(AppDbContext db, CancellationToken ct)
-    {
-        var bookmarks = await db.BookmarkNodes
-            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && n.Url != null)
-            .Select(n => new { n.Id, n.Title, n.Url })
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
+    /// <summary>The catalog side of the match: an inverted index built once per catalog sync and
+    /// reused across every bookmark-side rebuild until the next <see cref="InvalidateCatalog"/>.</summary>
+    private sealed record CatalogIndex(
+        List<CatalogCandidate> Candidates,
+        Dictionary<string, List<int>> TokenIndex,
+        int EntryCount);
 
+    /// <summary>
+    /// Tokenizes every catalog title/alternate-title into an inverted index. This is the expensive
+    /// half of the match build (tens of thousands of regex-normalized titles at real-world catalog
+    /// sizes) and only needs to happen when the catalog itself changes.
+    /// </summary>
+    private static async Task<CatalogIndex> BuildCatalogIndexAsync(AppDbContext db, CancellationToken ct)
+    {
         var catalogEntries = await db.LibraryCatalogEntries
             .Select(e => new { e.Provider, e.ProviderId, e.Title, e.AlternateTitles, e.CoverImageUrl })
             .ToListAsync(ct)
@@ -132,6 +151,24 @@ public sealed class BookmarkSeriesMatchService(
                 }
             }
         }
+
+        return new CatalogIndex(candidates, tokenIndex, catalogEntries.Count);
+    }
+
+    /// <summary>
+    /// Matches bookmarks against an already-built <see cref="CatalogIndex"/>. Cheap relative to
+    /// index construction: only the (much smaller) bookmark set is walked and tokenized here.
+    /// </summary>
+    private static async Task<IReadOnlyList<BookmarkSeriesMatch>> BuildMatchesAsync(AppDbContext db, CatalogIndex index, CancellationToken ct)
+    {
+        var bookmarks = await db.BookmarkNodes
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark && n.Url != null)
+            .Select(n => new { n.Id, n.Title, n.Url })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        var candidates = index.Candidates;
+        var tokenIndex = index.TokenIndex;
 
         // Highest chapter wins when multiple bookmarks match the same series.
         var bestPerSeries = new Dictionary<string, BookmarkSeriesMatch>(StringComparer.OrdinalIgnoreCase);

@@ -68,3 +68,7 @@ skills-lock.json
 
 # graphify knowledge graph index (local, regenerable via /graphify --update)
 graphify-out/
+
+# Serilog file sink output (src/BookmarkManager.Api/Program.cs)
+src/BookmarkManager.Api/logs/
+bin/*/logs/

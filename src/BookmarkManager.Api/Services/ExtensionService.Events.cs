@@ -13,8 +13,9 @@ public sealed partial class ExtensionService
     {
         var client = await GetOrCreateDefaultClientAsync(ct);
 
+        var requestEventIds = request.Events.Select(e => e.EventId).ToList();
         var existing = await db.ExtensionEvents
-            .Where(e => e.ExtensionClientId == client.Id && e.BatchId == request.BatchId)
+            .Where(e => e.ExtensionClientId == client.Id && requestEventIds.Contains(e.EventId))
             .Select(e => e.EventId)
             .ToListAsync(ct);
 

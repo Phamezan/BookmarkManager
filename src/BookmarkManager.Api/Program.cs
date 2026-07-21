@@ -8,8 +8,18 @@ using BookmarkManager.Api.Services.BookmarkTagging;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .WriteTo.Console()
+    .WriteTo.File(
+        Path.Combine(context.HostingEnvironment.ContentRootPath, "logs", "api-.log"),
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14));
 
 builder.Services.AddOpenApi();
 builder.Services.AddHealthChecks();
@@ -41,8 +51,6 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTaggi
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.KitsuTaggingService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
-builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.BookmarkTagging.NovelFullTaggingService))
-    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AnilistTaggingService>();
 builder.Services.AddSingleton<IAnilistTagProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
 builder.Services.AddSingleton<IAnilistScheduleProvider>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.AnilistTaggingService>());
@@ -50,8 +58,6 @@ builder.Services.AddSingleton<MangaUpdatesTaggingService>();
 builder.Services.AddSingleton<IMangaUpdatesTagProvider>(provider => provider.GetRequiredService<MangaUpdatesTaggingService>());
 builder.Services.AddSingleton<KitsuTaggingService>();
 builder.Services.AddSingleton<IKitsuTagProvider>(provider => provider.GetRequiredService<KitsuTaggingService>());
-builder.Services.AddSingleton<NovelFullTaggingService>();
-builder.Services.AddSingleton<INovelFullTagProvider>(provider => provider.GetRequiredService<NovelFullTaggingService>());
 builder.Services.AddSingleton<CatalogTaggingService>();
 builder.Services.AddSingleton<ICatalogTagProvider>(provider => provider.GetRequiredService<CatalogTaggingService>());
 builder.Services.AddSingleton<IDuckDuckGoSearchService, DuckDuckGoSearchService>();

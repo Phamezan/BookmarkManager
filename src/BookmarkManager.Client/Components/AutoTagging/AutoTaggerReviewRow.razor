@@ -1,4 +1,5 @@
 @namespace BookmarkManager.Client.Components
+@using BookmarkManager.Contracts
 @using MudBlazor
 
 <MudPaper Outlined="true" Class="pa-3" Style="background: transparent;">
@@ -29,6 +30,13 @@
                                        OnClick="@RevertTitle" />
                     </MudTooltip>
                 }
+                <MudTooltip Text="Explain tag match">
+                    <MudIconButton Icon="@Icons.Material.Filled.HelpOutline"
+                                   Size="Size.Small"
+                                   Class="flex-shrink-0"
+                                   aria-label="Explain tag match"
+                                   OnClick="@OpenExplainAsync" />
+                </MudTooltip>
             </div>
             <span class="mud-text-secondary text-truncate" style="font-size: 0.75rem; max-width: 240px; flex-shrink: 0;">@Item.Url</span>
         </div>
@@ -57,12 +65,27 @@
         <div class="d-flex flex-wrap align-center gap-1">
             @foreach (var tag in Item.Tags)
             {
-                <MudChip T="string"
-                         Size="Size.Small"
-                         Color="Color.Primary"
-                         OnClose="@(() => RemoveTag(tag))">
-                    @tag
-                </MudChip>
+                var score = GetScore(tag);
+                if (score is not null && score.MatchScore.HasValue)
+                {
+                    <MudTooltip Text="@($"{score.Provider} · {score.MatchScore.Value:0.00} ({(score.MeetsThreshold ? "meets" : "below")} threshold)")">
+                        <MudChip T="string"
+                                 Size="Size.Small"
+                                 Color="@(score.MeetsThreshold ? Color.Success : Color.Warning)"
+                                 OnClose="@(() => RemoveTag(tag))">
+                            @tag
+                        </MudChip>
+                    </MudTooltip>
+                }
+                else
+                {
+                    <MudChip T="string"
+                             Size="Size.Small"
+                             Color="Color.Primary"
+                             OnClose="@(() => RemoveTag(tag))">
+                        @tag
+                    </MudChip>
+                }
             }
             <div style="width: 140px; display: inline-block;">
                 <MudTextField @bind-Value="_localTagText"
@@ -81,6 +104,7 @@
 
 @code {
     [Parameter, EditorRequired] public ReviewItem Item { get; set; } = default!;
+    [Inject] private IDialogService DialogService { get; set; } = default!;
 
     // Local fields bound to the text boxes. Because this component owns the
     // values, typing only re-renders THIS row — not every row in the list.
@@ -200,5 +224,20 @@
         Item.Title = Item.SuggestedTitle;
         _localTitle = Item.Title;
         _syncedTitle = Item.Title;
+    }
+
+    private TagScoreDto? GetScore(string tag) =>
+        Item.TagScores.FirstOrDefault(s => s.Tag.Equals(tag, StringComparison.OrdinalIgnoreCase));
+
+    private async Task OpenExplainAsync()
+    {
+        var domain = Item.Tags.FirstOrDefault(t => t is "Anime" or "Manga" or "Novel");
+        var parameters = new DialogParameters<TagExplainDialog>
+        {
+            { x => x.Title, Item.Title },
+            { x => x.Url, Item.Url },
+            { x => x.Domain, domain }
+        };
+        await DialogService.ShowAsync<TagExplainDialog>("Tag Match Explain", parameters);
     }
 }

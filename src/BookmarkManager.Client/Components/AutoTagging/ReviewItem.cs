@@ -1,3 +1,5 @@
+using BookmarkManager.Contracts;
+
 namespace BookmarkManager.Client.Components;
 
 /// <summary>
@@ -12,6 +14,7 @@ public sealed class ReviewItem
     public string Url { get; set; } = string.Empty;
     public List<string> Tags { get; set; } = [];
     public string NewTagText { get; set; } = string.Empty;
+    public List<TagScoreDto> TagScores { get; set; } = [];
 
     // Snapshot of the AI-suggested state, captured when the row is created, so the
     // review screen can tell which rows the user actually touched before saving.

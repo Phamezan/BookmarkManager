@@ -38,7 +38,7 @@ This project is a Bookmark Manager tailored specifically for organizing, cleanin
 ## 3. Technology Stack Constraints
 *   **Frontend**: Blazor WebAssembly (.NET 10).
 *   **Backend**: ASP.NET Core API (.NET 10) with Entity Framework Core and SQLite.
-*   **Styling**: Vanilla CSS (specifically [app.css](file:///c:/Users/Pham2/source/repos/BookmarkManager/src/BookmarkManager.Client/wwwroot/css/app.css)) and MudBlazor UI component library.
+*   **Styling**: Vanilla CSS (specifically `src/BookmarkManager.Client/wwwroot/css/app.css`) and MudBlazor UI component library.
 *   **Sync Logic**: Sequential Command Queue with deferred commands (e.g., waiting for folder `BrowserNodeId` creation before executing child `Move` commands).
 *   **Integration Tests**: Any custom `WebApplicationFactory<Program>` subclass must override `ConnectionStrings:Default` and `Backup:Directory` using `ConfigureAppConfiguration` so they point to test-isolated temporary paths, preventing database/backup creation inside the disallowed `/data` directory in CI environments.
 

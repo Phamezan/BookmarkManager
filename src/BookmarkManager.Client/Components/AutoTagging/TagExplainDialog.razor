@@ -1,0 +1,168 @@
+@namespace BookmarkManager.Client.Components
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Tag Match Explain</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        @if (_loading)
+        {
+            <div class="d-flex justify-center pa-4">
+                <MudProgressCircular Indeterminate="true" />
+            </div>
+        }
+        else if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_error</MudAlert>
+        }
+        else if (_response is not null)
+        {
+            <MudStack Spacing="3">
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Thresholds</MudText>
+                    <div class="d-flex flex-wrap gap-1">
+                        <MudChip T="string" Size="Size.Small">Default: @_response.Thresholds.Default.ToString("0.00")</MudChip>
+                        <MudChip T="string" Size="Size.Small">AniList: @_response.Thresholds.AniList.ToString("0.00")</MudChip>
+                        <MudChip T="string" Size="Size.Small">Kitsu: @_response.Thresholds.Kitsu.ToString("0.00")</MudChip>
+                        <MudChip T="string" Size="Size.Small">MangaUpdates: @_response.Thresholds.MangaUpdates.ToString("0.00")</MudChip>
+                        <MudChip T="string" Size="Size.Small">Catalog: @_response.Thresholds.Catalog.ToString("0.00")</MudChip>
+                        <MudChip T="string" Size="Size.Small">AniListSlug: @_response.Thresholds.AniListSlug.ToString("0.00")</MudChip>
+                    </div>
+                </div>
+
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Normalization Segments</MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary mb-1">
+                        Title: @_response.Normalization.OriginalTitle
+                        @if (!string.IsNullOrWhiteSpace(_response.Normalization.Host))
+                        {
+                            <text> · Host: @_response.Normalization.Host</text>
+                        }
+                    </MudText>
+                    <MudSimpleTable Dense="true" Style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Text</th>
+                                <th>Position</th>
+                                <th>Score</th>
+                                <th>Flags</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var segment in _response.Normalization.Segments)
+                            {
+                                <tr>
+                                    <td>@segment.Text</td>
+                                    <td>@segment.Position</td>
+                                    <td>@segment.Score.ToString("0.00")</td>
+                                    <td>@SegmentFlags(segment)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Candidates</MudText>
+                    <MudSimpleTable Dense="true" Style="width: 100%;">
+                        <thead>
+                            <tr>
+                                <th>Query</th>
+                                <th>Confidence</th>
+                                <th>Reason</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var candidate in _response.Normalization.Candidates)
+                            {
+                                <tr>
+                                    <td>@candidate.Query</td>
+                                    <td>@candidate.Confidence.ToString("0.00")</td>
+                                    <td>@candidate.Reason</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+
+                <div>
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Catalog Matches</MudText>
+                    @if (_response.CatalogMatches.Count == 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">No catalog matches (only applies to Novel-domain lookups).</MudText>
+                    }
+                    else
+                    {
+                        <MudSimpleTable Dense="true" Style="width: 100%;">
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Score</th>
+                                    <th>Meets Threshold</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var match in _response.CatalogMatches.OrderByDescending(m => m.Score))
+                                {
+                                    <tr style="@(match.MeetsThreshold ? "color: var(--mud-palette-success);" : "color: var(--mud-palette-error);")">
+                                        <td>@match.Title</td>
+                                        <td>@match.Score.ToString("0.00")</td>
+                                        <td>@(match.MeetsThreshold ? "Yes" : "No")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </MudSimpleTable>
+                    }
+                </div>
+            </MudStack>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Close">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string? Url { get; set; }
+    [Parameter] public string? Domain { get; set; }
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+
+    private bool _loading = true;
+    private string? _error;
+    private TagExplainResponse? _response;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _response = await BookmarkService.GetTagExplainAsync(Title, Url, Domain);
+        }
+        catch (Exception ex)
+        {
+            _error = ex is ApiException apiEx ? (apiEx.Detail ?? apiEx.Title) : ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string SegmentFlags(SegmentExplainDto segment)
+    {
+        var flags = new List<string>();
+        if (segment.IsBrand) flags.Add("Brand");
+        if (segment.IsNoisePhrase) flags.Add("Noise");
+        if (segment.HasChapterMarker) flags.Add("ChapterMarker");
+        if (segment.IsPureChapterMarker) flags.Add("PureChapterMarker");
+        if (segment.LooksLikeTitle) flags.Add("LooksLikeTitle");
+        return flags.Count > 0 ? string.Join(", ", flags) : "-";
+    }
+
+    private void Close() => MudDialog.Close();
+}

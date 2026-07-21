@@ -45,7 +45,7 @@ public sealed partial class ExtensionService(
     // to map events and heartbeats to specific extension client IDs.
     private async Task<ExtensionClient> GetOrCreateDefaultClientAsync(CancellationToken ct)
     {
-        var client = await db.ExtensionClients.FirstOrDefaultAsync(ct);
+        var client = await db.ExtensionClients.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
         if (client is not null)
         {
             return client;
@@ -66,7 +66,7 @@ public sealed partial class ExtensionService(
 
     public async Task<ExtensionStatusDto> GetStatusAsync(CancellationToken ct)
     {
-        var client = await db.ExtensionClients.FirstOrDefaultAsync(ct);
+        var client = await db.ExtensionClients.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
         if (client is null)
         {
             return new ExtensionStatusDto { IsConnected = false };

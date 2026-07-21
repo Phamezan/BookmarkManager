@@ -151,13 +151,11 @@ internal sealed partial class AiBookmarkAutoTaggingService
     {
         var mangaUpdatesTask = _mangaUpdates.GetTagsForTitleAsync(context, cancellationToken);
         var kitsuTask = _kitsu.GetTagsForTitleAsync(context, cancellationToken);
-        var novelFullTask = _novelFull.GetTagsForTitleAsync(context, cancellationToken);
         var catalogTask = _catalog.GetTagsForTitleAsync(context, cancellationToken);
-        await Task.WhenAll(mangaUpdatesTask, kitsuTask, novelFullTask, catalogTask).ConfigureAwait(false);
+        await Task.WhenAll(mangaUpdatesTask, kitsuTask, catalogTask).ConfigureAwait(false);
         return [
             (await mangaUpdatesTask.ConfigureAwait(false), "MangaUpdates"),
             (await kitsuTask.ConfigureAwait(false), "Kitsu"),
-            (await novelFullTask.ConfigureAwait(false), "NovelFull"),
             (await catalogTask.ConfigureAwait(false), "Catalog")
         ];
     }

@@ -11,22 +11,41 @@ public sealed class BookmarkTaggingService
     private readonly IAnilistTagProvider _anilist;
     private readonly IMangaUpdatesTagProvider _mangaUpdates;
     private readonly IKitsuTagProvider _kitsu;
-    private readonly INovelFullTagProvider _novelFull;
     private readonly ICatalogTagProvider _catalog;
     private readonly TagExtractorService _localTagExtractor;
     private readonly ILogger<BookmarkTaggingService> _logger;
 
     public sealed record BatchTagLookupResult(
         Dictionary<Guid, List<string>> Tags,
-        Dictionary<Guid, string?> SuggestedTitles);
+        Dictionary<Guid, string?> SuggestedTitles,
+        Dictionary<Guid, List<TagScoreDto>> TagScores);
 
-    private sealed record TagLookupResult(List<string> Tags, string? CanonicalTitle, string? CoverImageUrl = null);
+    private sealed record TagLookupResult(
+        List<string> Tags,
+        string? CanonicalTitle,
+        string? CoverImageUrl,
+        List<TagScoreDto> TagScores)
+    {
+        public TagLookupResult(List<string> tags, string? canonicalTitle)
+            : this(tags, canonicalTitle, null, [])
+        {
+        }
+    }
+
+    /// <summary>Maps a provider source to the similarity threshold used to judge its match score.</summary>
+    private static double GetSimilarityThreshold(BookmarkTagSource source) => source switch
+    {
+        BookmarkTagSource.AniList => SimilarityThresholds.AniList,
+        BookmarkTagSource.Kitsu => SimilarityThresholds.Kitsu,
+        BookmarkTagSource.MangaUpdates => SimilarityThresholds.MangaUpdates,
+        BookmarkTagSource.Catalog => SimilarityThresholds.Catalog,
+        _ => SimilarityThresholds.Default
+    };
 
     public BookmarkTaggingService(
         IAnilistTagProvider anilist,
         IMangaUpdatesTagProvider mangaUpdates,
         IKitsuTagProvider kitsu,
-        INovelFullTagProvider novelFull,
         ICatalogTagProvider catalog,
         TagExtractorService localTagExtractor,
         ILogger<BookmarkTaggingService> logger)
@@ -34,7 +53,6 @@ public sealed class BookmarkTaggingService
         _anilist = anilist;
         _mangaUpdates = mangaUpdates;
         _kitsu = kitsu;
-        _novelFull = novelFull;
         _catalog = catalog;
         _localTagExtractor = localTagExtractor;
         _logger = logger;
@@ -77,6 +95,7 @@ public sealed class BookmarkTaggingService
     {
         var tagsById = new Dictionary<Guid, List<string>>();
         var suggestedById = new Dictionary<Guid, string?>();
+        var tagScoresById = new Dictionary<Guid, List<TagScoreDto>>();
         var lookupCache = new Dictionary<(BookmarkTagDomain Domain, string CleanTitle), TagLookupResult>();
 
         foreach (var item in items)
@@ -106,6 +125,7 @@ public sealed class BookmarkTaggingService
                 lookup.CanonicalTitle,
                 item.Title,
                 item.Url);
+            tagScoresById[item.Id] = lookup.TagScores;
         }
 
         _logger.LogInformation(
@@ -113,7 +133,7 @@ public sealed class BookmarkTaggingService
             items.Count,
             lookupCache.Count);
 
-        return new BatchTagLookupResult(tagsById, suggestedById);
+        return new BatchTagLookupResult(tagsById, suggestedById, tagScoresById);
     }
 
     private async Task<TagLookupResult> GetTagsWithCanonicalAsync(
@@ -133,7 +153,7 @@ public sealed class BookmarkTaggingService
             classification.Reason,
             string.Join(" | ", normalizedTitle.Candidates.Select(candidate => candidate.Query)));
 
-        var (provider, tags, wasRejected, rejectionReason, canonicalTitle, coverImageUrl) = await QueryProvidersAsync(
+        var (provider, tags, wasRejected, rejectionReason, canonicalTitle, coverImageUrl, tagScores) = await QueryProvidersAsync(
             title,
             url,
             folderPath,
@@ -162,6 +182,7 @@ public sealed class BookmarkTaggingService
             reason = $"Provider rejected query. {rejectionReason}";
             canonicalTitle = null;
             coverImageUrl = null;
+            tagScores = [];
         }
         else if (tags.Count == 0)
         {
@@ -172,14 +193,15 @@ public sealed class BookmarkTaggingService
             reason = tags.Count == 0 ? "No provider or local tags found." : "Provider returned no tags; used low-confidence local fallback.";
             canonicalTitle = null;
             coverImageUrl = null;
+            tagScores = [];
         }
 
         LogTagDecision(title, url, folderPath, requestedDomain, classification, provider, source, confidence, state, tags, reason);
 
-        return new TagLookupResult(tags, canonicalTitle, coverImageUrl);
+        return new TagLookupResult(tags, canonicalTitle, coverImageUrl, tagScores);
     }
 
-    private async Task<(BookmarkTagSource Source, List<string> Tags, bool WasRejected, string? RejectionReason, string? CanonicalTitle, string? CoverImageUrl)> QueryProvidersAsync(
+    private async Task<(BookmarkTagSource Source, List<string> Tags, bool WasRejected, string? RejectionReason, string? CanonicalTitle, string? CoverImageUrl, List<TagScoreDto> TagScores)> QueryProvidersAsync(
         string title,
         string? url,
         string? folderPath,
@@ -200,7 +222,6 @@ public sealed class BookmarkTaggingService
             {
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.MangaUpdates, await _mangaUpdates.GetTagsForTitleAsync(lookupContext, cancellationToken))));
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.Kitsu, await _kitsu.GetTagsForTitleAsync(lookupContext, cancellationToken))));
-                tasks.Add(Task.Run(async () => (BookmarkTagSource.NovelFull, await _novelFull.GetTagsForTitleAsync(lookupContext, cancellationToken))));
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.Catalog, await _catalog.GetTagsForTitleAsync(lookupContext, cancellationToken))));
             }
             else
@@ -223,13 +244,12 @@ public sealed class BookmarkTaggingService
 
             tasks.Add(Task.Run(async () => (BookmarkTagSource.MangaUpdates, await _mangaUpdates.GetTagsForTitleAsync(novelContext, cancellationToken))));
             tasks.Add(Task.Run(async () => (BookmarkTagSource.Kitsu, await _kitsu.GetTagsForTitleAsync(novelContext, cancellationToken))));
-            tasks.Add(Task.Run(async () => (BookmarkTagSource.NovelFull, await _novelFull.GetTagsForTitleAsync(novelContext, cancellationToken))));
             tasks.Add(Task.Run(async () => (BookmarkTagSource.Catalog, await _catalog.GetTagsForTitleAsync(novelContext, cancellationToken))));
         }
 
         if (tasks.Count == 0)
         {
-            return (BookmarkTagSource.None, [], false, null, null, null);
+            return (BookmarkTagSource.None, [], false, null, null, null, []);
         }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
@@ -249,9 +269,9 @@ public sealed class BookmarkTaggingService
             var rejected = tasks.Select(t => t.Result).FirstOrDefault(r => r.Result != null && r.Result.WasRejected);
             if (rejected.Result != null)
             {
-                return (rejected.Source, [], true, rejected.Result.RejectionReason, null, null);
+                return (rejected.Source, [], true, rejected.Result.RejectionReason, null, null, []);
             }
-            return (BookmarkTagSource.None, [], false, null, null, null);
+            return (BookmarkTagSource.None, [], false, null, null, null, []);
         }
 
         var sortedResults = validResults.OrderBy(r =>
@@ -268,7 +288,6 @@ public sealed class BookmarkTaggingService
                 BookmarkTagSource.AniList => 0,
                 BookmarkTagSource.Kitsu => 1,
                 BookmarkTagSource.Catalog => 1,
-                BookmarkTagSource.NovelFull => 2,
                 _ => 3
             };
             return (domainScore, sourceScore);
@@ -277,6 +296,7 @@ public sealed class BookmarkTaggingService
         var primarySource = sortedResults.First().Source;
         var combinedTags = new List<string>();
         var uniqueTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tagScores = new List<TagScoreDto>();
 
         foreach (var res in sortedResults)
         {
@@ -285,6 +305,10 @@ public sealed class BookmarkTaggingService
                 if (uniqueTags.Add(tag))
                 {
                     combinedTags.Add(tag);
+
+                    var threshold = GetSimilarityThreshold(res.Source);
+                    var meetsThreshold = res.Result.MatchScore.HasValue && res.Result.MatchScore.Value >= threshold;
+                    tagScores.Add(new TagScoreDto(tag, res.Source.ToString(), res.Result.MatchScore, meetsThreshold));
                 }
             }
         }
@@ -326,7 +350,7 @@ public sealed class BookmarkTaggingService
             }
         }
 
-        return (primarySource, combinedTags, false, null, canonicalTitle, coverImageUrl);
+        return (primarySource, combinedTags, false, null, canonicalTitle, coverImageUrl, tagScores);
     }
 
     private const double MinCanonicalTitleSimilarity = 0.40;

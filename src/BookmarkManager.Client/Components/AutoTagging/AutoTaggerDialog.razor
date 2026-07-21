@@ -635,6 +635,7 @@
                             var tags = response.Tags.TryGetValue(item.Id, out var t) ? t : new List<string>();
                             string? suggestedTitle = null;
                             response.SuggestedTitles?.TryGetValue(item.Id, out suggestedTitle);
+                            response.TagScores.TryGetValue(item.Id, out var scores);
                             if (tags.Count > 0)
                             {
                                 AddLog($"✓ '{item.Title}' tagged: [{string.Join(", ", tags)}]", LogType.Success);
@@ -652,7 +653,8 @@
                                 Url = item.Url ?? string.Empty,
                                 Tags = tags,
                                 OriginalTags = tags.ToList(),
-                                SuggestedTitle = suggestedTitle
+                                SuggestedTitle = suggestedTitle,
+                                TagScores = scores ?? []
                             });
                         }
                     }
@@ -669,7 +671,8 @@
                                 OriginalTitle = item.Title,
                                 Url = item.Url ?? string.Empty,
                                 Tags = new List<string>(),
-                                OriginalTags = []
+                                OriginalTags = [],
+                                TagScores = []
                             });
                         }
                     }
