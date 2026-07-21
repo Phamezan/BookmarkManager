@@ -131,6 +131,10 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IEmbeddingS
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
 builder.Services.AddHostedService(
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
+
+// RAG / semantic embedding engine (Wave 2a). In-memory cosine vector search over catalog embeddings.
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IVectorSearchService, BookmarkManager.Api.Services.Embedding.VectorSearchService>();
+
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));
