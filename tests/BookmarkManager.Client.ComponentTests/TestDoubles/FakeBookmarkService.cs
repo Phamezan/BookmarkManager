@@ -53,7 +53,14 @@ public class FakeBookmarkService : IBookmarkService
     public Guid? LastTagsFolderId { get; private set; }
 
     public Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default) => Task.FromResult(FolderTree);
-    
+
+    public Task<TagExplainResponse> GetTagExplainAsync(string title, string? url, string? domain, string? compareTo = null, int topN = 10, CancellationToken cancellationToken = default)
+        => Task.FromResult(new TagExplainResponse(
+            new NormalizationExplain(title, url, null, [], []),
+            new ThresholdsExplain(0, 0, 0, 0, 0, 0),
+            [],
+            null));
+
     public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
         => Task.FromResult(folderIds.Count == 0 ? new AnimeCalendarScheduleResponse() : ScheduleResponse);
 
