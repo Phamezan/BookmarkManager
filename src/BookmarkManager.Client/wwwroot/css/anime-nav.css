@@ -57,7 +57,7 @@
     width: 560px;
     height: 560px;
     opacity: .1;
-    background: url("../assets/anime/nav/nav-settings-b.webp") center/contain no-repeat;
+    background: url("../assets/anime/nav/nav-settings-b.webp?v=7") center/contain no-repeat;
 }
 
 /* --- Topbar = the rail's glass panel --- */
@@ -92,6 +92,7 @@
     border: 1px solid transparent;
     color: var(--anm-text-dim);
     transition: background .16s, border-color .16s, color .16s;
+    overflow: visible !important;
 }
 
 [data-theme="anime"] .primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover {
@@ -100,35 +101,48 @@
     color: var(--anm-text);
 }
 
-/* --- Die-cut mascot stickers replace the SVG icons (anime only) --- */
+/* --- Absolute-positioned stacked layout for springing animation --- */
+[data-theme="anime"] .primary-nav .nav-link-inner {
+    position: relative;
+    padding-left: 28px;
+    display: flex;
+    align-items: center;
+}
+
+[data-theme="anime"] .primary-nav .nav-icon-svg,
+[data-theme="anime"] .primary-nav .nav-mascot,
+[data-theme="anime"] .primary-nav .nav-mascot-cycle {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    margin: 0 !important;
+}
+
+/* SVG outline icon: visible on idle, slides down/fades out on hover/active */
 [data-theme="anime"] .primary-nav .nav-icon-svg {
-    display: none;
+    display: block !important;
+    width: 18px;
+    height: 18px;
+    opacity: 0.65;
+    transform: translateY(-50%) scale(1);
+    transform-origin: center;
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease, color 0.25s ease;
+    color: var(--anm-text-dim);
 }
 
-[data-theme="anime"] .primary-nav .nav-mascot {
-    display: block;
-    width: 30px;
-    height: 30px;
-    flex: none;
-    object-fit: contain;
-    filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .55));
-    transition: transform .2s, filter .2s;
-}
-
-[data-theme="anime"] .primary-nav .mud-nav-link:hover .nav-mascot {
-    transform: translateY(-2px) scale(1.07);
-    filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .6));
-}
-
-/* --- Settings chip: three silver seals stacked for the palindrome cycle --- */
+/* Chibi mascot sticker & Settings seal cycle: hidden on idle, springs up/scales in on hover/active */
+[data-theme="anime"] .primary-nav .nav-mascot,
 [data-theme="anime"] .primary-nav .nav-mascot-cycle {
     display: block;
-    position: relative;
     width: 30px;
     height: 30px;
-    flex: none;
+    object-fit: contain;
     filter: drop-shadow(0 3px 6px rgba(0, 0, 0, .55));
-    transition: transform .2s, filter .2s;
+    opacity: 0;
+    transform: translateY(12px) scale(0.6);
+    transform-origin: center;
+    pointer-events: none;
+    transition: transform 0.38s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease, filter 0.25s ease;
 }
 
 [data-theme="anime"] .primary-nav .nav-mascot-cycle img {
@@ -140,17 +154,26 @@
     opacity: 0;
 }
 
-/* Static reduced-motion state: first seal only. */
 [data-theme="anime"] .primary-nav .nav-mascot-cycle img:first-child {
     opacity: 1;
 }
 
-[data-theme="anime"] .primary-nav .mud-nav-link:hover .nav-mascot-cycle {
-    transform: translateY(-2px) scale(1.07);
+/* --- States: Hover & Active Transitions --- */
+
+/* Inactive Hover */
+[data-theme="anime"] .primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover .nav-icon-svg {
+    opacity: 0;
+    transform: translateY(18px) scale(0.6);
+}
+
+[data-theme="anime"] .primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover .nav-mascot,
+[data-theme="anime"] .primary-nav .mud-nav-link:not(.active):not(.nav-link-root-active):hover .nav-mascot-cycle {
+    opacity: 1;
+    transform: translateY(-80%) scale(1.15);
     filter: drop-shadow(0 6px 12px rgba(0, 0, 0, .6));
 }
 
-/* --- Active link: brighter wash + arcane disc bar + glowing diamond --- */
+/* Active Link State */
 [data-theme="anime"] .primary-nav .mud-nav-link.active:not(.mud-nav-link-disabled),
 [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active:not(.mud-nav-link-disabled) {
     color: var(--anm-text) !important;
@@ -161,16 +184,22 @@
     text-shadow: 0 0 12px rgba(205, 211, 222, .3);
 }
 
+[data-theme="anime"] .primary-nav .mud-nav-link.active .nav-icon-svg,
+[data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active .nav-icon-svg {
+    opacity: 0;
+    transform: translateY(18px) scale(0.6);
+}
+
 [data-theme="anime"] .primary-nav .mud-nav-link.active .nav-mascot,
 [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active .nav-mascot,
 [data-theme="anime"] .primary-nav .mud-nav-link.active .nav-mascot-cycle,
 [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active .nav-mascot-cycle {
-    transform: scale(1.08);
+    opacity: 1;
+    transform: translateY(-80%) scale(1.15);
     filter: drop-shadow(0 0 10px rgba(205, 211, 222, .55)) drop-shadow(0 3px 6px rgba(0, 0, 0, .5));
 }
 
-/* Arcane disc bar at the link's left edge (mockup .link.active::before,
-   rotated 90deg for the horizontal capsule). */
+/* Arcane disc bar at the link's left edge (horizontal capsule orientation) */
 [data-theme="anime"] .primary-nav .mud-nav-link.active::before,
 [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active::before {
     content: "";
@@ -186,8 +215,7 @@
     pointer-events: none;
 }
 
-/* Glowing diamond tucked into the top-right corner (mockup .link.active::after,
-   moved because horizontal pill labels fill the mid-right space). */
+/* Glowing diamond tucked into the top-right corner */
 [data-theme="anime"] .primary-nav .mud-nav-link.active::after,
 [data-theme="anime"] .primary-nav .mud-nav-link.nav-link-root-active::after {
     content: "";
