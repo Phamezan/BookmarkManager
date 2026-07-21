@@ -12,10 +12,14 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
 {
     private static readonly TimeSpan SuccessCacheDuration = TimeSpan.FromHours(12);
     private static readonly TimeSpan EmptyCacheDuration = TimeSpan.FromMinutes(30);
+    // queueLimit covers AiBookmarkAutoTaggingService's ProviderLookupConcurrency (6 concurrent
+    // titles, each making up to 2 sequential MangaUpdates calls) with headroom so a full batch
+    // waits for its turn instead of getting rejected with "rate-limit queue is full".
     private static readonly ProviderRateLimiter RateLimiter = new(
-        tokenLimit: 1,
-        tokensPerPeriod: 1,
-        replenishmentPeriod: TimeSpan.FromSeconds(1));
+        tokenLimit: 3,
+        tokensPerPeriod: 3,
+        replenishmentPeriod: TimeSpan.FromSeconds(1),
+        queueLimit: 24);
 
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<MangaUpdatesTaggingService> _logger;
@@ -188,7 +192,7 @@ public sealed partial class MangaUpdatesTaggingService : IMangaUpdatesTagProvide
             return null;
 
         var match = TryExtractBestSearchRecord(doc.RootElement, scoreQuery, requestedDomain, folderPath, url);
-        return match is null ? null : new SearchMatch(match.Value.SeriesId, match.Value.Record, match.Value.Score);
+        return match is null ? null : new SearchMatch(match.Value.SeriesId, match.Value.Record.Clone(), match.Value.Score);
     }
 
     private async Task<MangaUpdatesTagResult> FetchSeriesTagsAsync(long seriesId, BookmarkTagDomain requestedDomain, CancellationToken cancellationToken)
