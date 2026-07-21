@@ -25,7 +25,6 @@ public sealed record ThresholdsExplain(
     double AniList,
     double Kitsu,
     double MangaUpdates,
-    double NovelFull,
     double Catalog,
     double AniListSlug);
 

@@ -98,7 +98,6 @@ public sealed class AiAutoTagEndpointTests : IDisposable
         public FakeProvider Anilist { get; } = new();
         public FakeProvider MangaUpdates { get; } = new();
         public FakeProvider Kitsu { get; } = new();
-        public FakeProvider NovelFull { get; } = new();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -124,11 +123,9 @@ public sealed class AiAutoTagEndpointTests : IDisposable
                 services.RemoveAll<IAnilistTagProvider>();
                 services.RemoveAll<IMangaUpdatesTagProvider>();
                 services.RemoveAll<IKitsuTagProvider>();
-                services.RemoveAll<INovelFullTagProvider>();
                 services.AddSingleton<IAnilistTagProvider>(Anilist);
                 services.AddSingleton<IMangaUpdatesTagProvider>(MangaUpdates);
                 services.AddSingleton<IKitsuTagProvider>(Kitsu);
-                services.AddSingleton<INovelFullTagProvider>(NovelFull);
 
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
@@ -153,7 +150,7 @@ public sealed class AiAutoTagEndpointTests : IDisposable
         }
     }
 
-    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider, INovelFullTagProvider
+    private sealed class FakeProvider : IAnilistTagProvider, IMangaUpdatesTagProvider, IKitsuTagProvider
     {
         private readonly Dictionary<string, List<string>> _tagsByTitle = new(StringComparer.OrdinalIgnoreCase);
 

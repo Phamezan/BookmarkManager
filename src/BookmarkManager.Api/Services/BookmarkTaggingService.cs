@@ -11,7 +11,6 @@ public sealed class BookmarkTaggingService
     private readonly IAnilistTagProvider _anilist;
     private readonly IMangaUpdatesTagProvider _mangaUpdates;
     private readonly IKitsuTagProvider _kitsu;
-    private readonly INovelFullTagProvider _novelFull;
     private readonly ICatalogTagProvider _catalog;
     private readonly TagExtractorService _localTagExtractor;
     private readonly ILogger<BookmarkTaggingService> _logger;
@@ -39,7 +38,6 @@ public sealed class BookmarkTaggingService
         BookmarkTagSource.AniList => SimilarityThresholds.AniList,
         BookmarkTagSource.Kitsu => SimilarityThresholds.Kitsu,
         BookmarkTagSource.MangaUpdates => SimilarityThresholds.MangaUpdates,
-        BookmarkTagSource.NovelFull => SimilarityThresholds.NovelFull,
         BookmarkTagSource.Catalog => SimilarityThresholds.Catalog,
         _ => SimilarityThresholds.Default
     };
@@ -48,7 +46,6 @@ public sealed class BookmarkTaggingService
         IAnilistTagProvider anilist,
         IMangaUpdatesTagProvider mangaUpdates,
         IKitsuTagProvider kitsu,
-        INovelFullTagProvider novelFull,
         ICatalogTagProvider catalog,
         TagExtractorService localTagExtractor,
         ILogger<BookmarkTaggingService> logger)
@@ -56,7 +53,6 @@ public sealed class BookmarkTaggingService
         _anilist = anilist;
         _mangaUpdates = mangaUpdates;
         _kitsu = kitsu;
-        _novelFull = novelFull;
         _catalog = catalog;
         _localTagExtractor = localTagExtractor;
         _logger = logger;
@@ -226,7 +222,6 @@ public sealed class BookmarkTaggingService
             {
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.MangaUpdates, await _mangaUpdates.GetTagsForTitleAsync(lookupContext, cancellationToken))));
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.Kitsu, await _kitsu.GetTagsForTitleAsync(lookupContext, cancellationToken))));
-                tasks.Add(Task.Run(async () => (BookmarkTagSource.NovelFull, await _novelFull.GetTagsForTitleAsync(lookupContext, cancellationToken))));
                 tasks.Add(Task.Run(async () => (BookmarkTagSource.Catalog, await _catalog.GetTagsForTitleAsync(lookupContext, cancellationToken))));
             }
             else
@@ -249,7 +244,6 @@ public sealed class BookmarkTaggingService
 
             tasks.Add(Task.Run(async () => (BookmarkTagSource.MangaUpdates, await _mangaUpdates.GetTagsForTitleAsync(novelContext, cancellationToken))));
             tasks.Add(Task.Run(async () => (BookmarkTagSource.Kitsu, await _kitsu.GetTagsForTitleAsync(novelContext, cancellationToken))));
-            tasks.Add(Task.Run(async () => (BookmarkTagSource.NovelFull, await _novelFull.GetTagsForTitleAsync(novelContext, cancellationToken))));
             tasks.Add(Task.Run(async () => (BookmarkTagSource.Catalog, await _catalog.GetTagsForTitleAsync(novelContext, cancellationToken))));
         }
 
@@ -294,7 +288,6 @@ public sealed class BookmarkTaggingService
                 BookmarkTagSource.AniList => 0,
                 BookmarkTagSource.Kitsu => 1,
                 BookmarkTagSource.Catalog => 1,
-                BookmarkTagSource.NovelFull => 2,
                 _ => 3
             };
             return (domainScore, sourceScore);

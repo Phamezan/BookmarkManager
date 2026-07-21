@@ -92,7 +92,6 @@ public class TagExplainController(AppDbContext db, CatalogTaggingService catalog
             SimilarityThresholds.AniList,
             SimilarityThresholds.Kitsu,
             SimilarityThresholds.MangaUpdates,
-            SimilarityThresholds.NovelFull,
             SimilarityThresholds.Catalog,
             SimilarityThresholds.AniListSlug);
 

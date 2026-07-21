@@ -17,7 +17,6 @@ internal sealed partial class AiBookmarkAutoTaggingService
     private readonly IAnilistTagProvider _anilist;
     private readonly IMangaUpdatesTagProvider _mangaUpdates;
     private readonly IKitsuTagProvider _kitsu;
-    private readonly INovelFullTagProvider _novelFull;
     private readonly ICatalogTagProvider _catalog;
     private readonly ILogger<AiBookmarkAutoTaggingService> _logger;
 
@@ -27,7 +26,6 @@ internal sealed partial class AiBookmarkAutoTaggingService
         IAnilistTagProvider anilist,
         IMangaUpdatesTagProvider mangaUpdates,
         IKitsuTagProvider kitsu,
-        INovelFullTagProvider novelFull,
         ICatalogTagProvider catalog,
         ILogger<AiBookmarkAutoTaggingService> logger)
     {
@@ -36,7 +34,6 @@ internal sealed partial class AiBookmarkAutoTaggingService
         _anilist = anilist;
         _mangaUpdates = mangaUpdates;
         _kitsu = kitsu;
-        _novelFull = novelFull;
         _catalog = catalog;
         _logger = logger;
     }
