@@ -27,7 +27,8 @@ public partial class BookmarksController
         return Ok(new BookmarkManager.Contracts.BatchTagResponse
         {
             Tags = resultMapping.Tags,
-            SuggestedTitles = resultMapping.SuggestedTitles
+            SuggestedTitles = resultMapping.SuggestedTitles,
+            TagScores = resultMapping.TagScores
         });
     }
     catch (Exception ex)

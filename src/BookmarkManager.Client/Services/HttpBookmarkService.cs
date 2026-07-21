@@ -176,6 +176,17 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<List<TagProvenanceDto>> GetTagProvenanceAsync(Guid bookmarkId, CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<TagProvenanceDto>>($"api/bookmarks/{bookmarkId}/tag-provenance", cancellationToken) ?? [];
 
+    public async Task<TagExplainResponse> GetTagExplainAsync(string title, string? url, string? domain, string? compareTo = null, int topN = 10, CancellationToken cancellationToken = default)
+    {
+        var query = new List<string> { $"title={Uri.EscapeDataString(title)}" };
+        if (!string.IsNullOrWhiteSpace(url)) query.Add($"url={Uri.EscapeDataString(url)}");
+        if (!string.IsNullOrWhiteSpace(domain)) query.Add($"domain={Uri.EscapeDataString(domain)}");
+        if (!string.IsNullOrWhiteSpace(compareTo)) query.Add($"compareTo={Uri.EscapeDataString(compareTo)}");
+        if (topN != 10) query.Add($"topN={topN}");
+        return await _apiClient.GetAsync<TagExplainResponse>($"api/tag-explain?{string.Join("&", query)}", cancellationToken)
+               ?? throw new ApiException(HttpStatusCode.OK, "Tag explain response was empty.");
+    }
+
     public async Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
     {
         if (folderIds.Count == 0) return new AnimeCalendarScheduleResponse();
