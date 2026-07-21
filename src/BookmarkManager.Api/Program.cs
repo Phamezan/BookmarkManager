@@ -121,6 +121,16 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.BookmarkSerie
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>());
 builder.Services.AddSingleton(BookmarkManager.Api.Services.Library.ProviderBudgetTracker.Instance);
+
+// RAG / semantic embedding engine (Wave 1). Singleton ONNX session, warmed on startup via its
+// IHostedService.StartAsync; the named HttpClient allows a long timeout for first-boot model download.
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IEmbeddingService>(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
+builder.Services.AddHostedService(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));

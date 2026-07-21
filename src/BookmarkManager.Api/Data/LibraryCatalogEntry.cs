@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using BookmarkManager.Contracts;
 
 namespace BookmarkManager.Api.Data;
@@ -37,6 +38,34 @@ public class LibraryCatalogEntry
 
     public DateTimeOffset FirstImportedAt { get; set; }
     public DateTimeOffset LastRefreshedAt { get; set; }
+
+    /// <summary>L2-normalized 384-dim embedding of <see cref="LibraryEmbeddingText"/>, stored as a
+    /// little-endian float32 BLOB. Null until backfilled. Single-arch self-host (x64/arm64 both
+    /// little-endian) means the raw byte reinterpret below never crosses an endianness boundary.</summary>
+    public byte[]? Embedding { get; set; }
+
+    /// <summary>SHA256 hex of the embed text at the time <see cref="Embedding"/> was computed.
+    /// Re-embed only when the current text hashes to something different.</summary>
+    public string? EmbeddingSourceHash { get; set; }
+
+    /// <summary>Reinterprets the stored BLOB as a float vector without copying element-by-element.
+    /// Returns null when no embedding has been stored yet.</summary>
+    public float[]? GetEmbeddingVector()
+    {
+        if (Embedding is null || Embedding.Length == 0)
+        {
+            return null;
+        }
+
+        return MemoryMarshal.Cast<byte, float>(Embedding).ToArray();
+    }
+
+    /// <summary>Stores a float vector as its little-endian byte representation.</summary>
+    public void SetEmbeddingVector(float[] vector)
+    {
+        ArgumentNullException.ThrowIfNull(vector);
+        Embedding = MemoryMarshal.AsBytes(vector.AsSpan()).ToArray();
+    }
 
     public static List<string> SplitList(string? value) =>
         string.IsNullOrWhiteSpace(value)
