@@ -106,6 +106,11 @@
                 }
             </ChildContent>
         </MudMenu>
+        <button type="button" class="@($"lib-ai-toggle{(_chatOpen ? " is-active" : "")}")"
+                aria-pressed="@_chatOpen" @onclick="ToggleChat" title="Library AI assistant">
+            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" />
+            <span class="lib-ai-toggle-label">AI Assistant</span>
+        </button>
     </div>
 
     <div class="lib-genre-panel" aria-label="Genre filters">
@@ -358,4 +363,6 @@
             </div>
         }
     </section>
+
+    <LibraryChatDrawer @bind-Open="_chatOpen" />
 </div>

@@ -43,6 +43,9 @@ public interface IBookmarkService
     Task<List<TagProvenanceDto>> GetTagProvenanceAsync(Guid bookmarkId, CancellationToken cancellationToken = default);
     Task<TagExplainResponse> GetTagExplainAsync(string title, string? url, string? domain, string? compareTo = null, int topN = 10, CancellationToken cancellationToken = default);
 
+    // ── Library AI Assistant ──────────────────────────────────────────────
+    Task<LibraryChatResponseDto> LibraryChatAsync(LibraryChatRequestDto request, CancellationToken cancellationToken = default);
+
     // ── Anime Calendar ────────────────────────────────────────────────────
     Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default);
     Task<AutoMatchAnimeResponse> AutoMatchAnimeAsync(List<Guid> folderIds, List<Guid>? bookmarkIds = null, CancellationToken cancellationToken = default);

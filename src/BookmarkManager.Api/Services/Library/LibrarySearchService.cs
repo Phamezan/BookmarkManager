@@ -1,5 +1,7 @@
+using System.Numerics.Tensors;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.BookmarkTagging;
+using BookmarkManager.Api.Services.Embedding;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -18,11 +20,22 @@ public sealed class LibrarySearchService(
     LibraryProviderRegistry registry,
     IOptions<LibraryProviderOptions> options,
     AppDbContext db,
+    IEmbeddingService embeddingService,
     ILogger<LibrarySearchService> logger)
 {
     private const int CatalogSearchMatchLimit = 30;
     private const int MinTakeSize = 1;
     private const int MaxTakeSize = 200;
+
+    // Hybrid ranking weights: keyword relevance still dominates so exact/prefix title hits stay on top,
+    // with semantic similarity breaking ties and lifting conceptually-close matches. Sum to 1.0.
+    private const double KeywordWeight = 0.6;
+    private const double VectorWeight = 0.4;
+
+    /// <summary>Minimum cosine similarity for a semantic match to contribute; below this the vector
+    /// component is treated as noise (0) so weak matches don't perturb keyword order. Mirrors
+    /// <c>RagMinSimilarity</c> in the vector engine spec.</summary>
+    private const float VectorSimilarityFloor = 0.3f;
 
     private sealed record ProviderOutcome(IReadOnlyList<LibraryEntryDto> Entries, LibraryProviderStatusDto Status);
 
@@ -65,7 +78,77 @@ public sealed class LibrarySearchService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return rows.Select(MapCatalogEntry).ToList();
+        if (rows.Count == 0)
+            return [];
+
+        var ranked = await RankCatalogAsync(rows, query, cancellationToken).ConfigureAwait(false);
+        return ranked.Select(MapCatalogEntry).ToList();
+    }
+
+    /// <summary>Orders keyword candidates by a hybrid of keyword relevance and semantic (embedding)
+    /// similarity. When the embedding service isn't ready - or embedding the query fails - falls back
+    /// to the original keyword-only order so search never regresses below the pure-keyword baseline.</summary>
+    private async Task<IReadOnlyList<LibraryCatalogEntry>> RankCatalogAsync(
+        IReadOnlyList<LibraryCatalogEntry> rows, string query, CancellationToken cancellationToken)
+    {
+        if (!embeddingService.IsReady)
+            return rows;
+
+        float[] queryVector;
+        try
+        {
+            queryVector = await embeddingService.EmbedAsync(query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Query embedding failed; falling back to keyword-only catalog ranking.");
+            return rows;
+        }
+
+        return RankHybrid(rows, query, queryVector);
+    }
+
+    /// <summary>Pure, deterministic hybrid ordering - extracted so it can be unit-tested without a DB
+    /// or a real ONNX session. Higher <see cref="HybridScore"/> sorts first; ties keep input order.</summary>
+    internal static IReadOnlyList<LibraryCatalogEntry> RankHybrid(
+        IReadOnlyList<LibraryCatalogEntry> rows, string query, float[] queryVector) =>
+        rows.OrderByDescending(row => HybridScore(row, query, queryVector)).ToList();
+
+    internal static double HybridScore(LibraryCatalogEntry row, string query, float[] queryVector)
+    {
+        var keyword = KeywordScore(row.Title, row.AlternateTitles, query);
+
+        var vector = row.GetEmbeddingVector();
+        if (vector is null || vector.Length != queryVector.Length)
+            return keyword; // no embedding yet - keyword score only
+
+        var cosine = TensorPrimitives.CosineSimilarity(queryVector, vector);
+        var semantic = cosine < VectorSimilarityFloor ? 0.0 : cosine;
+        return (KeywordWeight * keyword) + (VectorWeight * semantic);
+    }
+
+    /// <summary>Cheap lexical relevance in [0,1]: exact &gt; prefix &gt; substring title match, then
+    /// alternate-title substring, then a small floor for LIKE candidates that matched some other way.</summary>
+    internal static double KeywordScore(string? title, string? alternateTitles, string query)
+    {
+        var q = query.Trim();
+        if (q.Length == 0)
+            return 0.0;
+
+        var t = title ?? string.Empty;
+        if (t.Equals(q, StringComparison.OrdinalIgnoreCase))
+            return 1.0;
+        if (t.StartsWith(q, StringComparison.OrdinalIgnoreCase))
+            return 0.8;
+        if (t.Contains(q, StringComparison.OrdinalIgnoreCase))
+            return 0.6;
+        if (alternateTitles is not null && alternateTitles.Contains(q, StringComparison.OrdinalIgnoreCase))
+            return 0.4;
+        return 0.2;
     }
 
     /// <summary>Pages the local catalog mirror ordered by popularity rank (nulls last, i.e. coverage-only
