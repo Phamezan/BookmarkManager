@@ -157,11 +157,11 @@ public sealed class LibraryRagService : ILibraryRagService
             : settings.RagSystemPrompt;
         var messages = BuildMessages(persona, request, cards);
         var chatRequest = new ChatRequest(
-            Model: string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel,
+            Model: string.IsNullOrWhiteSpace(settings.RagModel) ? "mistralai/mistral-large-3-675b-instruct-2512" : settings.RagModel,
             Temperature: 0.2,
             Messages: messages);
 
-        var baseUrl = string.IsNullOrWhiteSpace(settings.RagBaseUrl) ? "https://api.groq.com/openai/v1" : settings.RagBaseUrl;
+        var baseUrl = string.IsNullOrWhiteSpace(settings.RagBaseUrl) ? "https://integrate.api.nvidia.com/v1" : settings.RagBaseUrl;
         var uri = new Uri($"{baseUrl.TrimEnd('/')}/chat/completions");
 
         var httpClient = _httpClientFactory.CreateClient(HttpClientName);

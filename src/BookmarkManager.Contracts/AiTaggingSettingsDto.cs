@@ -23,7 +23,7 @@ public class AiTaggingSettingsDto
 
     // Library RAG assistant: OpenAI-compatible chat model that answers grounded on retrieved catalog
     // entries. Defaults to the same Groq endpoint/model shape as the tagging fallback.
-    public string RagModel { get; set; } = "nemotron-3-embed-1b";
+    public string RagModel { get; set; } = "mistralai/mistral-large-3-675b-instruct-2512";
     public string RagApiKey { get; set; } = string.Empty;
     public string RagBaseUrl { get; set; } = "https://integrate.api.nvidia.com/v1";
     public int RagRequestsPerMinute { get; set; } = 30;
