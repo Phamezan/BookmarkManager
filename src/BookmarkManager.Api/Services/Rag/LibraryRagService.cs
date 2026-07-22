@@ -13,7 +13,6 @@ using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.Embedding;
-using BookmarkManager.Api.Services.Vector;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -82,7 +81,7 @@ public sealed class LibraryRagService : ILibraryRagService
 
         var queryVector = await _embeddingService.EmbedAsync(request.Message, cancellationToken).ConfigureAwait(false);
         var hits = await _vectorSearch
-            .SearchAsync(queryVector, EmbeddingConstants.RagTopK, EmbeddingConstants.RagMinSimilarity)
+            .SearchAsync(queryVector, EmbeddingConstants.RagTopK, EmbeddingConstants.RagMinSimilarity, cancellationToken)
             .ConfigureAwait(false);
 
         var cards = await LoadRecommendedSeriesAsync(hits, cancellationToken).ConfigureAwait(false);

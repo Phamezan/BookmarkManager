@@ -73,12 +73,12 @@ public partial class LibraryChatDrawer : IAsyncDisposable
         try
         {
             var response = await BookmarkService.LibraryChatAsync(
-                new LibraryChatRequestDto { Message = text, History = history }, _cts.Token);
+                new LibraryChatRequestDto(text, history), _cts.Token);
 
-            pending.Content = string.IsNullOrWhiteSpace(response.Reply)
+            pending.Content = string.IsNullOrWhiteSpace(response.Markdown)
                 ? "No response."
-                : response.Reply;
-            pending.Recommendations = response.Recommendations;
+                : response.Markdown;
+            pending.Recommendations = response.Series;
         }
         catch (OperationCanceledException)
         {
@@ -133,6 +133,6 @@ public partial class LibraryChatDrawer : IAsyncDisposable
         public string Role { get; } = role;
         public string Content { get; set; } = content;
         public bool IsPending { get; set; }
-        public IReadOnlyList<LibraryChatSeriesCardDto>? Recommendations { get; set; }
+        public IReadOnlyList<LibraryRecommendedSeriesDto>? Recommendations { get; set; }
     }
 }

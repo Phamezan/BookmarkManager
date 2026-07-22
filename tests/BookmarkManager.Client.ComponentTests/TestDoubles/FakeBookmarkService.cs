@@ -62,7 +62,7 @@ public class FakeBookmarkService : IBookmarkService
             null));
 
     public Func<LibraryChatRequestDto, Task<LibraryChatResponseDto>>? OnLibraryChat { get; set; }
-    public LibraryChatResponseDto LibraryChatResponse { get; set; } = new();
+    public LibraryChatResponseDto LibraryChatResponse { get; set; } = new(string.Empty, []);
 
     public Task<LibraryChatResponseDto> LibraryChatAsync(LibraryChatRequestDto request, CancellationToken cancellationToken = default)
         => OnLibraryChat != null ? OnLibraryChat(request) : Task.FromResult(LibraryChatResponse);

@@ -23,10 +23,7 @@
                 {
                     <a class="lib-chat-card" href="@card.SourceUrl" target="_blank" rel="noopener noreferrer" title="@card.Title">
                         <span class="lib-chat-card-title">@card.Title</span>
-                        @if (card.Rating is { } rating)
-                        {
-                            <span class="lib-chat-card-rating">★ @rating.ToString("0.0")</span>
-                        }
+                        <span class="lib-chat-card-rating">@card.MediaType · @((card.Score * 100).ToString("0"))% match</span>
                         @if (!string.IsNullOrWhiteSpace(card.Synopsis))
                         {
                             <span class="lib-chat-card-synopsis">@card.Synopsis</span>
@@ -44,7 +41,7 @@
     [Parameter, EditorRequired] public string Role { get; set; } = AssistantRole;
     [Parameter] public string Content { get; set; } = string.Empty;
     [Parameter] public bool IsPending { get; set; }
-    [Parameter] public IReadOnlyList<LibraryChatSeriesCardDto>? Recommendations { get; set; }
+    [Parameter] public IReadOnlyList<LibraryRecommendedSeriesDto>? Recommendations { get; set; }
 
     private bool IsUser => string.Equals(Role, "user", StringComparison.OrdinalIgnoreCase);
 

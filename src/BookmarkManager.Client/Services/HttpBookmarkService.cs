@@ -189,7 +189,7 @@ public sealed class HttpBookmarkService : IBookmarkService
 
     public async Task<LibraryChatResponseDto> LibraryChatAsync(LibraryChatRequestDto request, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<LibraryChatResponseDto>(HttpMethod.Post, "api/library/chat", request, cancellationToken)
-           ?? new LibraryChatResponseDto();
+           ?? new LibraryChatResponseDto(string.Empty, []);
 
     public async Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
     {

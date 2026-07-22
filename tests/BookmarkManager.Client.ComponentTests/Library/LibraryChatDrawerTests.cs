@@ -50,14 +50,11 @@ public sealed class LibraryChatDrawerTests
     {
         var fake = new FakeBookmarkService
         {
-            LibraryChatResponse = new LibraryChatResponseDto
-            {
-                Reply = "Try Omniscient Reader's Viewpoint.",
-                Recommendations =
+            LibraryChatResponse = new LibraryChatResponseDto(
+                "Try Omniscient Reader's Viewpoint.",
                 [
-                    new LibraryChatSeriesCardDto("Novelfire", "42", "Omniscient Reader", null, "A reader in his novel.", 9.1, "https://example.com/42")
-                ]
-            }
+                    new LibraryRecommendedSeriesDto("Novelfire", "42", "Omniscient Reader", null, "A reader in his novel.", ["Fantasy"], LibraryMediaType.Webnovel, "https://example.com/42", 0.91f)
+                ])
         };
         using var context = NewContext(fake);
 
@@ -83,7 +80,7 @@ public sealed class LibraryChatDrawerTests
             OnLibraryChat = request =>
             {
                 captured = request;
-                return Task.FromResult(new LibraryChatResponseDto { Reply = "ok" });
+                return Task.FromResult(new LibraryChatResponseDto("ok", []));
             }
         };
         using var context = NewContext(fake);

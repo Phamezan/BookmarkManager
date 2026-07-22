@@ -6,7 +6,6 @@ using System.Text.Json.Serialization;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.Embedding;
-using BookmarkManager.Api.Services.Vector;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -113,7 +112,9 @@ public sealed class LibraryRagEndpointTests : IDisposable
     {
         public IReadOnlyList<(Guid Id, float Score)> Hits { get; set; } = [];
 
-        public Task<IReadOnlyList<(Guid Id, float Score)>> SearchAsync(float[] query, int k, float floor)
+        public void InvalidateCatalog() { }
+
+        public Task<IReadOnlyList<(Guid Id, float Score)>> SearchAsync(float[] query, int k, float floor, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<(Guid, float)>>(Hits.Take(k).ToList());
     }
 
