@@ -66,8 +66,14 @@ public sealed partial class FtsKeywordSearchService(AppDbContext db) : IKeywordS
         }
         finally
         {
+            // Must close through EF's ref-counted Database.CloseConnectionAsync, not the raw
+            // DbConnection.CloseAsync - OpenConnectionAsync above went through EF's ref-counted open, and
+            // closing the raw connection directly bypasses that ref count. EF can then believe the
+            // connection is still open with active statements when it's actually been torn down
+            // underneath it, surfacing as an intermittent "unable to delete/modify collation sequence due
+            // to active statements" (SQLite error 5) on a shared DbContext under concurrent/repeated use.
             if (wasClosed)
-                await connection.CloseAsync().ConfigureAwait(false);
+                await db.Database.CloseConnectionAsync().ConfigureAwait(false);
         }
     }
 
