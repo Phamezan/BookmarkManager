@@ -23,46 +23,145 @@
             </button>
         </header>
 
-        <div class="lib-chat-log" role="list" @ref="_logRef">
-            @if (_messages.Count == 0)
-            {
-                <div class="lib-chat-empty">
-                    <MudIcon Icon="@Icons.Material.Outlined.Chat" Class="lib-chat-empty-icon" />
-                    <p class="lib-chat-empty-title">Ask about your library</p>
-                    <p class="lib-chat-empty-sub">Try "recommend me a completed fantasy manhwa" or "what's like Solo Leveling?"</p>
-                </div>
-            }
-            else
-            {
-                @foreach (var message in _messages)
-                {
-                    <LibraryChatMessageBubble @key="message.Id"
-                                              Role="@message.Role"
-                                              Content="@message.Content"
-                                              IsPending="@message.IsPending"
-                                              Recommendations="@message.Recommendations" />
-                }
-            }
+        <div class="lib-chat-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="@(_view == DrawerView.Chat)"
+                    class="@TabClass(DrawerView.Chat)" @onclick="() => _view = DrawerView.Chat">
+                <MudIcon Icon="@Icons.Material.Outlined.Chat" Size="Size.Small" /> Chat
+            </button>
+            <button type="button" role="tab" aria-selected="@(_view == DrawerView.Diagnostics)"
+                    class="@TabClass(DrawerView.Diagnostics)" @onclick="OpenDiagnosticsAsync">
+                <MudIcon Icon="@Icons.Material.Outlined.Insights" Size="Size.Small" /> Diagnostics
+            </button>
         </div>
 
-        @if (_error is { } error)
+        @if (_view == DrawerView.Chat)
         {
-            <div class="lib-chat-error" role="alert">@error</div>
-        }
+            <div class="lib-chat-log" role="list" @ref="_logRef">
+                @if (_messages.Count == 0)
+                {
+                    <div class="lib-chat-empty">
+                        <MudIcon Icon="@Icons.Material.Outlined.Chat" Class="lib-chat-empty-icon" />
+                        <p class="lib-chat-empty-title">Ask about your library</p>
+                        <p class="lib-chat-empty-sub">Try "recommend me a completed fantasy manhwa" or "what's like Solo Leveling?"</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var message in _messages)
+                    {
+                        <LibraryChatMessageBubble @key="message.Id"
+                                                  Role="@message.Role"
+                                                  Content="@message.Content"
+                                                  IsPending="@message.IsPending"
+                                                  Recommendations="@message.Recommendations" />
+                    }
+                }
+            </div>
 
-        <footer class="lib-chat-input">
-            <textarea class="lib-chat-textarea"
-                      placeholder="Message the assistant…"
-                      value="@_input"
-                      @oninput="OnInput"
-                      @onkeydown="OnKeyDown"
-                      disabled="@_sending"
-                      rows="1"
-                      aria-label="Message the assistant"></textarea>
-            <button type="button" class="lib-chat-send" @onclick="SendAsync"
-                    disabled="@(!CanSend)" aria-label="Send message">
-                <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" />
-            </button>
-        </footer>
+            @if (_error is { } error)
+            {
+                <div class="lib-chat-error" role="alert">@error</div>
+            }
+
+            <footer class="lib-chat-input">
+                <textarea class="lib-chat-textarea"
+                          placeholder="Message the assistant…"
+                          value="@_input"
+                          @oninput="OnInput"
+                          @onkeydown="OnKeyDown"
+                          disabled="@_sending"
+                          rows="1"
+                          aria-label="Message the assistant"></textarea>
+                <button type="button" class="lib-chat-send" @onclick="SendAsync"
+                        disabled="@(!CanSend)" aria-label="Send message">
+                    <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" />
+                </button>
+            </footer>
+        }
+        else
+        {
+            <div class="lib-diag-body">
+                @if (_diag is { } d)
+                {
+                    <div class="lib-diag-coverage">
+                        @if (!d.ModelReady)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                                Embedding model not ready — coverage and query tests are unavailable until it finishes loading.
+                            </MudAlert>
+                        }
+                        <div class="lib-diag-cov-line">
+                            <span class="lib-diag-cov-num">@d.EmbeddedCount / @d.TotalCount</span>
+                            <span class="lib-diag-cov-label">catalog entries embedded (@d.EmbeddedPercent.ToString("0.#")%)</span>
+                        </div>
+                        <MudProgressLinear Value="@d.EmbeddedPercent" Color="Color.Primary" Class="lib-diag-cov-bar" />
+                    </div>
+                }
+
+                <div class="lib-diag-form">
+                    <input class="lib-diag-input" placeholder="Title to check (e.g. Solo Leveling)"
+                           value="@_diagTitle" @oninput="e => _diagTitle = e.Value?.ToString() ?? string.Empty" />
+                    <input class="lib-diag-input" placeholder="Query to test (e.g. levels up and spawns shadows)"
+                           value="@_diagQuery" @oninput="e => _diagQuery = e.Value?.ToString() ?? string.Empty"
+                           @onkeydown="OnDiagKeyDown" />
+                    <button type="button" class="lib-diag-run" @onclick="RunDiagnosticAsync" disabled="@_diagRunning">
+                        @(_diagRunning ? "Checking…" : "Run check")
+                    </button>
+                </div>
+
+                @if (_diagError is { } derr)
+                {
+                    <div class="lib-chat-error" role="alert">@derr</div>
+                }
+
+                @if (_diag?.Title is { } t)
+                {
+                    <div class="lib-diag-card">
+                        <div class="lib-diag-card-title">Title: "@t.Query"</div>
+                        @if (!t.Found)
+                        {
+                            <div class="lib-diag-bad">✗ Not found in catalog — it can't be recommended until it's crawled.</div>
+                        }
+                        else
+                        {
+                            <div class="lib-diag-ok">✓ Found: @t.MatchedTitle @(t.MediaType is { } mt ? $"({mt})" : "")</div>
+                            <div class="@(t.Embedded ? "lib-diag-ok" : "lib-diag-bad")">
+                                @(t.Embedded ? "✓ Embedded" : "✗ Not embedded yet — run catalog sync / wait for backfill.")
+                            </div>
+                        }
+                        @if (_diag.TitleRank is { } tr)
+                        {
+                            <div class="lib-diag-rank">
+                                @if (tr.Score is { } sc)
+                                {
+                                    <span>For your query: <b>@((sc * 100).ToString("0"))% </b>
+                                        @(tr.Rank is { } rk ? $"(rank #{rk})" : "")
+                                        @(tr.AboveFloor ? "— above retrieval floor ✓" : "— below floor, won't be retrieved ✗")</span>
+                                }
+                                else
+                                {
+                                    <span>No embedding to score against the query.</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_diag?.QueryMatches is { Count: > 0 } matches)
+                {
+                    <div class="lib-diag-matches">
+                        <div class="lib-diag-card-title">Top matches for the query</div>
+                        @foreach (var m in matches)
+                        {
+                            <div class="lib-diag-match-row">
+                                <span class="lib-diag-match-score">@((m.Score * 100).ToString("0"))%</span>
+                                <span class="lib-diag-match-title">@m.Title</span>
+                                <span class="lib-diag-match-type">@m.MediaType</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
     </aside>
 }

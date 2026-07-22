@@ -26,6 +26,51 @@ public partial class LibraryChatDrawer : IAsyncDisposable
     private ElementReference _logRef;
     private CancellationTokenSource? _cts;
 
+    private enum DrawerView { Chat, Diagnostics }
+    private DrawerView _view = DrawerView.Chat;
+    private LibraryEmbeddingDiagnosticDto? _diag;
+    private string _diagTitle = string.Empty;
+    private string _diagQuery = string.Empty;
+    private bool _diagRunning;
+    private string? _diagError;
+
+    private string TabClass(DrawerView view) =>
+        _view == view ? "lib-chat-tab lib-chat-tab-active" : "lib-chat-tab";
+
+    private async Task OpenDiagnosticsAsync()
+    {
+        _view = DrawerView.Diagnostics;
+        // Load coverage numbers immediately (no title/query) the first time the pane is opened.
+        if (_diag is null && !_diagRunning)
+            await RunDiagnosticAsync();
+    }
+
+    private async Task OnDiagKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await RunDiagnosticAsync();
+    }
+
+    private async Task RunDiagnosticAsync()
+    {
+        _diagRunning = true;
+        _diagError = null;
+        try
+        {
+            _diag = await BookmarkService.GetLibraryEmbeddingDiagnosticAsync(
+                string.IsNullOrWhiteSpace(_diagTitle) ? null : _diagTitle.Trim(),
+                string.IsNullOrWhiteSpace(_diagQuery) ? null : _diagQuery.Trim());
+        }
+        catch (Exception ex)
+        {
+            _diagError = $"Diagnostic failed: {ex.Message}";
+        }
+        finally
+        {
+            _diagRunning = false;
+        }
+    }
+
     private bool CanSend => !_sending && !string.IsNullOrWhiteSpace(_input);
 
     private void OnInput(ChangeEventArgs args) => _input = args.Value?.ToString() ?? string.Empty;

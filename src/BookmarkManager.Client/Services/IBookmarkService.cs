@@ -45,6 +45,7 @@ public interface IBookmarkService
 
     // ── Library AI Assistant ──────────────────────────────────────────────
     Task<LibraryChatResponseDto> LibraryChatAsync(LibraryChatRequestDto request, CancellationToken cancellationToken = default);
+    Task<LibraryEmbeddingDiagnosticDto> GetLibraryEmbeddingDiagnosticAsync(string? title, string? query, CancellationToken cancellationToken = default);
 
     // ── Anime Calendar ────────────────────────────────────────────────────
     Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default);

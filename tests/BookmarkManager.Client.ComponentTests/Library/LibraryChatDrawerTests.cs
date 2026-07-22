@@ -59,6 +59,26 @@ public sealed class LibraryChatDrawerTests
     }
 
     [Fact]
+    public async Task Drawer_DiagnosticsTab_ShowsEmbeddingCoverage()
+    {
+        var fake = new FakeBookmarkService
+        {
+            LibraryEmbeddingDiagnostic = new LibraryEmbeddingDiagnosticDto(
+                ModelReady: true, TotalCount: 100, EmbeddedCount: 95, EmbeddedPercent: 95.0)
+        };
+        using var context = NewContext(fake);
+
+        var drawer = context.Render<LibraryChatDrawer>(ps => ps.Add(p => p.Open, true));
+        await drawer.FindAll("[role=tab]")[1].ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+
+        drawer.WaitForAssertion(() =>
+        {
+            Assert.NotEmpty(drawer.FindAll(".lib-diag-body"));
+            Assert.Contains("95 / 100", drawer.Markup);
+        });
+    }
+
+    [Fact]
     public async Task Drawer_SendMessage_RendersUserBubbleAndAssistantReply()
     {
         var fake = new FakeBookmarkService

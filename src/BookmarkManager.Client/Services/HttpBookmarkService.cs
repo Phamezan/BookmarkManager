@@ -191,6 +191,16 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<LibraryChatResponseDto>(HttpMethod.Post, "api/library/chat", request, cancellationToken)
            ?? new LibraryChatResponseDto(string.Empty, []);
 
+    public async Task<LibraryEmbeddingDiagnosticDto> GetLibraryEmbeddingDiagnosticAsync(string? title, string? query, CancellationToken cancellationToken = default)
+    {
+        var q = new List<string>();
+        if (!string.IsNullOrWhiteSpace(title)) q.Add($"title={Uri.EscapeDataString(title)}");
+        if (!string.IsNullOrWhiteSpace(query)) q.Add($"query={Uri.EscapeDataString(query)}");
+        var url = q.Count > 0 ? $"api/library/diagnostics/embedding?{string.Join("&", q)}" : "api/library/diagnostics/embedding";
+        return await _apiClient.GetAsync<LibraryEmbeddingDiagnosticDto>(url, cancellationToken)
+               ?? new LibraryEmbeddingDiagnosticDto(false, 0, 0, 0);
+    }
+
     public async Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
     {
         if (folderIds.Count == 0) return new AnimeCalendarScheduleResponse();
