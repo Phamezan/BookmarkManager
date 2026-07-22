@@ -113,3 +113,34 @@ Settings are stored in `AiTaggingSettings` and managed via **Settings $\rightarr
 * **Force Full Resync**:
   `POST api/library/catalog/sync`
   Resets sequence continuation tokens and triggers ground-up re-crawl across all bulk providers.
+
+---
+
+## 6. Hybrid Retrieval (Dense Vector + FTS5/BM25, RRF-Fused)
+
+Pure dense retrieval blurs exact proper nouns (character/place names, exact titles) together with
+semantically-similar rows. `IHybridSearchService` (`Services/Search/`) fixes this by fusing two arms
+with **Reciprocal Rank Fusion**:
+
+* **Dense arm** — the existing `IVectorSearchService`, queried with a permissive floor so its
+  candidate pool isn't pre-truncated by `RagMinSimilarity`.
+* **Keyword arm** — `IKeywordSearchService` (`FtsKeywordSearchService`) against a SQLite FTS5 virtual
+  table (`LibraryCatalogSearch`) over Title/AlternateTitles/Genres/Synopsis, ranked by `bm25()`. The
+  raw query is tokenized and rebuilt as quoted, OR-ed phrase terms before it ever reaches FTS5 MATCH,
+  so punctuation and FTS5 keywords (`AND`/`OR`/`NEAR`/`" * : -`) can never cause a syntax error.
+
+Both arms pull `EmbeddingConstants.HybridCandidatePool` (60) candidates; each doc's fused score is
+`sum over arms of 1 / (RrfK + rank)` with `RrfK = 60`, rank 1-based, a doc absent from an arm
+contributing nothing for it. The top `k` by fused score is returned. A result's displayable `Score` is
+the dense-arm cosine when the doc was retrieved by the vector arm; for a keyword-only hit it's computed
+on demand from the doc's stored embedding (0 if it has none yet) — never a raw BM25 value, since BM25
+and cosine aren't on comparable scales.
+
+`LibraryCatalogSearch` is kept in sync with `LibraryCatalogEntries` by AFTER INSERT/UPDATE/DELETE SQL
+triggers created in the `AddLibraryCatalogSearchFts` migration (keyed by the catalog's Guid `Id`, not
+by matching SQLite's implicit integer `rowid` across the two tables — see the migration's comments for
+why). `LibraryRagService.ChatAsync` uses hybrid retrieval; `LibraryDiagnosticsController`'s pure-vector
+wide probe is unchanged, with hybrid results reported alongside it (`HybridMatches`) for comparison.
+`LibrarySearchService`'s catalog search is intentionally unchanged — its `LIKE`-gated candidate
+generation already guarantees exact-substring matches surface, so it doesn't have the failure mode
+hybrid retrieval exists to fix.

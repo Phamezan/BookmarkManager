@@ -15,7 +15,16 @@ namespace BookmarkManager.Api.Services.Library;
 /// view instead pages through <see cref="LibraryCatalogEntry"/> - a local mirror kept fresh by
 /// <see cref="LibraryCatalogSyncBackgroundService"/> - so it can offer thousands of titles without a
 /// live fan-out call on every page load; live search additionally folds in local catalog matches for
-/// better recall alongside the freshest live results.</summary>
+/// better recall alongside the freshest live results.
+///
+/// Deliberately NOT switched to <see cref="Search.IHybridSearchService"/> (feature/hybrid-search): unlike
+/// <c>LibraryRagService</c>, this service never does a full-corpus dense search in the first place - the
+/// SQL <c>LIKE</c> candidate generation in <see cref="SearchCatalogAsync"/> already guarantees an exact
+/// proper-noun substring match surfaces (the failure mode hybrid retrieval exists to fix), and
+/// <see cref="RankHybrid"/>/<see cref="HybridScore"/> already blend that keyword signal with cosine
+/// similarity over just those LIKE-filtered candidates. Routing this through RRF fusion over the whole
+/// catalog would be a bigger behavior change (different candidate set, different scoring) for a path that
+/// doesn't have the problem the task was written to solve.</summary>
 public sealed class LibrarySearchService(
     LibraryProviderRegistry registry,
     IOptions<LibraryProviderOptions> options,

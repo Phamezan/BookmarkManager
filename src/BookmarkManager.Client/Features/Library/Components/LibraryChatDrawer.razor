@@ -168,13 +168,29 @@
                 @if (_diag?.QueryMatches is { Count: > 0 } matches)
                 {
                     <div class="lib-diag-matches">
-                        <div class="lib-diag-card-title">Top matches for the query</div>
+                        <div class="lib-diag-card-title">Top matches for the query (pure vector)</div>
                         @foreach (var m in matches)
                         {
                             <div class="lib-diag-match-row">
                                 <span class="lib-diag-match-score">@((m.Score * 100).ToString("0"))%</span>
                                 <span class="lib-diag-match-title">@m.Title</span>
                                 <span class="lib-diag-match-type">@m.MediaType</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_diag?.HybridMatches is { Count: > 0 } hybridMatches)
+                {
+                    <div class="lib-diag-matches">
+                        <div class="lib-diag-card-title">Top matches for the query (hybrid: vector + keyword, RRF-fused)</div>
+                        @foreach (var m in hybridMatches)
+                        {
+                            <div class="lib-diag-match-row">
+                                <span class="lib-diag-match-score">@((m.Score * 100).ToString("0"))%</span>
+                                <span class="lib-diag-match-title">@m.Title</span>
+                                <span class="lib-diag-match-type">@m.MediaType</span>
+                                <span class="lib-diag-match-rrf" title="Fused RRF score">rrf @m.RrfScore.ToString("0.###")</span>
                             </div>
                         }
                     </div>

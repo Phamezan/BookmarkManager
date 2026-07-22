@@ -13,7 +13,10 @@ public sealed record LibraryEmbeddingDiagnosticDto(
     LibraryTitleQueryRankDto? TitleRank = null,
     // Embedded rows whose stored hash still matches the current embed-text format (Title + AltTitles +
     // Genres + Synopsis). EmbeddedCount - UpToDateCount = rows the backfill worker will re-embed.
-    int UpToDateCount = 0);
+    int UpToDateCount = 0,
+    // Hybrid (dense vector + FTS5/BM25 keyword, RRF-fused) results for the same query, shown alongside
+    // QueryMatches (pure-vector) so the diagnostics pane can compare the two retrieval strategies.
+    IReadOnlyList<LibraryHybridMatchDto>? HybridMatches = null);
 
 /// <summary>Lookup result for the requested <c>title</c>: whether a catalog entry whose Title or
 /// AlternateTitles contains it (case-insensitive) exists, and whether that entry is embedded.
@@ -44,3 +47,13 @@ public sealed record LibraryTitleQueryRankDto(
     float? Score,
     int? Rank,
     bool AboveFloor);
+
+/// <summary>One hybrid (RRF-fused dense vector + FTS5/BM25 keyword) match for the requested
+/// <c>query</c>. <c>Score</c> is a displayable cosine similarity (see <c>IHybridSearchService</c> for
+/// how it's derived when the match came only from the keyword arm); <c>RrfScore</c> is the raw fused
+/// rank score used to order results and is not on a [0,1] scale.</summary>
+public sealed record LibraryHybridMatchDto(
+    string Title,
+    LibraryMediaType MediaType,
+    float Score,
+    double RrfScore);

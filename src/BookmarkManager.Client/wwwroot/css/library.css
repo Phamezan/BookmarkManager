@@ -2059,6 +2059,13 @@
     text-transform: capitalize;
 }
 
+.lib-diag-match-rrf {
+    min-width: 52px;
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--bm-text-muted);
+}
+
 .lib-chat-log {
     flex: 1 1 auto;
     overflow-y: auto;
