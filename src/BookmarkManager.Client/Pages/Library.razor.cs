@@ -293,23 +293,36 @@ public partial class Library : IAsyncDisposable
 
         _browseRowsKey = key;
         _browseRows = items
-            .Chunk(Math.Max(1, _browseColumns))
+            .Chunk(Math.Clamp(_browseColumns, 4, 12))
             .Select(chunk => chunk.ToArray())
             .ToList();
         _scrubNeedsReset = true;
     }
 
     /// <summary>
-    /// Append-only for LoadMore. Never mutates an existing row array (that remounts
-    /// visible cards and feels like a scroll hitch). Incomplete last rows stay short.
+    /// Append for LoadMore. Fills a short trailing row first so the grid doesn't leave
+    /// empty slots (e.g. 48 items / 10 cols → 8-card last row) when more data arrives.
     /// </summary>
     private void AppendBrowseItems(IReadOnlyList<LibraryItem> newItems)
     {
         if (newItems.Count == 0)
             return;
 
-        var cols = Math.Max(1, _browseColumns);
-        foreach (var chunk in newItems.Chunk(cols))
+        var cols = Math.Clamp(_browseColumns, 4, 12);
+        var queue = new List<LibraryItem>(newItems);
+
+        if (_browseRows.Count > 0)
+        {
+            var last = _browseRows[^1];
+            if (last.Length > 0 && last.Length < cols)
+            {
+                var take = Math.Min(cols - last.Length, queue.Count);
+                _browseRows[^1] = last.Concat(queue.Take(take)).ToArray();
+                queue.RemoveRange(0, take);
+            }
+        }
+
+        foreach (var chunk in queue.Chunk(cols))
             _browseRows.Add(chunk.ToArray());
 
         _browseRowsKey = BuildBrowseRowsKey(_browseRows.Sum(r => r.Length));
@@ -334,16 +347,23 @@ public partial class Library : IAsyncDisposable
             _savedForLaterItems.Count);
     }
 
-    /// <summary>Stable per first card — length omitted so rows aren't remounted.</summary>
-    private static string BrowseRowKey(LibraryItem[] row) =>
+    /// <summary>Include columns + length so column-measure remounts rows (first-card-only keys reuse stale grids).</summary>
+    private string BrowseRowKey(LibraryItem[] row) =>
         row.Length == 0
-            ? "empty"
-            : $"{row[0].Provider}:{row[0].ProviderId}";
+            ? $"empty:{_browseColumns}"
+            : $"{_browseColumns}:{row.Length}:{row[0].Provider}:{row[0].ProviderId}";
 
-    private IReadOnlyList<LibraryItem> FilteredItems =>
-        _myBookmarksOnly
-            ? SortByCatchUpGap(FilterItems()).ToList()
-            : SortItems(FilterItems()).ToList();
+    private IReadOnlyList<LibraryItem> FilteredItems
+    {
+        get
+        {
+            var items = _myBookmarksOnly
+                ? SortByCatchUpGap(FilterItems())
+                : SortItems(FilterItems());
+
+            return items.DistinctBy(item => (item.Provider, item.ProviderId, item.Title, item.Type)).ToList();
+        }
+    }
 
     private IEnumerable<LibraryItem> FilterItems()
     {
@@ -526,6 +546,8 @@ public partial class Library : IAsyncDisposable
                 _browseRowsKey = null;
                 SyncBrowseRows();
                 StateHasChanged();
+                await RemeasureBrowseColumnsAsync();
+                await SyncBrowseInfiniteEnabledAsync();
             }
         }
     }
@@ -565,6 +587,8 @@ public partial class Library : IAsyncDisposable
                 _browseRowsKey = null;
                 SyncBrowseRows();
                 StateHasChanged();
+                await RemeasureBrowseColumnsAsync();
+                await SyncBrowseInfiniteEnabledAsync();
             }
         }
     }
@@ -655,7 +679,11 @@ public partial class Library : IAsyncDisposable
     private async Task LoadMoreAsync()
     {
         if (_loadingMore || !CanLoadMore)
+        {
+            // JS disables the gate before invoke — re-assert so search no-ops don't brick home scroll.
+            await SyncBrowseInfiniteEnabledAsync();
             return;
+        }
 
         // Join the search CTS so a search/filter change started mid-flight cancels this append
         // instead of letting stale trending rows land under the new UI state.
@@ -708,7 +736,7 @@ public partial class Library : IAsyncDisposable
                 }
             }
 
-            _infiniteNeedsSync = true;
+            await SyncBrowseInfiniteEnabledAsync();
             StateHasChanged();
         }
     }
@@ -721,6 +749,9 @@ public partial class Library : IAsyncDisposable
     {
         try
         {
+            if (columns < 1)
+                return;
+
             var busy = false;
             try
             {
@@ -734,7 +765,7 @@ public partial class Library : IAsyncDisposable
             if (busy)
                 return;
 
-            columns = Math.Clamp(columns, 1, 12);
+            columns = Math.Clamp(columns, 4, 12);
             if (columns == _browseColumns)
                 return;
 
@@ -746,6 +777,40 @@ public partial class Library : IAsyncDisposable
         catch
         {
             // Safe fallback during unmount
+        }
+    }
+
+    /// <summary>
+    /// Re-read container width after search/home remount. ResizeObserver alone can miss
+    /// the restore when an empty/loading swap collapsed the measure target earlier.
+    /// </summary>
+    private async Task RemeasureBrowseColumnsAsync()
+    {
+        if (!_browseInteropReady)
+            return;
+
+        try
+        {
+            var rawCols = await JSRuntime.InvokeAsync<int>(
+                "BookmarkGridInterop.getColumnCount",
+                _browseContainerRef,
+                BrowseMinCardWidthPx,
+                BrowseGapPx);
+            if (rawCols < 1)
+                return;
+
+            var cols = Math.Clamp(rawCols, 4, 12);
+            if (cols == _browseColumns)
+                return;
+
+            _browseColumns = cols;
+            _browseRowsKey = null;
+            SyncBrowseRows();
+            StateHasChanged();
+        }
+        catch
+        {
+            // Safe fallback during unmount / unset refs
         }
     }
 
@@ -761,7 +826,10 @@ public partial class Library : IAsyncDisposable
                     _browseContainerRef,
                     BrowseMinCardWidthPx,
                     BrowseGapPx);
-                var cols = Math.Clamp(rawCols, 1, 12);
+                if (rawCols < 1)
+                    return;
+
+                var cols = Math.Clamp(rawCols, 4, 12);
                 if (cols != _browseColumns)
                 {
                     _browseColumns = cols;

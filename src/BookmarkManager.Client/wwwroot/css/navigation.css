@@ -102,26 +102,27 @@
     flex-shrink: 0;
 }
 
+.status-dot.is-running,
 .status-dot.is-online {
-    background: var(--bm-success);
-    box-shadow: 0 0 0 2px var(--bm-success-soft), 0 0 8px var(--bm-success);
-    animation: pulseDot 2.4s var(--bm-ease) infinite;
+    background: #22c55e !important;
+    box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.3), 0 0 10px #22c55e !important;
+    animation: pulseDot 1.5s ease-in-out infinite;
 }
 
+.status-dot.is-idle,
 .status-dot.is-offline {
-    background: var(--bm-warning);
-    box-shadow: 0 0 0 2px var(--bm-warning-soft);
+    background: rgba(255, 255, 255, 0.25) !important;
+    box-shadow: none !important;
 }
 
 @keyframes pulseDot {
-
-    0%,
-    100% {
+    0%, 100% {
         opacity: 1;
+        transform: scale(1);
     }
-
     50% {
-        opacity: 0.5;
+        opacity: 0.4;
+        transform: scale(0.85);
     }
 }
 

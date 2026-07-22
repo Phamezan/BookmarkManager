@@ -935,6 +935,10 @@
     [data-theme="anime"] .lib-grid .lib-card:nth-child(10) { animation-delay: 1.68s; }
     [data-theme="anime"] .lib-grid .lib-card:nth-child(11) { animation-delay: 1.75s; }
     [data-theme="anime"] .lib-grid .lib-card:nth-child(12) { animation-delay: 1.82s; }
+    /* Browse uses GSAP remount entrance + scrub; CSS book-in fights Virtualize recycle. */
+    [data-theme="anime"] .lib-browse .lib-card {
+        animation: none;
+    }
     [data-theme="anime"] .lib-recommends-grid .lib-card:nth-child(1) { animation-delay: 0.5s; }
     [data-theme="anime"] .lib-recommends-grid .lib-card:nth-child(2) { animation-delay: 0.56s; }
     [data-theme="anime"] .lib-recommends-grid .lib-card:nth-child(3) { animation-delay: 0.62s; }
@@ -1000,3 +1004,29 @@
     7% { opacity: 0; transform: translate(-52vw, 58vh) rotate(-30deg); }
     100% { opacity: 0; transform: translate(-52vw, 58vh) rotate(-30deg); }
 }
+
+/* Library Assistant — moonlit glass + gold spine accents */
+[data-theme="anime"] .library-page .lib-chat-fab {
+    font-family: 'Outfit', 'Inter', sans-serif;
+}
+
+[data-theme="anime"] .library-page .lib-chat-drawer {
+    background: linear-gradient(165deg, rgba(16, 23, 58, 0.92), rgba(10, 14, 32, 0.94));
+    border-color: rgba(224, 190, 107, 0.28);
+}
+
+[data-theme="anime"] .library-page .lib-chat-title {
+    font-family: 'Outfit', 'Inter', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+[data-theme="anime"] .library-page .lib-chat-sub {
+    letter-spacing: 0.02em;
+}
+
+[data-theme="anime"] .library-page .lib-chat-tab-active {
+    color: #e0be6b;
+    border-bottom-color: #e0be6b;
+}
+

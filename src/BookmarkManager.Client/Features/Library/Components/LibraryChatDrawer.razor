@@ -5,20 +5,45 @@
 @if (!Open)
 {
     <button type="button" class="lib-chat-fab" @onclick="ToggleOpen"
-            aria-label="Open Library AI assistant" title="Ask the Library AI assistant">
-        <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Medium" />
+            aria-label="Open Library Assistant" title="Ask the Library Assistant">
+        <span class="lib-chat-fab-mark" aria-hidden="true">
+            <svg class="lib-chat-fab-book" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4.5 5.25C4.5 4.28 5.28 3.5 6.25 3.5H11v14.5H6.4c-1.05 0-1.9-.85-1.9-1.9V5.25Z"
+                      fill="currentColor" opacity="0.92"/>
+                <path d="M19.5 5.25C19.5 4.28 18.72 3.5 17.75 3.5H13v14.5h4.6c1.05 0 1.9-.85 1.9-1.9V5.25Z"
+                      fill="currentColor" opacity="0.72"/>
+                <path d="M12 3.5v14.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/>
+                <circle cx="17.2" cy="7.2" r="1.15" fill="currentColor" opacity="0.95"/>
+            </svg>
+        </span>
+        <span class="lib-chat-fab-copy">
+            <span class="lib-chat-fab-kicker">Library</span>
+            <span class="lib-chat-fab-name">Assistant</span>
+        </span>
     </button>
 }
 
 @if (Open)
 {
-    <aside class="lib-chat-drawer" role="dialog" aria-label="Library AI assistant" aria-modal="false">
+    <aside class="lib-chat-drawer" role="dialog" aria-label="Library Assistant" aria-modal="false">
         <header class="lib-chat-header">
             <div class="lib-chat-heading">
-                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" Class="lib-chat-spark" />
-                <span class="lib-chat-title">AI Assistant</span>
+                <span class="lib-chat-mark" aria-hidden="true">
+                    <svg class="lib-chat-mark-book" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4.5 5.25C4.5 4.28 5.28 3.5 6.25 3.5H11v14.5H6.4c-1.05 0-1.9-.85-1.9-1.9V5.25Z"
+                              fill="currentColor" opacity="0.95"/>
+                        <path d="M19.5 5.25C19.5 4.28 18.72 3.5 17.75 3.5H13v14.5h4.6c1.05 0 1.9-.85 1.9-1.9V5.25Z"
+                              fill="currentColor" opacity="0.75"/>
+                        <path d="M12 3.5v14.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/>
+                        <circle cx="17.2" cy="7.2" r="1.15" fill="currentColor"/>
+                    </svg>
+                </span>
+                <div class="lib-chat-heading-text">
+                    <span class="lib-chat-title">Library Assistant</span>
+                    <span class="lib-chat-sub">Catalog-grounded recommendations</span>
+                </div>
             </div>
-            <button type="button" class="lib-chat-close" @onclick="CloseAsync" aria-label="Close assistant">
+            <button type="button" class="lib-chat-close" @onclick="CloseAsync" aria-label="Close Library Assistant">
                 <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
             </button>
         </header>
@@ -26,7 +51,7 @@
         <div class="lib-chat-tabs" role="tablist">
             <button type="button" role="tab" aria-selected="@(_view == DrawerView.Chat)"
                     class="@TabClass(DrawerView.Chat)" @onclick="() => _view = DrawerView.Chat">
-                <MudIcon Icon="@Icons.Material.Outlined.Chat" Size="Size.Small" /> Chat
+                <MudIcon Icon="@Icons.Material.Outlined.Forum" Size="Size.Small" /> Chat
             </button>
             <button type="button" role="tab" aria-selected="@(_view == DrawerView.Diagnostics)"
                     class="@TabClass(DrawerView.Diagnostics)" @onclick="OpenDiagnosticsAsync">
@@ -40,9 +65,17 @@
                 @if (_messages.Count == 0)
                 {
                     <div class="lib-chat-empty">
-                        <MudIcon Icon="@Icons.Material.Outlined.Chat" Class="lib-chat-empty-icon" />
-                        <p class="lib-chat-empty-title">Ask about your library</p>
-                        <p class="lib-chat-empty-sub">Try "recommend me a completed fantasy manhwa" or "what's like Solo Leveling?"</p>
+                        <span class="lib-chat-empty-mark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M4.5 5.25C4.5 4.28 5.28 3.5 6.25 3.5H11v14.5H6.4c-1.05 0-1.9-.85-1.9-1.9V5.25Z"
+                                      fill="currentColor" opacity="0.9"/>
+                                <path d="M19.5 5.25C19.5 4.28 18.72 3.5 17.75 3.5H13v14.5h4.6c1.05 0 1.9-.85 1.9-1.9V5.25Z"
+                                      fill="currentColor" opacity="0.7"/>
+                                <path d="M12 3.5v14.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/>
+                            </svg>
+                        </span>
+                        <p class="lib-chat-empty-title">Ask the Library Assistant</p>
+                        <p class="lib-chat-empty-sub">Try “completed fantasy manhwa” or “something like Solo Leveling.”</p>
                     </div>
                 }
                 else
@@ -65,16 +98,16 @@
 
             <footer class="lib-chat-input">
                 <textarea class="lib-chat-textarea"
-                          placeholder="Message the assistant…"
+                          placeholder="Ask the Library Assistant…"
                           value="@_input"
                           @oninput="OnInput"
                           @onkeydown="OnKeyDown"
                           disabled="@_sending"
                           rows="1"
-                          aria-label="Message the assistant"></textarea>
+                          aria-label="Message the Library Assistant"></textarea>
                 <button type="button" class="lib-chat-send" @onclick="SendAsync"
                         disabled="@(!CanSend)" aria-label="Send message">
-                    <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" />
+                    <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" />
                 </button>
             </footer>
         }

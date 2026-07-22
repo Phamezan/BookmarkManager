@@ -5,37 +5,35 @@
 
 /* 1. Default Premium Dark Theme */
 :root {
-    /* Surface stack — deep, layered, never flat black */
-    --bm-bg: #08090D;
-    --bm-bg-elevated: #0F1015;
-    --bm-surface: rgba(22, 24, 32, 0.55);
-    --bm-surface-raised: rgba(30, 33, 44, 0.7);
-    --bm-surface-muted: rgba(22, 24, 32, 0.3);
+    /* Surface stack — rich dark purple / deep midnight indigo container surfaces */
+    --bm-bg: #06070B;
+    --bm-bg-elevated: #0B0C14;
+    --bm-surface: rgba(20, 19, 36, 0.85);
+    --bm-surface-raised: rgba(30, 28, 52, 0.9);
+    --bm-surface-muted: rgba(16, 15, 28, 0.6);
     --bm-panel: var(--bm-surface);
     --bm-panel-raised: var(--bm-surface-raised);
     --bm-panel-muted: var(--bm-surface-muted);
-    --bm-popover-bg: #14161E;
+    --bm-popover-bg: #141426;
 
-    /* Hairline borders */
-    --bm-border: rgba(255, 255, 255, 0.06);
-    --bm-border-strong: rgba(255, 255, 255, 0.11);
-    --bm-border-accent: rgba(77, 238, 255, 0.35);
+    /* Hairline borders — purple/indigo accent */
+    --bm-border: rgba(129, 140, 248, 0.18);
+    --bm-border-strong: rgba(129, 140, 248, 0.3);
+    --bm-border-accent: rgba(129, 140, 248, 0.45);
 
     /* Typography */
     --bm-text: #F4F4F6;
     --bm-text-secondary: #A8AEC0;
     --bm-text-muted: #6B6E7C;
 
-    /* Accent — cyan (was indigo #818CF8) */
+    /* Accent — indigo-purple */
     --bm-accent: #818CF8;
-    --bm-accent-hover: #818CF8;
-    --bm-accent-soft: rgba(77, 238, 255, 0.12);
-    --bm-accent-glow: rgba(77, 238, 255, 0.25);
-    --bm-appbar-bg: rgba(8, 9, 13, 0.6);
+    --bm-accent-hover: #93C5FD;
+    --bm-accent-soft: rgba(129, 140, 248, 0.14);
+    --bm-accent-glow: rgba(129, 140, 248, 0.3);
+    --bm-appbar-bg: rgba(13, 14, 24, 0.75);
 
-    /* Semantic — one hue per bookmark status/affordance. Each theme below
-       redefines these to fit its own identity; meaning (success/watching/
-       warning/danger/favorite) stays constant, hue does not. */
+    /* Semantic status colors */
     --bm-warning: #FBBF24;
     --bm-warning-soft: rgba(251, 191, 36, 0.12);
     --bm-danger: #F87171;
@@ -89,31 +87,28 @@
     --mud-palette-text-primary: var(--bm-text) !important;
     --mud-palette-text-secondary: var(--bm-text-secondary) !important;
     --mud-palette-primary: var(--bm-accent) !important;
-    /* MudBlazor uses primary-hover as a BACKGROUND fill for selected/hover
-       states (treeview rows, chips, etc.). It must be a faint overlay, NOT
-       a solid bright color, or every selected item glows neon. */
     --mud-palette-primary-hover: var(--bm-accent-soft) !important;
     --mud-palette-primary-soft: var(--bm-accent-soft) !important;
 }
 
 /* 2. Catppuccin Mocha Theme */
 [data-theme="catppuccin-mocha"] {
-    --bm-bg: #1e1e2e;
-    --bm-bg-elevated: #181825;
-    --bm-surface: rgba(49, 50, 68, 0.55);
-    --bm-surface-raised: rgba(69, 71, 90, 0.7);
-    --bm-surface-muted: rgba(49, 50, 68, 0.3);
-    --bm-border: rgba(255, 255, 255, 0.06);
-    --bm-border-strong: rgba(255, 255, 255, 0.12);
-    --bm-border-accent: rgba(203, 166, 247, 0.35);
+    --bm-bg: #181825;
+    --bm-bg-elevated: #11111b;
+    --bm-surface: rgba(40, 40, 62, 0.82);
+    --bm-surface-raised: rgba(55, 56, 78, 0.9);
+    --bm-surface-muted: rgba(30, 30, 48, 0.5);
+    --bm-border: rgba(203, 166, 247, 0.18);
+    --bm-border-strong: rgba(203, 166, 247, 0.3);
+    --bm-border-accent: rgba(203, 166, 247, 0.45);
     --bm-text: #cdd6f4;
     --bm-text-secondary: #bac2de;
     --bm-text-muted: #6c7086;
     --bm-accent: #cba6f7;
     --bm-accent-hover: #f5c2e7;
-    --bm-accent-soft: rgba(203, 166, 247, 0.12);
-    --bm-accent-glow: rgba(203, 166, 247, 0.25);
-    --bm-appbar-bg: rgba(30, 30, 46, 0.6);
+    --bm-accent-soft: rgba(203, 166, 247, 0.14);
+    --bm-accent-glow: rgba(203, 166, 247, 0.3);
+    --bm-appbar-bg: rgba(24, 24, 37, 0.75);
     --bm-warning: #f9e2af;
     --bm-warning-soft: rgba(249, 226, 175, 0.12);
     --bm-danger: #f38ba8;
@@ -128,22 +123,22 @@
 
 /* 3. Sakura Sunset Theme */
 [data-theme="sakura"] {
-    --bm-bg: #1a1016;
-    --bm-bg-elevated: #241520;
-    --bm-surface: rgba(58, 28, 48, 0.55);
-    --bm-surface-raised: rgba(88, 38, 70, 0.7);
-    --bm-surface-muted: rgba(58, 28, 48, 0.3);
-    --bm-border: rgba(255, 255, 255, 0.06);
-    --bm-border-strong: rgba(255, 255, 255, 0.12);
-    --bm-border-accent: rgba(255, 121, 198, 0.35);
+    --bm-bg: #180D14;
+    --bm-bg-elevated: #20101B;
+    --bm-surface: rgba(48, 22, 40, 0.82);
+    --bm-surface-raised: rgba(72, 30, 58, 0.9);
+    --bm-surface-muted: rgba(38, 16, 32, 0.5);
+    --bm-border: rgba(255, 121, 198, 0.18);
+    --bm-border-strong: rgba(255, 121, 198, 0.3);
+    --bm-border-accent: rgba(255, 121, 198, 0.45);
     --bm-text: #fff3f8;
     --bm-text-secondary: #f5b8d1;
     --bm-text-muted: #9e6b82;
     --bm-accent: #ff79c6;
     --bm-accent-hover: #ff92df;
-    --bm-accent-soft: rgba(255, 121, 198, 0.12);
-    --bm-accent-glow: rgba(255, 121, 198, 0.25);
-    --bm-appbar-bg: rgba(26, 16, 22, 0.6);
+    --bm-accent-soft: rgba(255, 121, 198, 0.14);
+    --bm-accent-glow: rgba(255, 121, 198, 0.3);
+    --bm-appbar-bg: rgba(24, 13, 20, 0.75);
     --bm-warning: #f1fa8c;
     --bm-warning-soft: rgba(241, 250, 140, 0.12);
     --bm-danger: #ff5555;
@@ -158,22 +153,22 @@
 
 /* 4. Grand Line Gold Theme */
 [data-theme="grand-line"] {
-    --bm-bg: #0D0E12;
-    --bm-bg-elevated: #15171F;
-    --bm-surface: rgba(26, 30, 43, 0.65);
-    --bm-surface-raised: rgba(38, 44, 62, 0.8);
-    --bm-surface-muted: rgba(26, 30, 43, 0.45);
-    --bm-border: rgba(244, 208, 104, 0.12);
-    --bm-border-strong: rgba(244, 208, 104, 0.22);
-    --bm-border-accent: rgba(217, 56, 58, 0.35);
+    --bm-bg: #0B0C10;
+    --bm-bg-elevated: #11131A;
+    --bm-surface: rgba(22, 25, 38, 0.82);
+    --bm-surface-raised: rgba(32, 37, 54, 0.9);
+    --bm-surface-muted: rgba(18, 20, 30, 0.5);
+    --bm-border: rgba(244, 208, 104, 0.18);
+    --bm-border-strong: rgba(244, 208, 104, 0.3);
+    --bm-border-accent: rgba(217, 56, 58, 0.45);
     --bm-text: #F4ECD8;
     --bm-text-secondary: #CBB998;
     --bm-text-muted: #7E725C;
     --bm-accent: #F4D068;
     --bm-accent-hover: #FFDF85;
-    --bm-accent-soft: rgba(244, 208, 104, 0.12);
-    --bm-accent-glow: rgba(244, 208, 104, 0.25);
-    --bm-appbar-bg: rgba(13, 14, 18, 0.7);
+    --bm-accent-soft: rgba(244, 208, 104, 0.14);
+    --bm-accent-glow: rgba(244, 208, 104, 0.3);
+    --bm-appbar-bg: rgba(11, 12, 16, 0.75);
     --bm-warning: #F59E0B;
     --bm-warning-soft: rgba(245, 158, 11, 0.12);
     --bm-danger: #D9383A;
@@ -186,23 +181,23 @@
     --bm-favorite-soft: rgba(255, 140, 105, 0.12);
 }
 
-/* 5. Anime Worlds Theme (design-mockups port — per-page artwork skins) */
+/* 5. Anime Worlds Theme */
 [data-theme="anime"] {
-    --bm-bg: #07080c;
-    --bm-bg-elevated: #0c0e14;
-    --bm-surface: rgba(16, 18, 24, 0.62);
-    --bm-surface-raised: rgba(22, 25, 33, 0.78);
-    --bm-surface-muted: rgba(16, 18, 24, 0.34);
-    --bm-popover-bg: #101218;
-    --bm-border: rgba(230, 226, 216, 0.08);
-    --bm-border-strong: rgba(230, 226, 216, 0.16);
-    --bm-border-accent: rgba(216, 31, 44, 0.4);
+    --bm-bg: #06070B;
+    --bm-bg-elevated: #0B0C14;
+    --bm-surface: rgba(20, 19, 36, 0.85);
+    --bm-surface-raised: rgba(30, 28, 52, 0.9);
+    --bm-surface-muted: rgba(16, 15, 28, 0.6);
+    --bm-popover-bg: #141426;
+    --bm-border: rgba(147, 112, 219, 0.18);
+    --bm-border-strong: rgba(147, 112, 219, 0.32);
+    --bm-border-accent: rgba(216, 31, 44, 0.45);
     --bm-text: #e6e2d8;
     --bm-text-secondary: #a8a49a;
     --bm-text-muted: #6d7280;
     --bm-accent: #d81f2c;
     --bm-accent-hover: #ff5b66;
-    --bm-accent-soft: rgba(216, 31, 44, 0.13);
-    --bm-accent-glow: rgba(216, 31, 44, 0.3);
-    --bm-appbar-bg: rgba(7, 8, 12, 0.66);
+    --bm-accent-soft: rgba(216, 31, 44, 0.15);
+    --bm-accent-glow: rgba(216, 31, 44, 0.35);
+    --bm-appbar-bg: rgba(13, 14, 24, 0.75);
 }

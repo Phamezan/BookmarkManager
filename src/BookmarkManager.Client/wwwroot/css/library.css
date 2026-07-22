@@ -6,7 +6,7 @@
 
 .library-page {
     position: relative;
-    max-width: 1400px;
+    max-width: 1800px;
     margin: 0 auto;
     padding: var(--bm-space-6) var(--bm-space-6) var(--bm-space-10);
     display: flex;
@@ -947,12 +947,30 @@
 
 .lib-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(152px, 1fr));
-    gap: var(--bm-space-6) var(--bm-space-5);
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--bm-space-5) var(--bm-space-4);
+}
+
+.lib-grid.lib-search-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--bm-space-5) var(--bm-space-4);
+    width: 100%;
+    margin-bottom: var(--bm-space-8);
+}
+
+.lib-search-grid .lib-card {
+    opacity: 1 !important;
+    transform: none !important;
+    max-width: 164px;
+    width: 100%;
+    justify-self: center;
 }
 
 /* Virtualize row: fixed stride must match BrowseRowItemSizePx (340) in Library.razor.cs */
 .lib-browse-virtual {
+    width: 100%;
+    min-width: 0;
     min-height: 0;
 }
 
@@ -1794,9 +1812,9 @@
     }
 }
 
-/* ── AI Assistant: controls-bar toggle + glassmorphism chat drawer ─────────── */
+/* ── Library Assistant: FAB + glass chat drawer ────────────────────────────── */
 
-/* Floating chat launcher (bottom-right, standard chat-widget FAB). */
+/* Pill launcher — open-book mark + label, bottom-left over the shelf. */
 .lib-chat-fab {
     position: fixed;
     z-index: 1400;
@@ -1804,22 +1822,69 @@
     bottom: 24px;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border: 1px solid var(--bm-border-accent);
-    border-radius: 50%;
-    background: linear-gradient(145deg, var(--bm-accent), color-mix(in srgb, var(--bm-accent) 70%, #000));
-    color: #fff;
+    gap: 10px;
+    min-height: 52px;
+    padding: 8px 16px 8px 10px;
+    border: 1px solid color-mix(in srgb, var(--bm-accent) 55%, rgba(255, 255, 255, 0.18));
+    border-radius: 999px;
+    background:
+        linear-gradient(145deg,
+            color-mix(in srgb, var(--bm-accent) 88%, #fff 8%),
+            color-mix(in srgb, var(--bm-accent) 62%, #1a1408));
+    color: #17110a;
     cursor: pointer;
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    box-shadow:
+        0 12px 28px rgba(0, 0, 0, 0.42),
+        inset 0 1px 0 rgba(255, 255, 255, 0.35),
+        inset 3px 0 0 color-mix(in srgb, #17110a 28%, transparent);
     transition: transform var(--bm-fast) var(--bm-ease), box-shadow var(--bm-fast) var(--bm-ease);
     animation: lib-chat-fade var(--bm-fast) var(--bm-ease);
 }
 
+.lib-chat-fab-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    background: rgba(23, 17, 10, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(23, 17, 10, 0.12);
+}
+
+.lib-chat-fab-book {
+    width: 20px;
+    height: 20px;
+}
+
+.lib-chat-fab-copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.1;
+    text-align: left;
+}
+
+.lib-chat-fab-kicker {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.72;
+}
+
+.lib-chat-fab-name {
+    font-size: 0.92rem;
+    font-weight: 750;
+    letter-spacing: 0.01em;
+}
+
 .lib-chat-fab:hover {
-    transform: translateY(-2px) scale(1.04);
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+    transform: translateY(-2px);
+    box-shadow:
+        0 16px 34px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        inset 3px 0 0 color-mix(in srgb, #17110a 32%, transparent);
 }
 
 .lib-chat-fab:focus-visible {
@@ -1838,12 +1903,15 @@
     height: min(620px, calc(100vh - 120px));
     display: flex;
     flex-direction: column;
-    border: 1px solid rgba(255, 255, 255, 0.14);
+    border: 1px solid color-mix(in srgb, var(--bm-accent) 28%, rgba(255, 255, 255, 0.12));
     border-radius: 20px;
     background: color-mix(in srgb, var(--bm-surface) 96%, transparent);
     backdrop-filter: blur(22px) saturate(160%);
     -webkit-backdrop-filter: blur(22px) saturate(160%);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    box-shadow:
+        0 24px 60px rgba(0, 0, 0, 0.5),
+        inset 0 1px 0 rgba(255, 255, 255, 0.12),
+        inset 3px 0 0 color-mix(in srgb, var(--bm-accent) 45%, transparent);
     overflow: hidden;
     animation: lib-chat-slide var(--bm-fast) var(--bm-ease);
 }
@@ -1862,24 +1930,51 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 18px;
+    padding: 14px 16px 12px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .lib-chat-heading {
     display: inline-flex;
     align-items: center;
-    gap: var(--bm-space-2);
+    gap: 10px;
+    min-width: 0;
 }
 
-.lib-chat-spark {
+.lib-chat-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--bm-accent) 18%, transparent);
     color: var(--bm-accent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bm-accent) 35%, transparent);
+}
+
+.lib-chat-mark-book {
+    width: 20px;
+    height: 20px;
+}
+
+.lib-chat-heading-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
 }
 
 .lib-chat-title {
     font-weight: 700;
     font-size: 0.98rem;
     color: var(--bm-text);
+}
+
+.lib-chat-sub {
+    font-size: 0.72rem;
+    color: var(--bm-text-muted);
 }
 
 .lib-chat-close {
@@ -2076,10 +2171,33 @@
 }
 
 .lib-chat-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     margin: auto;
+    padding: 28px 20px;
     text-align: center;
     color: var(--bm-text-muted);
-    padding: 24px;
+}
+
+.lib-chat-empty-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    margin-bottom: 4px;
+    border-radius: 16px;
+    color: var(--bm-accent);
+    background: color-mix(in srgb, var(--bm-accent) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bm-accent) 30%, transparent);
+}
+
+.lib-chat-empty-mark svg {
+    width: 28px;
+    height: 28px;
 }
 
 .lib-chat-empty-icon {
@@ -2089,14 +2207,18 @@
 }
 
 .lib-chat-empty-title {
-    margin: 10px 0 4px;
-    font-weight: 600;
-    color: var(--bm-text-secondary);
+    margin: 0;
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--bm-text);
 }
 
 .lib-chat-empty-sub {
     margin: 0;
-    font-size: 0.82rem;
+    max-width: 28ch;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    color: var(--bm-text-muted);
 }
 
 .lib-chat-bubble {
@@ -2250,12 +2372,36 @@
     border: none;
     border-radius: 50%;
     background: var(--bm-accent);
-    color: #fff;
+    color: #17110a;
     cursor: pointer;
-    transition: opacity var(--bm-fast) var(--bm-ease);
+    transition: opacity var(--bm-fast) var(--bm-ease), transform var(--bm-fast) var(--bm-ease);
+}
+
+.lib-chat-send:hover:not(:disabled) {
+    transform: translateY(-1px);
 }
 
 .lib-chat-send:disabled {
     opacity: 0.45;
     cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+    .lib-chat-fab {
+        left: 16px;
+        bottom: 16px;
+        padding: 8px 12px 8px 8px;
+        gap: 8px;
+    }
+
+    .lib-chat-fab-kicker {
+        display: none;
+    }
+
+    .lib-chat-drawer {
+        left: 12px;
+        bottom: 12px;
+        width: calc(100vw - 24px);
+        height: min(70vh, calc(100vh - 96px));
+    }
 }

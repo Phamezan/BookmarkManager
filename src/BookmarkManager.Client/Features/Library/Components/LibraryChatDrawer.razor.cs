@@ -6,7 +6,7 @@ using Microsoft.JSInterop;
 
 namespace BookmarkManager.Client.Features.Library.Components;
 
-/// <summary>Floating glassmorphism chat drawer for the Library AI assistant. Owns its own transcript
+/// <summary>Floating Library Assistant drawer. Owns its own transcript
 /// state and posts to <c>api/library/chat</c> through <see cref="IBookmarkService"/>; the host page
 /// only toggles <see cref="Open"/>.</summary>
 public partial class LibraryChatDrawer : IAsyncDisposable
