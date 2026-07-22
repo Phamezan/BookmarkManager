@@ -132,6 +132,17 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IEmbeddingS
 builder.Services.AddHostedService(
     provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
 
+// Stage-2 cross-encoder reranker (bge-reranker-base). Same lifecycle as the embedding service above:
+// singleton ONNX session, warmed on startup via IHostedService, own long-timeout HttpClient for first-boot
+// model download.
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Rerank.OnnxRerankerService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Rerank.OnnxRerankerService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Rerank.IRerankerService>(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Rerank.OnnxRerankerService>());
+builder.Services.AddHostedService(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Rerank.OnnxRerankerService>());
+
 // RAG / semantic embedding engine (Wave 2a). In-memory cosine vector search over catalog embeddings.
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IVectorSearchService, BookmarkManager.Api.Services.Embedding.VectorSearchService>();
 
