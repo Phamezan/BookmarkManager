@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Rerank;
 using BookmarkManager.Api.Services.Search;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,7 @@ public sealed class LibraryRagService : ILibraryRagService
 
     private readonly IEmbeddingService _embeddingService;
     private readonly IHybridSearchService _hybridSearch;
+    private readonly IRerankerService _reranker;
     private readonly AppDbContext _db;
     private readonly AiTaggingSettingsService _settings;
     private readonly AiRequestThrottle _throttle;
@@ -55,6 +57,7 @@ public sealed class LibraryRagService : ILibraryRagService
     public LibraryRagService(
         IEmbeddingService embeddingService,
         IHybridSearchService hybridSearch,
+        IRerankerService reranker,
         AppDbContext db,
         AiTaggingSettingsService settings,
         AiRequestThrottle throttle,
@@ -63,6 +66,7 @@ public sealed class LibraryRagService : ILibraryRagService
     {
         _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
         _hybridSearch = hybridSearch ?? throw new ArgumentNullException(nameof(hybridSearch));
+        _reranker = reranker ?? throw new ArgumentNullException(nameof(reranker));
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _throttle = throttle ?? throw new ArgumentNullException(nameof(throttle));
@@ -95,12 +99,15 @@ public sealed class LibraryRagService : ILibraryRagService
         // No post-hoc RagMinSimilarity cosine floor here: RRF fusion + the RagTopK cut already do the
         // filtering (see IHybridSearchService), and a keyword-only hit can legitimately score below
         // that floor on cosine while still being the right answer for an exact-title/proper-noun query.
+        // Stage 1 retrieves a wide pool (RerankCandidatePool) so stage 2 has real material to reorder;
+        // RerankPipeline falls back to the first RagTopK of this hybrid order untouched if the reranker
+        // isn't ready or fails.
         var queryVector = await _embeddingService.EmbedQueryAsync(request.Message, cancellationToken).ConfigureAwait(false);
         var hits = await _hybridSearch
-            .SearchAsync(request.Message, queryVector, EmbeddingConstants.RagTopK, cancellationToken)
+            .SearchAsync(request.Message, queryVector, RerankConstants.RerankCandidatePool, cancellationToken)
             .ConfigureAwait(false);
 
-        var cards = await LoadRecommendedSeriesAsync(hits, cancellationToken).ConfigureAwait(false);
+        var cards = await LoadRecommendedSeriesAsync(request.Message, hits, cancellationToken).ConfigureAwait(false);
         if (cards.Count == 0)
         {
             return new LibraryChatResponseDto(
@@ -112,24 +119,35 @@ public sealed class LibraryRagService : ILibraryRagService
         return new LibraryChatResponseDto(markdown, cards);
     }
 
-    /// <summary>Loads catalog rows for the search hits, preserving the search's ranking and displayable
-    /// (cosine) score.</summary>
+    /// <summary>Loads catalog rows for the hybrid search hits, reorders them through the stage-2 reranker
+    /// (<see cref="RerankPipeline"/>, which falls back to the hybrid order unchanged if the reranker isn't
+    /// ready), and returns the top <see cref="EmbeddingConstants.RagTopK"/> cards. The displayed
+    /// <c>Score</c> stays the stage-1 cosine similarity - reranking only changes ordering/selection, not
+    /// what's shown as the match percentage.</summary>
     private async Task<IReadOnlyList<LibraryRecommendedSeriesDto>> LoadRecommendedSeriesAsync(
+        string query,
         IReadOnlyList<(Guid Id, float Score, double RrfScore)> hits,
         CancellationToken cancellationToken)
     {
         if (hits.Count == 0)
             return Array.Empty<LibraryRecommendedSeriesDto>();
 
-        var ids = hits.Select(h => h.Id).ToList();
+        var hybridOrderIds = hits.Select(h => h.Id).ToList();
         var entriesById = await _db.LibraryCatalogEntries
             .AsNoTracking()
-            .Where(e => ids.Contains(e.Id))
+            .Where(e => hybridOrderIds.Contains(e.Id))
             .ToDictionaryAsync(e => e.Id, cancellationToken)
             .ConfigureAwait(false);
 
-        var cards = new List<LibraryRecommendedSeriesDto>(hits.Count);
-        foreach (var (id, score, _) in hits)
+        var textById = entriesById.ToDictionary(kv => kv.Key, kv => RerankDocumentText.Build(kv.Value));
+        var rerank = await RerankPipeline
+            .ApplyAsync(_reranker, query, hybridOrderIds, textById, EmbeddingConstants.RagTopK, _logger, cancellationToken)
+            .ConfigureAwait(false);
+
+        var scoreById = hits.ToDictionary(h => h.Id, h => h.Score);
+
+        var cards = new List<LibraryRecommendedSeriesDto>(rerank.OrderedIds.Count);
+        foreach (var id in rerank.OrderedIds)
         {
             if (!entriesById.TryGetValue(id, out var entry))
                 continue;
@@ -143,7 +161,7 @@ public sealed class LibraryRagService : ILibraryRagService
                 LibraryCatalogEntry.SplitList(entry.Genres),
                 entry.MediaType,
                 entry.SourceUrl,
-                score));
+                scoreById.GetValueOrDefault(id)));
         }
 
         return cards;

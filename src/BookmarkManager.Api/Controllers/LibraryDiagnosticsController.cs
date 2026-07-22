@@ -5,10 +5,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Rerank;
 using BookmarkManager.Api.Services.Search;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace BookmarkManager.Api.Controllers;
 
@@ -16,16 +18,19 @@ namespace BookmarkManager.Api.Controllers;
 /// given title is present/embedded, and how a query ranks against the vector index. Reuses the same
 /// <see cref="IEmbeddingService"/> and <see cref="IVectorSearchService"/> the Library assistant uses.
 /// The pure-vector "wide probe" (<see cref="RunQueryAsync"/>/<see cref="RankTitleForQueryAsync"/>) stays
-/// unchanged - a debugging tool that must report raw cosine rank - with hybrid (RRF-fused)
-/// results reported alongside via <see cref="IHybridSearchService"/> so the diagnostics pane can
-/// compare the two.</summary>
+/// unchanged - a debugging tool that must report raw cosine rank - with hybrid (RRF-fused) results
+/// reported alongside via <see cref="IHybridSearchService"/>, and stage-2 reranked results alongside that
+/// via <see cref="IRerankerService"/>/<see cref="RerankPipeline"/>, so the diagnostics pane can compare
+/// all three.</summary>
 [ApiController]
 [Route("api/library/diagnostics")]
 public sealed class LibraryDiagnosticsController(
     IEmbeddingService embeddingService,
     IVectorSearchService vectorSearch,
     IHybridSearchService hybridSearch,
-    AppDbContext db) : ControllerBase
+    IRerankerService reranker,
+    AppDbContext db,
+    ILogger<LibraryDiagnosticsController> logger) : ControllerBase
 {
     /// <summary>Floor low enough to surface a title even when its cosine similarity is far below the
     /// retrieval threshold (cosine ranges [-1, 1]); used only for the wider title-rank probe.</summary>
@@ -63,12 +68,15 @@ public sealed class LibraryDiagnosticsController(
                 Title: titleResult?.Dto,
                 QueryMatches: null,
                 TitleRank: null,
-                UpToDateCount: upToDateCount));
+                UpToDateCount: upToDateCount,
+                HybridMatches: null,
+                RerankerReady: reranker.IsReady));
         }
 
         IReadOnlyList<LibraryQueryMatchDto>? queryMatches = null;
         LibraryTitleQueryRankDto? titleRank = null;
         IReadOnlyList<LibraryHybridMatchDto>? hybridMatches = null;
+        IReadOnlyList<LibraryRerankMatchDto>? rerankMatches = null;
 
         if (!string.IsNullOrWhiteSpace(query))
         {
@@ -76,6 +84,7 @@ public sealed class LibraryDiagnosticsController(
             var queryVector = await embeddingService.EmbedQueryAsync(trimmedQuery, cancellationToken).ConfigureAwait(false);
             queryMatches = await RunQueryAsync(queryVector, cancellationToken).ConfigureAwait(false);
             hybridMatches = await RunHybridQueryAsync(trimmedQuery, queryVector, cancellationToken).ConfigureAwait(false);
+            rerankMatches = await RunRerankQueryAsync(trimmedQuery, queryVector, cancellationToken).ConfigureAwait(false);
 
             if (matchedEntry is not null)
                 titleRank = await RankTitleForQueryAsync(queryVector, matchedEntry, cancellationToken).ConfigureAwait(false);
@@ -90,7 +99,9 @@ public sealed class LibraryDiagnosticsController(
             QueryMatches: queryMatches,
             TitleRank: titleRank,
             UpToDateCount: upToDateCount,
-            HybridMatches: hybridMatches));
+            HybridMatches: hybridMatches,
+            RerankerReady: reranker.IsReady,
+            RerankMatches: rerankMatches));
     }
 
     /// <summary>Counts embedded rows whose stored hash still matches the hash of the current embed text.
@@ -202,6 +213,54 @@ public sealed class LibraryDiagnosticsController(
                 matches.Add(new LibraryHybridMatchDto(entry.Title, entry.MediaType, score, rrfScore));
         }
 
+        return matches;
+    }
+
+    /// <summary>Same query, stage-1 hybrid pool widened to <see cref="RerankConstants.RerankCandidatePool"/>
+    /// and reordered through <see cref="RerankPipeline"/> so the diagnostics pane can see the stage-2
+    /// effect. Returns an empty (not null) list when the reranker degraded and fell back to hybrid order
+    /// unchanged, so the UI can distinguish "reranker ran, nothing left after RagTopK" from "not ready" -
+    /// the latter is already reported via <c>RerankerReady</c>.</summary>
+    private async Task<IReadOnlyList<LibraryRerankMatchDto>?> RunRerankQueryAsync(
+        string query, float[] queryVector, CancellationToken cancellationToken)
+    {
+        if (!reranker.IsReady)
+            return null;
+
+        var hits = await hybridSearch
+            .SearchAsync(query, queryVector, RerankConstants.RerankCandidatePool, cancellationToken)
+            .ConfigureAwait(false);
+        if (hits.Count == 0)
+            return Array.Empty<LibraryRerankMatchDto>();
+
+        var hybridOrderIds = hits.Select(h => h.Id).ToList();
+        var hybridRankById = hybridOrderIds
+            .Select((id, index) => (id, rank: index + 1))
+            .ToDictionary(x => x.id, x => x.rank);
+
+        var entriesById = await db.LibraryCatalogEntries.AsNoTracking()
+            .Where(e => hybridOrderIds.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        var textById = entriesById.ToDictionary(kv => kv.Key, kv => RerankDocumentText.Build(kv.Value));
+        var result = await RerankPipeline
+            .ApplyAsync(reranker, query, hybridOrderIds, textById, EmbeddingConstants.RagTopK, logger, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result.Applied)
+            return Array.Empty<LibraryRerankMatchDto>();
+
+        var matches = new List<LibraryRerankMatchDto>(result.OrderedIds.Count);
+        foreach (var id in result.OrderedIds)
+        {
+            if (!entriesById.TryGetValue(id, out var entry))
+                continue;
+
+            var logit = result.Scores.GetValueOrDefault(id);
+            matches.Add(new LibraryRerankMatchDto(
+                entry.Title, entry.MediaType, logit, RerankScoring.Sigmoid(logit), hybridRankById.GetValueOrDefault(id)));
+        }
         return matches;
     }
 
