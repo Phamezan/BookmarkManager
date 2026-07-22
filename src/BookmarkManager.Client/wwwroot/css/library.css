@@ -1957,12 +1957,14 @@
 
 .lib-chat-bubble-user .lib-chat-bubble-body {
     background: var(--bm-accent);
-    color: #fff;
+    /* Dark ink on the bright gold accent — white-on-gold was too low-contrast to read. */
+    color: #17110a;
+    font-weight: 500;
     border-bottom-right-radius: 4px;
 }
 
 .lib-chat-bubble-assistant .lib-chat-bubble-body {
-    background: color-mix(in srgb, var(--bm-surface-muted) 80%, transparent);
+    background: color-mix(in srgb, var(--bm-surface-muted) 92%, transparent);
     color: var(--bm-text);
     border-bottom-left-radius: 4px;
 }
