@@ -81,6 +81,10 @@ public sealed partial class AniListLibraryProvider(
 
     public IReadOnlyList<string> CatalogMediaTypeQueries { get; } = ["ANIME", "MANGA"];
 
+    /// <summary>AniList's catalog listing (<see cref="BuildCatalogPageBody"/>) already selects
+    /// <c>description</c>, so every listing row carries a synopsis - no per-title detail fetch needed.</summary>
+    public bool ListingProvidesFullSynopsis => true;
+
     /// <summary>Walks AniList's full catalog in POPULARITY_DESC order, one page at a time. AniList has no
     /// documented depth limit on page-based pagination (unlike MangaDex's 10,000 offset ceiling), so this
     /// sequence runs unbounded (see <see cref="LibraryCatalogSyncQueueItem.RemainingPages"/>) until a page

@@ -95,6 +95,11 @@ public sealed class MangaDexLibraryProvider(
     /// (Provider, ProviderId), so titles found by both simply get their popularity rank filled in.</summary>
     public IReadOnlyList<string> CatalogMediaTypeQueries { get; } = ["manga", "manga-popular"];
 
+    /// <summary>MangaDex's <c>/manga</c> list responses include <c>attributes.description</c>, which
+    /// <see cref="MapManga"/> maps to the synopsis - the same field <see cref="GetDetailsAsync"/> would
+    /// return, so listing rows are already rich and need no per-title detail fetch.</summary>
+    public bool ListingProvidesFullSynopsis => true;
+
     public Task<CatalogPageResult> GetCatalogPageAsync(string mediaTypeQuery, string? continuationToken, CancellationToken cancellationToken) =>
         mediaTypeQuery == "manga-popular"
             ? GetPopularCatalogPageAsync(continuationToken, cancellationToken)

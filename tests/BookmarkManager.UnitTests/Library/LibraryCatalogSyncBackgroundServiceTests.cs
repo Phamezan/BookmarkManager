@@ -21,17 +21,23 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         string name,
         IReadOnlyList<string> queries,
         Func<string, string?, CatalogPageResult>? onGetPage = null,
-        Func<string, LibraryEntryDto?>? onGetDetails = null) : IBulkCatalogProvider
+        Func<string, LibraryEntryDto?>? onGetDetails = null,
+        bool listingProvidesFullSynopsis = false) : IBulkCatalogProvider
     {
         public string ProviderName => name;
         public bool IsEnabled => true;
         public IReadOnlyList<string> CatalogMediaTypeQueries { get; } = queries;
+        public bool ListingProvidesFullSynopsis => listingProvidesFullSynopsis;
+        public int GetDetailsCallCount { get; private set; }
 
         public Task<IReadOnlyList<LibraryEntryDto>> SearchAsync(string query, LibraryMediaType? mediaType, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<LibraryEntryDto>>([]);
 
-        public Task<LibraryEntryDto?> GetDetailsAsync(string providerId, CancellationToken cancellationToken) =>
-            Task.FromResult(onGetDetails?.Invoke(providerId));
+        public Task<LibraryEntryDto?> GetDetailsAsync(string providerId, CancellationToken cancellationToken)
+        {
+            GetDetailsCallCount++;
+            return Task.FromResult(onGetDetails?.Invoke(providerId));
+        }
 
         public Task<CatalogPageResult> GetCatalogPageAsync(string mediaTypeQuery, string? continuationToken, CancellationToken cancellationToken) =>
             Task.FromResult(onGetPage is not null
@@ -657,6 +663,91 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         Assert.Equal("3090", row.LatestChapter);
         Assert.Equal("Fantasy,Action", row.Genres);
         Assert.Equal("Ongoing", row.Status);
+    }
+
+    [Fact]
+    public async Task ProcessQueueItemAsync_ThinProviderNotOnLegacyAllowlist_StillEnrichesFromDetailPage()
+    {
+        // Widened behavior: enrichment is driven by ListingProvidesFullSynopsis (default false =>
+        // thin => enrich), not a hardcoded Novelfire/RanobeDB name allowlist. Any bulk provider whose
+        // listing rows are thin gets detail-enriched so its catalog rows carry a synopsis for RAG.
+        using var testDb = new TestDatabase();
+        var db = testDb.Db;
+        var provider = new FakeBulkProvider(
+            "SomeNewProvider",
+            ["seq1"],
+            (_, _) => new CatalogPageResult([MakeEntry("n1", provider: "SomeNewProvider", synopsis: null, latestChapter: null)], null),
+            id => new LibraryEntryDto(
+                "SomeNewProvider",
+                id,
+                "New Series",
+                [],
+                ["Author"],
+                LibraryMediaType.Webnovel,
+                null,
+                "A rich synopsis fetched from the detail page.",
+                ["Fantasy"],
+                null,
+                "Ongoing",
+                "42",
+                null,
+                null,
+                "https://example.com/n1"));
+        var (service, _) = CreateService(db, provider);
+
+        var item = new LibraryCatalogSyncQueueItem
+        {
+            Id = Guid.NewGuid(),
+            Provider = "SomeNewProvider",
+            MediaTypeQuery = "seq1",
+            Status = CatalogSyncQueueStatus.Processing,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.LibraryCatalogSyncQueue.Add(item);
+        await db.SaveChangesAsync();
+
+        await service.ProcessQueueItemAsync(provider, item, CancellationToken.None);
+
+        var row = await db.LibraryCatalogEntries.SingleAsync();
+        Assert.Equal("A rich synopsis fetched from the detail page.", row.Synopsis);
+        Assert.Equal("Fantasy", row.Genres);
+        Assert.Equal(1, provider.GetDetailsCallCount);
+    }
+
+    [Fact]
+    public async Task ProcessQueueItemAsync_ProviderWithFullListingSynopsis_DoesNotFetchDetails()
+    {
+        // Providers whose listing already returns the synopsis (AniList, MangaDex) opt out via
+        // ListingProvidesFullSynopsis => a per-title detail fetch would only re-return listing data,
+        // so it must be skipped entirely to avoid wasted calls.
+        using var testDb = new TestDatabase();
+        var db = testDb.Db;
+        var provider = new FakeBulkProvider(
+            "RichListingProvider",
+            ["seq1"],
+            (_, _) => new CatalogPageResult(
+                [MakeEntry("r1", provider: "RichListingProvider", synopsis: "Already has a synopsis at listing time.")],
+                null),
+            onGetDetails: _ => throw new InvalidOperationException("details must not be fetched"),
+            listingProvidesFullSynopsis: true);
+        var (service, _) = CreateService(db, provider);
+
+        var item = new LibraryCatalogSyncQueueItem
+        {
+            Id = Guid.NewGuid(),
+            Provider = "RichListingProvider",
+            MediaTypeQuery = "seq1",
+            Status = CatalogSyncQueueStatus.Processing,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        db.LibraryCatalogSyncQueue.Add(item);
+        await db.SaveChangesAsync();
+
+        await service.ProcessQueueItemAsync(provider, item, CancellationToken.None);
+
+        var row = await db.LibraryCatalogEntries.SingleAsync();
+        Assert.Equal("Already has a synopsis at listing time.", row.Synopsis);
+        Assert.Equal(0, provider.GetDetailsCallCount);
     }
 
     [Fact]
