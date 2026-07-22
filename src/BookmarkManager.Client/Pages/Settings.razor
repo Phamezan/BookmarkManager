@@ -299,14 +299,14 @@
                                               Label="Assistant Base URL"
                                               Variant="Variant.Outlined"
                                               Immediate="true"
-                                              HelperText="e.g. https://integrate.api.nvidia.com/v1" />
+                                              HelperText="e.g. https://api.groq.com/openai/v1 (Groq is fastest)" />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudTextField @bind-Value="_aiSettings.RagModel"
                                               Label="Assistant Model"
                                               Variant="Variant.Outlined"
                                               Immediate="true"
-                                              HelperText="Chat/completion model id, e.g. mistralai/mistral-large-3-675b-instruct-2512." />
+                                              HelperText="Chat/completion model id, e.g. llama-3.3-70b-versatile (Groq, ~1s)." />
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_aiSettings.RagRequestsPerMinute"
