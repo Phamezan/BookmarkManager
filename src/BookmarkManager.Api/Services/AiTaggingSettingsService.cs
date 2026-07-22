@@ -70,7 +70,11 @@ public class AiTaggingSettingsService
             RagModel = "llama-3.3-70b-versatile",
             RagApiKey = string.Empty,
             RagBaseUrl = "https://api.groq.com/openai/v1",
-            RagRequestsPerMinute = 15
+            RagRequestsPerMinute = 30,
+            RagSystemPrompt = AiTaggingSettingsDto.RagDefaultSystemPrompt,
+            RagFallbackApiKey = string.Empty,
+            RagFallbackModel = "meta/llama-3.3-70b-instruct",
+            RagFallbackBaseUrl = "https://integrate.api.nvidia.com/v1"
         };
 
     private static AiTaggingSettingsDto Normalize(AiTaggingSettingsDto settings)
@@ -102,6 +106,16 @@ public class AiTaggingSettingsService
             RagBaseUrl = string.IsNullOrWhiteSpace(settings.RagBaseUrl)
                 ? "https://api.groq.com/openai/v1"
                 : settings.RagBaseUrl.Trim().TrimEnd('/'),
-            RagRequestsPerMinute = settings.RagRequestsPerMinute <= 0 ? 15 : settings.RagRequestsPerMinute
+            RagRequestsPerMinute = settings.RagRequestsPerMinute <= 0 ? 30 : settings.RagRequestsPerMinute,
+            RagSystemPrompt = string.IsNullOrWhiteSpace(settings.RagSystemPrompt)
+                ? AiTaggingSettingsDto.RagDefaultSystemPrompt
+                : settings.RagSystemPrompt.Trim(),
+            RagFallbackApiKey = settings.RagFallbackApiKey?.Trim() ?? string.Empty,
+            RagFallbackModel = string.IsNullOrWhiteSpace(settings.RagFallbackModel)
+                ? "meta/llama-3.3-70b-instruct"
+                : settings.RagFallbackModel.Trim(),
+            RagFallbackBaseUrl = string.IsNullOrWhiteSpace(settings.RagFallbackBaseUrl)
+                ? "https://integrate.api.nvidia.com/v1"
+                : settings.RagFallbackBaseUrl.Trim().TrimEnd('/')
         };
 }
