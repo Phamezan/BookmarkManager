@@ -379,17 +379,21 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     /// instead of throughput / (round-trip latency).</summary>
     private const int DetailEnrichmentConcurrency = 4;
 
-    /// <summary>Listing-page bulk crawls for Novelfire/RanobeDB only carry thin card data (title/cover/rating,
-    /// sometimes a chapter count). After each page upsert, fetch the per-title detail page for rows still
-    /// missing synopsis, chapter info, or genres so Browse cards and the details popup aren't empty. Rate
-    /// limiting stays inside each provider's <see cref="IMediaProvider.GetDetailsAsync"/>.</summary>
+    /// <summary>Some bulk providers' listing pages only carry thin card data (title/cover/rating, sometimes
+    /// a chapter count) - Novelfire's genre listing and RanobeDB's series list, and any future provider that
+    /// doesn't opt out via <see cref="IBulkCatalogProvider.ListingProvidesFullSynopsis"/>. After each page
+    /// upsert, fetch the per-title detail page for rows still missing synopsis, chapter info, or genres so
+    /// Browse cards, the details popup, and the RAG embedding aren't empty. Providers whose listing already
+    /// returns the synopsis (AniList, MangaDex) set the flag and are skipped here - fetching details would
+    /// only re-return data the listing already carried. Rate limiting stays inside each provider's
+    /// <see cref="IMediaProvider.GetDetailsAsync"/>.</summary>
     private async Task EnrichThinCatalogEntriesAsync(
         AppDbContext db,
         IBulkCatalogProvider provider,
         IReadOnlyList<LibraryEntryDto> entries,
         CancellationToken ct)
     {
-        if (!NeedsDetailEnrichment(provider.ProviderName) || entries.Count == 0)
+        if (provider.ListingProvidesFullSynopsis || entries.Count == 0)
             return;
 
         var providerIds = entries.Select(e => e.ProviderId).ToList();
@@ -496,10 +500,6 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             _logger.LogWarning(ex, "Embedding catalog entries for {Provider} failed; crawl continues, backfill will retry.", provider);
         }
     }
-
-    private static bool NeedsDetailEnrichment(string providerName) =>
-        string.Equals(providerName, "Novelfire", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(providerName, "RanobeDB", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsThinCatalogEntry(LibraryCatalogEntry row) =>
         string.IsNullOrWhiteSpace(row.Synopsis) ||
