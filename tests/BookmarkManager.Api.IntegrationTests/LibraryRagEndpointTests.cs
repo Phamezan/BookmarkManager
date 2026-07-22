@@ -6,6 +6,8 @@ using System.Text.Json.Serialization;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Rerank;
+using BookmarkManager.Api.Services.Search;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -31,7 +33,7 @@ public sealed class LibraryRagEndpointTests : IDisposable
     public async Task Chat_WithMockedEmbeddingAndLlm_Returns200WithMarkdownAndSeriesCards()
     {
         var entryId = await SeedCatalogEntryAsync("Mother of Learning", "A time-loop progression fantasy.");
-        _factory.Vector.Hits = [(entryId, 0.87f)];
+        _factory.Hybrid.Hits = [(entryId, 0.87f, 1.0)];
         await SetRagApiKeyAsync("test-rag-key");
 
         using var client = _factory.CreateClient();
@@ -60,6 +62,56 @@ public sealed class LibraryRagEndpointTests : IDisposable
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Chat_WithRerankerReady_ReturnsRerankOrder_NotHybridOrder()
+    {
+        var lowId = await SeedCatalogEntryAsync("Shared Vocabulary Story", "A story that shares words with the query but isn't the answer.");
+        var highId = await SeedCatalogEntryAsync("Shadow Monarch Ascendant", "The true match for the query.");
+
+        // Hybrid (stage-1) ranks lowId first, highId second - the reranker (stage-2) scores the opposite
+        // way, so the final response order proves the endpoint actually applied the rerank, not just
+        // passed the hybrid order through.
+        _factory.Hybrid.Hits = [(lowId, 0.9f, 2.0), (highId, 0.1f, 1.0)];
+        _factory.Reranker.IsReady = true;
+        _factory.Reranker.ScoreFunc = (_, passages) => passages
+            .Select(p => p.Contains("true match", StringComparison.Ordinal) ? 5f : 0f)
+            .ToArray();
+        await SetRagApiKeyAsync("test-rag-key");
+
+        using var client = _factory.CreateClient();
+        var request = new LibraryChatRequestDto("shadow monarch");
+        using var response = await client.PostAsJsonAsync("/api/library/chat", request, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<LibraryChatResponseDto>(JsonOptions);
+        Assert.NotNull(body);
+        Assert.Equal(2, body!.Series.Count);
+        Assert.Equal("Shadow Monarch Ascendant", body.Series[0].Title);
+        Assert.Equal("Shared Vocabulary Story", body.Series[1].Title);
+    }
+
+    [Fact]
+    public async Task Chat_WithRerankerNotReady_FallsBackToHybridOrderUnchanged()
+    {
+        var firstId = await SeedCatalogEntryAsync("First Hybrid Result", "Top of the hybrid ranking.");
+        var secondId = await SeedCatalogEntryAsync("Second Hybrid Result", "Second in the hybrid ranking.");
+
+        _factory.Hybrid.Hits = [(firstId, 0.9f, 2.0), (secondId, 0.5f, 1.0)];
+        _factory.Reranker.IsReady = false;
+        await SetRagApiKeyAsync("test-rag-key");
+
+        using var client = _factory.CreateClient();
+        var request = new LibraryChatRequestDto("anything");
+        using var response = await client.PostAsJsonAsync("/api/library/chat", request, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<LibraryChatResponseDto>(JsonOptions);
+        Assert.NotNull(body);
+        Assert.Equal(2, body!.Series.Count);
+        Assert.Equal("First Hybrid Result", body.Series[0].Title);
+        Assert.Equal("Second Hybrid Result", body.Series[1].Title);
+    }
+
     private async Task<Guid> SeedCatalogEntryAsync(string title, string synopsis)
     {
         using var scope = _factory.Services.CreateScope();
@@ -68,7 +120,7 @@ public sealed class LibraryRagEndpointTests : IDisposable
         {
             Id = Guid.NewGuid(),
             Provider = "CatalogProvider",
-            ProviderId = "1",
+            ProviderId = Guid.NewGuid().ToString("N"),
             Title = title,
             Synopsis = synopsis,
             Genres = "Fantasy,Progression",
@@ -121,6 +173,30 @@ public sealed class LibraryRagEndpointTests : IDisposable
             => Task.FromResult<IReadOnlyList<(Guid, float)>>(Hits.Take(k).ToList());
     }
 
+    private sealed class FakeHybridSearchService : IHybridSearchService
+    {
+        public IReadOnlyList<(Guid Id, float Score, double RrfScore)> Hits { get; set; } = [];
+
+        public Task<IReadOnlyList<(Guid Id, float Score, double RrfScore)>> SearchAsync(
+            string queryText, float[] queryVector, int k, CancellationToken cancellationToken)
+            => Task.FromResult<IReadOnlyList<(Guid, float, double)>>(Hits.Take(k).ToList());
+    }
+
+    private sealed class FakeRerankerService : IRerankerService
+    {
+        public bool IsReady { get; set; }
+
+        public Func<string, IReadOnlyList<string>, IReadOnlyList<float>>? ScoreFunc { get; set; }
+
+        public Task<IReadOnlyList<float>> ScoreAsync(string query, IReadOnlyList<string> passages, CancellationToken cancellationToken)
+        {
+            if (!IsReady)
+                throw new InvalidOperationException("Reranker model is not ready.");
+            var scores = ScoreFunc?.Invoke(query, passages) ?? passages.Select(_ => 0f).ToArray();
+            return Task.FromResult(scores);
+        }
+    }
+
     private sealed class StubLlmHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -142,6 +218,8 @@ public sealed class LibraryRagEndpointTests : IDisposable
         private readonly string _dataDir = Path.Combine(Path.GetTempPath(), $"bm-rag-data-{Guid.NewGuid():N}");
 
         public FakeVectorSearchService Vector { get; } = new();
+        public FakeHybridSearchService Hybrid { get; } = new();
+        public FakeRerankerService Reranker { get; } = new();
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -166,6 +244,10 @@ public sealed class LibraryRagEndpointTests : IDisposable
                 services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
                 services.RemoveAll<IVectorSearchService>();
                 services.AddSingleton<IVectorSearchService>(Vector);
+                services.RemoveAll<IHybridSearchService>();
+                services.AddScoped<IHybridSearchService>(_ => Hybrid);
+                services.RemoveAll<IRerankerService>();
+                services.AddSingleton<IRerankerService>(Reranker);
 
                 // Isolate settings to a temp dir and stub the LLM HTTP call.
                 services.RemoveAll<AiTaggingSettingsService>();
