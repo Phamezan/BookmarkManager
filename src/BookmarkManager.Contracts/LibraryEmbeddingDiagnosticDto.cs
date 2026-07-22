@@ -13,14 +13,19 @@ public sealed record LibraryEmbeddingDiagnosticDto(
     LibraryTitleQueryRankDto? TitleRank = null);
 
 /// <summary>Lookup result for the requested <c>title</c>: whether a catalog entry whose Title or
-/// AlternateTitles contains it (case-insensitive) exists, and whether that entry is embedded.</summary>
+/// AlternateTitles contains it (case-insensitive) exists, and whether that entry is embedded.
+/// <c>HasSynopsis</c> and <c>EmbeddingStale</c> explain thin/low-quality matches: an entry embedded
+/// from title+genres only (no synopsis), or whose stored embedding predates the current embed-text
+/// format, ranks poorly on synopsis-describing queries and needs a re-sync/backfill.</summary>
 public sealed record LibraryTitleEmbeddingDto(
     string Query,
     bool Found,
     string? MatchedTitle,
     LibraryMediaType? MediaType,
     bool Embedded,
-    string? EmbeddingSourceHash);
+    string? EmbeddingSourceHash,
+    bool HasSynopsis = false,
+    bool EmbeddingStale = false);
 
 /// <summary>One top match for the requested <c>query</c>, in the same shape the RAG retrieval uses.</summary>
 public sealed record LibraryQueryMatchDto(

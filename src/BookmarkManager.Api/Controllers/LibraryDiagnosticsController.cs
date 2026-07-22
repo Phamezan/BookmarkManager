@@ -94,13 +94,22 @@ public sealed class LibraryDiagnosticsController(
         if (entry is null)
             return new TitleLookup(new LibraryTitleEmbeddingDto(title, false, null, null, false, null), null);
 
+        // Stale = embedded, but the stored hash no longer matches the hash of the current embed text
+        // (Title + AlternateTitles + Genres + Synopsis). Such rows were embedded from older/thinner text
+        // and rank poorly until the backfill worker re-embeds them.
+        var embedded = entry.Embedding is not null;
+        var currentHash = LibraryEmbeddingText.Hash(LibraryEmbeddingText.Build(entry));
+        var stale = embedded && !string.Equals(entry.EmbeddingSourceHash, currentHash, StringComparison.Ordinal);
+
         var dto = new LibraryTitleEmbeddingDto(
             title,
             Found: true,
             MatchedTitle: entry.Title,
             MediaType: entry.MediaType,
-            Embedded: entry.Embedding is not null,
-            EmbeddingSourceHash: entry.EmbeddingSourceHash);
+            Embedded: embedded,
+            EmbeddingSourceHash: entry.EmbeddingSourceHash,
+            HasSynopsis: !string.IsNullOrWhiteSpace(entry.Synopsis),
+            EmbeddingStale: stale);
         return new TitleLookup(dto, entry);
     }
 

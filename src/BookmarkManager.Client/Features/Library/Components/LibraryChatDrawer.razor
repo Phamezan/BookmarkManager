@@ -125,9 +125,16 @@
                         else
                         {
                             <div class="lib-diag-ok">✓ Found: @t.MatchedTitle @(t.MediaType is { } mt ? $"({mt})" : "")</div>
+                            <div class="@(t.HasSynopsis ? "lib-diag-ok" : "lib-diag-bad")">
+                                @(t.HasSynopsis ? "✓ Has synopsis" : "✗ No synopsis stored — run catalog sync to enrich it (weak matches without one).")
+                            </div>
                             <div class="@(t.Embedded ? "lib-diag-ok" : "lib-diag-bad")">
                                 @(t.Embedded ? "✓ Embedded" : "✗ Not embedded yet — run catalog sync / wait for backfill.")
                             </div>
+                            @if (t.Embedded && t.EmbeddingStale)
+                            {
+                                <div class="lib-diag-bad">⚠ Embedding is stale (built from older text) — the backfill worker will re-embed it with synopsis + alt-titles. Until then it ranks low.</div>
+                            }
                         }
                         @if (_diag.TitleRank is { } tr)
                         {
