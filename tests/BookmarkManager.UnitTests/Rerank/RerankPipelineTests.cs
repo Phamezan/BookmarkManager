@@ -88,6 +88,25 @@ public sealed class RerankPipelineTests
     }
 
     [Fact]
+    public async Task ApplyAsync_WhenScoreCountMismatchesCandidateCount_FallsBackInsteadOfThrowing()
+    {
+        // Reranker returns fewer scores than passages - indexing that directly would throw
+        // IndexOutOfRangeException straight out of the RAG chat path. Must degrade instead.
+        var reranker = new FakeRerankerService
+        {
+            IsReady = true,
+            ScoreFunc = (_, passages) => new float[] { 0.5f } // only 1 score for 3 candidates
+        };
+
+        var result = await RerankPipeline.ApplyAsync(
+            reranker, "query", HybridOrder, TextById, topK: 3, NullLogger.Instance, CancellationToken.None);
+
+        Assert.False(result.Applied);
+        Assert.Equal(new[] { IdA, IdB, IdC }, result.OrderedIds);
+        Assert.Empty(result.Scores);
+    }
+
+    [Fact]
     public async Task ApplyAsync_WithEmptyHybridOrder_ReturnsEmptyWithoutCallingReranker()
     {
         var reranker = new FakeRerankerService { IsReady = true, ThrowOnScore = new Exception("should not be called") };

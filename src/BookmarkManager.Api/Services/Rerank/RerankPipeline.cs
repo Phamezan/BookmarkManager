@@ -58,6 +58,14 @@ public static class RerankPipeline
         logger.LogInformation(
             "Stage-2 rerank scored {Count} candidates in {ElapsedMs}ms.", passages.Count, stopwatch.ElapsedMilliseconds);
 
+        if (scores.Count != hybridOrderIds.Count)
+        {
+            logger.LogWarning(
+                "Stage-2 rerank returned {ScoreCount} scores for {CandidateCount} candidates; falling back to stage-1 hybrid ordering.",
+                scores.Count, hybridOrderIds.Count);
+            return Fallback(hybridOrderIds, topK);
+        }
+
         var scoreById = new Dictionary<Guid, float>(hybridOrderIds.Count);
         for (var i = 0; i < hybridOrderIds.Count; i++)
             scoreById[hybridOrderIds[i]] = scores[i];
