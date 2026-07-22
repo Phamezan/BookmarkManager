@@ -150,51 +150,113 @@ public sealed class LibraryRagService : ILibraryRagService
         IReadOnlyList<LibraryRecommendedSeriesDto> cards,
         CancellationToken cancellationToken)
     {
-        await _throttle.AwaitThrottleAsync(settings.RagRequestsPerMinute, cancellationToken).ConfigureAwait(false);
-
         var persona = string.IsNullOrWhiteSpace(settings.RagSystemPrompt)
             ? AiTaggingSettingsDto.RagDefaultSystemPrompt
             : settings.RagSystemPrompt;
         var messages = BuildMessages(persona, request, cards);
-        var chatRequest = new ChatRequest(
-            Model: string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel,
-            Temperature: 0.2,
-            Messages: messages);
 
-        var baseUrl = string.IsNullOrWhiteSpace(settings.RagBaseUrl) ? "https://api.groq.com/openai/v1" : settings.RagBaseUrl;
+        var hasFallback = !string.IsNullOrWhiteSpace(settings.RagFallbackApiKey);
+
+        var primary = await CallProviderAsync(
+            baseUrl: string.IsNullOrWhiteSpace(settings.RagBaseUrl) ? "https://api.groq.com/openai/v1" : settings.RagBaseUrl,
+            model: string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel,
+            apiKey: settings.RagApiKey,
+            rpm: settings.RagRequestsPerMinute,
+            messages: messages,
+            isFallback: false,
+            cancellationToken).ConfigureAwait(false);
+
+        // Only fail over to the secondary provider when the primary was rate-limited or hit a transient
+        // server error - not on a bad key/model, which the fallback can't fix and which the user must correct.
+        var shouldFailOver = hasFallback && primary.Outcome is CallOutcome.RateLimited or CallOutcome.ServerError;
+        if (!shouldFailOver)
+            return primary.Message;
+
+        _logger.LogInformation("RAG primary provider {Outcome}; failing over to secondary provider.", primary.Outcome);
+        var fallback = await CallProviderAsync(
+            baseUrl: string.IsNullOrWhiteSpace(settings.RagFallbackBaseUrl) ? "https://integrate.api.nvidia.com/v1" : settings.RagFallbackBaseUrl,
+            model: string.IsNullOrWhiteSpace(settings.RagFallbackModel) ? "meta/llama-3.3-70b-instruct" : settings.RagFallbackModel,
+            apiKey: settings.RagFallbackApiKey,
+            rpm: settings.RagRequestsPerMinute,
+            messages: messages,
+            isFallback: true,
+            cancellationToken).ConfigureAwait(false);
+
+        // If the fallback also failed, surface the primary's (usually clearer) rate-limit message.
+        return fallback.Outcome == CallOutcome.Success ? fallback.Message : primary.Message;
+    }
+
+    private enum CallOutcome { Success, RateLimited, ServerError, ClientError }
+
+    private readonly record struct ProviderCallResult(CallOutcome Outcome, string Message);
+
+    /// <summary>Posts one OpenAI-compatible chat completion. Never throws for HTTP-level failures - returns a
+    /// typed outcome plus a user-facing message so the caller can decide whether to fail over.</summary>
+    private async Task<ProviderCallResult> CallProviderAsync(
+        string baseUrl,
+        string model,
+        string apiKey,
+        int rpm,
+        IReadOnlyList<ChatMessage> messages,
+        bool isFallback,
+        CancellationToken cancellationToken)
+    {
+        await _throttle.AwaitThrottleAsync(rpm, cancellationToken).ConfigureAwait(false);
+
+        var chatRequest = new ChatRequest(Model: model, Temperature: 0.2, Messages: messages);
         var uri = new Uri($"{baseUrl.TrimEnd('/')}/chat/completions");
 
         var httpClient = _httpClientFactory.CreateClient(HttpClientName);
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri);
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", settings.RagApiKey);
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         httpRequest.Content = JsonContent.Create(chatRequest, options: JsonOptions);
 
-        using var response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
-
-        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        var label = isFallback ? "fallback" : "primary";
+        HttpResponseMessage response;
+        try
         {
-            var retryAfter = response.Headers.RetryAfter?.Delta;
-            await _throttle.RecordRateLimitAsync(retryAfter, cancellationToken).ConfigureAwait(false);
-            return "The assistant is rate-limited right now. Please try again in a moment.";
+            response = await httpClient.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "RAG {Label} provider request failed to reach the endpoint.", label);
+            return new ProviderCallResult(CallOutcome.ServerError,
+                "The assistant provider is unreachable right now. Please try again in a moment.");
         }
 
-        if (!response.IsSuccessStatusCode)
+        using (response)
         {
-            var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            _logger.LogWarning("RAG chat request failed: {Status} {Body}", (int)response.StatusCode, content);
-            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                return "The Library assistant API key was rejected. Check the key in **Settings → AI → Library AI assistant**.";
-            return $"The assistant provider returned an error ({(int)response.StatusCode}). Check the model id and base URL in Settings, then try again.";
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var retryAfter = response.Headers.RetryAfter?.Delta;
+                await _throttle.RecordRateLimitAsync(retryAfter, cancellationToken).ConfigureAwait(false);
+                return new ProviderCallResult(CallOutcome.RateLimited,
+                    "The assistant is rate-limited right now. Please try again in a moment.");
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                _logger.LogWarning("RAG {Label} chat request failed: {Status} {Body}", label, (int)response.StatusCode, content);
+                if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                    return new ProviderCallResult(CallOutcome.ClientError,
+                        "The Library assistant API key was rejected. Check the key in **Settings → AI → Library AI assistant**.");
+                if ((int)response.StatusCode >= 500)
+                    return new ProviderCallResult(CallOutcome.ServerError,
+                        $"The assistant provider returned a server error ({(int)response.StatusCode}). Please try again.");
+                return new ProviderCallResult(CallOutcome.ClientError,
+                    $"The assistant provider returned an error ({(int)response.StatusCode}). Check the model id and base URL in Settings, then try again.");
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var chatResponse = JsonSerializer.Deserialize<ChatResponse>(responseJson, JsonOptions);
+            var text = chatResponse?.Choices?.FirstOrDefault()?.Message?.Content;
+
+            if (string.IsNullOrWhiteSpace(text))
+                return new ProviderCallResult(CallOutcome.ServerError, "The assistant returned an empty response. Please try again.");
+
+            return new ProviderCallResult(CallOutcome.Success, text);
         }
-
-        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        var chatResponse = JsonSerializer.Deserialize<ChatResponse>(responseJson, JsonOptions);
-        var text = chatResponse?.Choices?.FirstOrDefault()?.Message?.Content;
-
-        if (string.IsNullOrWhiteSpace(text))
-            return "The assistant returned an empty response. Please try again.";
-
-        return text;
     }
 
     private static IReadOnlyList<ChatMessage> BuildMessages(

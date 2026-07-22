@@ -324,6 +324,36 @@
                                               HelperText="Shapes the assistant's voice/expertise. Catalog-grounding rules are always enforced by the server." />
                             </MudItem>
                         </MudGrid>
+
+                        <MudDivider Class="my-2" />
+                        <MudText Typo="Typo.subtitle2">Fallback provider (optional)</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Tried automatically only when the primary is rate-limited (429) or errors — a different provider/account absorbs the overflow. Leave the key blank to disable.
+                        </MudText>
+                        <MudGrid>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.RagFallbackApiKey"
+                                              Label="Fallback API Key"
+                                              Variant="Variant.Outlined"
+                                              InputType="InputType.Password"
+                                              Immediate="true"
+                                              HelperText="e.g. an NVIDIA nvapi-… key. Stored locally on this API server." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.RagFallbackBaseUrl"
+                                              Label="Fallback Base URL"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="e.g. https://integrate.api.nvidia.com/v1" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.RagFallbackModel"
+                                              Label="Fallback Model"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="Chat/completion model id, e.g. meta/llama-3.3-70b-instruct." />
+                            </MudItem>
+                        </MudGrid>
                         @if (_ragKeyTestResult is not null)
                         {
                             <MudAlert Severity="@(_ragKeyTestResult.Success ? Severity.Success : Severity.Error)"

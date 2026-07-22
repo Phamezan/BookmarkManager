@@ -28,6 +28,12 @@ public class AiTaggingSettingsDto
     public string RagBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public int RagRequestsPerMinute { get; set; } = 30;
 
+    // Optional secondary provider tried automatically when the primary is rate-limited (429) or errors.
+    // Defaults to NVIDIA-hosted chat so a different account/quota absorbs the overflow. Blank key = disabled.
+    public string RagFallbackApiKey { get; set; } = string.Empty;
+    public string RagFallbackModel { get; set; } = "meta/llama-3.3-70b-instruct";
+    public string RagFallbackBaseUrl { get; set; } = "https://integrate.api.nvidia.com/v1";
+
     // Persona/system prompt prepended to every Library assistant chat. Editable so the user can shape
     // the assistant's voice and expertise. Grounding rules are appended by the server regardless.
     public string RagSystemPrompt { get; set; } = RagDefaultSystemPrompt;
