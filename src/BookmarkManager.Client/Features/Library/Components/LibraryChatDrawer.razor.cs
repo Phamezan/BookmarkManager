@@ -39,6 +39,15 @@ public partial class LibraryChatDrawer : IAsyncDisposable
         }
     }
 
+    private async Task ToggleOpen()
+    {
+        Open = !Open;
+        if (OpenChanged.HasDelegate)
+            await OpenChanged.InvokeAsync(Open);
+        if (Open)
+            await ScrollToBottomAsync();
+    }
+
     private async Task CloseAsync()
     {
         if (!Open)

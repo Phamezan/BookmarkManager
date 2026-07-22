@@ -74,7 +74,6 @@ public partial class Library : IAsyncDisposable
     private bool _genresExpanded;
     private bool _loading;
     private bool _loadingRecommends;
-    private bool _chatOpen;
     private CancellationTokenSource? _searchCts;
     private CancellationTokenSource? _recommendsCts;
     private LibraryBookmarkExclusions _bookmarkExclusions = LibraryBookmarkExclusions.Empty;
@@ -243,7 +242,6 @@ public partial class Library : IAsyncDisposable
 
     private void ToggleGenresExpanded() => _genresExpanded = !_genresExpanded;
 
-    private void ToggleChat() => _chatOpen = !_chatOpen;
 
     private bool HasActiveFilters =>
         IsSearchActive || _selectedType is not null || _selectedGenres.Count > 0 || _myBookmarksOnly || _savedForLaterOnly;

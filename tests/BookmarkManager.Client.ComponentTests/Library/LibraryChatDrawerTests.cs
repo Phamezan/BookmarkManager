@@ -25,13 +25,26 @@ public sealed class LibraryChatDrawerTests
     }
 
     [Fact]
-    public void Drawer_WhenClosed_RendersNothing()
+    public void Drawer_WhenClosed_ShowsLauncherFabAndNoPanel()
     {
         using var context = NewContext(new FakeBookmarkService());
 
         var drawer = context.Render<LibraryChatDrawer>(ps => ps.Add(p => p.Open, false));
 
+        Assert.NotEmpty(drawer.FindAll(".lib-chat-fab"));
         Assert.Empty(drawer.FindAll(".lib-chat-drawer"));
+    }
+
+    [Fact]
+    public async Task Drawer_ClickingFab_OpensPanel()
+    {
+        using var context = NewContext(new FakeBookmarkService());
+
+        var drawer = context.Render<LibraryChatDrawer>(ps => ps.Add(p => p.Open, false));
+        await drawer.Find(".lib-chat-fab").ClickAsync(new Microsoft.AspNetCore.Components.Web.MouseEventArgs());
+
+        Assert.NotEmpty(drawer.FindAll(".lib-chat-drawer"));
+        Assert.Empty(drawer.FindAll(".lib-chat-fab"));
     }
 
     [Fact]

@@ -2,10 +2,16 @@
 @using BookmarkManager.Contracts
 @using MudBlazor
 
+@if (!Open)
+{
+    <button type="button" class="lib-chat-fab" @onclick="ToggleOpen"
+            aria-label="Open Library AI assistant" title="Ask the Library AI assistant">
+        <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Medium" />
+    </button>
+}
+
 @if (Open)
 {
-    <div class="lib-chat-overlay" @onclick="CloseAsync" aria-hidden="true"></div>
-
     <aside class="lib-chat-drawer" role="dialog" aria-label="Library AI assistant" aria-modal="false">
         <header class="lib-chat-header">
             <div class="lib-chat-heading">
