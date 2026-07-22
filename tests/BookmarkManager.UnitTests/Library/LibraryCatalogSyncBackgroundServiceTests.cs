@@ -105,8 +105,17 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
         var registry = new LibraryProviderRegistry(providers, scopeFactory);
         var matchService = new BookmarkSeriesMatchService(scopeFactory, NullLogger<BookmarkSeriesMatchService>.Instance);
-        var service = new LibraryCatalogSyncBackgroundService(scopeFactory, NullLogger<LibraryCatalogSyncBackgroundService>.Instance, registry, matchService, embeddingService);
+        var service = new LibraryCatalogSyncBackgroundService(
+            scopeFactory, NullLogger<LibraryCatalogSyncBackgroundService>.Instance, registry, matchService,
+            embeddingService, new FakeVectorSearchService());
         return (service, scopeFactory);
+    }
+
+    private sealed class FakeVectorSearchService : IVectorSearchService
+    {
+        public void InvalidateCatalog() { }
+        public Task<IReadOnlyList<(Guid Id, float Score)>> SearchAsync(float[] query, int k, float floor, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<(Guid, float)>>([]);
     }
 
     /// <summary>Deterministic stand-in for the ONNX embedder: emits a fixed-length vector seeded off the

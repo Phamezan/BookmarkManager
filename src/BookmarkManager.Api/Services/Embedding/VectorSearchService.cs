@@ -17,10 +17,14 @@ namespace BookmarkManager.Api.Services.Embedding;
 /// cache and scores candidates with SIMD <see cref="TensorPrimitives.CosineSimilarity"/>.
 ///
 /// Invalidation coordinates with the existing split catalog/bookmark cache path: the cache is
-/// marked dirty by <see cref="InvalidateCatalog"/> (called on catalog-sync completion, the same
-/// signal that drives <see cref="Library.BookmarkSeriesMatchService.InvalidateCatalog"/>). As a
-/// self-healing guard it also compares a cheap catalog fingerprint (embedded-row count) each
-/// search, so a stale cache still rebuilds even before that wiring lands.
+/// marked dirty by <see cref="InvalidateCatalog"/>, called by every path that actually writes an
+/// embedding (<see cref="Library.LibraryCatalogSyncBackgroundService"/>'s interactive re-embed and
+/// <see cref="Library.LibraryEmbeddingBackfillService"/>'s backfill pass) - the same signal shape as
+/// <see cref="Library.BookmarkSeriesMatchService.InvalidateCatalog"/>. As a belt-and-suspenders guard
+/// it also compares a cheap catalog fingerprint (embedded-row count) each search; that fingerprint
+/// alone is NOT sufficient for correctness - re-embedding an existing row (edited text, same total
+/// embedded count) doesn't change it, which is why the explicit <see cref="InvalidateCatalog"/> calls
+/// above are load-bearing, not merely defense-in-depth.
 /// </summary>
 public sealed class VectorSearchService(
     IServiceScopeFactory scopeFactory,

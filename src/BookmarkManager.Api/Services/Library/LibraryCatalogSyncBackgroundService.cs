@@ -35,6 +35,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     private readonly LibraryProviderRegistry _registry;
     private readonly BookmarkSeriesMatchService _matchService;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IVectorSearchService _vectorSearch;
     private readonly Channel<bool> _resyncChannel = Channel.CreateUnbounded<bool>();
     private readonly object _statusLock = new();
     private bool _isCrawling;
@@ -44,13 +45,15 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         ILogger<LibraryCatalogSyncBackgroundService> logger,
         LibraryProviderRegistry registry,
         BookmarkSeriesMatchService matchService,
-        IEmbeddingService embeddingService)
+        IEmbeddingService embeddingService,
+        IVectorSearchService vectorSearch)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _registry = registry;
         _matchService = matchService;
         _embeddingService = embeddingService;
+        _vectorSearch = vectorSearch;
     }
 
     /// <summary>Forces a fresh, unbounded ground-up crawl of every sequence, ignoring any prior progress.</summary>
@@ -501,6 +504,11 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             }
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            // The in-memory vector cache's self-heal only notices a *count* change; re-embedding an
+            // existing row (edited synopsis, refreshed alt-titles) leaves the embedded-row count
+            // unchanged and would otherwise serve stale vectors for it until an unrelated count change or
+            // a restart. Invalidate explicitly whenever embeddings are actually written.
+            _vectorSearch.InvalidateCatalog();
         }
         catch (OperationCanceledException)
         {

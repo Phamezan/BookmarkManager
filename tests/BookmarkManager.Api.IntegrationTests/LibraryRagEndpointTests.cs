@@ -16,6 +16,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace BookmarkManager.Api.IntegrationTests;
@@ -258,10 +259,28 @@ public sealed class LibraryRagEndpointTests : IDisposable
                 services.AddHttpClient(BookmarkManager.Api.Services.Rag.LibraryRagService.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => new StubLlmHandler());
 
+                RemoveEmbeddingBackfillHostedService(services);
+
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
                 scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureDeleted();
             });
+        }
+
+        // LibraryEmbeddingBackfillService is normally idle in tests because the real embedding model
+        // never becomes ready in time - but this factory fakes IEmbeddingService.IsReady = true, which
+        // wakes the backfill loop up for real. It then scans the whole catalog and SaveChangesAsync's on
+        // its own AppDbContext scope, racing the test's own HTTP-triggered queries against the same
+        // per-test SQLite file. That race is the root cause of this suite's intermittent
+        // "unable to delete/modify collation sequence due to active statements" failures - removing the
+        // hosted service here is test isolation, not a change to production startup behavior.
+        private static void RemoveEmbeddingBackfillHostedService(IServiceCollection services)
+        {
+            var descriptor = services.SingleOrDefault(d =>
+                d.ServiceType == typeof(IHostedService) &&
+                d.ImplementationType == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService));
+            if (descriptor is not null)
+                services.Remove(descriptor);
         }
 
         protected override void Dispose(bool disposing)

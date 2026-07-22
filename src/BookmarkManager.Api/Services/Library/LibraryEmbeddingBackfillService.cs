@@ -29,15 +29,18 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IEmbeddingService _embeddingService;
+    private readonly IVectorSearchService _vectorSearch;
     private readonly ILogger<LibraryEmbeddingBackfillService> _logger;
 
     public LibraryEmbeddingBackfillService(
         IServiceScopeFactory scopeFactory,
         IEmbeddingService embeddingService,
+        IVectorSearchService vectorSearch,
         ILogger<LibraryEmbeddingBackfillService> logger)
     {
         _scopeFactory = scopeFactory;
         _embeddingService = embeddingService;
+        _vectorSearch = vectorSearch;
         _logger = logger;
     }
 
@@ -137,6 +140,11 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
         }
 
         await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // See LibraryCatalogSyncBackgroundService.EmbedUpsertedEntriesAsync for why this is needed on top
+        // of the vector cache's count-based self-heal: re-embedding an existing row (this backfill pass's
+        // whole purpose) leaves the embedded-row count unchanged, so without this explicit invalidation
+        // the cache would keep serving the stale vector this pass just replaced.
+        _vectorSearch.InvalidateCatalog();
         return pending.Count;
     }
 

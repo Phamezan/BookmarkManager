@@ -74,6 +74,14 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         }
     }
 
+    private sealed class FakeVectorSearchService : IVectorSearchService
+    {
+        public int InvalidateCount { get; private set; }
+        public void InvalidateCatalog() => InvalidateCount++;
+        public Task<IReadOnlyList<(Guid Id, float Score)>> SearchAsync(float[] query, int k, float floor, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<(Guid, float)>>([]);
+    }
+
     private static LibraryCatalogEntry MakeRow(string title, byte[]? embedding = null, string? hash = null) => new()
     {
         Id = Guid.NewGuid(),
@@ -89,8 +97,9 @@ public sealed class LibraryEmbeddingBackfillServiceTests
 
     private static LibraryEmbeddingBackfillService CreateService(
         IServiceScopeFactory scopeFactory,
-        IEmbeddingService embeddingService) =>
-        new(scopeFactory, embeddingService, NullLogger<LibraryEmbeddingBackfillService>.Instance);
+        IEmbeddingService embeddingService,
+        IVectorSearchService? vectorSearch = null) =>
+        new(scopeFactory, embeddingService, vectorSearch ?? new FakeVectorSearchService(), NullLogger<LibraryEmbeddingBackfillService>.Instance);
 
     [Fact]
     public async Task RunBackfillPassAsync_EmbedsRowsWithNullEmbedding()
@@ -101,7 +110,8 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         await db.SaveChangesAsync();
 
         var embedding = new FakeEmbeddingService();
-        var service = CreateService(testDb.ScopeFactory, embedding);
+        var vectorSearch = new FakeVectorSearchService();
+        var service = CreateService(testDb.ScopeFactory, embedding, vectorSearch);
 
         var count = await service.RunBackfillPassAsync(CancellationToken.None);
 
@@ -113,6 +123,10 @@ public sealed class LibraryEmbeddingBackfillServiceTests
             Assert.NotNull(r.Embedding);
             Assert.Equal(LibraryEmbeddingText.SourceHash(r), r.EmbeddingSourceHash);
         });
+
+        // Writing embeddings must invalidate the in-memory vector cache - its count-only self-heal can't
+        // detect a re-embed that leaves the total embedded-row count unchanged (see VectorSearchService).
+        Assert.Equal(1, vectorSearch.InvalidateCount);
     }
 
     [Fact]
@@ -148,12 +162,14 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         await db.SaveChangesAsync();
 
         var embedding = new FakeEmbeddingService();
-        var service = CreateService(testDb.ScopeFactory, embedding);
+        var vectorSearch = new FakeVectorSearchService();
+        var service = CreateService(testDb.ScopeFactory, embedding, vectorSearch);
 
         var count = await service.RunBackfillPassAsync(CancellationToken.None);
 
         Assert.Equal(0, count);
         Assert.Equal(0, embedding.EmbeddedTextCount);
+        Assert.Equal(0, vectorSearch.InvalidateCount);
     }
 
     [Fact]
@@ -161,12 +177,14 @@ public sealed class LibraryEmbeddingBackfillServiceTests
     {
         using var testDb = new TestDatabase();
         var embedding = new FakeEmbeddingService();
-        var service = CreateService(testDb.ScopeFactory, embedding);
+        var vectorSearch = new FakeVectorSearchService();
+        var service = CreateService(testDb.ScopeFactory, embedding, vectorSearch);
 
         var count = await service.RunBackfillPassAsync(CancellationToken.None);
 
         Assert.Equal(0, count);
         Assert.Equal(0, embedding.EmbeddedTextCount);
+        Assert.Equal(0, vectorSearch.InvalidateCount);
     }
 
     [Fact]
