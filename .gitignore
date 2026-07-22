@@ -72,3 +72,6 @@ graphify-out/
 # Serilog file sink output (src/BookmarkManager.Api/Program.cs)
 src/BookmarkManager.Api/logs/
 bin/*/logs/
+
+# Downloaded ONNX embedding model cache (regenerated on first run)
+src/BookmarkManager.Api/models/

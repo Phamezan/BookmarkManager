@@ -20,4 +20,11 @@ public class AiTaggingSettingsDto
     public string MigrationSearchModel { get; set; } = "groq/compound-mini";
     // When enabled, High-confidence migration proposals are auto-approved right after creation.
     public bool MigrationAutoApproveHigh { get; set; } = false;
+
+    // Library RAG assistant: OpenAI-compatible chat model that answers grounded on retrieved catalog
+    // entries. Defaults to the same Groq endpoint/model shape as the tagging fallback.
+    public string RagModel { get; set; } = "llama-3.3-70b-versatile";
+    public string RagApiKey { get; set; } = string.Empty;
+    public string RagBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
+    public int RagRequestsPerMinute { get; set; } = 15;
 }
