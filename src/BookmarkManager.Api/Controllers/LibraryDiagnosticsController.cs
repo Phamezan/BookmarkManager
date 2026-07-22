@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Search;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -13,12 +14,17 @@ namespace BookmarkManager.Api.Controllers;
 
 /// <summary>Read-only RAG coverage diagnostics: reports how much of the catalog is embedded, whether a
 /// given title is present/embedded, and how a query ranks against the vector index. Reuses the same
-/// <see cref="IEmbeddingService"/> and <see cref="IVectorSearchService"/> the Library assistant uses.</summary>
+/// <see cref="IEmbeddingService"/> and <see cref="IVectorSearchService"/> the Library assistant uses.
+/// The pure-vector "wide probe" (<see cref="RunQueryAsync"/>/<see cref="RankTitleForQueryAsync"/>) stays
+/// unchanged - a debugging tool that must report raw cosine rank - with hybrid (RRF-fused)
+/// results reported alongside via <see cref="IHybridSearchService"/> so the diagnostics pane can
+/// compare the two.</summary>
 [ApiController]
 [Route("api/library/diagnostics")]
 public sealed class LibraryDiagnosticsController(
     IEmbeddingService embeddingService,
     IVectorSearchService vectorSearch,
+    IHybridSearchService hybridSearch,
     AppDbContext db) : ControllerBase
 {
     /// <summary>Floor low enough to surface a title even when its cosine similarity is far below the
@@ -62,11 +68,14 @@ public sealed class LibraryDiagnosticsController(
 
         IReadOnlyList<LibraryQueryMatchDto>? queryMatches = null;
         LibraryTitleQueryRankDto? titleRank = null;
+        IReadOnlyList<LibraryHybridMatchDto>? hybridMatches = null;
 
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var queryVector = await embeddingService.EmbedQueryAsync(query.Trim(), cancellationToken).ConfigureAwait(false);
+            var trimmedQuery = query.Trim();
+            var queryVector = await embeddingService.EmbedQueryAsync(trimmedQuery, cancellationToken).ConfigureAwait(false);
             queryMatches = await RunQueryAsync(queryVector, cancellationToken).ConfigureAwait(false);
+            hybridMatches = await RunHybridQueryAsync(trimmedQuery, queryVector, cancellationToken).ConfigureAwait(false);
 
             if (matchedEntry is not null)
                 titleRank = await RankTitleForQueryAsync(queryVector, matchedEntry, cancellationToken).ConfigureAwait(false);
@@ -80,7 +89,8 @@ public sealed class LibraryDiagnosticsController(
             Title: titleResult?.Dto,
             QueryMatches: queryMatches,
             TitleRank: titleRank,
-            UpToDateCount: upToDateCount));
+            UpToDateCount: upToDateCount,
+            HybridMatches: hybridMatches));
     }
 
     /// <summary>Counts embedded rows whose stored hash still matches the hash of the current embed text.
@@ -163,6 +173,33 @@ public sealed class LibraryDiagnosticsController(
         {
             if (entriesById.TryGetValue(id, out var entry))
                 matches.Add(new LibraryQueryMatchDto(entry.Title, entry.MediaType, score));
+        }
+
+        return matches;
+    }
+
+    /// <summary>Same query, run through the hybrid (dense + FTS5/BM25, RRF-fused) path so the
+    /// diagnostics pane can show it next to the pure-vector <see cref="RunQueryAsync"/> results.</summary>
+    private async Task<IReadOnlyList<LibraryHybridMatchDto>> RunHybridQueryAsync(
+        string query, float[] queryVector, CancellationToken cancellationToken)
+    {
+        var hits = await hybridSearch
+            .SearchAsync(query, queryVector, EmbeddingConstants.RagTopK, cancellationToken)
+            .ConfigureAwait(false);
+        if (hits.Count == 0)
+            return Array.Empty<LibraryHybridMatchDto>();
+
+        var ids = hits.Select(h => h.Id).ToList();
+        var entriesById = await db.LibraryCatalogEntries.AsNoTracking()
+            .Where(e => ids.Contains(e.Id))
+            .ToDictionaryAsync(e => e.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        var matches = new List<LibraryHybridMatchDto>(hits.Count);
+        foreach (var (id, score, rrfScore) in hits)
+        {
+            if (entriesById.TryGetValue(id, out var entry))
+                matches.Add(new LibraryHybridMatchDto(entry.Title, entry.MediaType, score, rrfScore));
         }
 
         return matches;
