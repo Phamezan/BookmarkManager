@@ -135,6 +135,9 @@ builder.Services.AddHostedService(
 // RAG / semantic embedding engine (Wave 2a). In-memory cosine vector search over catalog embeddings.
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IVectorSearchService, BookmarkManager.Api.Services.Embedding.VectorSearchService>();
 
+// RAG / semantic embedding ingestion (Wave 2c). Backfill worker embeds catalog rows the interactive
+// sync path missed (crawled before the model loaded, or with a since-changed embed text).
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService>();
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));
