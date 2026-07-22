@@ -24,6 +24,9 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
 {
     private const string ModelFileName = "model.onnx";
     private const string TokenizerFileName = "tokenizer.json";
+    // bge-base-en-v1.5 has 512 learned position embeddings; longer sequences must be truncated or the
+    // ONNX run throws on out-of-range positions.
+    private const int MaxSequenceLength = 512;
     private const string ModelUrl = "https://huggingface.co/Xenova/bge-base-en-v1.5/resolve/main/onnx/model.onnx";
     private const string TokenizerUrl = "https://huggingface.co/Xenova/bge-base-en-v1.5/resolve/main/tokenizer.json";
 
@@ -141,43 +144,66 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
             throw new InvalidOperationException("Embedding model is not ready.");
         }
 
-        var vectors = new List<float[]>(texts.Count);
         await _runLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            foreach (var text in texts)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                vectors.Add(EmbedSingle(text));
-            }
+            return EmbedBatch(texts, cancellationToken);
         }
         finally
         {
             _runLock.Release();
         }
-
-        return vectors;
     }
 
-    // Single sequence, no padding: attention mask is all-ones and token types all-zero, so mean
-    // pooling is a plain average over every token position.
-    private float[] EmbedSingle(string text)
+    // Runs the whole batch through ONNX in one call: tokenizes each text (truncated to
+    // MaxSequenceLength), packs them into padded [batch, maxLen] tensors with a real attention mask so
+    // padded positions are ignored, executes a single session Run (ONNX Runtime parallelizes the matmuls
+    // across cores internally), then CLS-pools + L2-normalizes each row independently. Empty inputs are
+    // zero vectors and never reach the model. Assumes the run lock is held by the caller.
+    private IReadOnlyList<float[]> EmbedBatch(IReadOnlyList<string> texts, CancellationToken cancellationToken)
     {
-        var ids = _tokenizer!.Encode(text ?? string.Empty);
-        var sequenceLength = ids.Length;
-        if (sequenceLength == 0)
+        var encoded = new uint[texts.Count][];
+        var maxLength = 0;
+        for (var i = 0; i < texts.Count; i++)
         {
-            return new float[EmbeddingConstants.EmbeddingDimensions];
+            var ids = _tokenizer!.Encode(texts[i] ?? string.Empty);
+            if (ids.Length > MaxSequenceLength)
+            {
+                ids = ids[..MaxSequenceLength];
+            }
+            encoded[i] = ids;
+            if (ids.Length > maxLength)
+            {
+                maxLength = ids.Length;
+            }
         }
 
-        var inputIds = new DenseTensor<long>(new[] { 1, sequenceLength });
-        var attentionMask = new DenseTensor<long>(new[] { 1, sequenceLength });
-        var tokenTypeIds = new DenseTensor<long>(new[] { 1, sequenceLength });
-        for (var i = 0; i < sequenceLength; i++)
+        var vectors = new float[texts.Count][];
+        if (maxLength == 0)
         {
-            inputIds[0, i] = ids[i];
-            attentionMask[0, i] = 1;
-            tokenTypeIds[0, i] = 0;
+            // Every input tokenized empty: all-zero vectors, nothing to run.
+            for (var i = 0; i < texts.Count; i++)
+            {
+                vectors[i] = new float[EmbeddingConstants.EmbeddingDimensions];
+            }
+            return vectors;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var batch = texts.Count;
+        var inputIds = new DenseTensor<long>(new[] { batch, maxLength });
+        var attentionMask = new DenseTensor<long>(new[] { batch, maxLength });
+        var tokenTypeIds = new DenseTensor<long>(new[] { batch, maxLength });
+        for (var row = 0; row < batch; row++)
+        {
+            var ids = encoded[row];
+            for (var col = 0; col < ids.Length; col++)
+            {
+                inputIds[row, col] = ids[col];
+                attentionMask[row, col] = 1;
+                // token_type_ids and padded positions stay 0 (DenseTensor default).
+            }
         }
 
         var inputs = new List<NamedOnnxValue>(3);
@@ -188,7 +214,7 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
                 "input_ids" => inputIds,
                 "attention_mask" => attentionMask,
                 "token_type_ids" => tokenTypeIds,
-                _ => null
+                _ => (DenseTensor<long>?)null
             };
             if (tensor is not null)
             {
@@ -198,19 +224,26 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
 
         using var results = _session!.Run(inputs);
         var hiddenStates = results[0].AsTensor<float>();
-        return ClsPoolAndNormalize(hiddenStates);
+        for (var row = 0; row < batch; row++)
+        {
+            vectors[row] = encoded[row].Length == 0
+                ? new float[EmbeddingConstants.EmbeddingDimensions]
+                : ClsPoolAndNormalize(hiddenStates, row);
+        }
+
+        return vectors;
     }
 
-    // bge-base-en-v1.5 pools on the [CLS] token (first position of last_hidden_state), not mean pooling,
-    // then L2-normalizes so cosine similarity reduces to a dot product.
+    // bge-base-en-v1.5 pools on the [CLS] token (first position of last_hidden_state) for the given batch
+    // row, not mean pooling, then L2-normalizes so cosine similarity reduces to a dot product.
     private static float[] ClsPoolAndNormalize(
-        Microsoft.ML.OnnxRuntime.Tensors.Tensor<float> hiddenStates)
+        Microsoft.ML.OnnxRuntime.Tensors.Tensor<float> hiddenStates, int row)
     {
         const int dimensions = EmbeddingConstants.EmbeddingDimensions;
         var pooled = new float[dimensions];
         for (var dim = 0; dim < dimensions; dim++)
         {
-            pooled[dim] = hiddenStates[0, 0, dim];
+            pooled[dim] = hiddenStates[row, 0, dim];
         }
 
         var norm = MathF.Sqrt(TensorPrimitives.Dot(pooled, pooled));
