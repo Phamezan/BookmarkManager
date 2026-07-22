@@ -50,6 +50,8 @@ public partial class Settings
     private TestAiKeyResponse? _groqKeyTestResult;
     private bool _ragKeyTesting;
     private TestAiKeyResponse? _ragKeyTestResult;
+    private bool _ragFallbackKeyTesting;
+    private TestAiKeyResponse? _ragFallbackKeyTestResult;
 
     private class ThemeOption
     {
@@ -313,6 +315,35 @@ public partial class Settings
         finally
         {
             _ragKeyTesting = false;
+        }
+    }
+
+    private async Task TestRagFallbackKeyAsync()
+    {
+        _ragFallbackKeyTesting = true;
+        _ragFallbackKeyTestResult = null;
+        try
+        {
+            var request = new TestAiKeyRequest
+            {
+                Provider = "Groq",
+                BaseUrl = _aiSettings.RagFallbackBaseUrl,
+                Model = _aiSettings.RagFallbackModel,
+                ApiKey = _aiSettings.RagFallbackApiKey
+            };
+            _ragFallbackKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
+            Snackbar.Add(
+                _ragFallbackKeyTestResult.Success ? "Fallback key test passed." : "Fallback key test failed.",
+                _ragFallbackKeyTestResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _ragFallbackKeyTestResult = new TestAiKeyResponse { Success = false, Message = ex.Message };
+            Snackbar.Add($"Failed to run fallback key test: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _ragFallbackKeyTesting = false;
         }
     }
 

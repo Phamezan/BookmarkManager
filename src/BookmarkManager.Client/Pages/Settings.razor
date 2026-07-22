@@ -326,7 +326,17 @@
                         </MudGrid>
 
                         <MudDivider Class="my-2" />
-                        <MudText Typo="Typo.subtitle2">Fallback provider (optional)</MudText>
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2" Class="flex-grow-1">Fallback provider (optional)</MudText>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Bolt"
+                                       OnClick="TestRagFallbackKeyAsync"
+                                       Disabled="@(_ragFallbackKeyTesting || _aiSettingsLoading)">
+                                @(_ragFallbackKeyTesting ? "Testing..." : "Test key")
+                            </MudButton>
+                        </MudStack>
                         <MudText Typo="Typo.body2" Class="mud-text-secondary">
                             Tried automatically only when the primary is rate-limited (429) or errors — a different provider/account absorbs the overflow. Leave the key blank to disable.
                         </MudText>
@@ -354,6 +364,16 @@
                                               HelperText="Chat/completion model id, e.g. meta/llama-3.3-70b-instruct." />
                             </MudItem>
                         </MudGrid>
+                        @if (_ragFallbackKeyTestResult is not null)
+                        {
+                            <MudAlert Severity="@(_ragFallbackKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                                      Variant="Variant.Outlined"
+                                      Dense="true"
+                                      ShowCloseIcon="true"
+                                      CloseIconClicked="@(() => _ragFallbackKeyTestResult = null)">
+                                @(_ragFallbackKeyTestResult.StatusCode > 0 ? $"[{_ragFallbackKeyTestResult.StatusCode}] " : "")@_ragFallbackKeyTestResult.Message
+                            </MudAlert>
+                        }
                         @if (_ragKeyTestResult is not null)
                         {
                             <MudAlert Severity="@(_ragKeyTestResult.Success ? Severity.Success : Severity.Error)"
