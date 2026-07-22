@@ -234,9 +234,18 @@
         }
     }
 
+    // Keeps the AI assistant transcript pinned to the newest message after a send/reply.
+    function libraryChatScrollToBottom(logEl) {
+        if (!logEl) {
+            return;
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
     window.refreshLibraryScrub = refreshLibraryScrub;
     window.resetLibraryScrub = resetLibraryScrub;
     window.attachLibraryInfiniteScroll = attachLibraryInfiniteScroll;
     window.setLibraryInfiniteScrollEnabled = setLibraryInfiniteScrollEnabled;
     window.disposeLibraryBrowse = disposeLibraryBrowse;
+    window.libraryChatScrollToBottom = libraryChatScrollToBottom;
 })();

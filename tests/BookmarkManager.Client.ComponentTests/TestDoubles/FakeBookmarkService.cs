@@ -61,6 +61,12 @@ public class FakeBookmarkService : IBookmarkService
             [],
             null));
 
+    public Func<LibraryChatRequestDto, Task<LibraryChatResponseDto>>? OnLibraryChat { get; set; }
+    public LibraryChatResponseDto LibraryChatResponse { get; set; } = new();
+
+    public Task<LibraryChatResponseDto> LibraryChatAsync(LibraryChatRequestDto request, CancellationToken cancellationToken = default)
+        => OnLibraryChat != null ? OnLibraryChat(request) : Task.FromResult(LibraryChatResponse);
+
     public Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
         => Task.FromResult(folderIds.Count == 0 ? new AnimeCalendarScheduleResponse() : ScheduleResponse);
 

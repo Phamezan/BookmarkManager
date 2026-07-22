@@ -187,6 +187,10 @@ public sealed class HttpBookmarkService : IBookmarkService
                ?? throw new ApiException(HttpStatusCode.OK, "Tag explain response was empty.");
     }
 
+    public async Task<LibraryChatResponseDto> LibraryChatAsync(LibraryChatRequestDto request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<LibraryChatResponseDto>(HttpMethod.Post, "api/library/chat", request, cancellationToken)
+           ?? new LibraryChatResponseDto();
+
     public async Task<AnimeCalendarScheduleResponse> GetAnimeScheduleAsync(List<Guid> folderIds, CancellationToken cancellationToken = default)
     {
         if (folderIds.Count == 0) return new AnimeCalendarScheduleResponse();

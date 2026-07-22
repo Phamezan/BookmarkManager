@@ -1,0 +1,62 @@
+@namespace BookmarkManager.Client.Features.Library.Components
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+@if (Open)
+{
+    <div class="lib-chat-overlay" @onclick="CloseAsync" aria-hidden="true"></div>
+
+    <aside class="lib-chat-drawer" role="dialog" aria-label="Library AI assistant" aria-modal="false">
+        <header class="lib-chat-header">
+            <div class="lib-chat-heading">
+                <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Small" Class="lib-chat-spark" />
+                <span class="lib-chat-title">AI Assistant</span>
+            </div>
+            <button type="button" class="lib-chat-close" @onclick="CloseAsync" aria-label="Close assistant">
+                <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+            </button>
+        </header>
+
+        <div class="lib-chat-log" role="list" @ref="_logRef">
+            @if (_messages.Count == 0)
+            {
+                <div class="lib-chat-empty">
+                    <MudIcon Icon="@Icons.Material.Outlined.Chat" Class="lib-chat-empty-icon" />
+                    <p class="lib-chat-empty-title">Ask about your library</p>
+                    <p class="lib-chat-empty-sub">Try "recommend me a completed fantasy manhwa" or "what's like Solo Leveling?"</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var message in _messages)
+                {
+                    <LibraryChatMessageBubble @key="message.Id"
+                                              Role="@message.Role"
+                                              Content="@message.Content"
+                                              IsPending="@message.IsPending"
+                                              Recommendations="@message.Recommendations" />
+                }
+            }
+        </div>
+
+        @if (_error is { } error)
+        {
+            <div class="lib-chat-error" role="alert">@error</div>
+        }
+
+        <footer class="lib-chat-input">
+            <textarea class="lib-chat-textarea"
+                      placeholder="Message the assistant…"
+                      value="@_input"
+                      @oninput="OnInput"
+                      @onkeydown="OnKeyDown"
+                      disabled="@_sending"
+                      rows="1"
+                      aria-label="Message the assistant"></textarea>
+            <button type="button" class="lib-chat-send" @onclick="SendAsync"
+                    disabled="@(!CanSend)" aria-label="Send message">
+                <MudIcon Icon="@Icons.Material.Filled.Send" Size="Size.Small" />
+            </button>
+        </footer>
+    </aside>
+}
