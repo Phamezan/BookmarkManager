@@ -97,6 +97,9 @@ public sealed class LibraryRagEndpointTests : IDisposable
     {
         public bool IsReady => true;
 
+        public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) => EmbedAsync(text, cancellationToken);
+
+
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken)
         {
             var vector = new float[EmbeddingConstants.EmbeddingDimensions];

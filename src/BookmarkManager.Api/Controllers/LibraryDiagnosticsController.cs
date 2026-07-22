@@ -65,7 +65,7 @@ public sealed class LibraryDiagnosticsController(
 
         if (!string.IsNullOrWhiteSpace(query))
         {
-            var queryVector = await embeddingService.EmbedAsync(query.Trim(), cancellationToken).ConfigureAwait(false);
+            var queryVector = await embeddingService.EmbedQueryAsync(query.Trim(), cancellationToken).ConfigureAwait(false);
             queryMatches = await RunQueryAsync(queryVector, cancellationToken).ConfigureAwait(false);
 
             if (matchedEntry is not null)
@@ -96,14 +96,14 @@ public sealed class LibraryDiagnosticsController(
         var upToDate = 0;
         foreach (var r in rows)
         {
-            var text = LibraryEmbeddingText.Build(new LibraryCatalogEntry
+            var currentHash = LibraryEmbeddingText.SourceHash(new LibraryCatalogEntry
             {
                 Title = r.Title,
                 AlternateTitles = r.AlternateTitles,
                 Genres = r.Genres,
                 Synopsis = r.Synopsis
             });
-            if (string.Equals(r.EmbeddingSourceHash, LibraryEmbeddingText.Hash(text), StringComparison.Ordinal))
+            if (string.Equals(r.EmbeddingSourceHash, currentHash, StringComparison.Ordinal))
                 upToDate++;
         }
         return upToDate;
@@ -128,7 +128,7 @@ public sealed class LibraryDiagnosticsController(
         // (Title + AlternateTitles + Genres + Synopsis). Such rows were embedded from older/thinner text
         // and rank poorly until the backfill worker re-embeds them.
         var embedded = entry.Embedding is not null;
-        var currentHash = LibraryEmbeddingText.Hash(LibraryEmbeddingText.Build(entry));
+        var currentHash = LibraryEmbeddingText.SourceHash(entry);
         var stale = embedded && !string.Equals(entry.EmbeddingSourceHash, currentHash, StringComparison.Ordinal);
 
         var dto = new LibraryTitleEmbeddingDto(

@@ -24,8 +24,8 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
 {
     private const string ModelFileName = "model.onnx";
     private const string TokenizerFileName = "tokenizer.json";
-    private const string ModelUrl = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx";
-    private const string TokenizerUrl = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json";
+    private const string ModelUrl = "https://huggingface.co/Xenova/bge-base-en-v1.5/resolve/main/onnx/model.onnx";
+    private const string TokenizerUrl = "https://huggingface.co/Xenova/bge-base-en-v1.5/resolve/main/tokenizer.json";
 
     private readonly string _modelDirectory;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -45,7 +45,9 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
         ArgumentNullException.ThrowIfNull(environment);
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _modelDirectory = Path.Combine(environment.ContentRootPath, "models", "all-MiniLM-L6-v2");
+        // Model-versioned directory so switching models downloads fresh files instead of reusing the
+        // previous model's cached model.onnx/tokenizer.json.
+        _modelDirectory = Path.Combine(environment.ContentRootPath, "models", EmbeddingConstants.ModelTag);
     }
 
     public bool IsReady => _isReady;
@@ -121,6 +123,14 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
         return result[0];
     }
 
+    /// <summary>Embeds a search query. bge is asymmetric, so the query gets the retrieval instruction
+    /// prefix while documents (via <see cref="EmbedAsync"/>/<see cref="EmbedBatchAsync"/>) do not.</summary>
+    public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(text);
+        return EmbedAsync(EmbeddingConstants.QueryInstructionPrefix + text, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<float[]>> EmbedBatchAsync(
         IReadOnlyList<string> texts,
         CancellationToken cancellationToken)
@@ -188,27 +198,19 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
 
         using var results = _session!.Run(inputs);
         var hiddenStates = results[0].AsTensor<float>();
-        return MeanPoolAndNormalize(hiddenStates, sequenceLength);
+        return ClsPoolAndNormalize(hiddenStates);
     }
 
-    private static float[] MeanPoolAndNormalize(
-        Microsoft.ML.OnnxRuntime.Tensors.Tensor<float> hiddenStates,
-        int sequenceLength)
+    // bge-base-en-v1.5 pools on the [CLS] token (first position of last_hidden_state), not mean pooling,
+    // then L2-normalizes so cosine similarity reduces to a dot product.
+    private static float[] ClsPoolAndNormalize(
+        Microsoft.ML.OnnxRuntime.Tensors.Tensor<float> hiddenStates)
     {
         const int dimensions = EmbeddingConstants.EmbeddingDimensions;
         var pooled = new float[dimensions];
-        for (var token = 0; token < sequenceLength; token++)
-        {
-            for (var dim = 0; dim < dimensions; dim++)
-            {
-                pooled[dim] += hiddenStates[0, token, dim];
-            }
-        }
-
-        var inverseLength = 1f / sequenceLength;
         for (var dim = 0; dim < dimensions; dim++)
         {
-            pooled[dim] *= inverseLength;
+            pooled[dim] = hiddenStates[0, 0, dim];
         }
 
         var norm = MathF.Sqrt(TensorPrimitives.Dot(pooled, pooled));

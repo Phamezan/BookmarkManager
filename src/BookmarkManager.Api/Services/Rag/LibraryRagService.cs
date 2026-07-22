@@ -90,7 +90,7 @@ public sealed class LibraryRagService : ILibraryRagService
                 Array.Empty<LibraryRecommendedSeriesDto>());
         }
 
-        var queryVector = await _embeddingService.EmbedAsync(request.Message, cancellationToken).ConfigureAwait(false);
+        var queryVector = await _embeddingService.EmbedQueryAsync(request.Message, cancellationToken).ConfigureAwait(false);
         var hits = await _vectorSearch
             .SearchAsync(queryVector, EmbeddingConstants.RagTopK, EmbeddingConstants.RagMinSimilarity, cancellationToken)
             .ConfigureAwait(false);

@@ -117,6 +117,9 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         public int EmbedCallCount { get; private set; }
         public bool IsReady { get; } = isReady;
 
+        public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) => EmbedAsync(text, cancellationToken);
+
+
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken)
         {
             EmbedCallCount++;
@@ -777,7 +780,7 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         var row = await db.LibraryCatalogEntries.SingleAsync();
         Assert.NotNull(row.Embedding);
         Assert.NotNull(row.EmbeddingSourceHash);
-        Assert.Equal(LibraryEmbeddingText.Hash(LibraryEmbeddingText.Build(row)), row.EmbeddingSourceHash);
+        Assert.Equal(LibraryEmbeddingText.SourceHash(row), row.EmbeddingSourceHash);
         Assert.Equal(EmbeddingConstants.EmbeddingDimensions, row.GetEmbeddingVector()!.Length);
     }
 

@@ -97,7 +97,7 @@ public sealed class LibrarySearchService(
         float[] queryVector;
         try
         {
-            queryVector = await embeddingService.EmbedAsync(query, cancellationToken).ConfigureAwait(false);
+            queryVector = await embeddingService.EmbedQueryAsync(query, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

@@ -118,7 +118,7 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
         foreach (var row in rows)
         {
             var text = LibraryEmbeddingText.Build(row);
-            var hash = LibraryEmbeddingText.Hash(text);
+            var hash = LibraryEmbeddingText.SourceHash(row);
             if (row.Embedding is not null && string.Equals(row.EmbeddingSourceHash, hash, StringComparison.Ordinal))
                 continue;
 

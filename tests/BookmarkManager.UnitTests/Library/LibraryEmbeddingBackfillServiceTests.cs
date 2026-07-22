@@ -47,6 +47,9 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         public int EmbeddedTextCount { get; private set; }
         public bool IsReady { get; } = isReady;
 
+        public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) => EmbedAsync(text, cancellationToken);
+
+
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken)
         {
             EmbeddedTextCount++;
@@ -108,7 +111,7 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         Assert.All(rows, r =>
         {
             Assert.NotNull(r.Embedding);
-            Assert.Equal(LibraryEmbeddingText.Hash(LibraryEmbeddingText.Build(r)), r.EmbeddingSourceHash);
+            Assert.Equal(LibraryEmbeddingText.SourceHash(r), r.EmbeddingSourceHash);
         });
     }
 
@@ -128,7 +131,7 @@ public sealed class LibraryEmbeddingBackfillServiceTests
 
         Assert.Equal(1, count);
         var row = await db.LibraryCatalogEntries.SingleAsync();
-        Assert.Equal(LibraryEmbeddingText.Hash(LibraryEmbeddingText.Build(row)), row.EmbeddingSourceHash);
+        Assert.Equal(LibraryEmbeddingText.SourceHash(row), row.EmbeddingSourceHash);
         Assert.Equal(EmbeddingConstants.EmbeddingDimensions, row.GetEmbeddingVector()!.Length);
     }
 
@@ -138,7 +141,7 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         using var testDb = new TestDatabase();
         var db = testDb.Db;
         var row = MakeRow("Delta");
-        var currentHash = LibraryEmbeddingText.Hash(LibraryEmbeddingText.Build(row));
+        var currentHash = LibraryEmbeddingText.SourceHash(row);
         row.SetEmbeddingVector(new float[EmbeddingConstants.EmbeddingDimensions]);
         row.EmbeddingSourceHash = currentHash;
         db.LibraryCatalogEntries.Add(row);

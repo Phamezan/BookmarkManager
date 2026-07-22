@@ -183,6 +183,9 @@ public sealed class LibraryDiagnosticsEndpointTests : IDisposable
         public bool Ready { get; set; } = true;
         public bool IsReady => Ready;
 
+        public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) => EmbedAsync(text, cancellationToken);
+
+
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken)
         {
             var vector = new float[EmbeddingConstants.EmbeddingDimensions];

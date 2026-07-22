@@ -32,4 +32,14 @@ public static class LibraryEmbeddingText
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
         return Convert.ToHexStringLower(bytes);
     }
+
+    /// <summary>The stored freshness hash for an entry: the embed-text hash bound to the active model tag,
+    /// so a row counts as up-to-date only when both its text AND the embedding model still match. Switching
+    /// models (see <see cref="EmbeddingConstants.ModelTag"/>) changes every row's hash and triggers a
+    /// full re-embed by the backfill worker.</summary>
+    public static string SourceHash(LibraryCatalogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+        return Hash(EmbeddingConstants.ModelTag + '\n' + Build(entry));
+    }
 }
