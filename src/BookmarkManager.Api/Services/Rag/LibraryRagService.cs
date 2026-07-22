@@ -28,9 +28,11 @@ public sealed class LibraryRagService : ILibraryRagService
     public const string HttpClientName = nameof(LibraryRagService);
 
     private const int MaxHistoryTurns = 6;
-    private const string SystemInstructions =
-        "You are the Library assistant for a personal manga/light-novel/web-novel catalog. Answer the "
-        + "user's question using ONLY the numbered catalog entries provided as context. Recommend "
+
+    /// <summary>Non-negotiable grounding rules appended after the user-configurable persona so the
+    /// assistant stays anchored to the retrieved catalog regardless of how the persona is edited.</summary>
+    private const string GroundingRules =
+        "Answer the user's question using ONLY the numbered catalog entries provided as context. Recommend "
         + "specific titles from that context by name, briefly explaining why each fits. If the context "
         + "does not contain anything relevant, say so plainly instead of inventing titles. Respond in "
         + "concise Markdown.";
@@ -79,6 +81,15 @@ public sealed class LibraryRagService : ILibraryRagService
                 Array.Empty<LibraryRecommendedSeriesDto>());
         }
 
+        var settings = await _settings.GetAsync(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(settings.RagApiKey))
+        {
+            return new LibraryChatResponseDto(
+                "No Library assistant API key is configured yet. Open **Settings → AI → Library AI assistant** "
+                + "and paste a key (e.g. a free Groq key from console.groq.com/keys) to start chatting.",
+                Array.Empty<LibraryRecommendedSeriesDto>());
+        }
+
         var queryVector = await _embeddingService.EmbedAsync(request.Message, cancellationToken).ConfigureAwait(false);
         var hits = await _vectorSearch
             .SearchAsync(queryVector, EmbeddingConstants.RagTopK, EmbeddingConstants.RagMinSimilarity, cancellationToken)
@@ -92,7 +103,7 @@ public sealed class LibraryRagService : ILibraryRagService
                 Array.Empty<LibraryRecommendedSeriesDto>());
         }
 
-        var markdown = await CompleteAsync(request, cards, cancellationToken).ConfigureAwait(false);
+        var markdown = await CompleteAsync(settings, request, cards, cancellationToken).ConfigureAwait(false);
         return new LibraryChatResponseDto(markdown, cards);
     }
 
@@ -134,17 +145,17 @@ public sealed class LibraryRagService : ILibraryRagService
 
     /// <summary>Builds the grounded prompt and calls the OpenAI-compatible chat endpoint.</summary>
     private async Task<string> CompleteAsync(
+        AiTaggingSettingsDto settings,
         LibraryChatRequestDto request,
         IReadOnlyList<LibraryRecommendedSeriesDto> cards,
         CancellationToken cancellationToken)
     {
-        var settings = await _settings.GetAsync(cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(settings.RagApiKey))
-            throw new InvalidOperationException("A RAG API key is required before the Library assistant can answer.");
-
         await _throttle.AwaitThrottleAsync(settings.RagRequestsPerMinute, cancellationToken).ConfigureAwait(false);
 
-        var messages = BuildMessages(request, cards);
+        var persona = string.IsNullOrWhiteSpace(settings.RagSystemPrompt)
+            ? AiTaggingSettingsDto.RagDefaultSystemPrompt
+            : settings.RagSystemPrompt;
+        var messages = BuildMessages(persona, request, cards);
         var chatRequest = new ChatRequest(
             Model: string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel,
             Temperature: 0.2,
@@ -170,9 +181,10 @@ public sealed class LibraryRagService : ILibraryRagService
         if (!response.IsSuccessStatusCode)
         {
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            _logger.LogWarning("RAG chat request failed: {Status} {Body}", (int)response.StatusCode, content);
             if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-                throw new HttpRequestException("RAG key/config problem. Check the Library assistant API key in Settings.", null, response.StatusCode);
-            throw new HttpRequestException($"RAG chat request failed with status {(int)response.StatusCode} {response.StatusCode}: {content}", null, response.StatusCode);
+                return "The Library assistant API key was rejected. Check the key in **Settings → AI → Library AI assistant**.";
+            return $"The assistant provider returned an error ({(int)response.StatusCode}). Check the model id and base URL in Settings, then try again.";
         }
 
         var responseJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -180,16 +192,17 @@ public sealed class LibraryRagService : ILibraryRagService
         var text = chatResponse?.Choices?.FirstOrDefault()?.Message?.Content;
 
         if (string.IsNullOrWhiteSpace(text))
-            throw new InvalidOperationException("The Library assistant returned an empty response.");
+            return "The assistant returned an empty response. Please try again.";
 
         return text;
     }
 
     private static IReadOnlyList<ChatMessage> BuildMessages(
+        string persona,
         LibraryChatRequestDto request,
         IReadOnlyList<LibraryRecommendedSeriesDto> cards)
     {
-        var messages = new List<ChatMessage> { new("system", SystemInstructions) };
+        var messages = new List<ChatMessage> { new("system", $"{persona.Trim()}\n\n{GroundingRules}") };
 
         if (request.History is { Count: > 0 })
         {

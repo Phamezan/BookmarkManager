@@ -1800,7 +1800,7 @@
 .lib-chat-fab {
     position: fixed;
     z-index: 1400;
-    right: 24px;
+    left: 24px;
     bottom: 24px;
     display: inline-flex;
     align-items: center;
@@ -1830,7 +1830,8 @@
 .lib-chat-drawer {
     position: fixed;
     z-index: 1401;
-    right: 24px;
+    left: 24px;
+    right: auto;
     bottom: 24px;
     top: auto;
     width: min(400px, calc(100vw - 48px));
@@ -1839,10 +1840,10 @@
     flex-direction: column;
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 20px;
-    background: color-mix(in srgb, var(--bm-surface) 62%, transparent);
+    background: color-mix(in srgb, var(--bm-surface) 96%, transparent);
     backdrop-filter: blur(22px) saturate(160%);
     -webkit-backdrop-filter: blur(22px) saturate(160%);
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.12);
     overflow: hidden;
     animation: lib-chat-slide var(--bm-fast) var(--bm-ease);
 }

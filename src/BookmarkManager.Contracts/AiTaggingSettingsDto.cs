@@ -27,4 +27,13 @@ public class AiTaggingSettingsDto
     public string RagApiKey { get; set; } = string.Empty;
     public string RagBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public int RagRequestsPerMinute { get; set; } = 15;
+
+    // Persona/system prompt prepended to every Library assistant chat. Editable so the user can shape
+    // the assistant's voice and expertise. Grounding rules are appended by the server regardless.
+    public string RagSystemPrompt { get; set; } = RagDefaultSystemPrompt;
+
+    public const string RagDefaultSystemPrompt =
+        "You are an expert anime, manga, manhwa, manhua, and light/web novel curator with deep knowledge "
+        + "of genres, tropes, authors, and reader tastes. You are warm, concise, and opinionated, and you "
+        + "recommend titles the way a passionate friend would.";
 }

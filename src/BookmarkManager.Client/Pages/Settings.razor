@@ -286,6 +286,52 @@
                         </MudText>
                     </MudItem>
                 </MudGrid>
+
+                <MudDivider Class="my-2" />
+
+                <MudText Typo="Typo.subtitle2">Library AI assistant (RAG)</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Powers the floating chat on the Library page. Uses an OpenAI-compatible chat endpoint (a free Groq key works well) grounded on your catalog embeddings. Leave the key blank to disable the assistant.
+                </MudText>
+                <MudGrid>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_aiSettings.RagApiKey"
+                                      Label="Library Assistant API Key"
+                                      Variant="Variant.Outlined"
+                                      InputType="InputType.Password"
+                                      Immediate="true"
+                                      HelperText="Stored locally on this API server. Get a free key at console.groq.com/keys." />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.RagBaseUrl"
+                                      Label="Assistant Base URL"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      HelperText="e.g. https://api.groq.com/openai/v1" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudTextField @bind-Value="_aiSettings.RagModel"
+                                      Label="Assistant Model"
+                                      Variant="Variant.Outlined"
+                                      Immediate="true"
+                                      HelperText="e.g. llama-3.3-70b-versatile" />
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudNumericField @bind-Value="_aiSettings.RagRequestsPerMinute"
+                                         Label="Assistant Requests Per Minute (RPM)"
+                                         Variant="Variant.Outlined"
+                                         Min="1"
+                                         HelperText="Pacing limit for chat calls." />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField @bind-Value="_aiSettings.RagSystemPrompt"
+                                      Label="Assistant Persona (system prompt)"
+                                      Variant="Variant.Outlined"
+                                      Lines="3"
+                                      Immediate="true"
+                                      HelperText="Shapes the assistant's voice/expertise. Catalog-grounding rules are always enforced by the server." />
+                    </MudItem>
+                </MudGrid>
             }
         </MudStack>
     </MudPaper>
