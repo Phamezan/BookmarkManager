@@ -56,7 +56,7 @@ public sealed partial class NovelfireLibraryProvider(
         var cacheKey = $"{ProviderName}:catalog:{page}";
         var url = $"{BaseUrl}/genre-all/sort-popular/status-all/all-novel?page={page}";
 
-        return ExecuteAsync(
+        return ExecuteCatalogAsync(
             cacheKey,
             CatalogCacheTtl,
             TimeSpan.FromSeconds(15),
@@ -64,12 +64,13 @@ public sealed partial class NovelfireLibraryProvider(
             {
                 await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
                 var html = await GetHtmlAsync(url, ct).ConfigureAwait(false);
-                var entries = html is null ? [] : ParseGenreListing(html, ProviderName);
+                if (html is null)
+                    throw new HttpRequestException($"Novelfire catalog page {page} request failed.");
+                var entries = ParseGenreListing(html, ProviderName);
                 var next = entries.Count == 0 ? null : (page + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 var rankBase = (page - 1) * ItemsPerPage;
                 return new CatalogPageResult(entries, next, rankBase);
             },
-            new CatalogPageResult([], null),
             cancellationToken);
     }
 

@@ -95,6 +95,17 @@
                             <span class="lib-diag-cov-label">catalog entries embedded (@d.EmbeddedPercent.ToString("0.#")%)</span>
                         </div>
                         <MudProgressLinear Value="@d.EmbeddedPercent" Color="Color.Primary" Class="lib-diag-cov-bar" />
+                        <div class="lib-diag-cov-label">
+                            @{ var stale = d.EmbeddedCount - d.UpToDateCount; }
+                            @if (stale > 0)
+                            {
+                                <span class="lib-diag-bad">@d.UpToDateCount up-to-date · @stale need re-embed (backfill will catch up)</span>
+                            }
+                            else
+                            {
+                                <span class="lib-diag-ok">All @d.UpToDateCount embeddings up-to-date ✓</span>
+                            }
+                        </div>
                     </div>
                 }
 

@@ -39,6 +39,8 @@ public sealed class LibraryDiagnosticsController(
             ? 0d
             : Math.Round(embeddedCount * 100d / totalCount, 1);
 
+        var upToDateCount = await CountUpToDateEmbeddingsAsync(cancellationToken).ConfigureAwait(false);
+
         // Title lookup needs no model - it is a plain catalog membership + embedded check.
         var titleResult = string.IsNullOrWhiteSpace(title)
             ? null
@@ -54,7 +56,8 @@ public sealed class LibraryDiagnosticsController(
                 EmbeddedPercent: embeddedPercent,
                 Title: titleResult?.Dto,
                 QueryMatches: null,
-                TitleRank: null));
+                TitleRank: null,
+                UpToDateCount: upToDateCount));
         }
 
         IReadOnlyList<LibraryQueryMatchDto>? queryMatches = null;
@@ -76,7 +79,34 @@ public sealed class LibraryDiagnosticsController(
             EmbeddedPercent: embeddedPercent,
             Title: titleResult?.Dto,
             QueryMatches: queryMatches,
-            TitleRank: titleRank));
+            TitleRank: titleRank,
+            UpToDateCount: upToDateCount));
+    }
+
+    /// <summary>Counts embedded rows whose stored hash still matches the hash of the current embed text.
+    /// Projects only the text columns (never the Embedding blob) so a full-catalog freshness scan stays cheap.</summary>
+    private async Task<int> CountUpToDateEmbeddingsAsync(CancellationToken cancellationToken)
+    {
+        var rows = await db.LibraryCatalogEntries.AsNoTracking()
+            .Where(e => e.Embedding != null)
+            .Select(e => new { e.Title, e.AlternateTitles, e.Genres, e.Synopsis, e.EmbeddingSourceHash })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var upToDate = 0;
+        foreach (var r in rows)
+        {
+            var text = LibraryEmbeddingText.Build(new LibraryCatalogEntry
+            {
+                Title = r.Title,
+                AlternateTitles = r.AlternateTitles,
+                Genres = r.Genres,
+                Synopsis = r.Synopsis
+            });
+            if (string.Equals(r.EmbeddingSourceHash, LibraryEmbeddingText.Hash(text), StringComparison.Ordinal))
+                upToDate++;
+        }
+        return upToDate;
     }
 
     private sealed record TitleLookup(LibraryTitleEmbeddingDto Dto, LibraryCatalogEntry? Entry);

@@ -10,7 +10,10 @@ public sealed record LibraryEmbeddingDiagnosticDto(
     double EmbeddedPercent,
     LibraryTitleEmbeddingDto? Title = null,
     IReadOnlyList<LibraryQueryMatchDto>? QueryMatches = null,
-    LibraryTitleQueryRankDto? TitleRank = null);
+    LibraryTitleQueryRankDto? TitleRank = null,
+    // Embedded rows whose stored hash still matches the current embed-text format (Title + AltTitles +
+    // Genres + Synopsis). EmbeddedCount - UpToDateCount = rows the backfill worker will re-embed.
+    int UpToDateCount = 0);
 
 /// <summary>Lookup result for the requested <c>title</c>: whether a catalog entry whose Title or
 /// AlternateTitles contains it (case-insensitive) exists, and whether that entry is embedded.

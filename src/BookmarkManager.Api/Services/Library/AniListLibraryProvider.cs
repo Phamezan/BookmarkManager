@@ -94,7 +94,7 @@ public sealed partial class AniListLibraryProvider(
         var page = continuationToken is not null && int.TryParse(continuationToken, out var parsedPage) ? parsedPage : 1;
         var cacheKey = $"{ProviderName}:catalog:{mediaTypeQuery}:{page}";
 
-        return ExecuteAsync(
+        return ExecuteCatalogAsync(
             cacheKey,
             CatalogCacheTtl,
             TimeSpan.FromSeconds(15),
@@ -102,16 +102,15 @@ public sealed partial class AniListLibraryProvider(
             {
                 await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
                 using var doc = await QueryAsync(BuildCatalogPageBody(mediaTypeQuery, page, CatalogPageSize), ct).ConfigureAwait(false);
-                var entries = doc is null
-                    ? (IReadOnlyList<LibraryEntryDto>)[]
-                    : ParseSearchResults(doc.RootElement, ProviderName);
+                if (doc is null)
+                    throw new HttpRequestException($"AniList catalog page {page} request failed.");
+                var entries = ParseSearchResults(doc.RootElement, ProviderName);
                 var next = entries.Count < CatalogPageSize
                     ? null
                     : (page + 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
                 var rankBase = (page - 1) * CatalogPageSize;
                 return new CatalogPageResult(entries, next, rankBase);
             },
-            new CatalogPageResult([], null),
             cancellationToken);
     }
 

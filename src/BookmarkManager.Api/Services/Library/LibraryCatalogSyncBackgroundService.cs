@@ -165,6 +165,17 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = DateTimeOffset.UtcNow;
 
+        // Reset any stale Processing items left behind by a previous app instance back to Pending
+        var staleProcessing = await db.LibraryCatalogSyncQueue
+            .Where(q => q.Status == CatalogSyncQueueStatus.Processing)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var stale in staleProcessing)
+        {
+            stale.Status = CatalogSyncQueueStatus.Pending;
+        }
+
         foreach (var provider in GetBulkProviders())
         {
             if (!_registry.IsProviderEnabled(provider.ProviderName))
