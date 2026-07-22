@@ -90,6 +90,7 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
         {
             cancellationToken.ThrowIfCancellationRequested();
             total += await EmbedBatchAsync(batch, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
         }
 
         return total;

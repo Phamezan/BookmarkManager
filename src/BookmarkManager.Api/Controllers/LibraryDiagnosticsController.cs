@@ -104,10 +104,19 @@ public sealed class LibraryDiagnosticsController(
             RerankMatches: rerankMatches));
     }
 
+    private static (int Count, DateTimeOffset CachedAt)? _upToDateCache;
+    private static readonly object _upToDateLock = new();
+
     /// <summary>Counts embedded rows whose stored hash still matches the hash of the current embed text.
-    /// Projects only the text columns (never the Embedding blob) so a full-catalog freshness scan stays cheap.</summary>
+    /// Uses a short 30-second in-memory cache to avoid re-hashing 50k+ catalog rows on every UI click.</summary>
     private async Task<int> CountUpToDateEmbeddingsAsync(CancellationToken cancellationToken)
     {
+        lock (_upToDateLock)
+        {
+            if (_upToDateCache is { } cached && DateTimeOffset.UtcNow - cached.CachedAt < TimeSpan.FromSeconds(30))
+                return cached.Count;
+        }
+
         var rows = await db.LibraryCatalogEntries.AsNoTracking()
             .Where(e => e.Embedding != null)
             .Select(e => new { e.Title, e.AlternateTitles, e.Genres, e.Synopsis, e.EmbeddingSourceHash })
@@ -127,6 +136,12 @@ public sealed class LibraryDiagnosticsController(
             if (string.Equals(r.EmbeddingSourceHash, currentHash, StringComparison.Ordinal))
                 upToDate++;
         }
+
+        lock (_upToDateLock)
+        {
+            _upToDateCache = (upToDate, DateTimeOffset.UtcNow);
+        }
+
         return upToDate;
     }
 
@@ -272,8 +287,9 @@ public sealed class LibraryDiagnosticsController(
         if (entry.Embedding is null)
             return new LibraryTitleQueryRankDto(entry.Title, Score: null, Rank: null, AboveFloor: false);
 
-        var wideK = await db.LibraryCatalogEntries.AsNoTracking()
+        var totalEmbedded = await db.LibraryCatalogEntries.AsNoTracking()
             .CountAsync(e => e.Embedding != null, cancellationToken).ConfigureAwait(false);
+        var wideK = Math.Min(2000, totalEmbedded);
 
         var ranked = await vectorSearch
             .SearchAsync(queryVector, wideK, WideSearchFloor, cancellationToken)

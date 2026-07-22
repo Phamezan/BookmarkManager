@@ -102,7 +102,8 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             var activeItem = activeQueueItems.FirstOrDefault(q => q.Provider == pName && q.Status == CatalogSyncQueueStatus.Processing)
                           ?? activeQueueItems.FirstOrDefault(q => q.Provider == pName);
 
-            var isActive = activeItem is not null && activeItem.Status == CatalogSyncQueueStatus.Processing;
+            var isActive = activeItem is not null &&
+                           (activeItem.Status == CatalogSyncQueueStatus.Processing || activeItem.Status == CatalogSyncQueueStatus.Pending);
             var tokenStr = activeItem?.ContinuationToken is { Length: > 0 } t ? $"Page {t}" : (activeItem is not null ? "Initial Page" : "Completed");
             providerCounts.TryGetValue(pName, out var count);
 

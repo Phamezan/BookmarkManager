@@ -58,16 +58,23 @@ public sealed class LibrarySearchService(
         var (toQuery, precomputedStatuses) = SelectProviders(request.Providers);
         response.ProviderStatuses.AddRange(precomputedStatuses);
 
-        var timeout = TimeSpan.FromSeconds(Math.Max(1, options.Value.SearchTimeoutSeconds));
-        var outcomes = await Task.WhenAll(
-            toQuery.Select(p => RunAsync(p, timeout, ct => p.SearchAsync(query, request.MediaType, ct), cancellationToken))
-        ).ConfigureAwait(false);
+        // Run instant local catalog search (< 15ms) concurrently with live provider fan-out
+        var catalogTask = SearchCatalogAsync(query, request.MediaType, cancellationToken);
+
+        // Cap live web scraper timeout to 1.5s so external web calls never stall local catalog results
+        var liveTimeout = TimeSpan.FromMilliseconds(1500);
+        var outcomesTask = Task.WhenAll(
+            toQuery.Select(p => RunAsync(p, liveTimeout, ct => p.SearchAsync(query, request.MediaType, ct), cancellationToken))
+        );
+
+        await Task.WhenAll(catalogTask, outcomesTask).ConfigureAwait(false);
+
+        var catalogMatches = catalogTask.Result;
+        var outcomes = outcomesTask.Result;
 
         response.ProviderStatuses.AddRange(outcomes.Select(o => o.Status));
 
-        var catalogMatches = await SearchCatalogAsync(query, request.MediaType, cancellationToken).ConfigureAwait(false);
-
-        var entries = outcomes.SelectMany(o => o.Entries).Concat(catalogMatches);
+        var entries = catalogMatches.Concat(outcomes.SelectMany(o => o.Entries));
         if (request.MediaType is { } requestedType)
             entries = entries.Where(e => e.MediaType == requestedType);
 
@@ -106,11 +113,14 @@ public sealed class LibrarySearchService(
         float[] queryVector;
         try
         {
-            queryVector = await embeddingService.EmbedQueryAsync(query, cancellationToken).ConfigureAwait(false);
+            using var embedCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, embedCts.Token);
+            queryVector = await embeddingService.EmbedQueryAsync(query, linked.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw;
+            logger.LogInformation("Query embedding timed out (>150ms); using instant keyword catalog ranking.");
+            return rows;
         }
         catch (Exception ex)
         {
@@ -349,9 +359,14 @@ public sealed class LibrarySearchService(
 
     public static List<LibraryEntryDto> MergeAndDedupe(IEnumerable<LibraryEntryDto> entries)
     {
-        return entries
+        var merged = entries
             .GroupBy(e => (Title: MediaTitleNormalizer.NormalizeForSearch(e.Title), e.MediaType))
             .Select(group => MergeGroup(group.ToList()))
+            .ToList();
+
+        return merged
+            .GroupBy(e => (e.Provider, e.ProviderId))
+            .Select(group => group.First())
             .ToList();
     }
 

@@ -97,15 +97,12 @@ public sealed class AniListLibraryProviderCatalogTests
     }
 
     [Fact]
-    public async Task GetCatalogPageAsync_UpstreamFailure_DegradesToEmptyPageWithNoNextToken()
+    public async Task GetCatalogPageAsync_UpstreamFailure_ThrowsHttpRequestException()
     {
         var handler = new MockHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));
         var provider = CreateProvider(handler);
 
-        var page = await provider.GetCatalogPageAsync("MANGA", null, CancellationToken.None);
-
-        Assert.Empty(page.Entries);
-        Assert.Null(page.NextContinuationToken);
+        await Assert.ThrowsAsync<HttpRequestException>(() => provider.GetCatalogPageAsync("MANGA", null, CancellationToken.None));
     }
 
     [Fact]

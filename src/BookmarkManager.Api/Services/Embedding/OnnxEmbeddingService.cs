@@ -75,7 +75,12 @@ public sealed class OnnxEmbeddingService : IEmbeddingService, IHostedService, ID
             await EnsureFileAsync(modelPath, ModelUrl, cancellationToken).ConfigureAwait(false);
             await EnsureFileAsync(tokenizerPath, TokenizerUrl, cancellationToken).ConfigureAwait(false);
 
-            _session = new InferenceSession(modelPath);
+            var options = new Microsoft.ML.OnnxRuntime.SessionOptions
+            {
+                IntraOpNumThreads = Math.Min(2, Environment.ProcessorCount),
+                ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
+            };
+            _session = new InferenceSession(modelPath, options);
             _inputNames = _session.InputMetadata.Keys.ToList();
             _tokenizer = new OnnxTokenizer(vocabPath: tokenizerPath);
             _isReady = true;
