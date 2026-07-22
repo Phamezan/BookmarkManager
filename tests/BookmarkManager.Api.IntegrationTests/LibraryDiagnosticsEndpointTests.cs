@@ -199,14 +199,17 @@ public sealed class LibraryDiagnosticsEndpointTests : IDisposable
 
     private sealed class FakeVectorSearchService : IVectorSearchService
     {
-        /// <summary>Full ranked list (highest score first); SearchAsync honors k + floor over it.</summary>
+        /// <summary>Full ranked list (highest score first); SearchAsync honors k over it. Deliberately
+        /// does not filter by floor - tests pick exactly which docs "the vector index finds" via
+        /// Ranked, and RagMinSimilarity is a production threshold that changes independently of these
+        /// fixtures (matches the equivalent fake in LibraryRagEndpointTests). AboveFloor is computed
+        /// by the controller from the real floor constant, so floor semantics are still covered.</summary>
         public IReadOnlyList<(Guid Id, float Score)> Ranked { get; set; } = [];
 
         public void InvalidateCatalog() { }
 
         public Task<IReadOnlyList<(Guid Id, float Score)>> SearchAsync(float[] query, int k, float floor, CancellationToken cancellationToken)
-            => Task.FromResult<IReadOnlyList<(Guid, float)>>(
-                Ranked.Where(r => r.Score >= floor).Take(k).ToList());
+            => Task.FromResult<IReadOnlyList<(Guid, float)>>(Ranked.Take(k).ToList());
     }
 
     private sealed class LibraryDiagnosticsFactory : WebApplicationFactory<Program>
