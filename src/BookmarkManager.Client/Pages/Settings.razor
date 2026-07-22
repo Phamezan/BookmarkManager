@@ -1,6 +1,7 @@
 @page "/settings"
 @using BookmarkManager.Contracts
 @using BookmarkManager.Client.Components
+@implements IDisposable
 
 <PageTitle>Settings</PageTitle>
 
@@ -579,6 +580,40 @@
                         </MudStack>
                     </MudItem>
                 </MudGrid>
+
+                @if (_catalogStatus.ProviderStatuses != null && _catalogStatus.ProviderStatuses.Count > 0)
+                {
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">Bulk Provider Activity</MudText>
+                    <MudGrid Spacing="2">
+                        @foreach (var provider in _catalogStatus.ProviderStatuses)
+                        {
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudPaper Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px;">
+                                    <MudStack Spacing="1">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2" Style="font-weight: 700;">@provider.ProviderName</MudText>
+                                            @if (provider.IsActive)
+                                            {
+                                                <span class="status-dot is-running" title="Actively crawling page from provider" style="box-shadow: 0 0 8px #22c55e;"></span>
+                                            }
+                                            else
+                                            {
+                                                <span class="status-dot is-idle" title="Idle / Complete"></span>
+                                            }
+                                        </MudStack>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@provider.CurrentPageToken</MudText>
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(provider.IsActive ? Color.Success : Color.Default)">
+                                                @provider.TotalEntries.ToString("N0") titles
+                                            </MudChip>
+                                        </MudStack>
+                                    </MudStack>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
             }
         </MudStack>
     </MudPaper>

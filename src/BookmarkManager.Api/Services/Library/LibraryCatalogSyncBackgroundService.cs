@@ -79,6 +79,38 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             isCrawling = _isCrawling;
         }
 
+        var activeQueueItems = await db.LibraryCatalogSyncQueue
+            .AsNoTracking()
+            .Where(q => q.Status == CatalogSyncQueueStatus.Processing || q.Status == CatalogSyncQueueStatus.Pending)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var providerCounts = await db.LibraryCatalogEntries
+            .AsNoTracking()
+            .GroupBy(e => e.Provider)
+            .Select(g => new { Provider = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Provider, g => g.Count, cancellationToken)
+            .ConfigureAwait(false);
+
+        var providerStatuses = new List<ProviderSyncStatusDto>();
+        foreach (var provider in GetBulkProviders())
+        {
+            var pName = provider.ProviderName;
+            var activeItem = activeQueueItems.FirstOrDefault(q => q.Provider == pName && q.Status == CatalogSyncQueueStatus.Processing)
+                          ?? activeQueueItems.FirstOrDefault(q => q.Provider == pName);
+
+            var isActive = activeItem is not null && activeItem.Status == CatalogSyncQueueStatus.Processing;
+            var tokenStr = activeItem?.ContinuationToken is { Length: > 0 } t ? $"Page {t}" : (activeItem is not null ? "Initial Page" : "Completed");
+            providerCounts.TryGetValue(pName, out var count);
+
+            providerStatuses.Add(new ProviderSyncStatusDto(
+                pName,
+                isActive,
+                tokenStr,
+                count,
+                lastRefreshedAt));
+        }
+
         return new LibraryCatalogSyncStatusDto
         {
             TotalEntries = totalEntries,
@@ -86,7 +118,8 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             ProcessingQueueCount = processing,
             FailedQueueCount = failed,
             IsCrawling = isCrawling || pending > 0 || processing > 0,
-            LastRefreshedAt = lastRefreshedAt
+            LastRefreshedAt = lastRefreshedAt,
+            ProviderStatuses = providerStatuses
         };
     }
 

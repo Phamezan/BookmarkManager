@@ -399,12 +399,15 @@ public partial class Settings
         }
     }
 
+    private CancellationTokenSource? _pollCts;
+
     private async Task LoadCatalogSyncStatusAsync()
     {
         _catalogStatusLoading = true;
         try
         {
             _catalogStatus = await LibraryService.GetCatalogSyncStatusAsync();
+            EnsurePollingLoop();
         }
         catch (Exception ex)
         {
@@ -414,6 +417,51 @@ public partial class Settings
         {
             _catalogStatusLoading = false;
         }
+    }
+
+    private void EnsurePollingLoop()
+    {
+        if (_catalogStatus?.IsCrawling == true && _pollCts is null)
+        {
+            _pollCts = new CancellationTokenSource();
+            _ = PollStatusLoopAsync(_pollCts.Token);
+        }
+    }
+
+    private async Task PollStatusLoopAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        while (!token.IsCancellationRequested && await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+        {
+            try
+            {
+                var newStatus = await LibraryService.GetCatalogSyncStatusAsync().ConfigureAwait(false);
+                await InvokeAsync(() =>
+                {
+                    _catalogStatus = newStatus;
+                    StateHasChanged();
+                });
+
+                if (!newStatus.IsCrawling)
+                {
+                    break;
+                }
+            }
+            catch
+            {
+                // Ignore transient polling failure
+            }
+        }
+
+        _pollCts?.Dispose();
+        _pollCts = null;
+    }
+
+    public void Dispose()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
     }
 
     private async Task TriggerCatalogResyncAsync()
