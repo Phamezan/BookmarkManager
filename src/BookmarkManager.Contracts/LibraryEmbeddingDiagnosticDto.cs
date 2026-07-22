@@ -16,7 +16,13 @@ public sealed record LibraryEmbeddingDiagnosticDto(
     int UpToDateCount = 0,
     // Hybrid (dense vector + FTS5/BM25 keyword, RRF-fused) results for the same query, shown alongside
     // QueryMatches (pure-vector) so the diagnostics pane can compare the two retrieval strategies.
-    IReadOnlyList<LibraryHybridMatchDto>? HybridMatches = null);
+    IReadOnlyList<LibraryHybridMatchDto>? HybridMatches = null,
+    // Whether the stage-2 cross-encoder reranker is loaded and can be used.
+    bool RerankerReady = false,
+    // Post-rerank ordering for the same query - HybridMatches above stays the pre-rerank/RRF order so the
+    // diagnostics pane can compare the two. Null when no query was supplied or the reranker fell back to
+    // hybrid order unchanged (RerankPipeline.Result.Applied == false).
+    IReadOnlyList<LibraryRerankMatchDto>? RerankMatches = null);
 
 /// <summary>Lookup result for the requested <c>title</c>: whether a catalog entry whose Title or
 /// AlternateTitles contains it (case-insensitive) exists, and whether that entry is embedded.
@@ -57,3 +63,15 @@ public sealed record LibraryHybridMatchDto(
     LibraryMediaType MediaType,
     float Score,
     double RrfScore);
+
+/// <summary>One post-rerank (stage-2 cross-encoder) match for the requested query. <c>Score</c> is the
+/// raw cross-encoder logit (higher is more relevant; not bounded to [0,1] and not comparable across
+/// different queries); <c>Probability</c> is a sigmoid of that logit for display only. <c>HybridRank</c>
+/// is the 1-based rank this same entry held in the pre-rerank hybrid ordering, so the UI can show how far
+/// the reranker moved it.</summary>
+public sealed record LibraryRerankMatchDto(
+    string Title,
+    LibraryMediaType MediaType,
+    float Score,
+    float Probability,
+    int HybridRank);

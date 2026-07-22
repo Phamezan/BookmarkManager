@@ -90,6 +90,12 @@
                                 Embedding model not ready — coverage and query tests are unavailable until it finishes loading.
                             </MudAlert>
                         }
+                        @if (!d.RerankerReady)
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                                Stage-2 reranker not ready — query results use hybrid (stage-1) order only until it finishes loading.
+                            </MudAlert>
+                        }
                         <div class="lib-diag-cov-line">
                             <span class="lib-diag-cov-num">@d.EmbeddedCount / @d.TotalCount</span>
                             <span class="lib-diag-cov-label">catalog entries embedded (@d.EmbeddedPercent.ToString("0.#")%)</span>
@@ -191,6 +197,23 @@
                                 <span class="lib-diag-match-title">@m.Title</span>
                                 <span class="lib-diag-match-type">@m.MediaType</span>
                                 <span class="lib-diag-match-rrf" title="Fused RRF score">rrf @m.RrfScore.ToString("0.###")</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_diag?.RerankMatches is { Count: > 0 } rerankMatches)
+                {
+                    <div class="lib-diag-matches">
+                        <div class="lib-diag-card-title">Top matches for the query (stage-2 reranked)</div>
+                        @foreach (var m in rerankMatches)
+                        {
+                            <div class="lib-diag-match-row">
+                                <span class="lib-diag-match-score">@((m.Probability * 100).ToString("0"))%</span>
+                                <span class="lib-diag-match-title">@m.Title</span>
+                                <span class="lib-diag-match-type">@m.MediaType</span>
+                                <span class="lib-diag-match-rrf" title="Raw cross-encoder logit">logit @m.Score.ToString("0.###")</span>
+                                <span class="lib-diag-match-rrf" title="Rank before rerank (hybrid/RRF order)">was #@m.HybridRank</span>
                             </div>
                         }
                     </div>
