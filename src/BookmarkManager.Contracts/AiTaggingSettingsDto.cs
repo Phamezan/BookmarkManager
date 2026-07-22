@@ -23,10 +23,10 @@ public class AiTaggingSettingsDto
 
     // Library RAG assistant: OpenAI-compatible chat model that answers grounded on retrieved catalog
     // entries. Defaults to the same Groq endpoint/model shape as the tagging fallback.
-    public string RagModel { get; set; } = "llama-3.3-70b-versatile";
+    public string RagModel { get; set; } = "nemotron-3-embed-1b";
     public string RagApiKey { get; set; } = string.Empty;
-    public string RagBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
-    public int RagRequestsPerMinute { get; set; } = 15;
+    public string RagBaseUrl { get; set; } = "https://integrate.api.nvidia.com/v1";
+    public int RagRequestsPerMinute { get; set; } = 30;
 
     // Persona/system prompt prepended to every Library assistant chat. Editable so the user can shape
     // the assistant's voice and expertise. Grounding rules are appended by the server regardless.
