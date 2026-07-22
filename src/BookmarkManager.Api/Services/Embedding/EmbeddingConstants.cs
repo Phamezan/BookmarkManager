@@ -23,4 +23,14 @@ public static class EmbeddingConstants
 
     /// <summary>Rows embedded per backfill save cycle.</summary>
     public const int BackfillBatchSize = 64;
+
+    /// <summary>Candidates pulled from each arm (dense vector, FTS5 keyword) before RRF fusion - wider
+    /// than the final requested k so a doc that ranks well in only one arm still has a chance to
+    /// surface, and so the dense arm isn't pre-truncated by <see cref="RagMinSimilarity"/>.</summary>
+    public const int HybridCandidatePool = 60;
+
+    /// <summary>Rank-offset constant in Reciprocal Rank Fusion: <c>1 / (RrfK + rank)</c>. 60 is the
+    /// standard value from the original RRF paper (Cormack et al.) - large enough that top-ranked
+    /// docs from either arm don't overwhelm the fused score, small enough that rank still matters.</summary>
+    public const int RrfK = 60;
 }

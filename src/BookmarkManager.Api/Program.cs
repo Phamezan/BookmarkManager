@@ -135,6 +135,12 @@ builder.Services.AddHostedService(
 // RAG / semantic embedding engine (Wave 2a). In-memory cosine vector search over catalog embeddings.
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IVectorSearchService, BookmarkManager.Api.Services.Embedding.VectorSearchService>();
 
+// Hybrid retrieval (dense vector + SQLite FTS5/BM25 keyword, fused with RRF). Scoped: both depend on
+// the scoped AppDbContext (FtsKeywordSearchService queries LibraryCatalogSearch directly; HybridSearchService
+// looks up embeddings for keyword-only hits to compute a displayable cosine).
+builder.Services.AddScoped<BookmarkManager.Api.Services.Search.IKeywordSearchService, BookmarkManager.Api.Services.Search.FtsKeywordSearchService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Search.IHybridSearchService, BookmarkManager.Api.Services.Search.HybridSearchService>();
+
 // RAG / semantic embedding ingestion (Wave 2c). Backfill worker embeds catalog rows the interactive
 // sync path missed (crawled before the model loaded, or with a since-changed embed text).
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService>();

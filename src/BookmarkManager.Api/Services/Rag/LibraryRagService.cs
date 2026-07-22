@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Search;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -20,8 +21,9 @@ using Microsoft.Extensions.Logging;
 namespace BookmarkManager.Api.Services.Rag;
 
 /// <summary>Retrieval-augmented Library assistant. Embeds the user's question, pulls the nearest catalog
-/// entries via <see cref="IVectorSearchService"/>, and asks an OpenAI-compatible chat model (same
-/// request/response shape as <c>GroqSeriesIdentificationClient</c>) to answer grounded on that context.</summary>
+/// entries via <see cref="IHybridSearchService"/> (dense vector + FTS5/BM25 keyword, fused with RRF),
+/// and asks an OpenAI-compatible chat model (same request/response shape as
+/// <c>GroqSeriesIdentificationClient</c>) to answer grounded on that context.</summary>
 public sealed class LibraryRagService : ILibraryRagService
 {
     /// <summary>Named <see cref="IHttpClientFactory"/> client so the RAG LLM call gets its own pipeline.</summary>
@@ -43,7 +45,7 @@ public sealed class LibraryRagService : ILibraryRagService
     };
 
     private readonly IEmbeddingService _embeddingService;
-    private readonly IVectorSearchService _vectorSearch;
+    private readonly IHybridSearchService _hybridSearch;
     private readonly AppDbContext _db;
     private readonly AiTaggingSettingsService _settings;
     private readonly AiRequestThrottle _throttle;
@@ -52,7 +54,7 @@ public sealed class LibraryRagService : ILibraryRagService
 
     public LibraryRagService(
         IEmbeddingService embeddingService,
-        IVectorSearchService vectorSearch,
+        IHybridSearchService hybridSearch,
         AppDbContext db,
         AiTaggingSettingsService settings,
         AiRequestThrottle throttle,
@@ -60,7 +62,7 @@ public sealed class LibraryRagService : ILibraryRagService
         ILogger<LibraryRagService> logger)
     {
         _embeddingService = embeddingService ?? throw new ArgumentNullException(nameof(embeddingService));
-        _vectorSearch = vectorSearch ?? throw new ArgumentNullException(nameof(vectorSearch));
+        _hybridSearch = hybridSearch ?? throw new ArgumentNullException(nameof(hybridSearch));
         _db = db ?? throw new ArgumentNullException(nameof(db));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _throttle = throttle ?? throw new ArgumentNullException(nameof(throttle));
@@ -90,9 +92,12 @@ public sealed class LibraryRagService : ILibraryRagService
                 Array.Empty<LibraryRecommendedSeriesDto>());
         }
 
+        // No post-hoc RagMinSimilarity cosine floor here: RRF fusion + the RagTopK cut already do the
+        // filtering (see IHybridSearchService), and a keyword-only hit can legitimately score below
+        // that floor on cosine while still being the right answer for an exact-title/proper-noun query.
         var queryVector = await _embeddingService.EmbedQueryAsync(request.Message, cancellationToken).ConfigureAwait(false);
-        var hits = await _vectorSearch
-            .SearchAsync(queryVector, EmbeddingConstants.RagTopK, EmbeddingConstants.RagMinSimilarity, cancellationToken)
+        var hits = await _hybridSearch
+            .SearchAsync(request.Message, queryVector, EmbeddingConstants.RagTopK, cancellationToken)
             .ConfigureAwait(false);
 
         var cards = await LoadRecommendedSeriesAsync(hits, cancellationToken).ConfigureAwait(false);
@@ -107,9 +112,10 @@ public sealed class LibraryRagService : ILibraryRagService
         return new LibraryChatResponseDto(markdown, cards);
     }
 
-    /// <summary>Loads catalog rows for the search hits, preserving the search's ranking and score.</summary>
+    /// <summary>Loads catalog rows for the search hits, preserving the search's ranking and displayable
+    /// (cosine) score.</summary>
     private async Task<IReadOnlyList<LibraryRecommendedSeriesDto>> LoadRecommendedSeriesAsync(
-        IReadOnlyList<(Guid Id, float Score)> hits,
+        IReadOnlyList<(Guid Id, float Score, double RrfScore)> hits,
         CancellationToken cancellationToken)
     {
         if (hits.Count == 0)
@@ -123,7 +129,7 @@ public sealed class LibraryRagService : ILibraryRagService
             .ConfigureAwait(false);
 
         var cards = new List<LibraryRecommendedSeriesDto>(hits.Count);
-        foreach (var (id, score) in hits)
+        foreach (var (id, score, _) in hits)
         {
             if (!entriesById.TryGetValue(id, out var entry))
                 continue;
