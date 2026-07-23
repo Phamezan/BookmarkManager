@@ -95,6 +95,11 @@ public sealed class MangaDexLibraryProvider(
     /// (Provider, ProviderId), so titles found by both simply get their popularity rank filled in.</summary>
     public IReadOnlyList<string> CatalogMediaTypeQueries { get; } = ["manga", "manga-popular"];
 
+    /// <summary>MangaDex's <c>/manga</c> list responses include <c>attributes.description</c>, which
+    /// <see cref="MapManga"/> maps to the synopsis - the same field <see cref="GetDetailsAsync"/> would
+    /// return, so listing rows are already rich and need no per-title detail fetch.</summary>
+    public bool ListingProvidesFullSynopsis => true;
+
     public Task<CatalogPageResult> GetCatalogPageAsync(string mediaTypeQuery, string? continuationToken, CancellationToken cancellationToken) =>
         mediaTypeQuery == "manga-popular"
             ? GetPopularCatalogPageAsync(continuationToken, cancellationToken)
@@ -108,7 +113,7 @@ public sealed class MangaDexLibraryProvider(
                   "&includes[]=cover_art&includes[]=author" +
                   "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica";
 
-        return ExecuteAsync(
+        return ExecuteCatalogAsync(
             cacheKey,
             CatalogCacheTtl,
             TimeSpan.FromSeconds(15),
@@ -116,6 +121,8 @@ public sealed class MangaDexLibraryProvider(
             {
                 await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
                 using var doc = await GetJsonAsync(url, ct).ConfigureAwait(false);
+                if (doc is null)
+                    throw new HttpRequestException($"MangaDex popular catalog page at offset {offset} request failed.");
                 var results = ParseMangaArray(doc);
                 var nextOffset = offset + CatalogPageSize;
                 var next = results.Count < CatalogPageSize || nextOffset > PopularOffsetCeiling
@@ -123,7 +130,6 @@ public sealed class MangaDexLibraryProvider(
                     : nextOffset.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 return new CatalogPageResult(results, next, offset);
             },
-            new CatalogPageResult([], null),
             cancellationToken);
     }
 
@@ -135,7 +141,7 @@ public sealed class MangaDexLibraryProvider(
                   "&includes[]=cover_art&includes[]=author" +
                   "&contentRating[]=safe&contentRating[]=suggestive&contentRating[]=erotica";
 
-        return ExecuteAsync(
+        return ExecuteCatalogAsync(
             cacheKey,
             CatalogCacheTtl,
             TimeSpan.FromSeconds(15),
@@ -144,7 +150,7 @@ public sealed class MangaDexLibraryProvider(
                 await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
                 using var doc = await GetJsonAsync(url, ct).ConfigureAwait(false);
                 if (doc is null || !doc.RootElement.TryGetProperty("data", out var dataArray) || dataArray.ValueKind != JsonValueKind.Array)
-                    return new CatalogPageResult([], null);
+                    throw new HttpRequestException($"MangaDex exhaustive catalog page at cursor {cursor} request failed.");
 
                 var results = new List<LibraryEntryDto>();
                 string? lastCreatedAt = null;
@@ -159,7 +165,6 @@ public sealed class MangaDexLibraryProvider(
                 var next = results.Count < CatalogPageSize ? null : lastCreatedAt;
                 return new CatalogPageResult(results, next);
             },
-            new CatalogPageResult([], null),
             cancellationToken);
     }
 

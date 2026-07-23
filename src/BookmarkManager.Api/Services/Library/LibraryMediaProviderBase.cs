@@ -104,4 +104,77 @@ public abstract class LibraryMediaProviderBase(
 
         return fallback;
     }
+
+    /// <summary>Runs a background catalog page operation behind cache + circuit breaker + timeout + retry.
+    /// Unlike <see cref="ExecuteAsync{T}"/>, this method throws an exception on final attempt failure
+    /// so <see cref="LibraryCatalogSyncBackgroundService"/> catches it and requeues the item with backoff
+    /// instead of assuming natural page exhaustion.</summary>
+    protected async Task<T> ExecuteCatalogAsync<T>(
+        string cacheKey,
+        TimeSpan cacheTtl,
+        TimeSpan timeout,
+        Func<CancellationToken, Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue(cacheKey, out CacheEnvelope<T>? cached) && cached is not null && cached.Value is not null)
+        {
+            ProviderBudgetTracker.Instance.RecordCacheHit(ProviderName);
+            Logger.LogInformation("[Request Budget] Provider={Provider} Action=CacheHit Key={Key}", ProviderName, cacheKey);
+            return cached.Value;
+        }
+
+        if (Breaker.IsOpen)
+        {
+            Logger.LogDebug("{Provider} circuit open, throwing for catalog call {CacheKey}.", ProviderName, cacheKey);
+            throw new InvalidOperationException($"{ProviderName} circuit breaker is open.");
+        }
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            ProviderBudgetTracker.Instance.RecordNetworkCall(ProviderName);
+            Logger.LogInformation("[Request Budget] Provider={Provider} Action=NetworkCall Key={Key} Attempt={Attempt}", ProviderName, cacheKey, attempt);
+
+            using var timeoutCts = new CancellationTokenSource(timeout);
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            try
+            {
+                var result = await operation(linked.Token).ConfigureAwait(false);
+                Breaker.RecordSuccess();
+                cache.Set(cacheKey, new CacheEnvelope<T>(result), cacheTtl);
+                ProviderBudgetTracker.Instance.RecordSuccess(ProviderName);
+                return result;
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && attempt < MaxAttempts)
+            {
+                Logger.LogWarning("{Provider} attempt {Attempt} timed out after {TimeoutSeconds}s, retrying.", ProviderName, attempt, timeout.TotalSeconds);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                Breaker.RecordFailure();
+                Logger.LogWarning("{Provider} timed out after {TimeoutSeconds}s on final attempt.", ProviderName, timeout.TotalSeconds);
+                ProviderBudgetTracker.Instance.RecordFailure(ProviderName, "Timed out.");
+                throw new TimeoutException($"{ProviderName} timed out after {timeout.TotalSeconds}s on final attempt.");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt < MaxAttempts)
+            {
+                Logger.LogWarning(ex, "{Provider} attempt {Attempt} failed, retrying.", ProviderName, attempt);
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt), cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                Breaker.RecordFailure();
+                Logger.LogWarning(ex, "{Provider} failed.", ProviderName);
+                ProviderBudgetTracker.Instance.RecordFailure(ProviderName, ex.Message);
+                throw;
+            }
+        }
+
+        throw new InvalidOperationException($"{ProviderName} catalog request failed.");
+    }
 }

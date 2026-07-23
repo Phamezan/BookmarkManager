@@ -1,0 +1,257 @@
+@namespace BookmarkManager.Client.Features.Library.Components
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+@if (!Open)
+{
+    <button type="button" class="lib-chat-fab" @onclick="ToggleOpen"
+            aria-label="Open Library Assistant" title="Ask the Library Assistant">
+        <span class="lib-chat-fab-mark" aria-hidden="true">
+            <svg class="lib-chat-fab-book" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4.5 5.25C4.5 4.28 5.28 3.5 6.25 3.5H11v14.5H6.4c-1.05 0-1.9-.85-1.9-1.9V5.25Z"
+                      fill="currentColor" opacity="0.92"/>
+                <path d="M19.5 5.25C19.5 4.28 18.72 3.5 17.75 3.5H13v14.5h4.6c1.05 0 1.9-.85 1.9-1.9V5.25Z"
+                      fill="currentColor" opacity="0.72"/>
+                <path d="M12 3.5v14.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/>
+                <circle cx="17.2" cy="7.2" r="1.15" fill="currentColor" opacity="0.95"/>
+            </svg>
+        </span>
+        <span class="lib-chat-fab-copy">
+            <span class="lib-chat-fab-kicker">Library</span>
+            <span class="lib-chat-fab-name">Assistant</span>
+        </span>
+    </button>
+}
+
+@if (Open)
+{
+    <aside class="lib-chat-drawer" role="dialog" aria-label="Library Assistant" aria-modal="false">
+        <header class="lib-chat-header">
+            <div class="lib-chat-heading">
+                <span class="lib-chat-mark" aria-hidden="true">
+                    <svg class="lib-chat-mark-book" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M4.5 5.25C4.5 4.28 5.28 3.5 6.25 3.5H11v14.5H6.4c-1.05 0-1.9-.85-1.9-1.9V5.25Z"
+                              fill="currentColor" opacity="0.95"/>
+                        <path d="M19.5 5.25C19.5 4.28 18.72 3.5 17.75 3.5H13v14.5h4.6c1.05 0 1.9-.85 1.9-1.9V5.25Z"
+                              fill="currentColor" opacity="0.75"/>
+                        <path d="M12 3.5v14.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/>
+                        <circle cx="17.2" cy="7.2" r="1.15" fill="currentColor"/>
+                    </svg>
+                </span>
+                <div class="lib-chat-heading-text">
+                    <span class="lib-chat-title">Library Assistant</span>
+                    <span class="lib-chat-sub">Catalog-grounded recommendations</span>
+                </div>
+            </div>
+            <button type="button" class="lib-chat-close" @onclick="CloseAsync" aria-label="Close Library Assistant">
+                <MudIcon Icon="@Icons.Material.Filled.Close" Size="Size.Small" />
+            </button>
+        </header>
+
+        <div class="lib-chat-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected="@(_view == DrawerView.Chat)"
+                    class="@TabClass(DrawerView.Chat)" @onclick="() => _view = DrawerView.Chat">
+                <MudIcon Icon="@Icons.Material.Outlined.Forum" Size="Size.Small" /> Chat
+            </button>
+            <button type="button" role="tab" aria-selected="@(_view == DrawerView.Diagnostics)"
+                    class="@TabClass(DrawerView.Diagnostics)" @onclick="OpenDiagnosticsAsync">
+                <MudIcon Icon="@Icons.Material.Outlined.Insights" Size="Size.Small" /> Diagnostics
+            </button>
+        </div>
+
+        @if (_view == DrawerView.Chat)
+        {
+            <div class="lib-chat-log" role="list" @ref="_logRef">
+                @if (_messages.Count == 0)
+                {
+                    <div class="lib-chat-empty">
+                        <span class="lib-chat-empty-mark" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M4.5 5.25C4.5 4.28 5.28 3.5 6.25 3.5H11v14.5H6.4c-1.05 0-1.9-.85-1.9-1.9V5.25Z"
+                                      fill="currentColor" opacity="0.9"/>
+                                <path d="M19.5 5.25C19.5 4.28 18.72 3.5 17.75 3.5H13v14.5h4.6c1.05 0 1.9-.85 1.9-1.9V5.25Z"
+                                      fill="currentColor" opacity="0.7"/>
+                                <path d="M12 3.5v14.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity="0.35"/>
+                            </svg>
+                        </span>
+                        <p class="lib-chat-empty-title">Ask the Library Assistant</p>
+                        <p class="lib-chat-empty-sub">Try “completed fantasy manhwa” or “something like Solo Leveling.”</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var message in _messages)
+                    {
+                        <LibraryChatMessageBubble @key="message.Id"
+                                                  Role="@message.Role"
+                                                  Content="@message.Content"
+                                                  IsPending="@message.IsPending"
+                                                  Recommendations="@message.Recommendations" />
+                    }
+                }
+            </div>
+
+            @if (_error is { } error)
+            {
+                <div class="lib-chat-error" role="alert">@error</div>
+            }
+
+            <footer class="lib-chat-input">
+                <textarea class="lib-chat-textarea"
+                          placeholder="Ask the Library Assistant…"
+                          value="@_input"
+                          @oninput="OnInput"
+                          @onkeydown="OnKeyDown"
+                          disabled="@_sending"
+                          rows="1"
+                          aria-label="Message the Library Assistant"></textarea>
+                <button type="button" class="lib-chat-send" @onclick="SendAsync"
+                        disabled="@(!CanSend)" aria-label="Send message">
+                    <MudIcon Icon="@Icons.Material.Filled.ArrowUpward" Size="Size.Small" />
+                </button>
+            </footer>
+        }
+        else
+        {
+            <div class="lib-diag-body">
+                @if (_diag is { } d)
+                {
+                    <div class="lib-diag-coverage">
+                        @if (!d.ModelReady)
+                        {
+                            <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined">
+                                Embedding model not ready — coverage and query tests are unavailable until it finishes loading.
+                            </MudAlert>
+                        }
+                        @if (!d.RerankerReady)
+                        {
+                            <MudAlert Severity="Severity.Info" Dense="true" Variant="Variant.Outlined">
+                                Stage-2 reranker not ready — query results use hybrid (stage-1) order only until it finishes loading.
+                            </MudAlert>
+                        }
+                        <div class="lib-diag-cov-line">
+                            <span class="lib-diag-cov-num">@d.EmbeddedCount / @d.TotalCount</span>
+                            <span class="lib-diag-cov-label">catalog entries embedded (@d.EmbeddedPercent.ToString("0.#")%)</span>
+                        </div>
+                        <MudProgressLinear Value="@d.EmbeddedPercent" Color="Color.Primary" Class="lib-diag-cov-bar" />
+                        <div class="lib-diag-cov-label">
+                            @{ var stale = d.EmbeddedCount - d.UpToDateCount; }
+                            @if (stale > 0)
+                            {
+                                <span class="lib-diag-bad">@d.UpToDateCount up-to-date · @stale need re-embed (backfill will catch up)</span>
+                            }
+                            else
+                            {
+                                <span class="lib-diag-ok">All @d.UpToDateCount embeddings up-to-date ✓</span>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="lib-diag-form">
+                    <input class="lib-diag-input" placeholder="Title to check (e.g. Solo Leveling)"
+                           value="@_diagTitle" @oninput="e => _diagTitle = e.Value?.ToString() ?? string.Empty" />
+                    <input class="lib-diag-input" placeholder="Query to test (e.g. levels up and spawns shadows)"
+                           value="@_diagQuery" @oninput="e => _diagQuery = e.Value?.ToString() ?? string.Empty"
+                           @onkeydown="OnDiagKeyDown" />
+                    <button type="button" class="lib-diag-run" @onclick="RunDiagnosticAsync" disabled="@_diagRunning">
+                        @(_diagRunning ? "Checking…" : "Run check")
+                    </button>
+                </div>
+
+                @if (_diagError is { } derr)
+                {
+                    <div class="lib-chat-error" role="alert">@derr</div>
+                }
+
+                @if (_diag?.Title is { } t)
+                {
+                    <div class="lib-diag-card">
+                        <div class="lib-diag-card-title">Title: "@t.Query"</div>
+                        @if (!t.Found)
+                        {
+                            <div class="lib-diag-bad">✗ Not found in catalog — it can't be recommended until it's crawled.</div>
+                        }
+                        else
+                        {
+                            <div class="lib-diag-ok">✓ Found: @t.MatchedTitle @(t.MediaType is { } mt ? $"({mt})" : "")</div>
+                            <div class="@(t.HasSynopsis ? "lib-diag-ok" : "lib-diag-bad")">
+                                @(t.HasSynopsis ? "✓ Has synopsis" : "✗ No synopsis stored — run catalog sync to enrich it (weak matches without one).")
+                            </div>
+                            <div class="@(t.Embedded ? "lib-diag-ok" : "lib-diag-bad")">
+                                @(t.Embedded ? "✓ Embedded" : "✗ Not embedded yet — run catalog sync / wait for backfill.")
+                            </div>
+                            @if (t.Embedded && t.EmbeddingStale)
+                            {
+                                <div class="lib-diag-bad">⚠ Embedding is stale (built from older text) — the backfill worker will re-embed it with synopsis + alt-titles. Until then it ranks low.</div>
+                            }
+                        }
+                        @if (_diag.TitleRank is { } tr)
+                        {
+                            <div class="lib-diag-rank">
+                                @if (tr.Score is { } sc)
+                                {
+                                    <span>For your query: <b>@((sc * 100).ToString("0"))% </b>
+                                        @(tr.Rank is { } rk ? $"(rank #{rk})" : "")
+                                        @(tr.AboveFloor ? "— above retrieval floor ✓" : "— below floor, won't be retrieved ✗")</span>
+                                }
+                                else
+                                {
+                                    <span>No embedding to score against the query.</span>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_diag?.QueryMatches is { Count: > 0 } matches)
+                {
+                    <div class="lib-diag-matches">
+                        <div class="lib-diag-card-title">Top matches for the query (pure vector)</div>
+                        @foreach (var m in matches)
+                        {
+                            <div class="lib-diag-match-row">
+                                <span class="lib-diag-match-score">@((m.Score * 100).ToString("0"))%</span>
+                                <span class="lib-diag-match-title">@m.Title</span>
+                                <span class="lib-diag-match-type">@m.MediaType</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_diag?.HybridMatches is { Count: > 0 } hybridMatches)
+                {
+                    <div class="lib-diag-matches">
+                        <div class="lib-diag-card-title">Top matches for the query (hybrid: vector + keyword, RRF-fused)</div>
+                        @foreach (var m in hybridMatches)
+                        {
+                            <div class="lib-diag-match-row">
+                                <span class="lib-diag-match-score">@((m.Score * 100).ToString("0"))%</span>
+                                <span class="lib-diag-match-title">@m.Title</span>
+                                <span class="lib-diag-match-type">@m.MediaType</span>
+                                <span class="lib-diag-match-rrf" title="Fused RRF score">rrf @m.RrfScore.ToString("0.###")</span>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (_diag?.RerankMatches is { Count: > 0 } rerankMatches)
+                {
+                    <div class="lib-diag-matches">
+                        <div class="lib-diag-card-title">Top matches for the query (stage-2 reranked)</div>
+                        @foreach (var m in rerankMatches)
+                        {
+                            <div class="lib-diag-match-row">
+                                <span class="lib-diag-match-score">@((m.Probability * 100).ToString("0"))%</span>
+                                <span class="lib-diag-match-title">@m.Title</span>
+                                <span class="lib-diag-match-type">@m.MediaType</span>
+                                <span class="lib-diag-match-rrf" title="Raw cross-encoder logit">logit @m.Score.ToString("0.###")</span>
+                                <span class="lib-diag-match-rrf" title="Rank before rerank (hybrid/RRF order)">was #@m.HybridRank</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        }
+    </aside>
+}

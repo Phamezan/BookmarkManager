@@ -105,9 +105,65 @@
     function resetLibraryScrub(browseSelector) {
         killScrub();
         var root = document.querySelector(browseSelector || '.lib-browse');
-        if (root && window.gsap) {
-            gsap.set(root.querySelectorAll('.lib-card'), { clearProps: 'transform' });
+        if (!root || scrubDisabled()) {
+            if (root && window.gsap) {
+                gsap.set(root.querySelectorAll('.lib-card'), { clearProps: 'transform,opacity' });
+            }
+            return;
         }
+
+        gsap.registerPlugin(ScrollTrigger);
+        gsap.set(root.querySelectorAll('.lib-card'), { clearProps: 'transform,opacity' });
+
+        // Wait a frame so Virtualize rows have layout before measuring viewport.
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                playViewportEntrance(root, browseSelector);
+            });
+        });
+    }
+
+    function playViewportEntrance(root, browseSelector) {
+        if (!root || scrubDisabled()) return;
+
+        var scroller = getAppScroller();
+        var scrollerBottom = window.innerHeight;
+        try {
+            if (scroller && scroller.getBoundingClientRect) {
+                scrollerBottom = scroller.getBoundingClientRect().bottom;
+            }
+        } catch (_) { /* ignore */ }
+
+        var cards = root.querySelectorAll('.lib-card');
+        var visible = [];
+        for (var i = 0; i < cards.length; i++) {
+            var card = cards[i];
+            var key = card.getAttribute('data-lib-key');
+            if (!key) continue;
+            var rect = card.getBoundingClientRect();
+            if (rect.height === 0) continue;
+            if (rect.top < scrollerBottom * 0.95 && rect.bottom > 0) {
+                visible.push(card);
+                // Mark seen so bindCardScrub won't re-tween viewport cards.
+                scrubByKey[key] = { trigger: null, tween: null };
+            }
+        }
+
+        if (visible.length) {
+            gsap.fromTo(visible,
+                { opacity: 0, y: 16 },
+                {
+                    opacity: 1,
+                    y: 0,
+                    duration: 0.35,
+                    stagger: 0.02,
+                    ease: 'power2.out',
+                    overwrite: true,
+                    clearProps: 'opacity,transform'
+                });
+        }
+
+        ensureScrollBind();
         refreshLibraryScrub(browseSelector);
     }
 
@@ -234,9 +290,18 @@
         }
     }
 
+    // Keeps the AI assistant transcript pinned to the newest message after a send/reply.
+    function libraryChatScrollToBottom(logEl) {
+        if (!logEl) {
+            return;
+        }
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
     window.refreshLibraryScrub = refreshLibraryScrub;
     window.resetLibraryScrub = resetLibraryScrub;
     window.attachLibraryInfiniteScroll = attachLibraryInfiniteScroll;
     window.setLibraryInfiniteScrollEnabled = setLibraryInfiniteScrollEnabled;
     window.disposeLibraryBrowse = disposeLibraryBrowse;
+    window.libraryChatScrollToBottom = libraryChatScrollToBottom;
 })();

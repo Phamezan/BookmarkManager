@@ -1,6 +1,7 @@
 window.BookmarkGridInterop = {
     getColumnCount: function (el, minCardWidth, gapPx) {
-        if (!el) return 1;
+        // 0 = unreliable (missing/collapsed). Callers must not treat this as a real column count.
+        if (!el || el.clientWidth < 200) return 0;
         var width = el.clientWidth;
         return Math.max(1, Math.floor((width + gapPx) / (minCardWidth + gapPx)));
     },
@@ -18,7 +19,7 @@ window.BookmarkGridInterop = {
             timer = null;
             if (!el || suppressed()) return;
             var cols = window.BookmarkGridInterop.getColumnCount(el, minCardWidth, gapPx);
-            if (cols === lastCols) return;
+            if (cols < 1 || cols === lastCols) return;
             lastCols = cols;
             try {
                 dotNetRef.invokeMethodAsync('OnColumnsChanged', cols);
@@ -38,7 +39,8 @@ window.BookmarkGridInterop = {
             timer = setTimeout(notify, DEBOUNCE_MS);
         });
         ro.observe(el);
-        lastCols = window.BookmarkGridInterop.getColumnCount(el, minCardWidth, gapPx);
+        var initial = window.BookmarkGridInterop.getColumnCount(el, minCardWidth, gapPx);
+        if (initial > 0) lastCols = initial;
 
         var originalDisconnect = ro.disconnect.bind(ro);
         ro.disconnect = function () {

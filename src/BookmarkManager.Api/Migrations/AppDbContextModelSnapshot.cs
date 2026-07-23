@@ -473,6 +473,13 @@ namespace BookmarkManager.Api.Migrations
                         .HasMaxLength(2048)
                         .HasColumnType("TEXT");
 
+                    b.Property<byte[]>("Embedding")
+                        .HasColumnType("BLOB");
+
+                    b.Property<string>("EmbeddingSourceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("FirstImportedAt")
                         .HasColumnType("TEXT");
 

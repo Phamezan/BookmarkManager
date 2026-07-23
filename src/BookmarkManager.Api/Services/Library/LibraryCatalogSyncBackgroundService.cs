@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.Embedding;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,6 +34,8 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     private readonly ILogger<LibraryCatalogSyncBackgroundService> _logger;
     private readonly LibraryProviderRegistry _registry;
     private readonly BookmarkSeriesMatchService _matchService;
+    private readonly IEmbeddingService _embeddingService;
+    private readonly IVectorSearchService _vectorSearch;
     private readonly Channel<bool> _resyncChannel = Channel.CreateUnbounded<bool>();
     private readonly object _statusLock = new();
     private bool _isCrawling;
@@ -41,12 +44,16 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         IServiceScopeFactory scopeFactory,
         ILogger<LibraryCatalogSyncBackgroundService> logger,
         LibraryProviderRegistry registry,
-        BookmarkSeriesMatchService matchService)
+        BookmarkSeriesMatchService matchService,
+        IEmbeddingService embeddingService,
+        IVectorSearchService vectorSearch)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
         _registry = registry;
         _matchService = matchService;
+        _embeddingService = embeddingService;
+        _vectorSearch = vectorSearch;
     }
 
     /// <summary>Forces a fresh, unbounded ground-up crawl of every sequence, ignoring any prior progress.</summary>
@@ -75,6 +82,39 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             isCrawling = _isCrawling;
         }
 
+        var activeQueueItems = await db.LibraryCatalogSyncQueue
+            .AsNoTracking()
+            .Where(q => q.Status == CatalogSyncQueueStatus.Processing || q.Status == CatalogSyncQueueStatus.Pending)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var providerCounts = await db.LibraryCatalogEntries
+            .AsNoTracking()
+            .GroupBy(e => e.Provider)
+            .Select(g => new { Provider = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.Provider, g => g.Count, cancellationToken)
+            .ConfigureAwait(false);
+
+        var providerStatuses = new List<ProviderSyncStatusDto>();
+        foreach (var provider in GetBulkProviders())
+        {
+            var pName = provider.ProviderName;
+            var activeItem = activeQueueItems.FirstOrDefault(q => q.Provider == pName && q.Status == CatalogSyncQueueStatus.Processing)
+                          ?? activeQueueItems.FirstOrDefault(q => q.Provider == pName);
+
+            var isActive = activeItem is not null &&
+                           (activeItem.Status == CatalogSyncQueueStatus.Processing || activeItem.Status == CatalogSyncQueueStatus.Pending);
+            var tokenStr = activeItem?.ContinuationToken is { Length: > 0 } t ? $"Page {t}" : (activeItem is not null ? "Initial Page" : "Completed");
+            providerCounts.TryGetValue(pName, out var count);
+
+            providerStatuses.Add(new ProviderSyncStatusDto(
+                pName,
+                isActive,
+                tokenStr,
+                count,
+                lastRefreshedAt));
+        }
+
         return new LibraryCatalogSyncStatusDto
         {
             TotalEntries = totalEntries,
@@ -82,7 +122,8 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             ProcessingQueueCount = processing,
             FailedQueueCount = failed,
             IsCrawling = isCrawling || pending > 0 || processing > 0,
-            LastRefreshedAt = lastRefreshedAt
+            LastRefreshedAt = lastRefreshedAt,
+            ProviderStatuses = providerStatuses
         };
     }
 
@@ -160,6 +201,17 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = DateTimeOffset.UtcNow;
+
+        // Reset any stale Processing items left behind by a previous app instance back to Pending
+        var staleProcessing = await db.LibraryCatalogSyncQueue
+            .Where(q => q.Status == CatalogSyncQueueStatus.Processing)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var stale in staleProcessing)
+        {
+            stale.Status = CatalogSyncQueueStatus.Pending;
+        }
 
         foreach (var provider in GetBulkProviders())
         {
@@ -288,6 +340,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
 
         await UpsertEntriesAsync(db, provider.ProviderName, page.Entries, page.RankBase, ct).ConfigureAwait(false);
         await EnrichThinCatalogEntriesAsync(db, provider, page.Entries, ct).ConfigureAwait(false);
+        await EmbedUpsertedEntriesAsync(db, provider.ProviderName, page.Entries, ct).ConfigureAwait(false);
 
         var current = await db.LibraryCatalogSyncQueue.FirstAsync(q => q.Id == item.Id, ct).ConfigureAwait(false);
         current.Status = CatalogSyncQueueStatus.Done;
@@ -374,17 +427,21 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     /// instead of throughput / (round-trip latency).</summary>
     private const int DetailEnrichmentConcurrency = 4;
 
-    /// <summary>Listing-page bulk crawls for Novelfire/RanobeDB only carry thin card data (title/cover/rating,
-    /// sometimes a chapter count). After each page upsert, fetch the per-title detail page for rows still
-    /// missing synopsis, chapter info, or genres so Browse cards and the details popup aren't empty. Rate
-    /// limiting stays inside each provider's <see cref="IMediaProvider.GetDetailsAsync"/>.</summary>
+    /// <summary>Some bulk providers' listing pages only carry thin card data (title/cover/rating, sometimes
+    /// a chapter count) - Novelfire's genre listing and RanobeDB's series list, and any future provider that
+    /// doesn't opt out via <see cref="IBulkCatalogProvider.ListingProvidesFullSynopsis"/>. After each page
+    /// upsert, fetch the per-title detail page for rows still missing synopsis, chapter info, or genres so
+    /// Browse cards, the details popup, and the RAG embedding aren't empty. Providers whose listing already
+    /// returns the synopsis (AniList, MangaDex) set the flag and are skipped here - fetching details would
+    /// only re-return data the listing already carried. Rate limiting stays inside each provider's
+    /// <see cref="IMediaProvider.GetDetailsAsync"/>.</summary>
     private async Task EnrichThinCatalogEntriesAsync(
         AppDbContext db,
         IBulkCatalogProvider provider,
         IReadOnlyList<LibraryEntryDto> entries,
         CancellationToken ct)
     {
-        if (!NeedsDetailEnrichment(provider.ProviderName) || entries.Count == 0)
+        if (provider.ListingProvidesFullSynopsis || entries.Count == 0)
             return;
 
         var providerIds = entries.Select(e => e.ProviderId).ToList();
@@ -433,9 +490,69 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
     }
 
-    private static bool NeedsDetailEnrichment(string providerName) =>
-        string.Equals(providerName, "Novelfire", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(providerName, "RanobeDB", StringComparison.OrdinalIgnoreCase);
+    /// <summary>Re-embeds the just-upserted (and possibly detail-enriched) rows for this page whose
+    /// embed text changed since last time. Uses <see cref="LibraryEmbeddingText"/> so the sync path and
+    /// the backfill worker agree on "the current text", and re-embeds only when the SHA256 hash differs
+    /// (or no embedding exists yet). Embedding is best-effort: a model that isn't ready, or any embed
+    /// failure, logs and returns without touching the crawl - the catalog rows are already saved, and the
+    /// backfill worker will pick up any rows left without a current embedding. Cancellation propagates so
+    /// shutdown isn't swallowed.</summary>
+    private async Task EmbedUpsertedEntriesAsync(
+        AppDbContext db,
+        string provider,
+        IReadOnlyList<LibraryEntryDto> entries,
+        CancellationToken ct)
+    {
+        if (!_embeddingService.IsReady || entries.Count == 0)
+            return;
+
+        try
+        {
+            var providerIds = entries.Select(e => e.ProviderId).ToList();
+            var rows = await db.LibraryCatalogEntries
+                .Where(e => e.Provider == provider && providerIds.Contains(e.ProviderId))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            var pending = new List<(LibraryCatalogEntry Row, string Hash)>();
+            var texts = new List<string>();
+            foreach (var row in rows)
+            {
+                var text = LibraryEmbeddingText.Build(row);
+                var hash = LibraryEmbeddingText.SourceHash(row);
+                if (row.Embedding is not null && string.Equals(row.EmbeddingSourceHash, hash, StringComparison.Ordinal))
+                    continue;
+
+                pending.Add((row, hash));
+                texts.Add(text);
+            }
+
+            if (pending.Count == 0)
+                return;
+
+            var vectors = await _embeddingService.EmbedBatchAsync(texts, ct).ConfigureAwait(false);
+            for (var i = 0; i < pending.Count; i++)
+            {
+                pending[i].Row.SetEmbeddingVector(vectors[i]);
+                pending[i].Row.EmbeddingSourceHash = pending[i].Hash;
+            }
+
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            // The in-memory vector cache's self-heal only notices a *count* change; re-embedding an
+            // existing row (edited synopsis, refreshed alt-titles) leaves the embedded-row count
+            // unchanged and would otherwise serve stale vectors for it until an unrelated count change or
+            // a restart. Invalidate explicitly whenever embeddings are actually written.
+            _vectorSearch.InvalidateCatalog();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Embedding catalog entries for {Provider} failed; crawl continues, backfill will retry.", provider);
+        }
+    }
 
     private static bool IsThinCatalogEntry(LibraryCatalogEntry row) =>
         string.IsNullOrWhiteSpace(row.Synopsis) ||

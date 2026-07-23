@@ -121,6 +121,45 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.BookmarkSerie
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService>());
 builder.Services.AddSingleton(BookmarkManager.Api.Services.Library.ProviderBudgetTracker.Instance);
+
+// RAG / semantic embedding engine (Wave 1). Singleton ONNX session, warmed on startup via its
+// IHostedService.StartAsync; the named HttpClient allows a long timeout for first-boot model download.
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IEmbeddingService>(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
+builder.Services.AddHostedService(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService>());
+
+// Stage-2 cross-encoder reranker (bge-reranker-base). Same lifecycle as the embedding service above:
+// singleton ONNX session, warmed on startup via IHostedService, own long-timeout HttpClient for first-boot
+// model download.
+builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.Rerank.OnnxRerankerService))
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromMinutes(5));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Rerank.OnnxRerankerService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Rerank.IRerankerService>(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Rerank.OnnxRerankerService>());
+builder.Services.AddHostedService(
+    provider => provider.GetRequiredService<BookmarkManager.Api.Services.Rerank.OnnxRerankerService>());
+
+// RAG / semantic embedding engine (Wave 2a). In-memory cosine vector search over catalog embeddings.
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Embedding.IVectorSearchService, BookmarkManager.Api.Services.Embedding.VectorSearchService>();
+
+// Hybrid retrieval (dense vector + SQLite FTS5/BM25 keyword, fused with RRF). Scoped: both depend on
+// the scoped AppDbContext (FtsKeywordSearchService queries LibraryCatalogSearch directly; HybridSearchService
+// looks up embeddings for keyword-only hits to compute a displayable cosine).
+builder.Services.AddScoped<BookmarkManager.Api.Services.Search.IKeywordSearchService, BookmarkManager.Api.Services.Search.FtsKeywordSearchService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Search.IHybridSearchService, BookmarkManager.Api.Services.Search.HybridSearchService>();
+
+// RAG / semantic embedding ingestion (Wave 2c). Backfill worker embeds catalog rows the interactive
+// sync path missed (crawled before the model loaded, or with a since-changed embed text).
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService>();
+
+// Library RAG assistant (Wave 2b). Own named HttpClient for the OpenAI-compatible chat call.
+// Scoped because it depends on the scoped AppDbContext.
+builder.Services.AddHttpClient(BookmarkManager.Api.Services.Rag.LibraryRagService.HttpClientName);
+builder.Services.AddScoped<BookmarkManager.Api.Services.Rag.ILibraryRagService, BookmarkManager.Api.Services.Rag.LibraryRagService>();
 builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));

@@ -72,7 +72,7 @@ public sealed class RanobeDbLibraryProvider(
         var cacheKey = $"{ProviderName}:catalog:{page}";
         var url = $"{BaseUrl}/series?limit={CatalogPageSize}&page={page}&sort={Uri.EscapeDataString("Num. books desc")}";
 
-        return ExecuteAsync(
+        return ExecuteCatalogAsync(
             cacheKey,
             CatalogCacheTtl,
             TimeSpan.FromSeconds(15),
@@ -80,12 +80,14 @@ public sealed class RanobeDbLibraryProvider(
             {
                 await RateLimiter.WaitAsync(ct).ConfigureAwait(false);
                 using var doc = await GetJsonAsync(url, ct).ConfigureAwait(false);
+                if (doc is null)
+                    throw new HttpRequestException($"RanobeDB catalog page {page} request failed.");
                 var entries = ParseSeriesArray(doc, ProviderName);
 
-                var currentPage = doc is not null && doc.RootElement.TryGetProperty("currentPage", out var curEl) && curEl.ValueKind == JsonValueKind.Number
+                var currentPage = doc.RootElement.TryGetProperty("currentPage", out var curEl) && curEl.ValueKind == JsonValueKind.Number
                     ? curEl.GetInt32()
                     : page;
-                var totalPages = doc is not null && doc.RootElement.TryGetProperty("totalPages", out var totEl) && totEl.ValueKind == JsonValueKind.Number
+                var totalPages = doc.RootElement.TryGetProperty("totalPages", out var totEl) && totEl.ValueKind == JsonValueKind.Number
                     ? totEl.GetInt32()
                     : currentPage;
 
@@ -95,7 +97,6 @@ public sealed class RanobeDbLibraryProvider(
                 var rankBase = (page - 1) * CatalogPageSize;
                 return new CatalogPageResult(entries, next, rankBase);
             },
-            new CatalogPageResult([], null),
             cancellationToken);
     }
 

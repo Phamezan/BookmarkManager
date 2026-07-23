@@ -1,0 +1,51 @@
+@namespace BookmarkManager.Client.Features.Library.Components
+@using BookmarkManager.Contracts
+
+<div class="@BubbleClass" role="listitem">
+    <div class="lib-chat-bubble-body">
+        @if (IsPending)
+        {
+            <span class="lib-chat-typing" aria-label="Assistant is typing">
+                <span class="lib-chat-dot"></span>
+                <span class="lib-chat-dot"></span>
+                <span class="lib-chat-dot"></span>
+            </span>
+        }
+        else
+        {
+            <p class="lib-chat-text">@Content</p>
+        }
+
+        @if (Recommendations is { Count: > 0 })
+        {
+            <div class="lib-chat-cards">
+                @foreach (var card in Recommendations)
+                {
+                    <a class="lib-chat-card" href="@card.SourceUrl" target="_blank" rel="noopener noreferrer" title="@card.Title">
+                        <span class="lib-chat-card-title">@card.Title</span>
+                        <span class="lib-chat-card-rating">@card.MediaType · @((card.Score * 100).ToString("0"))% match</span>
+                        @if (!string.IsNullOrWhiteSpace(card.Synopsis))
+                        {
+                            <span class="lib-chat-card-synopsis">@card.Synopsis</span>
+                        }
+                    </a>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string AssistantRole = "assistant";
+
+    [Parameter, EditorRequired] public string Role { get; set; } = AssistantRole;
+    [Parameter] public string Content { get; set; } = string.Empty;
+    [Parameter] public bool IsPending { get; set; }
+    [Parameter] public IReadOnlyList<LibraryRecommendedSeriesDto>? Recommendations { get; set; }
+
+    private bool IsUser => string.Equals(Role, "user", StringComparison.OrdinalIgnoreCase);
+
+    private string BubbleClass => IsUser
+        ? "lib-chat-bubble lib-chat-bubble-user"
+        : "lib-chat-bubble lib-chat-bubble-assistant";
+}

@@ -66,7 +66,15 @@ public class AiTaggingSettingsService
             GroqApiKey = string.Empty,
             GroqModel = "llama-3.3-70b-versatile",
             GroqBaseUrl = "https://api.groq.com/openai/v1",
-            GroqRequestsPerMinute = 25
+            GroqRequestsPerMinute = 25,
+            RagModel = "llama-3.3-70b-versatile",
+            RagApiKey = string.Empty,
+            RagBaseUrl = "https://api.groq.com/openai/v1",
+            RagRequestsPerMinute = 30,
+            RagSystemPrompt = AiTaggingSettingsDto.RagDefaultSystemPrompt,
+            RagFallbackApiKey = string.Empty,
+            RagFallbackModel = "meta/llama-3.3-70b-instruct",
+            RagFallbackBaseUrl = "https://integrate.api.nvidia.com/v1"
         };
 
     private static AiTaggingSettingsDto Normalize(AiTaggingSettingsDto settings)
@@ -92,6 +100,22 @@ public class AiTaggingSettingsService
             MigrationSearchModel = string.IsNullOrWhiteSpace(settings.MigrationSearchModel)
                 ? "groq/compound-mini"
                 : settings.MigrationSearchModel.Trim(),
-            MigrationAutoApproveHigh = settings.MigrationAutoApproveHigh
+            MigrationAutoApproveHigh = settings.MigrationAutoApproveHigh,
+            RagModel = string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel.Trim(),
+            RagApiKey = settings.RagApiKey?.Trim() ?? string.Empty,
+            RagBaseUrl = string.IsNullOrWhiteSpace(settings.RagBaseUrl)
+                ? "https://api.groq.com/openai/v1"
+                : settings.RagBaseUrl.Trim().TrimEnd('/'),
+            RagRequestsPerMinute = settings.RagRequestsPerMinute <= 0 ? 30 : settings.RagRequestsPerMinute,
+            RagSystemPrompt = string.IsNullOrWhiteSpace(settings.RagSystemPrompt)
+                ? AiTaggingSettingsDto.RagDefaultSystemPrompt
+                : settings.RagSystemPrompt.Trim(),
+            RagFallbackApiKey = settings.RagFallbackApiKey?.Trim() ?? string.Empty,
+            RagFallbackModel = string.IsNullOrWhiteSpace(settings.RagFallbackModel)
+                ? "meta/llama-3.3-70b-instruct"
+                : settings.RagFallbackModel.Trim(),
+            RagFallbackBaseUrl = string.IsNullOrWhiteSpace(settings.RagFallbackBaseUrl)
+                ? "https://integrate.api.nvidia.com/v1"
+                : settings.RagFallbackBaseUrl.Trim().TrimEnd('/')
         };
 }

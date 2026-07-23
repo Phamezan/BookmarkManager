@@ -169,6 +169,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.LatestChapter).HasMaxLength(100);
             entity.Property(e => e.LatestVolume).HasMaxLength(100);
             entity.Property(e => e.SourceUrl).HasMaxLength(2048).IsRequired();
+            entity.Property(e => e.EmbeddingSourceHash).HasMaxLength(64);
 
             entity.HasIndex(e => new { e.Provider, e.ProviderId }).IsUnique();
             entity.HasIndex(e => e.MediaType);

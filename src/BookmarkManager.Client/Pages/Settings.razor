@@ -1,6 +1,7 @@
 @page "/settings"
 @using BookmarkManager.Contracts
 @using BookmarkManager.Client.Components
+@implements IDisposable
 
 <PageTitle>Settings</PageTitle>
 
@@ -121,26 +122,18 @@
         <MudStack Spacing="3">
             <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
                 <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" />
-                <MudText Typo="Typo.h6" Class="flex-grow-1">AI Auto Tagging</MudText>
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Secondary"
-                           Size="Size.Small"
-                           StartIcon="@Icons.Material.Filled.Bolt"
-                           OnClick="TestAiKeyAsync"
-                           Disabled="@(_aiKeyTesting || _aiSettingsLoading)">
-                    @(_aiKeyTesting ? "Testing..." : "Test key")
-                </MudButton>
+                <MudText Typo="Typo.h6" Class="flex-grow-1">AI Configuration</MudText>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            Size="Size.Small"
                            StartIcon="@Icons.Material.Filled.Save"
                            OnClick="SaveAiTaggingSettingsAsync"
                            Disabled="@_aiSettingsSaving">
-                    @(_aiSettingsSaving ? "Saving..." : "Save")
+                    @(_aiSettingsSaving ? "Saving..." : "Save all")
                 </MudButton>
             </MudStack>
             <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                Configure OpenRouter for the Auto Tagger's AI series-title matching mode. Tags still come from source providers.
+                One place for every AI provider — switch panes below. "Save all" persists every pane; each pane's "Test key" checks that pane's key.
             </MudText>
             @if (_aiSettingsLoading)
             {
@@ -148,144 +141,276 @@
             }
             else
             {
-                <MudCheckBox T="bool" @bind-Value="_aiSettings.Enabled" Label="Enable OpenRouter AI auto-tagging mode" Color="Color.Primary" />
-                
-                <MudGrid>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_aiSettings.BaseUrl"
-                                      Label="Base URL"
-                                      Variant="Variant.Outlined"
-                                      Immediate="true"
-                                      HelperText="OpenRouter API Base URL, e.g. https://openrouter.ai/api/v1" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudSelect T="string" @bind-Value="_aiSettings.Model"
-                                   Label="Model"
-                                   Variant="Variant.Outlined"
-                                   HelperText="Swap if the current model is congested (429).">
-                            @foreach (var option in ModelOptionsIncludingCurrent)
-                            {
-                                <MudSelectItem T="string" Value="@option">@option</MudSelectItem>
-                            }
-                        </MudSelect>
-                    </MudItem>
-                    <MudItem xs="12">
-                        <MudTextField @bind-Value="_aiSettings.ApiKey"
-                                      Label="OpenRouter API Key"
-                                      Variant="Variant.Outlined"
-                                      InputType="InputType.Password"
-                                      Immediate="true"
-                                      HelperText="Stored locally on this API server." />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudNumericField @bind-Value="_aiSettings.RequestsPerMinute"
-                                         Label="Requests Per Minute (RPM)"
-                                         Variant="Variant.Outlined"
-                                         Min="1"
-                                         HelperText="Pacing limit for API calls." />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudNumericField @bind-Value="_aiSettings.PreferredBatchSize"
-                                         Label="Preferred Batch Size"
-                                         Variant="Variant.Outlined"
-                                         Min="1"
-                                         HelperText="Number of bookmarks to process per batch." />
-                    </MudItem>
-                </MudGrid>
+                <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4" Class="ai-config-tabs">
 
-                @if (_aiKeyTestResult is not null)
-                {
-                    <MudAlert Severity="@(_aiKeyTestResult.Success ? Severity.Success : Severity.Error)"
-                              Variant="Variant.Outlined"
-                              Dense="true"
-                              ShowCloseIcon="true"
-                              CloseIconClicked="@(() => _aiKeyTestResult = null)">
-                        @(_aiKeyTestResult.StatusCode > 0 ? $"[{_aiKeyTestResult.StatusCode}] " : "")@_aiKeyTestResult.Message
-                    </MudAlert>
-                }
-
-                <MudDivider Class="my-2" />
-
-                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-                    <MudText Typo="Typo.subtitle2" Class="flex-grow-1">Groq fallback (optional)</MudText>
-                    <MudButton Variant="Variant.Outlined"
-                               Color="Color.Secondary"
-                               Size="Size.Small"
-                               StartIcon="@Icons.Material.Filled.Bolt"
-                               OnClick="TestGroqKeyAsync"
-                               Disabled="@(_groqKeyTesting || _aiSettingsLoading)">
-                        @(_groqKeyTesting ? "Testing..." : "Test key")
-                    </MudButton>
-                </MudStack>
-                <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                    Used automatically for a chunk only when OpenRouter's free-tier quota is exhausted for the day. Leave the key blank to disable the fallback.
-                </MudText>
-
-                <MudGrid>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_aiSettings.GroqBaseUrl"
-                                      Label="Groq Base URL"
-                                      Variant="Variant.Outlined"
-                                      Immediate="true"
-                                      HelperText="e.g. https://api.groq.com/openai/v1" />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_aiSettings.GroqModel"
-                                      Label="Groq Model"
-                                      Variant="Variant.Outlined"
-                                      Immediate="true"
-                                      HelperText="e.g. llama-3.3-70b-versatile" />
-                    </MudItem>
-                    <MudItem xs="12">
-                        <MudTextField @bind-Value="_aiSettings.GroqApiKey"
-                                      Label="Groq API Key"
-                                      Variant="Variant.Outlined"
-                                      InputType="InputType.Password"
-                                      Immediate="true"
-                                      HelperText="Stored locally on this API server. Get one at console.groq.com/keys." />
-                    </MudItem>
-                    <MudItem xs="12" sm="6">
-                        <MudNumericField @bind-Value="_aiSettings.GroqRequestsPerMinute"
-                                         Label="Groq Requests Per Minute (RPM)"
-                                         Variant="Variant.Outlined"
-                                         Min="1"
-                                         HelperText="Pacing limit for Groq fallback calls." />
-                    </MudItem>
-                </MudGrid>
-
-                @if (_groqKeyTestResult is not null)
-                {
-                    <MudAlert Severity="@(_groqKeyTestResult.Success ? Severity.Success : Severity.Error)"
-                              Variant="Variant.Outlined"
-                              Dense="true"
-                              ShowCloseIcon="true"
-                              CloseIconClicked="@(() => _groqKeyTestResult = null)">
-                        @(_groqKeyTestResult.StatusCode > 0 ? $"[{_groqKeyTestResult.StatusCode}] " : "")@_groqKeyTestResult.Message
-                    </MudAlert>
-                }
-
-                <MudDivider Class="my-2" />
-
-                <MudText Typo="Typo.subtitle2">URL Migrator search</MudText>
-                <MudGrid>
-                    <MudItem xs="12" sm="6">
-                        <MudTextField @bind-Value="_aiSettings.MigrationSearchModel"
-                                      Label="Migration Search Model"
-                                      Variant="Variant.Outlined"
-                                      Immediate="true"
-                                      Class="migration-search-model-field"
-                                      HelperText="Groq model used for the URL Migrator search/rerank stage, e.g. groq/compound-mini." />
-                    </MudItem>
-                    <MudItem xs="12" sm="6" Class="d-flex flex-column justify-center">
-                        <MudSwitch T="bool" @bind-Value="_aiSettings.MigrationAutoApproveHigh"
-                                   Color="Color.Warning"
-                                   Class="migration-auto-approve-switch"
-                                   Label="Auto-approve verified (High) proposals" />
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            When enabled, High-confidence URL Migrator matches are approved automatically as soon as they're found. Wrong-series matches are still possible — review results periodically.
+                    <MudTabPanel Text="Auto-Tagging" Icon="@Icons.Material.Filled.Label">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2" Class="flex-grow-1">OpenRouter (primary)</MudText>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Bolt"
+                                       OnClick="TestAiKeyAsync"
+                                       Disabled="@(_aiKeyTesting || _aiSettingsLoading)">
+                                @(_aiKeyTesting ? "Testing..." : "Test key")
+                            </MudButton>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Configure OpenRouter for the Auto Tagger's AI series-title matching mode. Tags still come from source providers.
                         </MudText>
-                    </MudItem>
-                </MudGrid>
+                        <MudCheckBox T="bool" @bind-Value="_aiSettings.Enabled" Label="Enable OpenRouter AI auto-tagging mode" Color="Color.Primary" />
+                        <MudGrid>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.BaseUrl"
+                                              Label="Base URL"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="OpenRouter API Base URL, e.g. https://openrouter.ai/api/v1" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="string" @bind-Value="_aiSettings.Model"
+                                           Label="Model"
+                                           Variant="Variant.Outlined"
+                                           HelperText="Swap if the current model is congested (429).">
+                                    @foreach (var option in ModelOptionsIncludingCurrent)
+                                    {
+                                        <MudSelectItem T="string" Value="@option">@option</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.ApiKey"
+                                              Label="OpenRouter API Key"
+                                              Variant="Variant.Outlined"
+                                              InputType="InputType.Password"
+                                              Immediate="true"
+                                              HelperText="Stored locally on this API server." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_aiSettings.RequestsPerMinute"
+                                                 Label="Requests Per Minute (RPM)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1"
+                                                 HelperText="Pacing limit for API calls." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_aiSettings.PreferredBatchSize"
+                                                 Label="Preferred Batch Size"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1"
+                                                 HelperText="Number of bookmarks to process per batch." />
+                            </MudItem>
+                        </MudGrid>
+                        @if (_aiKeyTestResult is not null)
+                        {
+                            <MudAlert Severity="@(_aiKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                                      Variant="Variant.Outlined"
+                                      Dense="true"
+                                      ShowCloseIcon="true"
+                                      CloseIconClicked="@(() => _aiKeyTestResult = null)">
+                                @(_aiKeyTestResult.StatusCode > 0 ? $"[{_aiKeyTestResult.StatusCode}] " : "")@_aiKeyTestResult.Message
+                            </MudAlert>
+                        }
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Groq fallback" Icon="@Icons.Material.Filled.Bolt">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2" Class="flex-grow-1">Groq fallback (optional)</MudText>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Bolt"
+                                       OnClick="TestGroqKeyAsync"
+                                       Disabled="@(_groqKeyTesting || _aiSettingsLoading)">
+                                @(_groqKeyTesting ? "Testing..." : "Test key")
+                            </MudButton>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Used automatically for a chunk only when OpenRouter's free-tier quota is exhausted for the day. Leave the key blank to disable the fallback.
+                        </MudText>
+                        <MudGrid>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.GroqBaseUrl"
+                                              Label="Groq Base URL"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="e.g. https://api.groq.com/openai/v1" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.GroqModel"
+                                              Label="Groq Model"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="e.g. llama-3.3-70b-versatile" />
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.GroqApiKey"
+                                              Label="Groq API Key"
+                                              Variant="Variant.Outlined"
+                                              InputType="InputType.Password"
+                                              Immediate="true"
+                                              HelperText="Stored locally on this API server. Get one at console.groq.com/keys." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_aiSettings.GroqRequestsPerMinute"
+                                                 Label="Groq Requests Per Minute (RPM)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1"
+                                                 HelperText="Pacing limit for Groq fallback calls." />
+                            </MudItem>
+                        </MudGrid>
+                        @if (_groqKeyTestResult is not null)
+                        {
+                            <MudAlert Severity="@(_groqKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                                      Variant="Variant.Outlined"
+                                      Dense="true"
+                                      ShowCloseIcon="true"
+                                      CloseIconClicked="@(() => _groqKeyTestResult = null)">
+                                @(_groqKeyTestResult.StatusCode > 0 ? $"[{_groqKeyTestResult.StatusCode}] " : "")@_groqKeyTestResult.Message
+                            </MudAlert>
+                        }
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="Library assistant" Icon="@Icons.Material.Filled.Chat">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2" Class="flex-grow-1">Library AI assistant (RAG)</MudText>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Bolt"
+                                       OnClick="TestRagKeyAsync"
+                                       Disabled="@(_ragKeyTesting || _aiSettingsLoading)">
+                                @(_ragKeyTesting ? "Testing..." : "Test key")
+                            </MudButton>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Powers the floating chat on the Library page. The model must be an OpenAI-compatible chat/completion model (embedding models will not answer). Leave the key blank to disable the assistant.
+                        </MudText>
+                        <MudGrid>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.RagApiKey"
+                                              Label="Library Assistant API Key"
+                                              Variant="Variant.Outlined"
+                                              InputType="InputType.Password"
+                                              Immediate="true"
+                                              HelperText="Stored locally on this API server." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.RagBaseUrl"
+                                              Label="Assistant Base URL"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="e.g. https://api.groq.com/openai/v1 (Groq is fastest)" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.RagModel"
+                                              Label="Assistant Model"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="Chat/completion model id, e.g. llama-3.3-70b-versatile (Groq, ~1s)." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField @bind-Value="_aiSettings.RagRequestsPerMinute"
+                                                 Label="Assistant Requests Per Minute (RPM)"
+                                                 Variant="Variant.Outlined"
+                                                 Min="1"
+                                                 HelperText="Pacing limit for chat calls." />
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.RagSystemPrompt"
+                                              Label="Assistant Persona (system prompt)"
+                                              Variant="Variant.Outlined"
+                                              Lines="3"
+                                              Immediate="true"
+                                              HelperText="Shapes the assistant's voice/expertise. Catalog-grounding rules are always enforced by the server." />
+                            </MudItem>
+                        </MudGrid>
+
+                        <MudDivider Class="my-2" />
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudText Typo="Typo.subtitle2" Class="flex-grow-1">Fallback provider (optional)</MudText>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.Bolt"
+                                       OnClick="TestRagFallbackKeyAsync"
+                                       Disabled="@(_ragFallbackKeyTesting || _aiSettingsLoading)">
+                                @(_ragFallbackKeyTesting ? "Testing..." : "Test key")
+                            </MudButton>
+                        </MudStack>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Tried automatically only when the primary is rate-limited (429) or errors — a different provider/account absorbs the overflow. Leave the key blank to disable.
+                        </MudText>
+                        <MudGrid>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.RagFallbackApiKey"
+                                              Label="Fallback API Key"
+                                              Variant="Variant.Outlined"
+                                              InputType="InputType.Password"
+                                              Immediate="true"
+                                              HelperText="e.g. an NVIDIA nvapi-… key. Stored locally on this API server." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.RagFallbackBaseUrl"
+                                              Label="Fallback Base URL"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="e.g. https://integrate.api.nvidia.com/v1" />
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.RagFallbackModel"
+                                              Label="Fallback Model"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              HelperText="Chat/completion model id, e.g. meta/llama-3.3-70b-instruct." />
+                            </MudItem>
+                        </MudGrid>
+                        @if (_ragFallbackKeyTestResult is not null)
+                        {
+                            <MudAlert Severity="@(_ragFallbackKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                                      Variant="Variant.Outlined"
+                                      Dense="true"
+                                      ShowCloseIcon="true"
+                                      CloseIconClicked="@(() => _ragFallbackKeyTestResult = null)">
+                                @(_ragFallbackKeyTestResult.StatusCode > 0 ? $"[{_ragFallbackKeyTestResult.StatusCode}] " : "")@_ragFallbackKeyTestResult.Message
+                            </MudAlert>
+                        }
+                        @if (_ragKeyTestResult is not null)
+                        {
+                            <MudAlert Severity="@(_ragKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                                      Variant="Variant.Outlined"
+                                      Dense="true"
+                                      ShowCloseIcon="true"
+                                      CloseIconClicked="@(() => _ragKeyTestResult = null)">
+                                @(_ragKeyTestResult.StatusCode > 0 ? $"[{_ragKeyTestResult.StatusCode}] " : "")@_ragKeyTestResult.Message
+                            </MudAlert>
+                        }
+                    </MudTabPanel>
+
+                    <MudTabPanel Text="URL Migrator" Icon="@Icons.Material.Filled.Link">
+                        <MudText Typo="Typo.subtitle2">URL Migrator search</MudText>
+                        <MudGrid>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.MigrationSearchModel"
+                                              Label="Migration Search Model"
+                                              Variant="Variant.Outlined"
+                                              Immediate="true"
+                                              Class="migration-search-model-field"
+                                              HelperText="Groq model used for the URL Migrator search/rerank stage, e.g. groq/compound-mini." />
+                            </MudItem>
+                            <MudItem xs="12" sm="6" Class="d-flex flex-column justify-center">
+                                <MudSwitch T="bool" @bind-Value="_aiSettings.MigrationAutoApproveHigh"
+                                           Color="Color.Warning"
+                                           Class="migration-auto-approve-switch"
+                                           Label="Auto-approve verified (High) proposals" />
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    When enabled, High-confidence URL Migrator matches are approved automatically as soon as they're found. Wrong-series matches are still possible — review results periodically.
+                                </MudText>
+                            </MudItem>
+                        </MudGrid>
+                    </MudTabPanel>
+
+                </MudTabs>
             }
         </MudStack>
     </MudPaper>
@@ -455,6 +580,40 @@
                         </MudStack>
                     </MudItem>
                 </MudGrid>
+
+                @if (_catalogStatus.ProviderStatuses != null && _catalogStatus.ProviderStatuses.Count > 0)
+                {
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.subtitle2" Class="mud-text-secondary">Bulk Provider Activity</MudText>
+                    <MudGrid Spacing="2">
+                        @foreach (var provider in _catalogStatus.ProviderStatuses)
+                        {
+                            <MudItem xs="12" sm="6" md="3">
+                                <MudPaper Elevation="0" Style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px;">
+                                    <MudStack Spacing="1">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2" Style="font-weight: 700;">@provider.ProviderName</MudText>
+                                            @if (provider.IsActive)
+                                            {
+                                                <span class="status-dot is-running" title="Actively crawling page from provider" style="box-shadow: 0 0 8px #22c55e;"></span>
+                                            }
+                                            else
+                                            {
+                                                <span class="status-dot is-idle" title="Idle / Complete"></span>
+                                            }
+                                        </MudStack>
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@provider.CurrentPageToken</MudText>
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(provider.IsActive ? Color.Success : Color.Default)">
+                                                @provider.TotalEntries.ToString("N0") titles
+                                            </MudChip>
+                                        </MudStack>
+                                    </MudStack>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                }
             }
         </MudStack>
     </MudPaper>

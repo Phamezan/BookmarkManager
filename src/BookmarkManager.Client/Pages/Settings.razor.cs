@@ -48,6 +48,10 @@ public partial class Settings
     private TestAiKeyResponse? _aiKeyTestResult;
     private bool _groqKeyTesting;
     private TestAiKeyResponse? _groqKeyTestResult;
+    private bool _ragKeyTesting;
+    private TestAiKeyResponse? _ragKeyTestResult;
+    private bool _ragFallbackKeyTesting;
+    private TestAiKeyResponse? _ragFallbackKeyTestResult;
 
     private class ThemeOption
     {
@@ -283,6 +287,66 @@ public partial class Settings
         }
     }
 
+    private async Task TestRagKeyAsync()
+    {
+        _ragKeyTesting = true;
+        _ragKeyTestResult = null;
+        try
+        {
+            // Reuse the generic OpenAI-compatible chat key test (same shape the RAG chat call uses)
+            // against the assistant's own base URL/model/key currently in the form.
+            var request = new TestAiKeyRequest
+            {
+                Provider = "Groq",
+                BaseUrl = _aiSettings.RagBaseUrl,
+                Model = _aiSettings.RagModel,
+                ApiKey = _aiSettings.RagApiKey
+            };
+            _ragKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
+            Snackbar.Add(
+                _ragKeyTestResult.Success ? "Library assistant key test passed." : "Library assistant key test failed.",
+                _ragKeyTestResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _ragKeyTestResult = new TestAiKeyResponse { Success = false, Message = ex.Message };
+            Snackbar.Add($"Failed to run Library assistant key test: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _ragKeyTesting = false;
+        }
+    }
+
+    private async Task TestRagFallbackKeyAsync()
+    {
+        _ragFallbackKeyTesting = true;
+        _ragFallbackKeyTestResult = null;
+        try
+        {
+            var request = new TestAiKeyRequest
+            {
+                Provider = "Groq",
+                BaseUrl = _aiSettings.RagFallbackBaseUrl,
+                Model = _aiSettings.RagFallbackModel,
+                ApiKey = _aiSettings.RagFallbackApiKey
+            };
+            _ragFallbackKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
+            Snackbar.Add(
+                _ragFallbackKeyTestResult.Success ? "Fallback key test passed." : "Fallback key test failed.",
+                _ragFallbackKeyTestResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _ragFallbackKeyTestResult = new TestAiKeyResponse { Success = false, Message = ex.Message };
+            Snackbar.Add($"Failed to run fallback key test: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _ragFallbackKeyTesting = false;
+        }
+    }
+
     private async Task SaveAiTaggingSettingsAsync()
     {
         _aiSettingsSaving = true;
@@ -335,12 +399,15 @@ public partial class Settings
         }
     }
 
+    private CancellationTokenSource? _pollCts;
+
     private async Task LoadCatalogSyncStatusAsync()
     {
         _catalogStatusLoading = true;
         try
         {
             _catalogStatus = await LibraryService.GetCatalogSyncStatusAsync();
+            EnsurePollingLoop();
         }
         catch (Exception ex)
         {
@@ -350,6 +417,51 @@ public partial class Settings
         {
             _catalogStatusLoading = false;
         }
+    }
+
+    private void EnsurePollingLoop()
+    {
+        if (_catalogStatus?.IsCrawling == true && _pollCts is null)
+        {
+            _pollCts = new CancellationTokenSource();
+            _ = PollStatusLoopAsync(_pollCts.Token);
+        }
+    }
+
+    private async Task PollStatusLoopAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        while (!token.IsCancellationRequested && await timer.WaitForNextTickAsync(token).ConfigureAwait(false))
+        {
+            try
+            {
+                var newStatus = await LibraryService.GetCatalogSyncStatusAsync().ConfigureAwait(false);
+                await InvokeAsync(() =>
+                {
+                    _catalogStatus = newStatus;
+                    StateHasChanged();
+                });
+
+                if (!newStatus.IsCrawling)
+                {
+                    break;
+                }
+            }
+            catch
+            {
+                // Ignore transient polling failure
+            }
+        }
+
+        _pollCts?.Dispose();
+        _pollCts = null;
+    }
+
+    public void Dispose()
+    {
+        _pollCts?.Cancel();
+        _pollCts?.Dispose();
+        _pollCts = null;
     }
 
     private async Task TriggerCatalogResyncAsync()

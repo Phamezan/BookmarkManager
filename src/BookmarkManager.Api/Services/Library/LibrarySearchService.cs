@@ -1,5 +1,7 @@
+using System.Numerics.Tensors;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.BookmarkTagging;
+using BookmarkManager.Api.Services.Embedding;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -13,16 +15,36 @@ namespace BookmarkManager.Api.Services.Library;
 /// view instead pages through <see cref="LibraryCatalogEntry"/> - a local mirror kept fresh by
 /// <see cref="LibraryCatalogSyncBackgroundService"/> - so it can offer thousands of titles without a
 /// live fan-out call on every page load; live search additionally folds in local catalog matches for
-/// better recall alongside the freshest live results.</summary>
+/// better recall alongside the freshest live results.
+///
+/// Deliberately NOT switched to <see cref="Search.IHybridSearchService"/> (feature/hybrid-search): unlike
+/// <c>LibraryRagService</c>, this service never does a full-corpus dense search in the first place - the
+/// SQL <c>LIKE</c> candidate generation in <see cref="SearchCatalogAsync"/> already guarantees an exact
+/// proper-noun substring match surfaces (the failure mode hybrid retrieval exists to fix), and
+/// <see cref="RankHybrid"/>/<see cref="HybridScore"/> already blend that keyword signal with cosine
+/// similarity over just those LIKE-filtered candidates. Routing this through RRF fusion over the whole
+/// catalog would be a bigger behavior change (different candidate set, different scoring) for a path that
+/// doesn't have the problem the task was written to solve.</summary>
 public sealed class LibrarySearchService(
     LibraryProviderRegistry registry,
     IOptions<LibraryProviderOptions> options,
     AppDbContext db,
+    IEmbeddingService embeddingService,
     ILogger<LibrarySearchService> logger)
 {
     private const int CatalogSearchMatchLimit = 30;
     private const int MinTakeSize = 1;
     private const int MaxTakeSize = 200;
+
+    // Hybrid ranking weights: keyword relevance still dominates so exact/prefix title hits stay on top,
+    // with semantic similarity breaking ties and lifting conceptually-close matches. Sum to 1.0.
+    private const double KeywordWeight = 0.6;
+    private const double VectorWeight = 0.4;
+
+    /// <summary>Minimum cosine similarity for a semantic match to contribute; below this the vector
+    /// component is treated as noise (0) so weak matches don't perturb keyword order. Mirrors
+    /// <c>RagMinSimilarity</c> in the vector engine spec.</summary>
+    private const float VectorSimilarityFloor = 0.3f;
 
     private sealed record ProviderOutcome(IReadOnlyList<LibraryEntryDto> Entries, LibraryProviderStatusDto Status);
 
@@ -36,16 +58,23 @@ public sealed class LibrarySearchService(
         var (toQuery, precomputedStatuses) = SelectProviders(request.Providers);
         response.ProviderStatuses.AddRange(precomputedStatuses);
 
-        var timeout = TimeSpan.FromSeconds(Math.Max(1, options.Value.SearchTimeoutSeconds));
-        var outcomes = await Task.WhenAll(
-            toQuery.Select(p => RunAsync(p, timeout, ct => p.SearchAsync(query, request.MediaType, ct), cancellationToken))
-        ).ConfigureAwait(false);
+        // Run instant local catalog search (< 15ms) concurrently with live provider fan-out
+        var catalogTask = SearchCatalogAsync(query, request.MediaType, cancellationToken);
+
+        // Cap live web scraper timeout to 1.5s so external web calls never stall local catalog results
+        var liveTimeout = TimeSpan.FromMilliseconds(1500);
+        var outcomesTask = Task.WhenAll(
+            toQuery.Select(p => RunAsync(p, liveTimeout, ct => p.SearchAsync(query, request.MediaType, ct), cancellationToken))
+        );
+
+        await Task.WhenAll(catalogTask, outcomesTask).ConfigureAwait(false);
+
+        var catalogMatches = catalogTask.Result;
+        var outcomes = outcomesTask.Result;
 
         response.ProviderStatuses.AddRange(outcomes.Select(o => o.Status));
 
-        var catalogMatches = await SearchCatalogAsync(query, request.MediaType, cancellationToken).ConfigureAwait(false);
-
-        var entries = outcomes.SelectMany(o => o.Entries).Concat(catalogMatches);
+        var entries = catalogMatches.Concat(outcomes.SelectMany(o => o.Entries));
         if (request.MediaType is { } requestedType)
             entries = entries.Where(e => e.MediaType == requestedType);
 
@@ -65,7 +94,80 @@ public sealed class LibrarySearchService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return rows.Select(MapCatalogEntry).ToList();
+        if (rows.Count == 0)
+            return [];
+
+        var ranked = await RankCatalogAsync(rows, query, cancellationToken).ConfigureAwait(false);
+        return ranked.Select(MapCatalogEntry).ToList();
+    }
+
+    /// <summary>Orders keyword candidates by a hybrid of keyword relevance and semantic (embedding)
+    /// similarity. When the embedding service isn't ready - or embedding the query fails - falls back
+    /// to the original keyword-only order so search never regresses below the pure-keyword baseline.</summary>
+    private async Task<IReadOnlyList<LibraryCatalogEntry>> RankCatalogAsync(
+        IReadOnlyList<LibraryCatalogEntry> rows, string query, CancellationToken cancellationToken)
+    {
+        if (!embeddingService.IsReady)
+            return rows;
+
+        float[] queryVector;
+        try
+        {
+            using var embedCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(150));
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, embedCts.Token);
+            queryVector = await embeddingService.EmbedQueryAsync(query, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Query embedding timed out (>150ms); using instant keyword catalog ranking.");
+            return rows;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Query embedding failed; falling back to keyword-only catalog ranking.");
+            return rows;
+        }
+
+        return RankHybrid(rows, query, queryVector);
+    }
+
+    /// <summary>Pure, deterministic hybrid ordering - extracted so it can be unit-tested without a DB
+    /// or a real ONNX session. Higher <see cref="HybridScore"/> sorts first; ties keep input order.</summary>
+    internal static IReadOnlyList<LibraryCatalogEntry> RankHybrid(
+        IReadOnlyList<LibraryCatalogEntry> rows, string query, float[] queryVector) =>
+        rows.OrderByDescending(row => HybridScore(row, query, queryVector)).ToList();
+
+    internal static double HybridScore(LibraryCatalogEntry row, string query, float[] queryVector)
+    {
+        var keyword = KeywordScore(row.Title, row.AlternateTitles, query);
+
+        var vector = row.GetEmbeddingVector();
+        if (vector is null || vector.Length != queryVector.Length)
+            return keyword; // no embedding yet - keyword score only
+
+        var cosine = TensorPrimitives.CosineSimilarity(queryVector, vector);
+        var semantic = cosine < VectorSimilarityFloor ? 0.0 : cosine;
+        return (KeywordWeight * keyword) + (VectorWeight * semantic);
+    }
+
+    /// <summary>Cheap lexical relevance in [0,1]: exact &gt; prefix &gt; substring title match, then
+    /// alternate-title substring, then a small floor for LIKE candidates that matched some other way.</summary>
+    internal static double KeywordScore(string? title, string? alternateTitles, string query)
+    {
+        var q = query.Trim();
+        if (q.Length == 0)
+            return 0.0;
+
+        var t = title ?? string.Empty;
+        if (t.Equals(q, StringComparison.OrdinalIgnoreCase))
+            return 1.0;
+        if (t.StartsWith(q, StringComparison.OrdinalIgnoreCase))
+            return 0.8;
+        if (t.Contains(q, StringComparison.OrdinalIgnoreCase))
+            return 0.6;
+        if (alternateTitles is not null && alternateTitles.Contains(q, StringComparison.OrdinalIgnoreCase))
+            return 0.4;
+        return 0.2;
     }
 
     /// <summary>Pages the local catalog mirror ordered by popularity rank (nulls last, i.e. coverage-only
@@ -257,9 +359,14 @@ public sealed class LibrarySearchService(
 
     public static List<LibraryEntryDto> MergeAndDedupe(IEnumerable<LibraryEntryDto> entries)
     {
-        return entries
+        var merged = entries
             .GroupBy(e => (Title: MediaTitleNormalizer.NormalizeForSearch(e.Title), e.MediaType))
             .Select(group => MergeGroup(group.ToList()))
+            .ToList();
+
+        return merged
+            .GroupBy(e => (e.Provider, e.ProviderId))
+            .Select(group => group.First())
             .ToList();
     }
 

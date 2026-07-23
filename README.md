@@ -11,6 +11,7 @@ So this is a self-hosted bookmark manager built around that use case, plus a com
 ## Features
 
 - **Two-way browser sync** — real-time sync between a Brave/Chrome bookmark folder and the server via WebSocket heartbeats and a command queue.
+- **Library AI Assistant (RAG)** — floating catalog-grounded chat drawer powered by hybrid vector search (dense embeddings + BM25) to recommend series directly from your library catalog.
 - **Global undo** — stack-based undo for deletes, moves, and drag-and-drop.
 - **Anime/manga episode auto-extraction** — the extension parses episode/chapter numbers from URLs and page content and appends them to bookmark titles.
 - **Address-bar search** — type `bm` + space in the browser omnibox to search and launch bookmarks.
@@ -23,24 +24,27 @@ So this is a self-hosted bookmark manager built around that use case, plus a com
 - **Airing calendar** — tracks tagged anime/manga bookmarks against AniList release schedules and lays out upcoming episodes/chapters on a month view.
 - **Recycle Bin** — soft-deleted bookmarks stay recoverable for 30 days before purge.
 - **Keyboard-driven** — full keyboard navigation and shortcuts for working through bookmarks without touching the mouse (press `?` in the dashboard for the cheat sheet).
-- **Five built-in themes** — switchable instantly from Settings, no reload.
+- **Five built-in themes** — switchable instantly from Settings (including the revamped Anime Worlds theme), no reload.
 
 ## Screenshots
 
 <details>
-<summary><strong>Default</strong></summary>
+<summary><strong>Default (Premium Dark)</strong></summary>
 
 **Bookmarks**
-![Bookmarks](Docs/images/bookmarks-default.webp)
+![Bookmarks — default theme](Docs/images/bookmarks-default.png)
 
-**Library**
-![Library](Docs/images/library-default.webp)
+**Library & AI Assistant**
+![Library Assistant — default theme](Docs/images/library-assistant-default.png)
 
 **Library, scrolled**
 ![Library scrolled](Docs/images/library-scrolled-default.webp)
 
 **Command palette**
 ![Command palette](Docs/images/palette-default.webp)
+
+**Settings & AI Configuration**
+![Settings AI Config — default theme](Docs/images/settings-ai-config-default.png)
 
 **Auto Tagger**
 ![Auto Tagger](Docs/images/autotag-default.webp)
@@ -62,11 +66,14 @@ So this is a self-hosted bookmark manager built around that use case, plus a com
 <details>
 <summary><strong>With theme — Anime Worlds</strong></summary>
 
-**Bookmarks**
-![Bookmarks — anime theme](Docs/images/bookmarks-anime.webp)
+**Bookmarks & Revamped Navbar**
+![Bookmarks — anime theme](Docs/images/bookmarks-anime.png)
 
-**Library**
-![Library — anime theme](Docs/images/library-anime.webp)
+**Library & AI Assistant — Anime Theme**
+![Library Assistant — anime theme](Docs/images/library-assistant-anime.png)
+
+**Settings — Anime Theme**
+![Settings — anime theme](Docs/images/settings-anime.png)
 
 **Command palette**
 ![Command palette — anime theme](Docs/images/palette-anime.webp)
@@ -84,7 +91,36 @@ So this is a self-hosted bookmark manager built around that use case, plus a com
 
 ## Architecture
 
-Three pieces: a Manifest V3 browser extension, an ASP.NET Core API, and a Blazor WebAssembly dashboard. The extension and server maintain a 1:1 state projection of tracked browser folders.
+The system consists of three primary components: a Manifest V3 browser extension, an ASP.NET Core API server, and a Blazor WebAssembly dashboard. The extension and server maintain a 1:1 state projection of tracked browser folders.
+
+### System Container Overview (C4 Model)
+
+```mermaid
+C4Container
+    title Container Diagram for Bookmark Manager
+
+    Person(user, "User", "Single administrator managing manga, anime, & novel bookmarks")
+
+    System_Boundary(bm_sys, "Bookmark Manager System") {
+        Container(ext, "Brave Extension", "TypeScript, Svelte, MV3", "2-way sync, in-tab command palette (Ctrl+P), episode extraction, omnibox search (bm)")
+        Container(client, "Blazor Dashboard", "Blazor WebAssembly, MudBlazor", "Interactive UI, library catalog, RAG AI assistant, calendar, settings, backups")
+        Container(api, "API Server", "ASP.NET Core (.NET 10)", "Sync engine, EF Core SQLite, RAG vector retrieval, background catalog crawler")
+        ContainerDb(db, "SQLite Database", "SQLite", "Bookmarks, extension commands, tag provenance, catalog mirror & vector index")
+    }
+
+    System_Ext(providers, "Media Providers", "AniList, MangaDex, Kitsu, RanobeDB, Novelfire")
+    System_Ext(llm, "AI LLM Provider", "OpenAI-compatible API (Groq, OpenRouter, Local)")
+
+    Rel(user, ext, "Bookmarks series & searches", "Brave / Chrome")
+    Rel(user, client, "Browses library & manages state", "HTTPS / Blazor WASM")
+    Rel(ext, api, "WebSocket sync & snapshot commands", "ws:// & http://")
+    Rel(client, api, "REST & WebSocket API requests", "http:// & ws://")
+    Rel(api, db, "Reads / Writes state & vectors", "EF Core / SQLite")
+    Rel(api, providers, "Fetches public series metadata & catalog", "HTTP REST")
+    Rel(api, llm, "Grounds catalog context for Library Assistant", "HTTP / OpenAI API")
+```
+
+### Real-Time Synchronization Protocol
 
 ```mermaid
 sequenceDiagram

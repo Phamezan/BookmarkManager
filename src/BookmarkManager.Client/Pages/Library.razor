@@ -326,18 +326,18 @@
                 }
             </span>
         </div>
-        @if (!_loading && FilteredItems.Count == 0)
-        {
-            <div class="lib-empty">
-                <span class="lib-empty-glyph" aria-hidden="true">⌀</span>
-                <p class="lib-empty-title">Nothing on this shelf</p>
-                <p class="lib-empty-sub">No titles match the current search and filters. Clear a filter or try another name.</p>
-                <button type="button" class="lib-clear-btn" @onclick="ClearFilters">Clear all filters</button>
-            </div>
-        }
-        else
-        {
-            <div class="lib-browse-virtual" @ref="_browseContainerRef">
+        <div class="lib-browse-virtual" @ref="_browseContainerRef">
+            @if (!_loading && FilteredItems.Count == 0)
+            {
+                <div class="lib-empty">
+                    <span class="lib-empty-glyph" aria-hidden="true">⌀</span>
+                    <p class="lib-empty-title">Nothing on this shelf</p>
+                    <p class="lib-empty-sub">No titles match the current search and filters. Clear a filter or try another name.</p>
+                    <button type="button" class="lib-clear-btn" @onclick="ClearFilters">Clear all filters</button>
+                </div>
+            }
+            else
+            {
                 <Virtualize Items="_browseRows" Context="row" ItemSize="BrowseRowItemSizePx" OverscanCount="6">
                     <div @key="BrowseRowKey(row)"
                          class="lib-grid lib-grid-row"
@@ -349,13 +349,15 @@
                         }
                     </div>
                 </Virtualize>
-                <div class="lib-scroll-sentinel" @ref="_browseSentinelRef" aria-hidden="true">
-                    @if (_loadingMore)
-                    {
-                        <span class="lib-scroll-sentinel-label">Loading more…</span>
-                    }
-                </div>
+            }
+            <div class="lib-scroll-sentinel" @ref="_browseSentinelRef" aria-hidden="true">
+                @if (_loadingMore)
+                {
+                    <span class="lib-scroll-sentinel-label">Loading more…</span>
+                }
             </div>
-        }
+        </div>
     </section>
+
+    <LibraryChatDrawer />
 </div>
