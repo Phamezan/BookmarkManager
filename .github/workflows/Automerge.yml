@@ -31,7 +31,10 @@ jobs:
         run: dotnet build --configuration Release
 
       - name: Run Tests
-        run: dotnet test --configuration Release --no-build
+        run: |
+          dotnet test ./tests/BookmarkManager.Client.ComponentTests/BookmarkManager.Client.ComponentTests.csproj --configuration Release --no-build
+          dotnet test ./tests/BookmarkManager.Api.IntegrationTests/BookmarkManager.Api.IntegrationTests.csproj --configuration Release --no-build
+          dotnet test ./tests/BookmarkManager.UnitTests/BookmarkManager.UnitTests.csproj --configuration Release --no-build
 
       - name: Create and Auto-Merge PR
         env:
