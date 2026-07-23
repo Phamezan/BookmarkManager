@@ -69,7 +69,8 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
 
             var options = new Microsoft.ML.OnnxRuntime.SessionOptions
             {
-                IntraOpNumThreads = Math.Min(2, Environment.ProcessorCount),
+                IntraOpNumThreads = 1,
+                InterOpNumThreads = 1,
                 ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
             };
             _session = new InferenceSession(modelPath, options);
