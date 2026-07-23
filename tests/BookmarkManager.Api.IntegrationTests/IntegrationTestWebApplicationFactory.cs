@@ -86,13 +86,14 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             var settingsPath = Path.Combine(_tempDataDir, "ai-tagging-settings.json");
             services.AddSingleton<AiTaggingSettingsService>(new TestAiTaggingSettingsService(settingsPath));
 
-            // Remove background ONNX model downloader and backfill hosted services so tests don't fetch or run ONNX in CI.
+            // Remove background ONNX model downloader, reranker, embedding backfill, and catalog sync hosted services so tests don't fetch or run ONNX in CI.
             var hostedServicesToRemove = services.Where(d =>
                 d.ServiceType == typeof(IHostedService) &&
                 d.ImplementationType is { } impl &&
                 (impl == typeof(OnnxEmbeddingService) ||
                  impl == typeof(OnnxRerankerService) ||
-                 impl == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService)))
+                 impl == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService) ||
+                 impl == typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService)))
                 .ToList();
 
             foreach (var hs in hostedServicesToRemove)

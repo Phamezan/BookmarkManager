@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Hosting;
 using Xunit;
 
 namespace BookmarkManager.Api.IntegrationTests;
@@ -193,6 +194,14 @@ public sealed class LibraryReadingProgressEndpointTests : IDisposable
             {
                 services.RemoveAll<DbContextOptions<AppDbContext>>();
                 services.AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={_dbPath}"));
+
+                var catalogSyncDescriptor = services.SingleOrDefault(d =>
+                    d.ServiceType == typeof(IHostedService) &&
+                    d.ImplementationType == typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService));
+                if (catalogSyncDescriptor is not null)
+                {
+                    services.Remove(catalogSyncDescriptor);
+                }
 
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
