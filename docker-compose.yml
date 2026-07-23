@@ -14,3 +14,13 @@ services:
     volumes:
       - ${BOOKMARK_MANAGER_DATA_DIR:-./data}:/data
     restart: unless-stopped
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: dozzle
+    ports:
+      - "7007:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+

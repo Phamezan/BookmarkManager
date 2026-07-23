@@ -8,6 +8,16 @@ So this is a self-hosted bookmark manager built around that use case, plus a com
 
 **[Quickstart / installation →](Docs/quickstart.md)**
 
+## Default Endpoints & Connection URLs
+
+| Environment | Service | Default URL / Base Address | Purpose / Extension Config |
+|-------------|---------|----------------------------|----------------------------|
+| **Server / Production (Docker)** | Web Dashboard & API | `http://<server-lan-ip>:8080` | Set as API base URL in Brave extension popup |
+| **Server / Production (TLS)** | In-Tab Command Palette | `https://<server-lan-ip>:8443` | Dual Kestrel HTTPS overlay (`docker-compose.tls.yml`) |
+| **Server / Production (Logs)** | Real-Time Log Viewer (Dozzle) | `http://<server-lan-ip>:7007` | Live container log web UI |
+| **Local Development** | API Server & Client | `http://localhost:5080` | Local `dotnet run` (`http` profile) |
+| **Local Development (TLS)** | API Server & Palette | `https://localhost:5443` | Local `dotnet run` (`https` profile) |
+
 ## Features
 
 - **Two-way browser sync** — real-time sync between a Brave/Chrome bookmark folder and the server via WebSocket heartbeats and a command queue.

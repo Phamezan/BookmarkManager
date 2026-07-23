@@ -4,9 +4,12 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services;
+using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Rerank;
 
 namespace BookmarkManager.Api.IntegrationTests;
 
@@ -83,6 +86,30 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             var settingsPath = Path.Combine(_tempDataDir, "ai-tagging-settings.json");
             services.AddSingleton<AiTaggingSettingsService>(new TestAiTaggingSettingsService(settingsPath));
 
+            // Remove background ONNX model downloader, reranker, embedding backfill, and catalog sync hosted services so tests don't fetch or run ONNX in CI.
+            // The ONNX hosted services are registered via AddHostedService(factory), so they show up as IHostedService descriptors
+            // with ImplementationFactory (no ImplementationType). Remove those factory-registered hosted services too.
+            var hostedServicesToRemove = services.Where(d =>
+                d.ServiceType == typeof(IHostedService) &&
+                ((d.ImplementationType is { } impl &&
+                  (impl == typeof(OnnxEmbeddingService) ||
+                   impl == typeof(OnnxRerankerService) ||
+                   impl == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService) ||
+                   impl == typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService))) ||
+                 d.ImplementationFactory is not null))
+                .ToList();
+
+            foreach (var hs in hostedServicesToRemove)
+            {
+                services.Remove(hs);
+            }
+
+            services.RemoveAll<IEmbeddingService>();
+            services.AddSingleton<IEmbeddingService, TestEmbeddingService>();
+
+            services.RemoveAll<IRerankerService>();
+            services.AddSingleton<IRerankerService, TestRerankerService>();
+
             var sp = services.BuildServiceProvider();
             using var scope = sp.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -115,4 +142,22 @@ internal sealed class TestAiTaggingSettingsService : AiTaggingSettingsService
         : base(Microsoft.Extensions.Logging.Abstractions.NullLogger<AiTaggingSettingsService>.Instance, settingsPath)
     {
     }
+}
+
+internal sealed class TestEmbeddingService : IEmbeddingService
+{
+    public bool IsReady => false;
+    public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult(new float[EmbeddingConstants.EmbeddingDimensions]);
+    public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) =>
+        Task.FromResult(new float[EmbeddingConstants.EmbeddingDimensions]);
+    public Task<IReadOnlyList<float[]>> EmbedBatchAsync(IReadOnlyList<string> texts, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<float[]>>(texts.Select(_ => new float[EmbeddingConstants.EmbeddingDimensions]).ToList());
+}
+
+internal sealed class TestRerankerService : IRerankerService
+{
+    public bool IsReady => false;
+    public Task<IReadOnlyList<float>> ScoreAsync(string query, IReadOnlyList<string> passages, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<float>>(passages.Select(_ => 0f).ToList());
 }
