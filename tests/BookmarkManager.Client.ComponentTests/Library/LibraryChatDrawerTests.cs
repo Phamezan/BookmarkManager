@@ -55,7 +55,8 @@ public sealed class LibraryChatDrawerTests
         var drawer = context.Render<LibraryChatDrawer>(ps => ps.Add(p => p.Open, true));
 
         Assert.NotEmpty(drawer.FindAll(".lib-chat-drawer"));
-        Assert.Contains("Ask about your library", drawer.Markup);
+        Assert.Contains("Ask the Library Assistant", drawer.Markup);
+        Assert.Contains("Library Assistant", drawer.Markup);
     }
 
     [Fact]
