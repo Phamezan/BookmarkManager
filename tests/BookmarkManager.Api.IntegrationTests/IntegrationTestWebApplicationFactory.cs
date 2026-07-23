@@ -87,13 +87,16 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             services.AddSingleton<AiTaggingSettingsService>(new TestAiTaggingSettingsService(settingsPath));
 
             // Remove background ONNX model downloader, reranker, embedding backfill, and catalog sync hosted services so tests don't fetch or run ONNX in CI.
+            // The ONNX hosted services are registered via AddHostedService(factory), so they show up as IHostedService descriptors
+            // with ImplementationFactory (no ImplementationType). Remove those factory-registered hosted services too.
             var hostedServicesToRemove = services.Where(d =>
                 d.ServiceType == typeof(IHostedService) &&
-                d.ImplementationType is { } impl &&
-                (impl == typeof(OnnxEmbeddingService) ||
-                 impl == typeof(OnnxRerankerService) ||
-                 impl == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService) ||
-                 impl == typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService)))
+                ((d.ImplementationType is { } impl &&
+                  (impl == typeof(OnnxEmbeddingService) ||
+                   impl == typeof(OnnxRerankerService) ||
+                   impl == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService) ||
+                   impl == typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService))) ||
+                 d.ImplementationFactory is not null))
                 .ToList();
 
             foreach (var hs in hostedServicesToRemove)
@@ -158,4 +161,3 @@ internal sealed class TestRerankerService : IRerankerService
     public Task<IReadOnlyList<float>> ScoreAsync(string query, IReadOnlyList<string> passages, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<float>>(passages.Select(_ => 0f).ToList());
 }
-
