@@ -21,7 +21,22 @@ internal static class BookmarkMediaCandidateClassifier
             var clean = MediaTitleNormalizer.CleanTitle(title, url, BookmarkTagDomain.Novel);
             return new MediaCandidateClassification(false, clean, BookmarkTagDomain.Novel, $"Matched Novel host: {host}");
         }
-        if (path.Contains("Novel", StringComparison.OrdinalIgnoreCase) || 
+        if (host != null && host.Contains("mangaupdates.com", StringComparison.OrdinalIgnoreCase))
+        {
+            var clean = MediaTitleNormalizer.CleanTitle(title, url, BookmarkTagDomain.Manga);
+            return new MediaCandidateClassification(false, clean, BookmarkTagDomain.Manga, $"Matched Manga host: {host}");
+        }
+
+        // Definitive URL host/title signals beat folder-name guesses: a novel-site
+        // bookmark filed into a "Manga" folder is still a novel.
+        var urlDomain = BookmarkTagClassifier.Classify(title, url, folderPath: null, BookmarkTagDomainDto.Auto).Domain;
+        if (urlDomain is BookmarkTagDomain.Anime or BookmarkTagDomain.Manga or BookmarkTagDomain.Novel)
+        {
+            var clean = MediaTitleNormalizer.CleanTitle(title, url, urlDomain);
+            return new MediaCandidateClassification(false, clean, urlDomain, $"URL signal indicates {urlDomain} domain");
+        }
+
+        if (path.Contains("Novel", StringComparison.OrdinalIgnoreCase) ||
             path.Contains("Light Novel", StringComparison.OrdinalIgnoreCase) || 
             path.Contains("Web Novel", StringComparison.OrdinalIgnoreCase))
         {
@@ -30,11 +45,6 @@ internal static class BookmarkMediaCandidateClassifier
         }
 
         // 2. Manga
-        if (host != null && host.Contains("mangaupdates.com", StringComparison.OrdinalIgnoreCase))
-        {
-            var clean = MediaTitleNormalizer.CleanTitle(title, url, BookmarkTagDomain.Manga);
-            return new MediaCandidateClassification(false, clean, BookmarkTagDomain.Manga, $"Matched Manga host: {host}");
-        }
         if (path.Contains("Manga", StringComparison.OrdinalIgnoreCase) || 
             path.Contains("Manhwa", StringComparison.OrdinalIgnoreCase) || 
             path.Contains("Manhua", StringComparison.OrdinalIgnoreCase))

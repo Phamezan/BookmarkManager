@@ -10,10 +10,7 @@ internal sealed partial class AiBookmarkAutoTaggingService
         string? folderPath,
         AiSeriesIdentification identification)
     {
-        var folderDomain = BookmarkTagClassifier.GuessDefaultDomainFromFolderTitle(folderPath ?? string.Empty);
-        if (folderDomain is BookmarkTagDomainDto.Anime or BookmarkTagDomainDto.Manga or BookmarkTagDomainDto.Novel)
-            return FromDomainDto(folderDomain, identification.SourceHint);
-
+        // URL classification first: a definitive host signal beats the folder guess.
         var urlClassification = BookmarkTagClassifier.Classify(
             identification.CanonicalTitle,
             bookmark.Url,
@@ -21,6 +18,10 @@ internal sealed partial class AiBookmarkAutoTaggingService
             BookmarkTagDomainDto.Auto);
         if (urlClassification.Domain != BookmarkTagDomain.General)
             return WithMediaSubtype(urlClassification.Domain, identification.SourceHint);
+
+        var folderDomain = BookmarkTagClassifier.GuessDefaultDomainFromFolderTitle(folderPath ?? string.Empty);
+        if (folderDomain is BookmarkTagDomainDto.Anime or BookmarkTagDomainDto.Manga or BookmarkTagDomainDto.Novel)
+            return FromDomainDto(folderDomain, identification.SourceHint);
 
         return FromSourceHint(identification.SourceHint);
     }

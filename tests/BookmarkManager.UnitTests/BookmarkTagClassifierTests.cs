@@ -100,6 +100,11 @@ public sealed class BookmarkTagClassifierTests
     [InlineData("Novels", BookmarkTagDomainDto.Novel)]
     [InlineData("LN", BookmarkTagDomainDto.Novel)]
     [InlineData("WN", BookmarkTagDomainDto.Novel)]
+    [InlineData("Animes", BookmarkTagDomainDto.Anime)]
+    // Combined folder: anime wins over manga (checked first), so anime bookmarks file here.
+    [InlineData("Animes and Manga", BookmarkTagDomainDto.Anime)]
+    [InlineData("Mangas", BookmarkTagDomainDto.Manga)]
+    [InlineData("Webtoons", BookmarkTagDomainDto.Manga)]
     public void GuessDefaultDomainFromFolderTitle_UsesTokenAndPhraseMatching(string folderTitle, BookmarkTagDomainDto expected)
     {
         Assert.Equal(expected, BookmarkTagClassifier.GuessDefaultDomainFromFolderTitle(folderTitle));
@@ -116,6 +121,56 @@ public sealed class BookmarkTagClassifierTests
 
         Assert.Equal(BookmarkTagDomain.Novel, result.Domain);
         Assert.True(result.ShouldUseMangaUpdates);
+    }
+
+    [Fact]
+    public void Classify_NovelHostUrl_BeatsMangaFolderSignal()
+    {
+        var result = BookmarkTagClassifier.Classify(
+            "100X Returns System: I Dominate the Age of Gods - Novel Fire",
+            "https://novelfire.net/book/100x-returns-system-i-dominate-the-age-of-gods",
+            "Manga",
+            BookmarkTagDomainDto.Auto);
+
+        Assert.Equal(BookmarkTagDomain.Novel, result.Domain);
+        Assert.True(result.ShouldUseMangaUpdates);
+        Assert.False(result.ShouldUseAniList);
+    }
+
+    [Fact]
+    public void Classify_MangaHostUrl_BeatsNovelFolderSignal()
+    {
+        var result = BookmarkTagClassifier.Classify(
+            "Jujutsu Kaisen",
+            "https://mangadex.org/title/jjk",
+            "Noveller",
+            BookmarkTagDomainDto.Auto);
+
+        Assert.Equal(BookmarkTagDomain.Manga, result.Domain);
+    }
+
+    [Fact]
+    public void Classify_AnimeHostUrl_BeatsMangaFolderSignal()
+    {
+        var result = BookmarkTagClassifier.Classify(
+            "One Piece",
+            "https://crunchyroll.com/watch/x",
+            "Manga",
+            BookmarkTagDomainDto.Auto);
+
+        Assert.Equal(BookmarkTagDomain.Anime, result.Domain);
+    }
+
+    [Fact]
+    public void Classify_FolderSignal_StillUsedForUnknownHosts()
+    {
+        var result = BookmarkTagClassifier.Classify(
+            "Some Story",
+            "https://example.com/story",
+            "Manga",
+            BookmarkTagDomainDto.Auto);
+
+        Assert.Equal(BookmarkTagDomain.Manga, result.Domain);
     }
 
     [Theory]
