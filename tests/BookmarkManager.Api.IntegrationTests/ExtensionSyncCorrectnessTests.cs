@@ -231,6 +231,168 @@ public sealed class ExtensionSyncCorrectnessTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task CreatedEvent_WithSoftDeletedNodeAtSameBrowserId_RevivesRowWithNewPayload()
+    {
+        using var client = Factory.CreateClient();
+        var nodeId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = GetDb(scope);
+            db.BookmarkNodes.Add(new BookmarkNode
+            {
+                Id = nodeId,
+                Title = "The Player Hides His Past - Chapter 130",
+                Type = NodeType.Bookmark,
+                Url = "https://webtoon.example/old-series",
+                BrowserNodeId = "900",
+                SyncState = SyncState.Synced,
+                Tags = "Manga,Action",
+                Rating = 5,
+                IsFavorite = true,
+                CoverImageUrl = "https://cdn.example/old-cover.jpg",
+                IsDeleted = true,
+                DeletedAt = DateTime.UtcNow.AddDays(-1),
+                Version = 3,
+                UpdatedAt = DateTime.UtcNow.AddDays(-1)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // github.com is a non-media URL: the post-create auto-tag pass stays offline.
+        var batch = CreatedBatch("900", "100X Returns System: I Dominate the Age of Gods", "https://github.com/new-owner/new-repo");
+        using var response = await client.PostAsJsonAsync("/api/extension/events", batch);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = GetDb(scope);
+            Assert.Equal(1, await db.BookmarkNodes.CountAsync(n => n.BrowserNodeId == "900"));
+            var node = await db.BookmarkNodes.SingleAsync(n => n.Id == nodeId);
+            Assert.False(node.IsDeleted);
+            Assert.Null(node.DeletedAt);
+            Assert.Equal("100X Returns System: I Dominate the Age of Gods", node.Title);
+            Assert.Equal("https://github.com/new-owner/new-repo", node.Url);
+            // URL changed: content from the row's previous life must be gone.
+            Assert.Null(node.Rating);
+            Assert.False(node.IsFavorite);
+            Assert.Null(node.CoverImageUrl);
+            Assert.DoesNotContain("Manga", node.Tags ?? string.Empty);
+        }
+    }
+
+    [Fact]
+    public async Task CreatedEvent_WithSoftDeletedNodeAtSameUrl_RevivesKeepingUserData()
+    {
+        using var client = Factory.CreateClient();
+        var nodeId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = GetDb(scope);
+            db.BookmarkNodes.Add(new BookmarkNode
+            {
+                Id = nodeId,
+                Title = "Old Title",
+                Type = NodeType.Bookmark,
+                Url = "https://novelfire.example/book/some-series",
+                BrowserNodeId = "901",
+                SyncState = SyncState.Synced,
+                Tags = "Novel,Fantasy",
+                Rating = 4,
+                IsDeleted = true,
+                DeletedAt = DateTime.UtcNow.AddDays(-1),
+                Version = 2,
+                UpdatedAt = DateTime.UtcNow.AddDays(-1)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var batch = CreatedBatch("901", "Some Series", "https://novelfire.example/book/some-series");
+        using var response = await client.PostAsJsonAsync("/api/extension/events", batch);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = GetDb(scope);
+            Assert.Equal(1, await db.BookmarkNodes.CountAsync(n => n.BrowserNodeId == "901"));
+            var node = await db.BookmarkNodes.SingleAsync(n => n.Id == nodeId);
+            Assert.False(node.IsDeleted);
+            Assert.Equal("Some Series", node.Title);
+            // Same URL: tags and user data survive the revive.
+            Assert.Equal("Novel,Fantasy", node.Tags);
+            Assert.Equal(4, node.Rating);
+        }
+    }
+
+    [Fact]
+    public async Task CreatedEvent_WithLiveNodeAtSameBrowserId_IsSkippedAsDuplicate()
+    {
+        using var client = Factory.CreateClient();
+        var nodeId = Guid.NewGuid();
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = GetDb(scope);
+            db.BookmarkNodes.Add(new BookmarkNode
+            {
+                Id = nodeId,
+                Title = "Live Bookmark",
+                Type = NodeType.Bookmark,
+                Url = "https://example.com/live",
+                BrowserNodeId = "902",
+                SyncState = SyncState.Synced,
+                Version = 1,
+                UpdatedAt = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var batch = CreatedBatch("902", "Intruder", "https://example.com/intruder");
+        using var response = await client.PostAsJsonAsync("/api/extension/events", batch);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        using (var scope = Factory.Services.CreateScope())
+        {
+            var db = GetDb(scope);
+            Assert.Equal(1, await db.BookmarkNodes.CountAsync(n => n.BrowserNodeId == "902"));
+            var node = await db.BookmarkNodes.SingleAsync(n => n.Id == nodeId);
+            Assert.Equal("Live Bookmark", node.Title);
+            Assert.Equal("https://example.com/live", node.Url);
+        }
+    }
+
+    private static EventBatchRequest CreatedBatch(string browserNodeId, string title, string url) => new()
+    {
+        BatchId = Guid.NewGuid(),
+        ExtensionClientId = Guid.NewGuid(),
+        ConfigVersion = 1,
+        Events =
+        [
+            new ExtensionEventDto
+            {
+                EventId = Guid.NewGuid(),
+                EventType = "Created",
+                BrowserNodeId = browserNodeId,
+                OccurredAt = DateTime.UtcNow,
+                Payload = new
+                {
+                    node = new
+                    {
+                        browserNodeId,
+                        parentBrowserNodeId = (string?)null,
+                        type = "Bookmark",
+                        title,
+                        url,
+                        position = 0,
+                        isProtected = false
+                    }
+                }
+            }
+        ]
+    };
+
+    [Fact]
     public async Task CommandsForUnconfirmedParentAreDeferredUntilFolderCompletes()
     {
         using var client = Factory.CreateClient();
