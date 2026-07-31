@@ -157,10 +157,22 @@ public sealed partial class ExtensionService
                 existingNode.PurgeAfter = node.PurgeAfter;
                 existingNode.BrowserNodeId = node.BrowserNodeId;
                 existingNode.ParentBrowserNodeId = node.ParentBrowserNodeId;
+
+                // Backfill PlanToRead on status-less series-root bookmarks (imports from
+                // before the heuristic existed). Only sets when empty — an explicit
+                // user-chosen status (Reading/Completed, or PlanToRead on a chapter
+                // page) is never touched.
+                if (!existingNode.IsDeleted
+                    && existingNode.Type == NodeType.Bookmark
+                    && string.IsNullOrEmpty(existingNode.Status)
+                    && BookmarkPlanToReadHeuristic.ShouldMarkPlanToRead(existingNode.Url))
+                {
+                    existingNode.Status = BookmarkReadingStatus.PlanToRead;
+                }
             }
             else
             {
-                db.BookmarkNodes.Add(new BookmarkNode
+                var newNode = new BookmarkNode
                 {
                     Id = node.Id,
                     ParentId = node.ParentId,
@@ -177,7 +189,15 @@ public sealed partial class ExtensionService
                     PurgeAfter = node.PurgeAfter,
                     BrowserNodeId = node.BrowserNodeId,
                     ParentBrowserNodeId = node.ParentBrowserNodeId
-                });
+                };
+
+                // Snapshot payloads carry no server-side metadata, so a fresh import
+                // would otherwise leave the "Saved for later" shelf empty. Re-apply the
+                // same series-root heuristic used on the creation paths.
+                if (!newNode.IsDeleted)
+                    BookmarkPlanToReadHeuristic.ApplyAutoStatus(newNode);
+
+                db.BookmarkNodes.Add(newNode);
             }
         }
     }

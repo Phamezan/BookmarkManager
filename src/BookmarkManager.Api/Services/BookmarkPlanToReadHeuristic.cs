@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Contracts;
 
@@ -6,12 +7,16 @@ namespace BookmarkManager.Api.Services;
 
 /// <summary>
 /// Decides when a bookmark URL should auto-receive <see cref="BookmarkReadingStatus.PlanToRead"/>.
-/// Series-root pages (no chapter/episode marker, path depth ≥ 2) qualify — e.g. novelfire /book/{slug}.
+/// Series-root pages (no chapter/episode marker, path depth ≥ 2) qualify — e.g. novelfire
+/// /book/{slug} — but only when the URL also classifies as a media domain (Anime/Manga/Novel,
+/// which covers webtoon/manhwa/manhua/lightnovel/webnovel hosts and paths), so unrelated
+/// deep links (course pages, repos, docs) never get shelved.
 /// </summary>
 public static partial class BookmarkPlanToReadHeuristic
 {
-    /// <summary>Path segment that IS a chapter/episode marker (mirrors extension seriesKeyFromUrl).</summary>
-    [GeneratedRegex(@"^(?:chapter|chapters|chap|ch|episode|episodes|ep|volume|vol)[-_. ]?\d+(?:[-.]\d+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    /// <summary>Path segment that IS a chapter/episode marker (mirrors extension seriesKeyFromUrl,
+    /// plus the bare <c>c2</c>/<c>c036</c> style used by mangakatana/mangatown).</summary>
+    [GeneratedRegex(@"^(?:chapter|chapters|chap|ch|c|episode|episodes|ep|volume|vol)[-_. ]?\d+(?:[-.]\d+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ChapterSegmentRegex();
 
     [GeneratedRegex(@"[-_](?:chapter|chap|ch|episode|ep|volume|vol)[-_. ]?\d+(?:[-.]\d+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
@@ -39,7 +44,9 @@ public static partial class BookmarkPlanToReadHeuristic
         if (BookmarkProgressExtractor.Extract(null, url).CurrentChapter is not null)
             return false;
 
-        return true;
+        // Media-domain gate: only anime/manga/novel URLs may be shelved.
+        var domain = BookmarkTagClassifier.Classify(string.Empty, url, folderPath: null, BookmarkTagDomainDto.Auto).Domain;
+        return domain is BookmarkTagDomain.Anime or BookmarkTagDomain.Manga or BookmarkTagDomain.Novel;
     }
 
     /// <summary>
