@@ -9,14 +9,26 @@ function stubChrome(opts: {
   searchResults?: chrome.bookmarks.BookmarkTreeNode[];
   createResult?: { id: string };
   getResults?: chrome.bookmarks.BookmarkTreeNode[];
+  getTreeResult?: chrome.bookmarks.BookmarkTreeNode[];
+  tab?: { id: number; url: string; title: string };
 }) {
   const create = vi.fn().mockResolvedValue(opts.createResult ?? { id: "999" });
   const search = vi.fn().mockResolvedValue(opts.searchResults ?? []);
-  const get = vi.fn().mockResolvedValue(
-    opts.getResults ?? [{ id: "1", title: "Bookmarks bar", url: undefined }],
+  const get = vi.fn().mockImplementation(async (id: string) => {
+    if (opts.getResults) return opts.getResults.filter((n) => n.id === id);
+    return id === "1" ? [{ id: "1", title: "Bookmarks bar", url: undefined }] : [];
+  });
+  const getTree = vi.fn().mockResolvedValue(
+    opts.getTreeResult ?? [
+      {
+        id: "0",
+        title: "",
+        children: [{ id: "1", title: "Bookmarks bar" }],
+      },
+    ],
   );
   const query = vi.fn().mockResolvedValue([
-    { id: 1, url: "https://example.com/some-series", title: "Some Series" },
+    opts.tab ?? { id: 1, url: "https://example.com/some-series", title: "Some Series" },
   ]);
   const action = {
     openPopup: vi.fn().mockResolvedValue(undefined),
@@ -26,12 +38,12 @@ function stubChrome(opts: {
 
   vi.stubGlobal("chrome", {
     tabs: { query },
-    bookmarks: { search, create, get },
+    bookmarks: { search, create, get, getTree },
     scripting: { executeScript: vi.fn() },
     action,
   });
 
-  return { create, search, get, query, action };
+  return { create, search, get, getTree, query, action };
 }
 
 describe("QuickBookmarkHandler", () => {
@@ -92,6 +104,84 @@ describe("QuickBookmarkHandler", () => {
       capturedAt: NOW_ISO,
       wasCreated: false,
     });
+  });
+
+  it("run() targets the domain-matched folder for a novel URL", async () => {
+    stubChrome({
+      tab: {
+        id: 1,
+        url: "https://novelfire.net/book/some-novel",
+        title: "Some Novel - Novel Fire",
+      },
+      getTreeResult: [
+        {
+          id: "0",
+          title: "",
+          children: [
+            {
+              id: "1",
+              title: "Bookmarks bar",
+              children: [
+                { id: "10", title: "Manga" },
+                { id: "20", title: "Noveller" },
+              ],
+            },
+          ],
+        },
+      ] as unknown as chrome.bookmarks.BookmarkTreeNode[],
+    });
+    const handler = new QuickBookmarkHandler({
+      storage: repo,
+      now: () => new Date(NOW_ISO),
+      rememberConfirmedDuplicateUrl: vi.fn(),
+    });
+
+    await handler.run();
+
+    const draft = await repo.getPendingCreateDraft();
+    expect(draft).toEqual({
+      url: "https://novelfire.net/book/some-novel",
+      title: "Some Novel",
+      folderId: "20",
+      capturedAt: NOW_ISO,
+    });
+  });
+
+  it("run() falls back to the last-active folder when no domain folder matches", async () => {
+    await repo.saveLastActiveFolder("55");
+    stubChrome({
+      tab: {
+        id: 1,
+        url: "https://novelfire.net/book/some-novel",
+        title: "Some Novel",
+      },
+      getResults: [
+        { id: "55", title: "Misc", url: undefined },
+      ] as unknown as chrome.bookmarks.BookmarkTreeNode[],
+      getTreeResult: [
+        {
+          id: "0",
+          title: "",
+          children: [
+            {
+              id: "1",
+              title: "Bookmarks bar",
+              children: [{ id: "10", title: "Recipes" }],
+            },
+          ],
+        },
+      ] as unknown as chrome.bookmarks.BookmarkTreeNode[],
+    });
+    const handler = new QuickBookmarkHandler({
+      storage: repo,
+      now: () => new Date(NOW_ISO),
+      rememberConfirmedDuplicateUrl: vi.fn(),
+    });
+
+    await handler.run();
+
+    const draft = await repo.getPendingCreateDraft();
+    expect(draft?.folderId).toBe("55");
   });
 
   // commitDraft's actual creation path lives in PopupController.commitDraft

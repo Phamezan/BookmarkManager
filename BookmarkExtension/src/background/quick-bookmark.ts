@@ -1,6 +1,13 @@
 import type { StorageRepository } from "../api/contracts";
 import { normalizeBookmarkUrl, type DuplicateDetector } from "../bookmarks/duplicate-detector";
 import {
+  classifyUrlDomain,
+  findFolderIdForDomain,
+  findFolderIdForDomainByContent,
+  flattenFolderTree,
+  type FolderNode,
+} from "../bookmarks/folder-mapper";
+import {
   chapterLabelFromUrl,
   enrichQuickBookmarkTitle,
   urlHasChapterMarker,
@@ -96,7 +103,7 @@ export class QuickBookmarkHandler {
 
       title = enrichQuickBookmarkTitle(url, title, extractedEpisodeOrChapter);
 
-      const folderId = await this.resolveTargetFolder();
+      const folderId = await this.resolveTargetFolder(url);
       if (folderId === null) {
         console.warn("[worker] quick-bookmark: no valid target folder available");
         return null;
@@ -229,13 +236,44 @@ export class QuickBookmarkHandler {
     return results.some((n) => n.url === url);
   }
 
-  private async resolveTargetFolder(): Promise<string | null> {
+  /**
+   * Picks the quick-bookmark target folder: first a folder matching the URL's
+   * media domain (anime/manga/novel), then the last-active folder, then the
+   * Bookmarks Bar. Returns null when no valid folder exists.
+   */
+  private async resolveTargetFolder(url: string): Promise<string | null> {
+    const domainFolder = await this.findDomainFolder(url);
+    if (domainFolder) return domainFolder;
+
     const remembered = await this.deps.storage.getLastActiveFolder();
     if (await this.isValidFolder(remembered)) return remembered;
     if (remembered !== BOOKMARKS_BAR_ID && (await this.isValidFolder(BOOKMARKS_BAR_ID))) {
       return BOOKMARKS_BAR_ID;
     }
     return null;
+  }
+
+  /**
+   * Maps the URL's media domain to a folder in the browser bookmark tree —
+   * content evidence first (where do URLs of this domain already live), then
+   * a folder-title keyword match. Returns null when the URL classifies to no
+   * domain, no folder matches, or the tree walk fails — the caller then falls
+   * back to the last-active folder.
+   */
+  private async findDomainFolder(url: string): Promise<string | null> {
+    const domain = classifyUrlDomain(url);
+    if (!domain) return null;
+
+    try {
+      const tree = await chrome.bookmarks.getTree();
+      const byContent = findFolderIdForDomainByContent(tree, domain);
+      if (byContent) return byContent;
+      const folders: FolderNode[] = flattenFolderTree(tree);
+      return findFolderIdForDomain(folders, domain);
+    } catch (e) {
+      console.warn("[worker] quick-bookmark: bookmark tree walk failed:", e);
+      return null;
+    }
   }
 
   private async isValidFolder(folderId: string): Promise<boolean> {
