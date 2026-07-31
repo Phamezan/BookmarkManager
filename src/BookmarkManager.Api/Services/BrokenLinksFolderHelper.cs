@@ -170,7 +170,7 @@ public static class BrokenLinksFolderHelper
 
         await db.SaveChangesAsync(ct);
         await SyncWebSocketManager.BroadcastSyncAsync();
-        logger.LogInformation("Moved {Count} bookmarks to Broken Links folder.", bookmarksToMove.Count);
+        logger.LogInformation("Moved {Count} bookmarks to folder '{Folder}'.", bookmarksToMove.Count, folder.Title);
         return bookmarksToMove.Count;
     }
 }

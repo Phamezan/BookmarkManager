@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 
@@ -406,15 +407,17 @@ public sealed partial class ExtensionService
         if (createdBookmarkIds.Count == 0) return;
 
         var changed = false;
+        var domainMoves = new Dictionary<Guid, (BookmarkNode Folder, List<Guid> BookmarkIds)>();
         foreach (var nodeId in createdBookmarkIds)
         {
             var node = await db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == nodeId, ct);
             if (node is null || node.Type != NodeType.Bookmark || !string.IsNullOrEmpty(node.Tags))
                 continue;
 
+            string? folderPath = null;
             try
             {
-                var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
+                folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
                 var outcome = await bookmarkTagging.GetTagsWithCoverAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
                 if (outcome.Tags.Count > 0)
                 {
@@ -438,10 +441,52 @@ public sealed partial class ExtensionService
             {
                 logger.LogWarning(ex, "Auto-tagging failed for created bookmark {NodeId}", nodeId);
             }
+
+            // Auto-file the bookmark into the domain-matching folder: a novelfire
+            // link saved into "Manga" belongs in the novel folder. Tagging is
+            // best-effort, so this runs even when the provider lookup failed.
+            try
+            {
+                var classification = BookmarkTagClassifier.Classify(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto);
+                if (classification.Domain is BookmarkTagDomain.Anime or BookmarkTagDomain.Manga or BookmarkTagDomain.Novel)
+                {
+                    var parentTitle = node.ParentId.HasValue
+                        ? await db.BookmarkNodes.Where(n => n.Id == node.ParentId.Value).Select(n => n.Title).FirstOrDefaultAsync(ct)
+                        : null;
+
+                    if (!DomainFolderHelper.CurrentFolderMatchesDomain(parentTitle, classification.Domain))
+                    {
+                        var target = await DomainFolderHelper.FindDomainFolderAsync(db, classification.Domain, ct);
+                        if (target is not null && target.Id != node.ParentId)
+                        {
+                            if (!domainMoves.TryGetValue(target.Id, out var move))
+                                move = (target, []);
+                            move.BookmarkIds.Add(node.Id);
+                            domainMoves[target.Id] = move;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Domain folder mapping failed for created bookmark {NodeId}", nodeId);
+            }
         }
 
         if (changed)
             await db.SaveChangesAsync(ct);
+
+        foreach (var (folder, bookmarkIds) in domainMoves.Values)
+        {
+            var moved = await BrokenLinksFolderHelper.MoveBookmarksIntoFolderAsync(db, folder, bookmarkIds, logger, ct);
+            if (moved > 0)
+            {
+                logger.LogInformation(
+                    "Auto-filed {Count} created bookmark(s) into domain folder '{Folder}'.",
+                    moved,
+                    folder.Title);
+            }
+        }
     }
 
 }
