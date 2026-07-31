@@ -87,17 +87,33 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             services.AddSingleton<AiTaggingSettingsService>(new TestAiTaggingSettingsService(settingsPath));
 
             // Remove background ONNX model downloader, reranker, embedding backfill, and catalog sync hosted services so tests don't fetch or run ONNX in CI.
-            // The ONNX hosted services are registered via AddHostedService(factory), so they show up as IHostedService descriptors
-            // with ImplementationFactory (no ImplementationType). Remove those factory-registered hosted services too.
+            // Some are type-registered; the ONNX pair and the catalog sync are registered via
+            // AddHostedService(factory), so they only show up as IHostedService descriptors with
+            // ImplementationFactory. Probe factory-registered descriptors by invoking the factory —
+            // a blanket ImplementationFactory removal would also strip UrlMigrationBackgroundJob
+            // and LinkCheckerService, which are factory-registered too but needed by tests.
+            var blockedHostedTypes = new[]
+            {
+                typeof(OnnxEmbeddingService),
+                typeof(OnnxRerankerService),
+                typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService),
+                typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService)
+            };
+
             var hostedServicesToRemove = services.Where(d =>
                 d.ServiceType == typeof(IHostedService) &&
-                ((d.ImplementationType is { } impl &&
-                  (impl == typeof(OnnxEmbeddingService) ||
-                   impl == typeof(OnnxRerankerService) ||
-                   impl == typeof(BookmarkManager.Api.Services.Library.LibraryEmbeddingBackfillService) ||
-                   impl == typeof(BookmarkManager.Api.Services.Library.LibraryCatalogSyncBackgroundService))) ||
-                 d.ImplementationFactory is not null))
+                d.ImplementationType is { } impl && blockedHostedTypes.Contains(impl))
                 .ToList();
+
+            var probe = services.BuildServiceProvider();
+            foreach (var hostedDescriptor in services.Where(d =>
+                         d.ServiceType == typeof(IHostedService) && d.ImplementationFactory is not null).ToList())
+            {
+                if (blockedHostedTypes.Contains(hostedDescriptor.ImplementationFactory!(probe).GetType()))
+                {
+                    hostedServicesToRemove.Add(hostedDescriptor);
+                }
+            }
 
             foreach (var hs in hostedServicesToRemove)
             {
@@ -110,8 +126,7 @@ public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory
             services.RemoveAll<IRerankerService>();
             services.AddSingleton<IRerankerService, TestRerankerService>();
 
-            var sp = services.BuildServiceProvider();
-            using var scope = sp.CreateScope();
+            using var scope = probe.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.Database.EnsureDeleted();
         });
