@@ -1,0 +1,36 @@
+# bookmarkmanager-tls-renew.service
+#
+# Runs scripts/setup-tls.sh to (re-)issue the Tailscale-signed Let's Encrypt
+# certificate used by the in-tab command palette's https endpoint. Meant to
+# be triggered by the paired bookmarkmanager-tls-renew.timer, not started
+# directly (though `systemctl start bookmarkmanager-tls-renew.service` works
+# for a manual one-off run).
+#
+# IMPORTANT: this unit intentionally does NOT restart the API or its
+# container. Kestrel hot-reloads certs/lan.pem + certs/lan-key.pem from disk
+# (polled, ~60s) via a ServerCertificateSelector, so a renewed cert is picked
+# up automatically. Do not add `docker compose restart` / `systemctl restart
+# bookmarkmanager` here -- that would defeat the point of the hot-reload work.
+#
+# Install steps:
+#   1. Edit WorkingDirectory AND the ExecStart path below to your repo checkout
+#      path. systemd requires ExecStart to be absolute -- WorkingDirectory does
+#      not make a relative ExecStart resolve, the unit just fails to load.
+#   2. sudo cp bookmarkmanager-tls-renew.service bookmarkmanager-tls-renew.timer /etc/systemd/system/
+#   3. sudo systemctl daemon-reload
+#   4. sudo systemctl enable --now bookmarkmanager-tls-renew.timer
+#
+# `tailscale cert` needs access to the tailscaled local API. This unit runs
+# as root (the systemd default when no User= is set) so that works out of
+# the box. If you'd rather not run as root, do a one-time
+# `sudo tailscale set --operator=<user>` and add `User=<user>` below instead.
+
+[Unit]
+Description=Renew the Tailscale-issued TLS certificate for the BookmarkManager palette endpoint
+
+[Service]
+Type=oneshot
+WorkingDirectory=/path/to/BookmarkManager
+ExecStart=/path/to/BookmarkManager/scripts/setup-tls.sh
+StandardOutput=journal
+StandardError=journal

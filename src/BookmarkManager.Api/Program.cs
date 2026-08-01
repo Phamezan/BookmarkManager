@@ -195,6 +195,47 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
     };
 });
 
+// The TLS cert is renewed on a schedule (Tailscale/Let's Encrypt, 90-day). Serving it through a
+// selector backed by a file-watching cache means a renewal lands without restarting the API. This
+// only activates when the https endpoint is actually configured with a cert path (it is absent from
+// the http-only launch profile and the plain docker-compose.yml).
+var tlsCertPath = builder.Configuration["Kestrel:Endpoints:Https:Certificate:Path"];
+var tlsKeyPath = builder.Configuration["Kestrel:Endpoints:Https:Certificate:KeyPath"];
+if (!string.IsNullOrWhiteSpace(tlsCertPath) && !string.IsNullOrWhiteSpace(tlsKeyPath))
+{
+    var resolvedCertPath = Path.IsPathRooted(tlsCertPath)
+        ? tlsCertPath
+        : Path.Combine(builder.Environment.ContentRootPath, tlsCertPath);
+    var resolvedKeyPath = Path.IsPathRooted(tlsKeyPath)
+        ? tlsKeyPath
+        : Path.Combine(builder.Environment.ContentRootPath, tlsKeyPath);
+
+    // The provider is needed to build the Kestrel selector below, which runs before builder.Build()
+    // produces the DI container -- and before builder.Host.UseSerilog above actually wires up
+    // Serilog's static Log.Logger (that happens inside Build()), so we can't route through Serilog
+    // here without depending on init order. Instead, build a small standalone console ILoggerFactory,
+    // construct the provider directly, and register that exact instance with DI (via
+    // AddSingleton(instance)) purely so the container disposes it on shutdown -- DI never constructs
+    // it itself.
+    // Deliberately NOT a `using`, and deliberately NOT registered in DI. The provider logs on every
+    // later reload, so the factory must outlive this block -- disposing it here would stop the
+    // console provider's queue and silently swallow every subsequent renewal/failure message.
+    // Registering it would also overwrite the app's real (Serilog) ILoggerFactory for every other
+    // consumer. It lives for the process lifetime instead, which is what a singleton would do anyway.
+    var tlsLoggerFactory = LoggerFactory.Create(logging => logging.AddConsole());
+    var tlsCertificateProvider = new BookmarkManager.Api.Services.Tls.ReloadingCertificateProvider(
+        resolvedCertPath,
+        resolvedKeyPath,
+        tlsLoggerFactory.CreateLogger<BookmarkManager.Api.Services.Tls.ReloadingCertificateProvider>());
+
+    // Registered only so the container disposes the certificate at shutdown; DI never constructs it.
+    builder.Services.AddSingleton(tlsCertificateProvider);
+
+    builder.WebHost.ConfigureKestrel(options =>
+        options.ConfigureHttpsDefaults(https =>
+            https.ServerCertificateSelector = (_, _) => tlsCertificateProvider.Current));
+}
+
 var app = builder.Build();
 
 await app.InitializeDatabaseAsync();

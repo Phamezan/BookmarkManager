@@ -1,0 +1,28 @@
+# bookmarkmanager-tls-renew.timer
+#
+# Fires bookmarkmanager-tls-renew.service every 30 days. That is comfortably
+# inside the certificate's 90-day Let's Encrypt lifetime and inside
+# Tailscale's own renewal window, so most runs of `tailscale cert` are a
+# cheap no-op (it only actually re-issues when the cert is due). Also fires
+# once shortly after boot so a box that was off across a scheduled run
+# doesn't skip a cycle.
+#
+# Install steps:
+#   1. sudo cp bookmarkmanager-tls-renew.service bookmarkmanager-tls-renew.timer /etc/systemd/system/
+#   2. sudo systemctl daemon-reload
+#   3. sudo systemctl enable --now bookmarkmanager-tls-renew.timer
+#
+# Check status:
+#   systemctl list-timers bookmarkmanager-tls-renew.timer
+#   journalctl -u bookmarkmanager-tls-renew
+
+[Unit]
+Description=Periodic renewal of the Tailscale-issued TLS certificate for the BookmarkManager palette endpoint
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=30d
+Persistent=true
+
+[Install]
+WantedBy=timers.target

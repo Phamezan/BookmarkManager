@@ -1,6 +1,6 @@
 ---
 status: live
-last_verified: 2026-07-18
+last_verified: 2026-08-01
 note: Setup and installation steps. Split out of the root README so the README could stay a pure showcase page.
 ---
 
@@ -58,6 +58,7 @@ Auto-tagging works offline (rule-based) out of the box. To enable the AI-assiste
 - **WebSocket never connects (stuck "Connecting…")** — check the server is reachable over plain `http`/`ws` on that port from the browser's machine (`curl http://<server>:8080/health/live`); a firewall blocking the port will hang the WebSocket handshake with no clear error.
 - **Extension changes don't reach the server (or vice versa)** — confirm the bookmark lives under the **Bookmarks Bar** (see [First sync](#first-sync)); folders outside it are invisible to sync by design.
 - **Certificate warning on `/palette`** — see the [TLS section](deployment-ubuntu.md#tls-for-the-in-tab-command-palette-optional) of the Ubuntu deployment doc; the palette specifically requires a trusted https cert, the rest of the app doesn't.
+- **`<machine>.<tailnet>.ts.net` doesn't resolve** — see [Tailscale prerequisites](deployment-ubuntu.md#tailscale-prerequisites) in the Ubuntu deployment doc for the tailnet login and admin-console requirements.
 
 ## Production deployment (Ubuntu)
 

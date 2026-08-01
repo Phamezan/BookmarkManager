@@ -31,7 +31,7 @@ Exists purely to make bookmarking manga, manhwa, manhua, webnovels, light novels
 - Palette origin resolved from extension storage only, never page-supplied params.
 - All cross-frame postMessage origin-checked; relayed URLs restricted to `http`/`https`.
 - Palette iframes kept alive per tab (hidden, not destroyed) to skip repeat Blazor WASM boot.
-- Requires dual Kestrel TLS binding (`docker-compose.tls.yml` prod / `https` launch profile dev, mkcert cert in gitignored `certs/`) — extension pages block active mixed content.
+- Requires dual Kestrel TLS binding (`docker-compose.tls.yml` prod / `https` launch profile dev, Tailscale-issued Let's Encrypt cert in gitignored `certs/`) — extension pages block active mixed content.
 
 ## Verification beyond green build
 
