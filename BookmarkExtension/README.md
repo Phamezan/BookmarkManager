@@ -25,7 +25,7 @@ npm test           # vitest run
 1. `npm run build` (produces `dist/`).
 2. Go to `chrome://extensions` (or `brave://extensions`), enable **Developer mode**.
 3. **Load unpacked** → select `BookmarkExtension/dist`.
-4. Open the extension popup, set the **API Base URL** to your server (e.g. `http://localhost:5080`), and connect. You'll be prompted for host permission for that origin — that's the only host access the extension ever requests, and only for the server you point it at.
+4. Open the extension popup, set the **API Base URL** to your server, and connect. This is a free-text field you use to switch between a local dev server (`http://localhost:5080`) and the real deployment — for a deployment with the [in-tab command palette's TLS](../Docs/deployment-ubuntu.md#tls-for-the-in-tab-command-palette-optional) set up, use the server's stable Tailscale MagicDNS name, e.g. `https://<machine>.<tailnet>.ts.net:8443`, since it stays correct even if the server's LAN IP changes. You'll be prompted for host permission for that origin — that's the only host access the extension ever requests, and only for the server you point it at.
 
 See [Docs/quickstart.md](../Docs/quickstart.md) for the full setup flow alongside the server.
 

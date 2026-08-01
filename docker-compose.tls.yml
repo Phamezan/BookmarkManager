@@ -1,6 +1,9 @@
 # TLS overlay for the in-tab command palette (extension iframe requires https).
-# Requires a mkcert (or equivalent) PEM cert/key pair in ./certs:
-#   mkcert -cert-file certs/lan.pem -key-file certs/lan-key.pem <lan-hostname> <lan-ip>
+# Requires a PEM cert/key pair in ./certs, generated on the host with:
+#   scripts/setup-tls.sh
+# The cert is a Tailscale-issued, publicly-trusted Let's Encrypt certificate for
+# the host's Tailscale MagicDNS name (tailscale cert). Nothing Tailscale-related
+# runs inside the container; it just serves the cert files mounted below.
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
 # The plain http endpoint stays on 8080; https is added on 8443.
