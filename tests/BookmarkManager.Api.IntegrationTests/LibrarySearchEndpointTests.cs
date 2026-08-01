@@ -256,6 +256,8 @@ public sealed class LibrarySearchEndpointTests : IDisposable
                 services.AddSingleton<IMediaProvider>(ProviderA);
                 services.AddSingleton<IMediaProvider>(ProviderB);
 
+                services.RemoveExternalBackgroundWorkers();
+
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
