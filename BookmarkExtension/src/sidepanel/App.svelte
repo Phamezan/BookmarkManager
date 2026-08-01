@@ -2,6 +2,11 @@
   import { onMount, onDestroy } from "svelte";
   import TagEditor from "./TagEditor.svelte";
   import { SIDEPANEL_PORT_NAME } from "./sidepanel-port";
+  import {
+    classifyUrlDomain,
+    findFolderIdForDomain,
+    flattenFolderTree,
+  } from "../bookmarks/folder-mapper";
 
   const POLL_INTERVAL_MS = 1500;
   const POLL_TIMEOUT_MS = 15000;
@@ -15,6 +20,10 @@
   let allTags = $state([]);
   let saveState = $state("idle"); // idle | saving | saved | error
   let shortcutLabel = $state("");
+  let folders = $state([]);
+  let currentFolderId = $state(null);
+  let suggestedFolderId = $state(null);
+  let folderSaveState = $state("idle"); // idle | saving | saved | error
 
   let pollTimer = null;
   let pollDeadline = 0;
@@ -28,10 +37,58 @@
       const result = await sendMessage({ type: "sidepanel/getCurrent" });
       enrichment = result ?? null;
       loadError = enrichment ? null : "No bookmark to show yet.";
+      await loadCurrentFolder();
     } catch (e) {
       loadError = e instanceof Error ? e.message : String(e);
     } finally {
       loading = false;
+    }
+  }
+
+  async function loadFolders() {
+    try {
+      const tree = await chrome.bookmarks.getTree();
+      folders = flattenFolderTree(tree);
+    } catch {
+      folders = [];
+    }
+  }
+
+  /** Current parent + domain-suggested folder for the shown bookmark. */
+  async function loadCurrentFolder() {
+    currentFolderId = null;
+    suggestedFolderId = null;
+    if (!enrichment?.browserNodeId) return;
+    try {
+      const [node] = await chrome.bookmarks.get(enrichment.browserNodeId);
+      currentFolderId = node?.parentId ?? null;
+    } catch {
+      currentFolderId = null;
+    }
+    const domain = enrichment.url ? classifyUrlDomain(enrichment.url) : null;
+    if (domain) {
+      suggestedFolderId = findFolderIdForDomain(folders, domain);
+    }
+  }
+
+  async function handleFolderChange(event) {
+    const newParentId = event.currentTarget.value;
+    if (!enrichment?.browserNodeId || newParentId === currentFolderId) return;
+    folderSaveState = "saving";
+    try {
+      await chrome.bookmarks.move(enrichment.browserNodeId, {
+        parentId: newParentId,
+      });
+      currentFolderId = newParentId;
+      folderSaveState = "saved";
+      setTimeout(() => {
+        if (folderSaveState === "saved") folderSaveState = "idle";
+      }, 1500);
+      // Pick up the new server-side folder path once the move syncs through.
+      setTimeout(() => void refreshCurrent(), 1500);
+    } catch {
+      folderSaveState = "error";
+      event.currentTarget.value = currentFolderId;
     }
   }
 
@@ -124,6 +181,7 @@
       }
     });
 
+    await loadFolders();
     await refreshCurrent();
     await loadTags();
     await loadShortcut();
@@ -182,9 +240,34 @@
             </a>
           {/if}
 
-          {#if enrichment.folderPath || enrichment.status === PLAN_TO_READ_STATUS}
+          {#if enrichment.folderPath || enrichment.status === PLAN_TO_READ_STATUS || folders.length > 0}
             <div class="meta-row">
-              {#if enrichment.folderPath}
+              {#if folders.length > 0 && currentFolderId}
+                <div class="folder">
+                  <svg class="folder-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                  </svg>
+                  <select
+                    class="folder-select"
+                    aria-label="Folder"
+                    value={currentFolderId}
+                    onchange={handleFolderChange}
+                  >
+                    {#each folders as folder (folder.id)}
+                      <option value={folder.id}>
+                        {"  ".repeat(folder.depth) + folder.title + (folder.id === suggestedFolderId && folder.id !== currentFolderId ? " (suggested)" : "")}
+                      </option>
+                    {/each}
+                  </select>
+                </div>
+                {#if folderSaveState === "saving"}
+                  <span class="hint saving">Moving…</span>
+                {:else if folderSaveState === "saved"}
+                  <span class="hint saved">Moved</span>
+                {:else if folderSaveState === "error"}
+                  <span class="hint error">Move failed</span>
+                {/if}
+              {:else if enrichment.folderPath}
                 <div class="folder">
                   <svg class="folder-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M3 7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -527,6 +610,23 @@
   .folder-icon {
     flex-shrink: 0;
     color: var(--violet);
+  }
+
+  .folder-select {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 11.5px;
+    max-width: 190px;
+    padding: 0;
+    cursor: pointer;
+    outline: none;
+  }
+
+  .folder-select option {
+    background: hsl(250 22% 9%);
+    color: var(--text);
   }
 
   .status-pill {

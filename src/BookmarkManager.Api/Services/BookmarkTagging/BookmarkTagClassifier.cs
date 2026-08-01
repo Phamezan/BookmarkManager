@@ -25,25 +25,49 @@ public static partial class BookmarkTagClassifier
         if (requestedDomain == BookmarkTagDomainDto.General)
             return new(BookmarkTagDomain.General, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: false, IsEligibleForDualProviderLookup: false, "user selected General");
 
-        if (HasAnyToken(folderTokens, "anime") || HasAnyUrlSignal(urlText,
+        // Strong URL host signals beat folder signals: a bookmark filed into the
+        // "wrong" folder still gets the domain its host proves.
+        if (HasAnyUrlSignal(urlText,
                 "crunchyroll", "animepahe", "gogoanime", "9anime", "9animetv", "anilist.co/anime", "myanimelist.net/anime",
                 "miruro", "aniwatch", "aniwave", "zoro", "zorox", "hianime", "animesge", "kickassanime", "allanime"))
         {
-            return new(BookmarkTagDomain.Anime, cleanTitle, ShouldUseAniList: true, ShouldUseMangaUpdates: false, IsEligibleForDualProviderLookup: false, "anime folder/host signal");
+            return new(BookmarkTagDomain.Anime, cleanTitle, ShouldUseAniList: true, ShouldUseMangaUpdates: false, IsEligibleForDualProviderLookup: false, "anime host signal");
         }
 
-        if (HasAnyToken(folderTokens, "manga", "manhwa", "manhua", "webtoon") || HasAnyUrlSignal(urlText,
-                "mangadex", "asuracomic", "comick", "mangaplus", "webtoons.com", "mangakakalot",
-                "manga", "manhwa", "manhua", "webtoon", "reaperscans"))
+        if (HasAnyUrlSignal(urlText,
+                "mangadex", "asuracomic", "comick", "mangaplus", "webtoons.com", "mangakakalot", "reaperscans"))
         {
-            return new(BookmarkTagDomain.Manga, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "manga folder/host signal");
+            return new(BookmarkTagDomain.Manga, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "manga host signal");
         }
 
-        if (HasNovelFolderSignal(folderText, folderTokens) ||
-            HasNovelUrlSignal(urlText) ||
-            HasNovelTitleSignal(title))
+        if (HasNovelUrlSignal(urlText))
         {
-            return new(BookmarkTagDomain.Novel, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "novel folder/host/title signal");
+            return new(BookmarkTagDomain.Novel, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "novel host signal");
+        }
+
+        if (HasAnyToken(folderTokens, "anime", "animes"))
+        {
+            return new(BookmarkTagDomain.Anime, cleanTitle, ShouldUseAniList: true, ShouldUseMangaUpdates: false, IsEligibleForDualProviderLookup: false, "anime folder signal");
+        }
+
+        if (HasAnyToken(folderTokens, "manga", "mangas", "manhwa", "manhwas", "manhua", "manhuas", "webtoon", "webtoons"))
+        {
+            return new(BookmarkTagDomain.Manga, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "manga folder signal");
+        }
+
+        if (HasNovelFolderSignal(folderText, folderTokens))
+        {
+            return new(BookmarkTagDomain.Novel, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "novel folder signal");
+        }
+
+        if (HasAnyUrlSignal(urlText, "manga", "manhwa", "manhua", "webtoon"))
+        {
+            return new(BookmarkTagDomain.Manga, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "manga url keyword signal");
+        }
+
+        if (HasNovelTitleSignal(title))
+        {
+            return new(BookmarkTagDomain.Novel, cleanTitle, ShouldUseAniList: false, ShouldUseMangaUpdates: true, IsEligibleForDualProviderLookup: false, "novel title signal");
         }
 
         var isEligible = !IsNonMediaUrl(urlText);
@@ -54,8 +78,8 @@ public static partial class BookmarkTagClassifier
     {
         var tokens = Tokenize(folderTitleOrPath);
         var text = NormalizeForPhraseMatching(folderTitleOrPath);
-        if (HasAnyToken(tokens, "anime")) return BookmarkTagDomainDto.Anime;
-        if (HasAnyToken(tokens, "manga", "manhwa", "manhua", "webtoon")) return BookmarkTagDomainDto.Manga;
+        if (HasAnyToken(tokens, "anime", "animes")) return BookmarkTagDomainDto.Anime;
+        if (HasAnyToken(tokens, "manga", "mangas", "manhwa", "manhwas", "manhua", "manhuas", "webtoon", "webtoons")) return BookmarkTagDomainDto.Manga;
         if (HasNovelFolderSignal(text, tokens)) return BookmarkTagDomainDto.Novel;
         return BookmarkTagDomainDto.General;
     }
@@ -68,7 +92,7 @@ public static partial class BookmarkTagClassifier
             return true;
         }
 
-        return HasAnyToken(tokens, "novel", "novels", "noveller", "novelle", "ln", "wn", "wuxia", "xianxia", "ranobe");
+        return HasAnyToken(tokens, "novel", "novels", "noveller", "novelle", "ln", "wn", "wuxia", "xianxia", "ranobe", "webnovel", "webnovels", "lightnovel", "lightnovels");
     }
 
     private static bool HasPhrase(string normalizedText, string phrase)

@@ -69,7 +69,7 @@ public sealed class TagExtractorService
 
         // 3. Meaningful tokens from title + page title + description, scored
         //    by position and source rather than flat frequency.
-        var titleForTokens = StripEpisodeSuffix(title ?? string.Empty);
+        var titleForTokens = StripSiteBrandSuffix(StripEpisodeSuffix(title ?? string.Empty), url);
         AddTokenScores(scores, titleForTokens, weight: 3.0, source: "title");
         if (!string.IsNullOrWhiteSpace(page?.SiteName) && !IsBrandNoise(page.SiteName))
             scores[ToTitleCase(page.SiteName)] = Math.Max(scores.GetValueOrDefault(page.SiteName), 3.0);
@@ -190,7 +190,7 @@ public sealed class TagExtractorService
             string? urlLower = url?.ToLowerInvariant();
             bool isAnimeUrl = urlLower != null && HasAnyWord(urlLower, "crunchyroll.com", "miruro.tv", "gogoanime", "9anime", "animepahe", "hianime", "animesge", "kickassanime", "allanime");
             bool isMangaUrl = urlLower != null && HasAnyWord(urlLower, "mangadex.org", "mangafox", "mangakakalot", "mangaplus", "webtoons.com");
-            bool isNovelUrl = urlLower != null && HasAnyWord(urlLower, "novelupdates.com", "royalroad.com", "scribblehub.com", "novelbin", "novelusb", "novelcool", "novelhall", "novelfull");
+            bool isNovelUrl = urlLower != null && HasAnyWord(urlLower, "novelupdates.com", "royalroad.com", "scribblehub.com", "novelbin", "novelusb", "novelcool", "novelhall", "novelfull", "novelfire", "novelfire.net");
 
             if (isAnimeUrl)
             {
@@ -349,6 +349,34 @@ public sealed class TagExtractorService
         var stripped = EpisodeSuffix.Replace(title, string.Empty);
         return stripped.Trim();
     }
+
+    // Site-brand suffix appended to page titles, e.g. "... - Novel Fire" on
+    // novelfire.net. Strips the trailing segment when it (normalized to
+    // letters/digits only) equals a host label, so "Fire" doesn't leak in as a tag.
+    private static string StripSiteBrandSuffix(string title, string? url)
+    {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(url))
+            return title;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Host))
+            return title;
+
+        var hostLabels = uri.Host.ToLowerInvariant()
+            .Split('.', StringSplitOptions.RemoveEmptyEntries)
+            .Where(label => label.Length > 3 && !string.Equals(label, "www", StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        if (hostLabels.Count == 0)
+            return title;
+
+        var segments = TitleSegmentSplit.Split(title);
+        var normalizedLast = NonAlphaNumericRegex.Replace(segments[^1].ToLowerInvariant(), string.Empty);
+        if (normalizedLast.Length == 0 || !hostLabels.Contains(normalizedLast))
+            return title;
+
+        var remainder = string.Join(' ', segments[..^1]).Trim();
+        return remainder.Length > 0 ? remainder : title;
+    }
+
+    private static readonly Regex NonAlphaNumericRegex = new(@"[^\p{L}0-9]+", RegexOptions.Compiled);
 
     private static bool IsBrandNoise(string token)
     {

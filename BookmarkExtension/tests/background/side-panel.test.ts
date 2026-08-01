@@ -146,7 +146,11 @@ describe("SidePanelController.getCurrent", () => {
 
     const current = await controller.getCurrent();
     expect(getBookmarkEnrichmentByBrowserId).toHaveBeenCalledWith("42");
-    expect(current).toEqual({ ...enrichment, url: "https://novelfire.net/book/solo-leveling" });
+    expect(current).toEqual({
+      ...enrichment,
+      url: "https://novelfire.net/book/solo-leveling",
+      browserNodeId: "42",
+    });
   });
 
   it("stays available after tryOpen consumes the arming window", async () => {

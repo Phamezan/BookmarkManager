@@ -28,6 +28,7 @@ interface CurrentBookmarkState {
 /** Enrichment plus the browser-side URL (not part of the enrichment
  *  endpoint contract), so the panel can render a link immediately. */
 export interface SidePanelBookmark extends ExtensionBookmarkEnrichment {
+  browserNodeId: string;
   url: string | null;
 }
 
@@ -161,7 +162,7 @@ export class SidePanelController {
       current.browserNodeId,
     );
     if (!enrichment) return null;
-    return { ...enrichment, url: current.url };
+    return { ...enrichment, url: current.url, browserNodeId: current.browserNodeId };
   }
 
   /** Tag counts for the panel's tag-editor autocomplete. */

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 
@@ -167,7 +168,12 @@ public sealed partial class ExtensionService
 
             if (evt.EventType == "Created")
             {
-                if (existingNodes.ContainsKey(nodeId) || (!string.IsNullOrEmpty(evt.BrowserNodeId) && existingByBrowserId.ContainsKey(evt.BrowserNodeId)))
+                BookmarkNode? collision = null;
+                if (!existingNodes.TryGetValue(nodeId, out collision) && !string.IsNullOrEmpty(evt.BrowserNodeId))
+                    existingByBrowserId.TryGetValue(evt.BrowserNodeId, out collision);
+
+                // A live node with this id/browser-id is a genuine duplicate.
+                if (collision is { IsDeleted: false })
                     continue;
 
                 var raw = JsonSerializer.Serialize(evt.Payload);
@@ -201,6 +207,58 @@ public sealed partial class ExtensionService
                         if (pDb is not null)
                             parentId = pDb.Id;
                     }
+                }
+
+                if (collision is not null)
+                {
+                    // Browser node id reuse — the browser assigned an id the projection
+                    // still maps to a soft-deleted node (bookmark-tree reset/re-import,
+                    // second browser, or re-add after delete). Revive the row with the
+                    // new payload instead of dropping the bookmark. Content from the
+                    // row's previous life is only kept when the URL still matches.
+                    var urlChanged = !string.Equals(collision.Url, url, StringComparison.OrdinalIgnoreCase);
+                    collision.ParentId = parentId;
+                    collision.Type = typeStr == "Folder" ? NodeType.Folder : NodeType.Bookmark;
+                    collision.Title = title;
+                    collision.Url = url;
+                    collision.Position = position;
+                    collision.IsProtected = isProtected;
+                    collision.IsDeleted = false;
+                    collision.DeletedAt = null;
+                    collision.PurgeAfter = null;
+                    collision.SyncState = SyncState.Synced;
+                    collision.UpdatedAt = now;
+                    collision.BrowserNodeId = evt.BrowserNodeId;
+                    collision.ParentBrowserNodeId = parentBrowserNodeId;
+
+                    if (urlChanged)
+                    {
+                        collision.Category = null;
+                        collision.Status = null;
+                        collision.CurrentProgress = null;
+                        collision.TotalProgress = null;
+                        collision.Tags = null;
+                        collision.Rating = null;
+                        collision.Notes = null;
+                        collision.IsFavorite = false;
+                        collision.PreviousTitle = null;
+                        collision.PreviousUrl = null;
+                        collision.CoverImageUrl = null;
+                        collision.AniListId = null;
+                        collision.AniListMatchedAt = null;
+                        collision.MediaStatus = null;
+                        collision.LastMatchAttemptAt = null;
+                        collision.IsLinkBroken = false;
+                        collision.LinkCheckedAt = null;
+                    }
+
+                    if (collision.Type == NodeType.Bookmark)
+                        BookmarkPlanToReadHeuristic.ApplyAutoStatus(collision);
+
+                    if (collision.Type == NodeType.Bookmark && string.IsNullOrEmpty(collision.Tags))
+                        createdBookmarkIds.Add(collision.Id);
+
+                    continue;
                 }
 
                 var newNode = new BookmarkNode
@@ -349,15 +407,17 @@ public sealed partial class ExtensionService
         if (createdBookmarkIds.Count == 0) return;
 
         var changed = false;
+        var domainMoves = new Dictionary<Guid, (BookmarkNode Folder, List<Guid> BookmarkIds)>();
         foreach (var nodeId in createdBookmarkIds)
         {
             var node = await db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == nodeId, ct);
             if (node is null || node.Type != NodeType.Bookmark || !string.IsNullOrEmpty(node.Tags))
                 continue;
 
+            string? folderPath = null;
             try
             {
-                var folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
+                folderPath = await Data.FolderHierarchy.BuildFolderPathAsync(db, node.ParentId, ct);
                 var outcome = await bookmarkTagging.GetTagsWithCoverAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
                 if (outcome.Tags.Count > 0)
                 {
@@ -381,10 +441,52 @@ public sealed partial class ExtensionService
             {
                 logger.LogWarning(ex, "Auto-tagging failed for created bookmark {NodeId}", nodeId);
             }
+
+            // Auto-file the bookmark into the domain-matching folder: a novelfire
+            // link saved into "Manga" belongs in the novel folder. Tagging is
+            // best-effort, so this runs even when the provider lookup failed.
+            try
+            {
+                var classification = BookmarkTagClassifier.Classify(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto);
+                if (classification.Domain is BookmarkTagDomain.Anime or BookmarkTagDomain.Manga or BookmarkTagDomain.Novel)
+                {
+                    var parentTitle = node.ParentId.HasValue
+                        ? await db.BookmarkNodes.Where(n => n.Id == node.ParentId.Value).Select(n => n.Title).FirstOrDefaultAsync(ct)
+                        : null;
+
+                    if (!DomainFolderHelper.CurrentFolderMatchesDomain(parentTitle, classification.Domain))
+                    {
+                        var target = await DomainFolderHelper.FindDomainFolderAsync(db, classification.Domain, ct);
+                        if (target is not null && target.Id != node.ParentId)
+                        {
+                            if (!domainMoves.TryGetValue(target.Id, out var move))
+                                move = (target, []);
+                            move.BookmarkIds.Add(node.Id);
+                            domainMoves[target.Id] = move;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Domain folder mapping failed for created bookmark {NodeId}", nodeId);
+            }
         }
 
         if (changed)
             await db.SaveChangesAsync(ct);
+
+        foreach (var (folder, bookmarkIds) in domainMoves.Values)
+        {
+            var moved = await BrokenLinksFolderHelper.MoveBookmarksIntoFolderAsync(db, folder, bookmarkIds, logger, ct);
+            if (moved > 0)
+            {
+                logger.LogInformation(
+                    "Auto-filed {Count} created bookmark(s) into domain folder '{Folder}'.",
+                    moved,
+                    folder.Title);
+            }
+        }
     }
 
 }

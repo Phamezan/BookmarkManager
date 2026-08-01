@@ -105,4 +105,23 @@ public sealed class BookmarkMediaCandidateClassifierTests
         Assert.Equal("Some Random Bookmark Title", classification.CanonicalTitle);
         Assert.Equal("Requires AI identification", classification.Reason);
     }
+
+    [Theory]
+    // A definitive URL host signal beats a contradictory folder-name guess:
+    // a web novel dropped into a "Manga" folder is still a novel.
+    [InlineData("https://novelfire.net/book/100x-returns-system-i-dominate-the-age-of-gods", "Manga", BookmarkTagDomain.Novel)]
+    [InlineData("https://novelfire.net/book/magus-infinite", "Manhwa", BookmarkTagDomain.Novel)]
+    [InlineData("https://mangadex.org/title/jjk", "Noveller", BookmarkTagDomain.Manga)]
+    [InlineData("https://crunchyroll.com/watch/x", "Light Novels", BookmarkTagDomain.Anime)]
+    public void Classify_UrlHostSignal_BeatsFolderGuess(string url, string folderPath, BookmarkTagDomain expectedDomain)
+    {
+        var classification = BookmarkMediaCandidateClassifier.Classify(
+            "Some Series Title",
+            url,
+            folderPath);
+
+        Assert.False(classification.RequiresAi);
+        Assert.Equal(expectedDomain, classification.Domain);
+        Assert.Contains("URL signal indicates", classification.Reason);
+    }
 }

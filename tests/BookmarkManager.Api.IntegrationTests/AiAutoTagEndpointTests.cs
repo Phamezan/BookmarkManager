@@ -127,6 +127,8 @@ public sealed class AiAutoTagEndpointTests : IDisposable
                 services.AddSingleton<IMangaUpdatesTagProvider>(MangaUpdates);
                 services.AddSingleton<IKitsuTagProvider>(Kitsu);
 
+                services.RemoveExternalBackgroundWorkers();
+
                 using var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();

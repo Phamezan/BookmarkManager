@@ -8,6 +8,52 @@ export function urlHasChapterMarker(url: string): boolean {
   return seriesKeyFromUrl(url) !== null;
 }
 
+/** Escapes a string for safe interpolation into a RegExp. */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Strips a trailing site-brand segment when it matches the page's hostname
+ * ("100X Returns System: ... - Novel Fire" on novelfire.net → brand dropped).
+ * The title is split on the same separator style as chapter-noise stripping;
+ * only the LAST segment is considered a brand candidate. The candidate is
+ * normalized (lowercase, alphanumeric only) and compared against each
+ * hostname label, ignoring "www" and labels of 3 chars or fewer
+ * (com/net/org/me/tv/co/uk ...). Never returns an empty string — when
+ * stripping would empty the title, the original is returned.
+ */
+export function stripSiteBrandSuffix(title: string, url: string): string {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return title;
+  }
+
+  const segments = title.split(/\s*[-–—|:]\s*/);
+  if (segments.length < 2) return title;
+
+  const lastSegment = segments[segments.length - 1];
+  if (!lastSegment) return title;
+  const candidate = lastSegment.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!candidate) return title;
+
+  const labels = host
+    .split(".")
+    .map((label) => label.toLowerCase())
+    .filter((label) => label !== "www" && label.length > 3);
+  if (!labels.includes(candidate)) return title;
+
+  const stripped = title
+    .replace(
+      new RegExp(`\\s*[-–—|:]\\s*${escapeRegExp(lastSegment)}\\s*$`),
+      "",
+    )
+    .trim();
+  return stripped || title;
+}
+
 /**
  * Strips a trailing chapter/episode clause that novel sites often shove into
  * the document title even on series-root pages
@@ -24,7 +70,8 @@ export function stripTrailingChapterNoise(title: string): string {
 
 /**
  * Builds the quick-bookmark title.
- * - Chapter URL: keep URL/DOM chapter append behavior.
+ * - Site-brand suffix ("- Novel Fire" on novelfire.net) is stripped first.
+ * - Chapter URL: keep URL/DOM chapter append behavior (on the brand-stripped title).
  * - Series-root URL: never append DOM chapter list hits; strip trailing chapter noise from the tab title.
  */
 export function enrichQuickBookmarkTitle(
@@ -33,10 +80,10 @@ export function enrichQuickBookmarkTitle(
   extractedChapter: string | null,
 ): string {
   if (!urlHasChapterMarker(url)) {
-    return stripTrailingChapterNoise(tabTitle);
+    return stripTrailingChapterNoise(stripSiteBrandSuffix(tabTitle, url));
   }
 
-  let title = tabTitle;
+  let title = stripSiteBrandSuffix(tabTitle, url);
   if (
     extractedChapter &&
     !title.toLowerCase().includes(extractedChapter.toLowerCase())

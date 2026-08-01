@@ -174,4 +174,28 @@ public sealed class TagExtractorTests
         Assert.Contains("Novel", tags);
         Assert.DoesNotContain("Manga", tags);
     }
+
+    [Fact]
+    public void NovelFireUrl_YieldsNovelNotManga()
+    {
+        var tags = _svc.ExtractTags(
+            "MAGUS INFINITE - Novel Fire",
+            "https://novelfire.net/book/magus-infinite");
+
+        Assert.Contains("Novel", tags);
+        Assert.DoesNotContain("Manga", tags);
+    }
+
+    [Fact]
+    public void SiteBrandSuffix_IsStrippedFromTitleBeforeTokenizing()
+    {
+        var tags = _svc.ExtractTags(
+            "The Nameless Extra: I Proofread This World - Novel Fire",
+            "https://novelfire.net/book/the-nameless-extra-i-proofread-this-world",
+            BookmarkTagDomain.Novel);
+
+        Assert.Contains("Novel", tags);
+        Assert.DoesNotContain("Fire", tags, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Novelfire", tags, StringComparer.OrdinalIgnoreCase);
+    }
 }
