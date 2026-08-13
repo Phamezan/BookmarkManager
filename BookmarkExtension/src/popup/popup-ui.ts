@@ -84,7 +84,7 @@ if (isBrowser) {
     normalMode:    document.getElementById("normal-mode")     as HTMLElement | null,
     editorMode:    document.getElementById("editor-mode")     as HTMLElement | null,
     apiUrl:        document.getElementById("api-url")         as HTMLInputElement | null,
-    apiUrlList:    document.getElementById("api-url-list")    as HTMLDataListElement | null,
+    apiProfile:    document.getElementById("api-profile")    as HTMLSelectElement | null,
     saveBtn:       document.getElementById("save-btn")        as HTMLButtonElement | null,
     clearBtn:      document.getElementById("clear-btn")       as HTMLButtonElement | null,
     configShortcut:document.getElementById("configure-shortcut-btn") as HTMLButtonElement | null,
@@ -175,26 +175,37 @@ if (isBrowser) {
     els.backupMsg.className = `message${type ? " " + type : ""}`;
   }
 
-  function populateApiBaseUrlList(
-    datalist: HTMLDataListElement,
+  function populateApiProfiles(
+    select: HTMLSelectElement,
     input: HTMLInputElement,
     recentApiBaseUrls: string[],
-    currentValue: string,
+    activeApiBaseUrl: string,
+    setupComplete: boolean,
+    pendingApiBaseUrl: string | null,
   ): void {
-    const suggestions = withRecentApiBaseUrl(recentApiBaseUrls, DEFAULT_API_BASE_URL);
+    let profiles = withRecentApiBaseUrl(recentApiBaseUrls, DEFAULT_API_BASE_URL);
+    profiles = withRecentApiBaseUrl(profiles, activeApiBaseUrl);
+    if (pendingApiBaseUrl) profiles = withRecentApiBaseUrl(profiles, pendingApiBaseUrl);
 
-    datalist.textContent = "";
-    for (const url of suggestions) {
+    select.textContent = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Saved servers";
+    placeholder.disabled = true;
+    select.appendChild(placeholder);
+    for (const url of profiles) {
       const el = document.createElement("option");
       el.value = url;
-      datalist.appendChild(el);
+      el.textContent = setupComplete && url === activeApiBaseUrl ? `${url} (active)` : url;
+      select.appendChild(el);
     }
 
     // Don't clobber in-progress typing: only set the value on first render.
     if (!input.dataset.initialized) {
-      input.value = currentValue;
+      input.value = pendingApiBaseUrl ?? activeApiBaseUrl;
       input.dataset.initialized = "true";
     }
+    select.value = profiles.includes(input.value) ? input.value : "";
   }
 
   function syncOpenManagerButtonLabel(): void {
@@ -210,8 +221,18 @@ if (isBrowser) {
   async function refreshNormalStatus(): Promise<void> {
     const state = await controller.loadState();
 
-    if (els.apiUrl && els.apiUrlList) {
-      populateApiBaseUrlList(els.apiUrlList, els.apiUrl, state.recentApiBaseUrls, state.apiBaseUrl);
+    if (els.apiUrl && els.apiProfile) {
+      populateApiProfiles(
+        els.apiProfile,
+        els.apiUrl,
+        state.recentApiBaseUrls,
+        state.apiBaseUrl,
+        state.setupComplete,
+        state.pendingApiBaseUrl,
+      );
+      if (state.pendingApiBaseUrl && !els.connMsg?.textContent) {
+        setConnMsg("Server saved. Grant access and connect to finish setup.", "info");
+      }
     }
 
     syncOpenManagerButtonLabel();
@@ -529,7 +550,15 @@ if (isBrowser) {
   });
 
   els.apiUrl?.addEventListener("input", () => {
+    if (els.apiProfile) els.apiProfile.value = "";
     syncOpenManagerButtonLabel();
+  });
+
+  els.apiProfile?.addEventListener("change", () => {
+    if (els.apiUrl && els.apiProfile?.value) {
+      els.apiUrl.value = els.apiProfile.value;
+      syncOpenManagerButtonLabel();
+    }
   });
 
   els.clearBtn?.addEventListener("click", async () => {

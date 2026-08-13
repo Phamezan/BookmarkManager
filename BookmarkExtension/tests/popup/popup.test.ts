@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   DEFAULT_API_BASE_URL,
   PopupController,
@@ -56,6 +56,23 @@ describe("PopupController", () => {
       expect(state.syncState).toBe("Healthy");
       expect(state.pendingCount).toBe(3);
     });
+
+    it("prefers a pending candidate for restoring the editable field", async () => {
+      await repo.saveSettings({
+        apiBaseUrl: "http://192.168.50.100:8080",
+        setupComplete: true,
+        recentApiBaseUrls: ["http://localhost:5080", "http://192.168.50.100:8080"],
+        pendingApiBaseUrl: "http://localhost:5080",
+      });
+
+      const state = await controller.loadState();
+      expect(state.apiBaseUrl).toBe("http://192.168.50.100:8080");
+      expect(state.pendingApiBaseUrl).toBe("http://localhost:5080");
+      expect(state.recentApiBaseUrls).toEqual([
+        "http://localhost:5080",
+        "http://192.168.50.100:8080",
+      ]);
+    });
   });
 
   describe("saveConnection", () => {
@@ -95,6 +112,99 @@ describe("PopupController", () => {
       );
       expect(result.success).toBe(false);
       expect(result.error).toContain("permission");
+      const settings = await repo.getSettings();
+      expect(settings?.pendingApiBaseUrl).toBe(DEFAULT_API_BASE_URL);
+      expect(settings?.recentApiBaseUrls).toContain(DEFAULT_API_BASE_URL);
+      expect(settings?.setupComplete).toBe(false);
+      expect(messages).not.toContainEqual({ type: "manualSync" });
+    });
+
+    it("retains the prior active connection when a profile permission is denied", async () => {
+      const active = "http://192.168.50.100:8080";
+      await repo.saveSettings({
+        apiBaseUrl: active,
+        setupComplete: true,
+        recentApiBaseUrls: [active],
+      });
+      permissionGranted = false;
+
+      await expect(controller.saveConnection(DEFAULT_API_BASE_URL)).resolves.toEqual({
+        success: false,
+        error: "Host permission denied",
+      });
+
+      expect(await repo.getSettings()).toEqual({
+        apiBaseUrl: active,
+        setupComplete: true,
+        recentApiBaseUrls: [DEFAULT_API_BASE_URL, active],
+        pendingApiBaseUrl: DEFAULT_API_BASE_URL,
+      });
+      expect(messages).toEqual([]);
+    });
+
+    it("persists a candidate before the permission prompt resolves", async () => {
+      const active = "http://192.168.50.100:8080";
+      const candidate = "http://localhost:5080/";
+      await repo.saveSettings({
+        apiBaseUrl: active,
+        setupComplete: true,
+        recentApiBaseUrls: [active],
+      });
+
+      let resolvePermission!: (granted: boolean) => void;
+      const permission = new Promise<boolean>((resolve) => {
+        resolvePermission = resolve;
+      });
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async (message: unknown) => {
+          messages.push(message);
+          return { success: true };
+        },
+        requestPermission: async () => await permission,
+      });
+
+      const saving = controller.saveConnection(candidate);
+      await vi.waitFor(async () => {
+        const saved = await repo.getSettings();
+        expect(saved?.pendingApiBaseUrl).toBe(DEFAULT_API_BASE_URL);
+      });
+      const beforePermission = await repo.getSettings();
+      expect(beforePermission).toMatchObject({
+        apiBaseUrl: active,
+        setupComplete: true,
+        pendingApiBaseUrl: DEFAULT_API_BASE_URL,
+        recentApiBaseUrls: [DEFAULT_API_BASE_URL, active],
+      });
+      expect(messages).toEqual([]);
+
+      resolvePermission(true);
+      await expect(saving).resolves.toEqual({ success: true, error: null });
+      expect(await repo.getSettings()).toEqual({
+        apiBaseUrl: DEFAULT_API_BASE_URL,
+        setupComplete: true,
+        recentApiBaseUrls: [DEFAULT_API_BASE_URL, active],
+      });
+      expect(messages).toEqual([{ type: "manualSync" }]);
+    });
+
+    it("keeps both saved profiles when switching from LAN to localhost", async () => {
+      const lan = "http://192.168.50.100:8080";
+      await repo.saveSettings({
+        apiBaseUrl: lan,
+        setupComplete: true,
+        recentApiBaseUrls: [lan],
+      });
+
+      await expect(controller.saveConnection(`${DEFAULT_API_BASE_URL}/`)).resolves.toEqual({
+        success: true,
+        error: null,
+      });
+
+      const state = await controller.loadState();
+      expect(state.apiBaseUrl).toBe(DEFAULT_API_BASE_URL);
+      expect(state.pendingApiBaseUrl).toBeNull();
+      expect(state.recentApiBaseUrls).toEqual([DEFAULT_API_BASE_URL, lan]);
     });
 
     it("normalizes URL by stripping trailing slash", async () => {
