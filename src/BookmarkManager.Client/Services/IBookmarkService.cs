@@ -58,6 +58,7 @@ public interface IBookmarkService
     // ── URL Migrator ──────────────────────────────────────────────────────
     Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default);
     Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default);
+    Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default);
     Task<List<UrlMigrationProposalDto>> GetUrlMigrationProposalsAsync(Guid? runId, string? status, CancellationToken cancellationToken = default);
     Task<DecideProposalsResponse?> ApproveProposalsAsync(List<Guid> ids, CancellationToken cancellationToken = default);

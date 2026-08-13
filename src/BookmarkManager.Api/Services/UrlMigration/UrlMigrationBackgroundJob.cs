@@ -22,6 +22,8 @@ namespace BookmarkManager.Api.Services.UrlMigration;
 /// </summary>
 public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 {
+    public static readonly TimeSpan DefaultRunTimeout = TimeSpan.FromMinutes(30);
+
     public const string LivenessAbortMessage =
         "Domain appears alive — run Link Checker first or double-check the host.";
 
@@ -41,6 +43,13 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     private int _unresolved;
     private string? _currentBookmarkTitle;
     private string? _errorMessage;
+    private CancellationTokenSource? _activeRunCancellation;
+
+    /// <summary>
+    /// Maximum wall-clock duration of one migration run. Public to allow integration tests and
+    /// host configuration to select a short deterministic timeout without delaying in real time.
+    /// </summary>
+    public TimeSpan RunTimeout { get; set; } = DefaultRunTimeout;
 
     public UrlMigrationBackgroundJob(IServiceScopeFactory scopeFactory, ILogger<UrlMigrationBackgroundJob> logger)
     {
@@ -69,6 +78,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             _unresolved = 0;
             _currentBookmarkTitle = null;
             _errorMessage = null;
+            _activeRunCancellation = new CancellationTokenSource();
         }
 
         var queued = _requestChannel.Writer.TryWrite(new UrlMigrationRunRequest(runId, deadHost, force, suggestedHost));
@@ -76,11 +86,31 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         {
             lock (_statusLock)
             {
-                _isRunning = false;
+                if (_runId == runId)
+                {
+                    _isRunning = false;
+                    _activeRunCancellation?.Dispose();
+                    _activeRunCancellation = null;
+                }
             }
         }
 
         return queued;
+    }
+
+    /// <summary>Signals cancellation for the current run, if one is active.</summary>
+    public bool CancelActiveRun()
+    {
+        lock (_statusLock)
+        {
+            if (!_isRunning || _activeRunCancellation is null)
+            {
+                return false;
+            }
+
+            _activeRunCancellation.Cancel();
+            return true;
+        }
     }
 
     public UrlMigrationStatusDto GetStatus()
@@ -112,23 +142,61 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             {
                 var request = await _requestChannel.Reader.ReadAsync(stoppingToken).ConfigureAwait(false);
 
+                CancellationTokenSource? userCancellation;
+                lock (_statusLock)
+                {
+                    userCancellation = _runId == request.RunId ? _activeRunCancellation : null;
+                }
+
+                if (userCancellation is null)
+                {
+                    continue;
+                }
+
+                var runTimeout = RunTimeout > TimeSpan.Zero ? RunTimeout : DefaultRunTimeout;
+                using var timeoutCancellation = new CancellationTokenSource(runTimeout);
+                using var runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                    stoppingToken,
+                    userCancellation.Token,
+                    timeoutCancellation.Token);
+
                 try
                 {
-                    await RunMigrationAsync(request, stoppingToken).ConfigureAwait(false);
+                    await RunMigrationAsync(request, runCancellation.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (timeoutCancellation.IsCancellationRequested
+                                                          && !stoppingToken.IsCancellationRequested
+                                                          && !userCancellation.IsCancellationRequested)
+                {
+                    _logger.LogWarning("URL migration run {RunId} timed out after {Timeout}.", request.RunId, runTimeout);
+                    SetRunError(request.RunId, $"URL migration timed out after {FormatTimeout(runTimeout)}.");
+                }
+                catch (OperationCanceledException) when (userCancellation.IsCancellationRequested
+                                                          && !stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogInformation("URL migration run {RunId} was canceled by the user.", request.RunId);
+                    SetRunError(request.RunId, "URL migration canceled.");
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Host shutdown is expected and should not be presented as a migration failure.
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "URL migration run failed.");
-                    lock (_statusLock)
-                    {
-                        _errorMessage = ex.Message;
-                    }
+                    _logger.LogError(ex, "URL migration run {RunId} failed.", request.RunId);
+                    SetRunError(request.RunId, "URL migration failed.");
                 }
                 finally
                 {
                     lock (_statusLock)
                     {
-                        _isRunning = false;
+                        if (_runId == request.RunId)
+                        {
+                            _isRunning = false;
+                            _currentBookmarkTitle = null;
+                            _activeRunCancellation?.Dispose();
+                            _activeRunCancellation = null;
+                        }
                     }
                 }
             }
@@ -141,6 +209,28 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 _logger.LogError(ex, "URL migration background job loop encountered an error.");
             }
         }
+    }
+
+    private void SetRunError(Guid runId, string message)
+    {
+        lock (_statusLock)
+        {
+            if (_runId == runId)
+            {
+                _errorMessage = message;
+            }
+        }
+    }
+
+    private static string FormatTimeout(TimeSpan timeout)
+    {
+        if (timeout.TotalMinutes >= 1 && timeout.TotalMinutes == Math.Truncate(timeout.TotalMinutes))
+        {
+            return $"{timeout.TotalMinutes:0} {(timeout.TotalMinutes == 1 ? "minute" : "minutes")}";
+        }
+
+        return FormattableString.Invariant(
+            $"{timeout.TotalSeconds:0.###} {(timeout.TotalSeconds == 1 ? "second" : "seconds")}");
     }
 
     private async Task RunMigrationAsync(UrlMigrationRunRequest request, CancellationToken ct)

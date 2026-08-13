@@ -80,6 +80,21 @@ public partial class BookmarksController
         return Ok(job.GetStatus());
     }
 
+    [HttpPost("url-migration/cancel")]
+    public ActionResult<UrlMigrationStatusDto> CancelUrlMigration([FromServices] UrlMigrationBackgroundJob job)
+    {
+        if (!job.CancelActiveRun())
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "No URL migration run is active.",
+                Status = StatusCodes.Status409Conflict
+            });
+        }
+
+        return Accepted(job.GetStatus());
+    }
+
     [HttpGet("url-migration/proposals")]
     public async Task<ActionResult<List<UrlMigrationProposalDto>>> GetUrlMigrationProposalsAsync(
         [FromQuery] Guid? runId,

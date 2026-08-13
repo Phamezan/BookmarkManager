@@ -183,6 +183,32 @@ public sealed class UrlMigratorPageTests
     }
 
     [Fact]
+    public async Task RunningMigration_CancelButtonRequestsCancellation()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto
+            {
+                IsRunning = true,
+                RunId = Guid.NewGuid(),
+                DeadHost = "flamecomics.xyz",
+                TotalFound = 2
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-cancel-run-btn")));
+        page.Find(".migrator-cancel-run-btn").Click();
+
+        page.WaitForAssertion(() => Assert.Equal(1, fake.CancelRunCallCount));
+    }
+
+    [Fact]
     public async Task HistoryTab_ShowsRevertButton_OnlyForApprovedRows()
     {
         await using var context = new BunitContext();
@@ -241,6 +267,7 @@ public sealed class UrlMigratorPageTests
         public bool UpdateBookmarkCalled { get; private set; }
         public (Guid Id, string Url)? ManualUrlSet { get; private set; }
         public int StatusCallCount { get; private set; }
+        public int CancelRunCallCount { get; private set; }
 
         public override Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
         public string? LastStartedHost { get; private set; }
@@ -252,6 +279,12 @@ public sealed class UrlMigratorPageTests
             LastStartedHost = deadHost;
             LastStartedForce = force;
             LastSuggestedHost = suggestedHost;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default)
+        {
+            CancelRunCallCount++;
             return Task.FromResult(true);
         }
 

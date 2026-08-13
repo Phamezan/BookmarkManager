@@ -449,3 +449,8 @@
     color: var(--bm-text-muted);
     font-variant-numeric: tabular-nums;
 }
+
+.migrator-cancel-run-btn.mud-button-root {
+    align-self: flex-start;
+    font-weight: 700;
+}
