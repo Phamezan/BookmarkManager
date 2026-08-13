@@ -144,7 +144,7 @@ label {
 
 input[type="url"],
 input[type="text"],
-select#api-url {
+select#api-profile {
   flex: 1;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -157,7 +157,8 @@ select#api-url {
   transition: border-color var(--transition), box-shadow var(--transition);
 }
 
-select#api-url {
+select#api-profile {
+  width: 100%;
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
@@ -178,9 +179,14 @@ input[type="text"]::placeholder { color: var(--text-muted); }
 
 input[type="url"]:focus,
 input[type="text"]:focus,
-select#api-url:focus {
+select#api-profile:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
+select#api-profile option {
+  background: var(--surface);
+  color: var(--text-primary);
 }
 
 /* ── Primary button (icon save) ──────────────────────────────────────────── */

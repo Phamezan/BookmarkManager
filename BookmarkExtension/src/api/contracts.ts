@@ -185,6 +185,8 @@ export interface ExtensionSettings {
   setupComplete: boolean;
   /** Most-recently-used API base URLs (newest first), for quick dev/prod switching. */
   recentApiBaseUrls?: string[];
+  /** Candidate saved before the optional-host permission prompt completes. */
+  pendingApiBaseUrl?: string;
 }
 
 export interface ServerConfig {

@@ -142,6 +142,17 @@
                     <span class="migrator-stat-pill">Resolved <strong>@_status.Resolved</strong></span>
                     <span class="migrator-stat-pill">Unresolved <strong>@_status.Unresolved</strong></span>
                 </div>
+                @if (IsRunning)
+                {
+                    <MudButton Variant="Variant.Outlined"
+                               Color="Color.Error"
+                               StartIcon="@Icons.Material.Filled.Cancel"
+                               OnClick="CancelMigrationAsync"
+                               Disabled="@_canceling"
+                               Class="migrator-cancel-run-btn">
+                        @(_canceling ? "Canceling..." : "Cancel migration")
+                    </MudButton>
+                }
                 @if (!string.IsNullOrEmpty(_status.ErrorMessage))
                 {
                     <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">@_status.ErrorMessage</MudAlert>

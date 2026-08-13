@@ -43,6 +43,7 @@ export class PopupController {
 
   async loadState(): Promise<{
     apiBaseUrl: string;
+    pendingApiBaseUrl: string | null;
     recentApiBaseUrls: string[];
     setupComplete: boolean;
     syncState: string;
@@ -55,6 +56,7 @@ export class PopupController {
 
     return {
       apiBaseUrl: settings?.apiBaseUrl ?? DEFAULT_API_BASE_URL,
+      pendingApiBaseUrl: settings?.pendingApiBaseUrl ?? null,
       recentApiBaseUrls: settings?.recentApiBaseUrls ?? [],
       setupComplete: settings?.setupComplete ?? false,
       syncState: status?.state ?? "NotConfigured",
@@ -72,16 +74,34 @@ export class PopupController {
       return { success: false, error: validation.error };
     }
 
-    const granted = await this.deps.requestPermission(validation.value);
+    const existing = await this.deps.storage.getSettings();
+    await this.deps.storage.saveSettings({
+      apiBaseUrl: existing?.apiBaseUrl ?? validation.value,
+      setupComplete: existing?.setupComplete ?? false,
+      recentApiBaseUrls: withRecentApiBaseUrl(existing?.recentApiBaseUrls, validation.value),
+      pendingApiBaseUrl: validation.value,
+    });
+
+    let granted = false;
+    try {
+      granted = await this.deps.requestPermission(validation.value);
+    } catch {
+      granted = false;
+    }
     if (!granted) {
       return { success: false, error: "Host permission denied" };
     }
 
-    const existing = await this.deps.storage.getSettings();
+    const latest = await this.deps.storage.getSettings();
+    const { pendingApiBaseUrl: _pendingApiBaseUrl, ...latestWithoutPending } = latest ?? {
+      apiBaseUrl: validation.value,
+      setupComplete: false,
+    };
     await this.deps.storage.saveSettings({
+      ...latestWithoutPending,
       apiBaseUrl: validation.value,
       setupComplete: true,
-      recentApiBaseUrls: withRecentApiBaseUrl(existing?.recentApiBaseUrls, validation.value),
+      recentApiBaseUrls: withRecentApiBaseUrl(latest?.recentApiBaseUrls, validation.value),
     });
 
     await this.deps.sendMessage({ type: "manualSync" });

@@ -226,6 +226,9 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost, force, suggestedHost)));
 
+    public async Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/cancel", cancellationToken));
+
     public async Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<UrlMigrationStatusDto>("api/bookmarks/url-migration/status", cancellationToken);
 

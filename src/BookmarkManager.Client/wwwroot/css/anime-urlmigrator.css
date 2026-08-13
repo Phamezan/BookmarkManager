@@ -26,14 +26,14 @@
 /* ── 0. Page tokens & base type ─────────────────────────────────────────── */
 [data-theme="anime"] .url-migrator-page {
     --um-void: #060b18;
-    --um-panel: rgba(13, 20, 38, 0.64);
-    --um-line: #233252;
-    --um-line-hi: #3a5490;
+    --um-panel: rgba(9, 15, 30, 0.88);
+    --um-line: #3a4f78;
+    --um-line-hi: #5a78b8;
     --um-slash: #8dfc5f;
     --um-wound: #ff5347;
     --um-amber: #ffc857;
     --um-bone: #e2e9f6;
-    --um-dim: #7d8bb0;
+    --um-dim: #aab7d6;
     font-family: "Rajdhani", sans-serif;
     font-weight: 500;
     color: var(--um-bone);
@@ -172,12 +172,12 @@
 /* ── 3. Panels — blade-cut corners ──────────────────────────────────────── */
 [data-theme="anime"] .url-migrator-page .ops-panel.mud-paper {
     background: var(--um-panel) !important;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    border: none;
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+    border: 1px solid rgba(90, 120, 184, 0.72);
     border-radius: 0;
     clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 16px 100%, 0 calc(100% - 16px));
-    box-shadow: inset 0 0 0 1px var(--um-line), inset 0 0 34px rgba(3, 6, 14, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(9, 15, 30, 0.86), inset 0 0 42px rgba(2, 5, 12, 0.78), 0 12px 34px rgba(0, 0, 0, 0.38);
     color: var(--um-bone);
 }
 
@@ -286,12 +286,13 @@
 /* Manual entry fields — mono dark inputs, green focus edge. */
 [data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-outlined,
 [data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-outlined {
-    background: #0a1122;
+    background: rgba(5, 10, 22, 0.96);
+    box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.45);
 }
 
 [data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-outlined-border,
 [data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-outlined-border {
-    border-color: var(--um-line) !important;
+    border-color: #526b9f !important;
 }
 
 [data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-outlined:focus-within .mud-input-outlined-border,
@@ -308,12 +309,33 @@
 
 [data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-slot::placeholder,
 [data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-slot::placeholder {
-    color: #4c5a80;
+    color: #9eabd0;
+    opacity: 1;
 }
 
 [data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-label,
 [data-theme="anime"] .url-migrator-page .migrator-suggested-host-field .mud-input-label {
-    color: var(--um-dim) !important;
+    color: #c1cbe2 !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field.mud-disabled .mud-input-outlined,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field.mud-disabled .mud-input-outlined {
+    background: rgba(9, 15, 30, 0.94);
+    opacity: 1;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field.mud-disabled .mud-input-outlined-border,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field.mud-disabled .mud-input-outlined-border {
+    border-color: #405477 !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field.mud-disabled .mud-input-slot,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field.mud-disabled .mud-input-slot,
+[data-theme="anime"] .url-migrator-page .migrator-manual-host-field.mud-disabled .mud-input-label,
+[data-theme="anime"] .url-migrator-page .migrator-suggested-host-field.mud-disabled .mud-input-label {
+    color: #8998bb !important;
+    -webkit-text-fill-color: #8998bb !important;
+    opacity: 1;
 }
 
 [data-theme="anime"] .url-migrator-page .migrator-manual-host-field .mud-input-adornment .mud-icon-root {
@@ -350,8 +372,39 @@
 
 [data-theme="anime"] .url-migrator-page .migrator-start-btn.mud-button-root:disabled {
     background: #22304a;
-    color: #5a6a90;
+    color: #96a5c7;
     box-shadow: none;
+    opacity: 1;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-cancel-run-btn.mud-button-root {
+    align-self: flex-start;
+    border: 1px solid #b94b45;
+    border-radius: 0;
+    background: rgba(68, 14, 18, 0.84);
+    color: #ff9b93;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 1;
+    transition: background 0.18s, border-color 0.18s, box-shadow 0.18s, color 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-cancel-run-btn.mud-button-root:hover:not(:disabled),
+[data-theme="anime"] .url-migrator-page .migrator-cancel-run-btn.mud-button-root:focus-visible {
+    border-color: var(--um-wound);
+    background: rgba(118, 24, 27, 0.94);
+    color: #fff0ee;
+    box-shadow: 0 0 18px rgba(255, 83, 71, 0.36);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-cancel-run-btn.mud-button-root:disabled {
+    border-color: #65413f;
+    background: rgba(45, 25, 29, 0.92);
+    color: #b08b88;
+    opacity: 1;
 }
 
 /* ── 5. Run status panel — radar, processed bar, pills ──────────────────── */

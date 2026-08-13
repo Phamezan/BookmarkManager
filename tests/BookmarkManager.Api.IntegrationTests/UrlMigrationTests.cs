@@ -214,6 +214,85 @@ public sealed class UrlMigrationTests : IntegrationTestBase
         Assert.Equal("Unresolved", proposal.Confidence);
     }
 
+    [Fact]
+    public async Task CancelActiveRun_ReleasesSingleFlightAndAllowsSubsequentRun()
+    {
+        const string deadHost = "cancel-test.example";
+        var gate = new GateSeriesExtractionService();
+        using var factory = CreateFactoryWithStubs(Factory, gate);
+        await SeedBookmarkAsync(factory, $"https://{deadHost}/series/chapter-10");
+
+        using var client = factory.CreateClient();
+        var startResponse = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/run", new StartUrlMigrationRequest(deadHost));
+        Assert.Equal(HttpStatusCode.Accepted, startResponse.StatusCode);
+
+        var cancelResponse = await client.PostAsync("/api/bookmarks/url-migration/cancel", null);
+        Assert.Equal(HttpStatusCode.Accepted, cancelResponse.StatusCode);
+
+        var finalStatus = await WaitForStoppedStatusAsync(client);
+        Assert.Equal("URL migration canceled.", finalStatus.ErrorMessage);
+
+        var subsequentResponse = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/run", new StartUrlMigrationRequest(deadHost));
+        Assert.Equal(HttpStatusCode.Accepted, subsequentResponse.StatusCode);
+
+        Assert.Equal(HttpStatusCode.Accepted,
+            (await client.PostAsync("/api/bookmarks/url-migration/cancel", null)).StatusCode);
+        await WaitForStoppedStatusAsync(client);
+    }
+
+    [Fact]
+    public async Task RunTimeout_ReleasesSingleFlightAndReportsSafeError()
+    {
+        const string deadHost = "timeout-test.example";
+        var gate = new GateSeriesExtractionService();
+        using var factory = CreateFactoryWithStubs(Factory, gate);
+        await SeedBookmarkAsync(factory, $"https://{deadHost}/series/chapter-10");
+
+        using var client = factory.CreateClient();
+        factory.Services.GetRequiredService<UrlMigrationBackgroundJob>().RunTimeout = TimeSpan.FromMilliseconds(100);
+
+        var startResponse = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/run", new StartUrlMigrationRequest(deadHost));
+        Assert.Equal(HttpStatusCode.Accepted, startResponse.StatusCode);
+
+        var finalStatus = await WaitForStoppedStatusAsync(client);
+        Assert.Equal("URL migration timed out after 0.1 seconds.", finalStatus.ErrorMessage);
+
+        var subsequentResponse = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/run", new StartUrlMigrationRequest(deadHost));
+        Assert.Equal(HttpStatusCode.Accepted, subsequentResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Accepted,
+            (await client.PostAsync("/api/bookmarks/url-migration/cancel", null)).StatusCode);
+        await WaitForStoppedStatusAsync(client);
+    }
+
+    [Fact]
+    public async Task CancelUrlMigration_WhenIdle_ReturnsConflict()
+    {
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsync("/api/bookmarks/url-migration/cancel", null);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    private static async Task<UrlMigrationStatusDto> WaitForStoppedStatusAsync(HttpClient client)
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            var status = await client.GetFromJsonAsync<UrlMigrationStatusDto>(
+                "/api/bookmarks/url-migration/status", JsonOptions);
+            if (status is { IsRunning: false })
+            {
+                return status;
+            }
+
+            await Task.Delay(25);
+        }
+
+        throw new Xunit.Sdk.XunitException("URL migration did not stop within the test timeout.");
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not a host!")]

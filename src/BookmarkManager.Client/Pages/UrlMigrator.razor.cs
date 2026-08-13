@@ -24,6 +24,7 @@ public partial class UrlMigrator : IDisposable
     private string _manualHost = string.Empty;
     private string _suggestedTargetHost = string.Empty;
     private bool _starting;
+    private bool _canceling;
     private UrlMigrationStatusDto? _status;
     private bool _polling;
     private CancellationTokenSource? _pollCts;
@@ -147,6 +148,37 @@ public partial class UrlMigrator : IDisposable
         _pollCts?.Cancel();
         _pollCts = new CancellationTokenSource();
         _ = PollStatusLoopAsync(_pollCts.Token);
+    }
+
+    private async Task CancelMigrationAsync()
+    {
+        if (!IsRunning || _canceling)
+        {
+            return;
+        }
+
+        _canceling = true;
+        try
+        {
+            if (!await BookmarkService.CancelUrlMigrationAsync())
+            {
+                Snackbar.Add("The migration is no longer running.", Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add("Cancel requested.", Severity.Info);
+            }
+
+            await RefreshStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not cancel migration: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _canceling = false;
+        }
     }
 
     private async Task PollStatusLoopAsync(CancellationToken ct)
