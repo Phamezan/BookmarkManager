@@ -7,7 +7,7 @@ name: CI/CD Auto-Merge Pipeline
 on:
   push:
     branches:
-      - 'feature/*' # Only triggers on feature branches
+      - 'feature/**' # Only triggers on feature branchesgit ad
 
 permissions:
   contents: write
@@ -42,6 +42,6 @@ jobs:
         run: |
           # Creates a PR silently
           gh pr view "${{ github.ref_name }}" &>/dev/null || gh pr create --title "Auto-Merge: ${{ github.ref_name }}" --body "Automated by CI" --base main
-          
+
           # Merges the PR immediately and deletes the remote branch
           gh pr merge --merge --delete-branch
