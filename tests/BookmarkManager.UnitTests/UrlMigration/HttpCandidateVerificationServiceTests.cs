@@ -310,6 +310,50 @@ public class HttpCandidateVerificationServiceTests
         Assert.False(isAlive);
     }
 
+    [Fact]
+    public async Task VerifyAsync_Returns403_NotReachable()
+    {
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.Forbidden)
+        {
+            Content = new StringContent("<html><body>403 Forbidden Access to this resource on the server is denied!</body></html>", Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(Candidate(), Extraction(), CancellationToken.None);
+
+        Assert.False(result.Reachable);
+        Assert.Contains("403", result.Detail);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReturnsParkedDomain_NotReachable()
+    {
+        var html = "<html><head><title>Solo Max-Level Newbie Chapter 112</title></head><body>This domain is parked for free with Namecheap. Buy this domain.</body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(Candidate(), Extraction(), CancellationToken.None);
+
+        Assert.False(result.Reachable);
+        Assert.Contains("parked", result.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ReturnsCloudflareChallenge_NotReachable()
+    {
+        var html = "<html><head><title>Just a moment...</title></head><body>Enable JavaScript and cookies to continue (Cloudflare).</body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(Candidate(), Extraction(), CancellationToken.None);
+
+        Assert.False(result.Reachable);
+        Assert.Contains("Cloudflare", result.Detail);
+    }
+
     private sealed class MockHttpClientFactory : IHttpClientFactory
     {
         private readonly HttpClient _client;

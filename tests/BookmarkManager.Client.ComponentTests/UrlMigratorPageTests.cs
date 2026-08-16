@@ -132,6 +132,7 @@ public sealed class UrlMigratorPageTests
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".mud-dialog")));
 
         var urlInput = page.Find(".manual-url-field input");
+        Assert.True(string.IsNullOrEmpty(urlInput.GetAttribute("value")));
         urlInput.Input("https://newsite.example/series/obscure-novel");
 
         page.WaitForAssertion(() =>
@@ -243,6 +244,32 @@ public sealed class UrlMigratorPageTests
         Assert.Empty(rejectedRow.QuerySelectorAll(".migrator-revert-btn"));
     }
 
+    [Fact]
+    public async Task ResetEngine_CallsResetUrlMigrationAsync()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto
+            {
+                IsRunning = true,
+                RunId = Guid.NewGuid(),
+                DeadHost = "flamecomics.xyz",
+                TotalFound = 2
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-reset-engine-btn")));
+        page.Find(".migrator-reset-engine-btn").Click();
+
+        page.WaitForAssertion(() => Assert.Equal(1, fake.ResetCallCount));
+    }
+
     private static UrlMigrationProposalDto MakeProposal(string title, string? proposedHost, string confidence) => new()
     {
         Id = Guid.NewGuid(),
@@ -268,6 +295,13 @@ public sealed class UrlMigratorPageTests
         public (Guid Id, string Url)? ManualUrlSet { get; private set; }
         public int StatusCallCount { get; private set; }
         public int CancelRunCallCount { get; private set; }
+        public int ResetCallCount { get; private set; }
+
+        public override Task<bool> ResetUrlMigrationAsync(CancellationToken cancellationToken = default)
+        {
+            ResetCallCount++;
+            return Task.FromResult(true);
+        }
 
         public override Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());
         public string? LastStartedHost { get; private set; }

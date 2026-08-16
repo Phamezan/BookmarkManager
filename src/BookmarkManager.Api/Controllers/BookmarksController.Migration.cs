@@ -95,6 +95,13 @@ public partial class BookmarksController
         return Accepted(job.GetStatus());
     }
 
+    [HttpPost("url-migration/reset")]
+    public ActionResult<UrlMigrationStatusDto> ResetUrlMigration([FromServices] UrlMigrationBackgroundJob job)
+    {
+        job.ForceReset();
+        return Ok(job.GetStatus());
+    }
+
     [HttpGet("url-migration/proposals")]
     public async Task<ActionResult<List<UrlMigrationProposalDto>>> GetUrlMigrationProposalsAsync(
         [FromQuery] Guid? runId,
@@ -211,6 +218,38 @@ public partial class BookmarksController
         return Ok(result);
     }
 
+    [HttpPost("url-migration/proposals/{id:guid}/update-url")]
+    public async Task<ActionResult<UrlMigrationProposalDto>> UpdateProposalUrlAsync(
+        Guid id,
+        [FromBody] UpdateProposalUrlRequest request,
+        [FromServices] UrlMigrationApprovalService approvalService,
+        [FromServices] ICandidateVerificationService verificationService,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request?.Url) ||
+            !Uri.TryCreate(request.Url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Url must be an absolute http/https URL.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var result = await approvalService.UpdateProposedUrlAsync(id, request.Url, verificationService, ct);
+        if (result == null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Title = "Proposal not found or is already decided.",
+                Status = StatusCodes.Status404NotFound
+            });
+        }
+
+        return Ok(result);
+    }
+
     [HttpPost("url-migration/proposals/{id:guid}/revert")]
     public async Task<IActionResult> RevertUrlMigrationProposalAsync(
         Guid id,
@@ -251,6 +290,31 @@ public partial class BookmarksController
         }
 
         return null;
+    }
+
+    private static string NormalizeHost(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        input = input.Trim();
+        if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Uri.TryCreate(input, UriKind.Absolute, out var uri))
+            {
+                return uri.Host;
+            }
+        }
+        else if (input.Contains('/'))
+        {
+            var firstPart = input.Split('/', StringSplitOptions.RemoveEmptyEntries)[0];
+            return firstPart.Trim();
+        }
+
+        return input;
     }
 
     private static bool IsValidHost(string? host)

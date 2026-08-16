@@ -1,0 +1,446 @@
+/* ============================================================================
+   Bookmark Manager — URL Migrator Base Stylesheet
+   Provides universal styling for URL Migrator across all themes.
+   ============================================================================ */
+
+.url-migrator-page {
+    position: relative;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+}
+
+.url-migrator-page .page-heading {
+    margin-bottom: var(--bm-space-2, 8px);
+}
+
+/* ── Panels ─────────────────────────────────────────────────────────────── */
+.url-migrator-page .ops-panel {
+    background: var(--bm-surface);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-lg, 16px);
+    padding: var(--bm-space-4, 16px) var(--bm-space-5, 20px);
+    box-shadow: var(--bm-shadow, 0 4px 16px rgba(0, 0, 0, 0.4));
+    transition: border-color var(--bm-med, 200ms) ease;
+}
+
+.url-migrator-page .migrator-panel-header {
+    padding-bottom: var(--bm-space-2, 8px);
+    border-bottom: 1px solid var(--bm-border);
+}
+
+.url-migrator-page .migrator-refresh-btn {
+    color: var(--bm-accent);
+}
+
+/* ── Dead Domains List ──────────────────────────────────────────────────── */
+.url-migrator-page .migrator-dead-domains-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--bm-space-2, 8px);
+    margin-top: var(--bm-space-2, 8px);
+}
+
+.url-migrator-page .migrator-dead-domain-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: var(--bm-radius-md, 10px);
+    background: var(--bm-surface-muted, rgba(16, 15, 28, 0.6));
+    border: 1px solid var(--bm-border);
+    gap: 12px;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.url-migrator-page .migrator-dead-domain-row:hover {
+    background: var(--bm-surface-raised, rgba(30, 28, 52, 0.9));
+    border-color: var(--bm-border-strong);
+}
+
+.url-migrator-page .migrator-domain-host {
+    font-family: var(--bm-font-mono, monospace);
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--bm-text);
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.url-migrator-page .migrator-domain-count {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--bm-danger-soft, rgba(248, 113, 113, 0.12));
+    color: var(--bm-danger, #F87171);
+    white-space: nowrap;
+}
+
+.url-migrator-page .migrator-migrate-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--bm-accent);
+    border-radius: var(--bm-radius-sm, 6px);
+    background: var(--bm-accent-soft, rgba(129, 140, 248, 0.14));
+    color: var(--bm-accent);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.url-migrator-page .migrator-migrate-btn:hover:not(:disabled) {
+    background: var(--bm-accent);
+    color: #fff;
+    box-shadow: 0 0 12px var(--bm-accent-glow);
+}
+
+.url-migrator-page .migrator-migrate-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    border-color: var(--bm-border);
+}
+
+.url-migrator-page .migrator-expand-btn {
+    align-self: flex-start;
+    margin-top: 4px;
+}
+
+/* ── Manual Row ─────────────────────────────────────────────────────────── */
+.url-migrator-page .migrator-manual-row {
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.url-migrator-page .migrator-manual-host-field {
+    flex: 2 1 240px;
+    min-width: 200px;
+}
+
+.url-migrator-page .migrator-suggested-host-field {
+    flex: 2 1 240px;
+    min-width: 200px;
+}
+
+.url-migrator-page .migrator-start-btn {
+    flex: 0 0 auto;
+    height: 44px;
+    font-weight: 600;
+}
+
+.url-migrator-page .migrator-engine-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* ── Progress Panel ─────────────────────────────────────────────────────── */
+.url-migrator-page .migrator-progress-panel {
+    background: var(--bm-surface-raised, rgba(30, 28, 52, 0.9));
+    border-color: var(--bm-border-strong);
+}
+
+.url-migrator-page .migrator-progress-host {
+    font-family: var(--bm-font-mono, monospace);
+    color: var(--bm-accent);
+    font-weight: 700;
+}
+
+.url-migrator-page .migrator-progress-bar {
+    height: 8px !important;
+    border-radius: 4px;
+}
+
+.url-migrator-page .migrator-resolving-line {
+    color: var(--bm-text-secondary);
+    font-style: italic;
+}
+
+.url-migrator-page .migrator-stat-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.url-migrator-page .migrator-stat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background: var(--bm-surface-muted);
+    border: 1px solid var(--bm-border);
+    color: var(--bm-text-secondary);
+}
+
+.url-migrator-page .migrator-stat-pill strong {
+    color: var(--bm-text);
+    font-size: 0.85rem;
+}
+
+/* ── Review Tabs & Panels ───────────────────────────────────────────────── */
+.url-migrator-page .migrator-review-panel {
+    padding-top: var(--bm-space-2, 8px);
+}
+
+.url-migrator-page .migrator-groups {
+    margin-top: 12px;
+    gap: 12px;
+    display: flex;
+    flex-direction: column;
+}
+
+.url-migrator-page .migrator-group.mud-expand-panel {
+    background: var(--bm-surface-muted, rgba(16, 15, 28, 0.6)) !important;
+    border: 1px solid var(--bm-border) !important;
+    border-radius: var(--bm-radius-md, 10px) !important;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
+.url-migrator-page .migrator-group .mud-expand-panel-header {
+    padding: 12px 16px;
+}
+
+.url-migrator-page .migrator-group .mud-expand-panel-content {
+    padding: 0 16px 12px;
+}
+
+.url-migrator-page .migrator-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 12px;
+}
+
+.url-migrator-page .migrator-approve-group-btn {
+    font-weight: 600;
+}
+
+/* ── Proposal Cards ─────────────────────────────────────────────────────── */
+.url-migrator-page .migrator-proposal-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    background: var(--bm-surface);
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-md, 10px);
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+    min-width: 0;
+}
+
+.url-migrator-page .migrator-proposal-row:hover {
+    border-color: var(--bm-border-strong);
+    background: var(--bm-surface-raised);
+    box-shadow: var(--bm-shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.url-migrator-page .migrator-content-col {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.url-migrator-page .migrator-title-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+
+.url-migrator-page .migrator-bookmark-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--bm-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+}
+
+.url-migrator-page .migrator-chapter-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bm-accent-soft);
+    color: var(--bm-accent);
+    flex-shrink: 0;
+}
+
+.url-migrator-page .migrator-url-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-top: 4px;
+    font-family: var(--bm-font-mono, monospace);
+    font-size: 0.78rem;
+}
+
+.url-migrator-page .migrator-url-tag {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+}
+
+.url-migrator-page .migrator-url-tag-old {
+    background: var(--bm-danger-soft, rgba(248, 113, 113, 0.12));
+    color: var(--bm-danger, #F87171);
+}
+
+.url-migrator-page .migrator-url-tag-new {
+    background: var(--bm-success-soft, rgba(52, 211, 153, 0.12));
+    color: var(--bm-success, #34D399);
+}
+
+.url-migrator-page .migrator-url-value {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.url-migrator-page .migrator-url-value-old {
+    color: var(--bm-text-muted);
+    text-decoration: line-through;
+}
+
+.url-migrator-page .migrator-url-value-new {
+    color: var(--bm-text);
+    font-weight: 500;
+}
+
+.url-migrator-page .migrator-copy-btn {
+    padding: 2px;
+    min-width: auto;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+    flex-shrink: 0;
+}
+
+.url-migrator-page .migrator-copy-btn:hover {
+    opacity: 1;
+}
+
+.url-migrator-page .migrator-detail {
+    font-size: 0.72rem;
+    color: var(--bm-text-secondary);
+    margin-top: 4px;
+}
+
+.url-migrator-page .migrator-actions-col {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.url-migrator-page .migrator-row-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* ── Status & Confidence Badges ─────────────────────────────────────────── */
+.url-migrator-page .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.url-migrator-page .status-badge--success {
+    background: var(--bm-success-soft, rgba(52, 211, 153, 0.12));
+    color: var(--bm-success, #34D399);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.url-migrator-page .status-badge--warning {
+    background: var(--bm-warning-soft, rgba(251, 191, 36, 0.12));
+    color: var(--bm-warning, #FBBF24);
+    border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.url-migrator-page .status-badge--danger {
+    background: var(--bm-danger-soft, rgba(248, 113, 113, 0.12));
+    color: var(--bm-danger, #F87171);
+    border: 1px solid rgba(248, 113, 113, 0.3);
+}
+
+.url-migrator-page .status-badge--watching {
+    background: var(--bm-watching-soft, rgba(176, 132, 255, 0.12));
+    color: var(--bm-watching, #B084FF);
+    border: 1px solid rgba(176, 132, 255, 0.3);
+}
+
+.url-migrator-page .status-badge--active {
+    background: var(--bm-accent-soft, rgba(129, 140, 248, 0.14));
+    color: var(--bm-accent, #818CF8);
+    border: 1px solid rgba(129, 140, 248, 0.3);
+}
+
+/* ── Unresolved Rows ────────────────────────────────────────────────────── */
+.url-migrator-page .migrator-unresolved-row {
+    background: var(--bm-surface-muted);
+    border-style: dashed;
+}
+
+/* ── History Table ──────────────────────────────────────────────────────── */
+.url-migrator-page .migrator-history-table {
+    border: 1px solid var(--bm-border);
+    border-radius: var(--bm-radius-md, 10px);
+    overflow: hidden;
+}
+
+.url-migrator-page .migrator-history-table thead th {
+    background: var(--bm-surface-raised);
+    color: var(--bm-text-secondary);
+    font-weight: 600;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.url-migrator-page .migrator-history-row:hover td {
+    background: var(--bm-surface-raised);
+}
+
+/* ── Responsive adjustments ─────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .url-migrator-page .migrator-proposal-row {
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .url-migrator-page .migrator-actions-col {
+        width: 100%;
+        justify-content: flex-end;
+        border-top: 1px solid var(--bm-border);
+        padding-top: 8px;
+    }
+}

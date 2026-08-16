@@ -113,6 +113,33 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         }
     }
 
+    /// <summary>Forces the migration engine to reset to an idle state if desynchronized or stuck.</summary>
+    public void ForceReset()
+    {
+        lock (_statusLock)
+        {
+            try
+            {
+                _activeRunCancellation?.Cancel();
+                _activeRunCancellation?.Dispose();
+            }
+            catch
+            {
+                // Ignore disposal errors on forced reset
+            }
+
+            _activeRunCancellation = null;
+            _runId = null;
+            _isRunning = false;
+            _totalFound = 0;
+            _processed = 0;
+            _resolved = 0;
+            _unresolved = 0;
+            _currentBookmarkTitle = null;
+            _errorMessage = "Migration engine was manually reset.";
+        }
+    }
+
     public UrlMigrationStatusDto GetStatus()
     {
         lock (_statusLock)
@@ -145,11 +172,12 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 CancellationTokenSource? userCancellation;
                 lock (_statusLock)
                 {
-                    userCancellation = _runId == request.RunId ? _activeRunCancellation : null;
+                    userCancellation = (_runId == request.RunId && _isRunning) ? _activeRunCancellation : null;
                 }
 
                 if (userCancellation is null)
                 {
+                    // Stale or invalidated request from an earlier cancelled/reset run - ignore and do not alter running state.
                     continue;
                 }
 
@@ -348,7 +376,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 : EmptyExcludedUrls;
 
             var proposal = await BuildProposalAsync(
-                request.RunId, deadHost, bookmark, extraction, searchService, verificationService, anilistProvider, episodeIdResolver, excludedUrls, preferredHost, restrictToPreferredHost, ct).ConfigureAwait(false);
+                request.RunId, deadHost, bookmark, extraction, searchService, verificationService, anilistProvider, episodeIdResolver, excludedUrls, preferredHost, restrictToPreferredHost, db, ct).ConfigureAwait(false);
 
             if (!restrictToPreferredHost && proposal.ProposedHost != null && (proposal.Confidence == "High" || proposal.Confidence == "Medium"))
             {
@@ -421,6 +449,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         IReadOnlySet<string> excludedUrls,
         string? preferredHost,
         bool restrictToPreferredHost,
+        AppDbContext db,
         CancellationToken ct)
     {
         var proposal = new UrlMigrationProposal
@@ -472,6 +501,54 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             }
         }
 
+        var combinedCandidates = new List<SearchCandidate>();
+
+        // Query local library catalog for verified series source URLs (if compatible with host preferences)
+        if (!string.IsNullOrWhiteSpace(extraction.SeriesName) && extraction.SeriesName.Length >= 3)
+        {
+            try
+            {
+                var catalogHits = await db.LibraryCatalogEntries
+                    .AsNoTracking()
+                    .Where(e => !string.IsNullOrEmpty(e.SourceUrl) &&
+                               (EF.Functions.Like(e.Title, "%" + extraction.SeriesName + "%") ||
+                                (e.AlternateTitles != null && EF.Functions.Like(e.AlternateTitles, "%" + extraction.SeriesName + "%"))))
+                    .Take(5)
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
+
+                foreach (var hit in catalogHits)
+                {
+                    if (string.IsNullOrWhiteSpace(hit.SourceUrl) || HostMatches(hit.SourceUrl, deadHost))
+                    {
+                        continue;
+                    }
+
+                    // If search is restricted to a preferred host, catalog URL must match that host
+                    if (restrictToPreferredHost && preferredHost != null && !HostMatches(hit.SourceUrl, preferredHost))
+                    {
+                        continue;
+                    }
+
+                    combinedCandidates.Add(new SearchCandidate(hit.SourceUrl, hit.Title, $"Catalog match ({hit.Provider})"));
+
+                    // Take at most 1 catalog match when unrestricted so web search candidates aren't starved
+                    if (!restrictToPreferredHost)
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Catalog lookup skipped for {Series}", extraction.SeriesName);
+            }
+        }
+
         IReadOnlyList<SearchCandidate> candidates;
         try
         {
@@ -487,12 +564,14 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             candidates = [];
         }
 
+        combinedCandidates.AddRange(candidates);
+
         if (excludedUrls.Count > 0)
         {
-            candidates = candidates.Where(c => !excludedUrls.Contains(NormalizeUrlForComparison(c.Url))).ToList();
+            combinedCandidates = combinedCandidates.Where(c => !excludedUrls.Contains(NormalizeUrlForComparison(c.Url))).ToList();
         }
 
-        if (candidates.Count == 0)
+        if (combinedCandidates.Count == 0)
         {
             proposal.Confidence = "Unresolved";
             proposal.Detail = excludedUrls.Count > 0
@@ -503,10 +582,8 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 
         SearchCandidate? bestSeriesMatch = null;
         VerificationResult? bestSeriesMatchResult = null;
-        SearchCandidate? challengeCandidate = null;
-        VerificationResult? challengeResult = null;
 
-        foreach (var candidate in candidates.Take(MaxCandidatesToVerify))
+        foreach (var candidate in combinedCandidates.Take(MaxCandidatesToVerify))
         {
             ct.ThrowIfCancellationRequested();
 
@@ -531,12 +608,6 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 bestSeriesMatchResult = result;
                 break; // Stop at first candidate that passes (plan §6.4).
             }
-
-            if (challengeCandidate == null && result.Detail.Contains("Cloudflare", StringComparison.OrdinalIgnoreCase))
-            {
-                challengeCandidate = candidate;
-                challengeResult = result;
-            }
         }
 
         if (bestSeriesMatch != null)
@@ -558,17 +629,10 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             return proposal;
         }
 
-        if (challengeCandidate != null)
-        {
-            proposal.ProposedUrl = challengeCandidate.Url;
-            proposal.ProposedHost = TryGetHost(challengeCandidate.Url);
-            proposal.Confidence = "Low";
-            proposal.Detail = challengeResult!.Detail;
-            return proposal;
-        }
-
         proposal.Confidence = "Unresolved";
-        proposal.Detail = "No candidate survived verification.";
+        proposal.Detail = excludedUrls.Count > 0
+            ? "No new candidates found (previously rejected URL(s) excluded)."
+            : "No candidates survived verification (unreachable, 403 Forbidden, or title did not match).";
         return proposal;
     }
 

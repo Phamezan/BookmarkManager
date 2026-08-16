@@ -755,35 +755,35 @@
     color: var(--um-bone);
 }
 
-[data-theme="anime"] .url-migrator-page .migrator-url-text {
+[data-theme="anime"] .url-migrator-page .migrator-url-row {
     font-family: "IBM Plex Mono", monospace;
-    font-size: 0.75rem;
-    color: var(--um-dim) !important;
 }
 
-/* Dead URL: dimmed, struck through in wound red. */
-[data-theme="anime"] .url-migrator-page .migrator-url-text:has(+ .migrator-url-text) {
-    color: #5d6c92 !important;
-    text-decoration: line-through;
-    text-decoration-color: var(--um-wound);
-    text-decoration-thickness: 1.5px;
+[data-theme="anime"] .url-migrator-page .migrator-url-tag-old {
+    background: rgba(255, 83, 71, 0.15) !important;
+    color: var(--um-wound) !important;
+    border: 1px solid rgba(255, 83, 71, 0.3);
 }
 
-/* Found candidate: green slash carved above the replacement URL. */
-[data-theme="anime"] .url-migrator-page .migrator-url-text + .migrator-url-text {
+[data-theme="anime"] .url-migrator-page .migrator-url-tag-new {
+    background: rgba(141, 252, 95, 0.15) !important;
     color: var(--um-slash) !important;
+    border: 1px solid rgba(141, 252, 95, 0.3);
 }
 
-[data-theme="anime"] .url-migrator-page .migrator-url-text + .migrator-url-text::before {
-    content: "";
-    display: block;
-    width: 150px;
-    height: 2px;
-    margin: 5px 0 3px;
-    background: linear-gradient(90deg, var(--um-slash), transparent);
-    box-shadow: 0 0 10px rgba(141, 252, 95, 0.9);
-    transform: skewX(-30deg);
-    transform-origin: left center;
+[data-theme="anime"] .url-migrator-page .migrator-url-value-old {
+    color: #657599 !important;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-url-value-new {
+    color: var(--um-slash) !important;
+    text-shadow: 0 0 8px rgba(141, 252, 95, 0.25);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-chapter-badge {
+    background: rgba(141, 252, 95, 0.12) !important;
+    color: var(--um-slash) !important;
+    border: 1px solid rgba(141, 252, 95, 0.25);
 }
 
 [data-theme="anime"] .url-migrator-page .migrator-detail {
@@ -1156,11 +1156,6 @@
     [data-theme="anime"] .url-migrator-page .anime-radar-sweep { animation: umRadarSpin 4.6s linear infinite; }
     [data-theme="anime"] .url-migrator-page .anime-radar-ping { animation: umPingPulse 2.2s ease-in-out infinite; }
     [data-theme="anime"] .url-migrator-page .migrator-progress-bar .mud-progress-linear-bar::after { animation: umShimmer 3.4s ease-in-out 1.2s infinite; }
-
-    /* Slash carves in above the candidate; tally marks grow on the tiers. */
-    [data-theme="anime"] .url-migrator-page .migrator-url-text + .migrator-url-text::before {
-        animation: umSlashDraw 0.52s cubic-bezier(0.22, 0.85, 0.3, 1.15) both;
-    }
 
     [data-theme="anime"] .url-migrator-page .migrator-proposal-row .status-badge::before {
         animation: umTallyDraw 0.3s ease-out both;

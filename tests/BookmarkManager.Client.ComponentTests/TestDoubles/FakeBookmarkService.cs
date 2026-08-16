@@ -219,4 +219,21 @@ public class FakeBookmarkService : IBookmarkService
 
     public virtual Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default) 
         => OnSetManualProposalUrl != null ? OnSetManualProposalUrl(id, url) : Task.FromResult<DecideProposalsResponse?>(null);
+
+    public virtual Task<bool> ResetUrlMigrationAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(true);
+
+    public virtual Task<UrlMigrationProposalDto?> UpdateProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
+    {
+        var proposal = UrlMigrationProposals.FirstOrDefault(p => p.Id == id);
+        if (proposal != null)
+        {
+            proposal.ProposedUrl = url;
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                proposal.ProposedHost = uri.Host;
+            }
+        }
+        return Task.FromResult(proposal);
+    }
 }

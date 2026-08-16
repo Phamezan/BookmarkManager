@@ -462,4 +462,56 @@ public sealed class UrlMigrationTests : IntegrationTestBase
         var reloadedBookmark = await ReloadBookmarkAsync(Factory, bookmark.Id);
         Assert.Equal(oldUrl, reloadedBookmark.Url);
     }
+
+    [Fact]
+    public async Task ResetUrlMigration_ResetsEngineState()
+    {
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsync("/api/bookmarks/url-migration/reset", null);
+        response.EnsureSuccessStatusCode();
+
+        var status = await response.Content.ReadFromJsonAsync<UrlMigrationStatusDto>(JsonOptions);
+        Assert.NotNull(status);
+        Assert.False(status!.IsRunning);
+        Assert.Equal("Migration engine was manually reset.", status.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task UpdateProposalUrl_UpdatesProposalAndProposedHost()
+    {
+        var oldUrl = "https://flamecomics.xyz/solo-leveling/chapter-112";
+        var bookmark = await SeedBookmarkAsync(Factory, oldUrl, browserNodeId: "brave-node-1", version: 1);
+        var proposal = await SeedProposalAsync(Factory, bookmark.Id, "flamecomics.xyz", null, status: "Pending");
+
+        using var client = Factory.CreateClient();
+        var editedUrl = "https://weebcentral.com/series/01JJ/solo-leveling/chapter-112";
+        var response = await client.PostAsJsonAsync(
+            $"/api/bookmarks/url-migration/proposals/{proposal.Id}/update-url",
+            new UpdateProposalUrlRequest(editedUrl));
+
+        response.EnsureSuccessStatusCode();
+        var result = await response.Content.ReadFromJsonAsync<UrlMigrationProposalDto>(JsonOptions);
+        Assert.NotNull(result);
+        Assert.Equal(editedUrl, result!.ProposedUrl);
+        Assert.Equal("weebcentral.com", result.ProposedHost);
+
+        var reloaded = await ReloadProposalAsync(Factory, proposal.Id);
+        Assert.Equal(editedUrl, reloaded.ProposedUrl);
+        Assert.Equal("weebcentral.com", reloaded.ProposedHost);
+    }
+
+    [Fact]
+    public async Task UpdateProposalUrl_WhenProposalNotPending_ReturnsNotFound()
+    {
+        var oldUrl = "https://flamecomics.xyz/solo-leveling/chapter-112";
+        var bookmark = await SeedBookmarkAsync(Factory, oldUrl, browserNodeId: "brave-node-1", version: 1);
+        var proposal = await SeedProposalAsync(Factory, bookmark.Id, "flamecomics.xyz", "https://new.example/chapter-112", status: "Approved");
+
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            $"/api/bookmarks/url-migration/proposals/{proposal.Id}/update-url",
+            new UpdateProposalUrlRequest("https://another.example/chapter-112"));
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
 }
