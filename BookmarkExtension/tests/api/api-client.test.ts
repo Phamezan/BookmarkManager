@@ -220,6 +220,53 @@ describe("HttpApiClient", () => {
     });
   });
 
+  describe("suggestBookmarkStatus", () => {
+    it("sends GET request with encoded URL query and returns status suggestion", async () => {
+      fakeFetch.setResponse("/api/bookmarks/suggest-status", {
+        status: 200,
+        body: {
+          status: "PlanToRead",
+          isSuggested: true,
+        },
+      });
+
+      const result = await client.suggestBookmarkStatus(
+        "https://novelfire.net/book/radiant-blade-of-the-wilderness",
+      );
+
+      const call = fakeFetch.calls[0]!;
+      expect(call.method).toBe("GET");
+      expect(call.url).toBe(
+        `http://localhost:8080/api/bookmarks/suggest-status?url=${encodeURIComponent(
+          "https://novelfire.net/book/radiant-blade-of-the-wilderness",
+        )}`,
+      );
+      expect(result).toEqual({
+        status: "PlanToRead",
+        isSuggested: true,
+      });
+    });
+
+    it("encodes query parameters in the target URL properly", async () => {
+      fakeFetch.setResponse("/api/bookmarks/suggest-status", {
+        status: 200,
+        body: {
+          status: "Ongoing",
+          isSuggested: false,
+        },
+      });
+
+      await client.suggestBookmarkStatus("https://example.com/item?foo=1&bar=2");
+
+      const call = fakeFetch.calls[0]!;
+      expect(call.url).toBe(
+        `http://localhost:8080/api/bookmarks/suggest-status?url=${encodeURIComponent(
+          "https://example.com/item?foo=1&bar=2",
+        )}`,
+      );
+    });
+  });
+
   describe("network error", () => {
     it("throws ApiError with NETWORK_ERROR code", async () => {
       fakeFetch.setNetworkError("*");

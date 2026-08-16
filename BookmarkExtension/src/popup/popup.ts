@@ -5,6 +5,7 @@
 export {
   DEFAULT_API_BASE_URL,
   PopupController,
+  normalizeReadingStatus,
   withRecentApiBaseUrl,
   type PopupBookmarkApi,
   type PopupDeps,

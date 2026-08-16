@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   DEFAULT_API_BASE_URL,
   PopupController,
+  normalizeReadingStatus,
 } from "../../src/popup/popup";
 import { FakeStorage } from "../helpers/fake-chrome-storage";
 import { ChromeStorageRepository } from "../../src/storage/storage-repository";
@@ -392,7 +393,7 @@ describe("PopupController", () => {
       expect(result.catalog).toEqual([]);
     });
 
-    it("loadDraft returns the pending draft and the folder catalog", async () => {
+    it("loadDraft returns the pending draft with default Ongoing status when no API is configured", async () => {
       await repo.savePendingCreateDraft(draft);
       controller = new PopupController({
         storage: repo,
@@ -413,10 +414,88 @@ describe("PopupController", () => {
       });
 
       const result = await controller.loadDraft();
-      expect(result.draft).toEqual(draft);
+      expect(result.draft).toEqual({
+        ...draft,
+        status: "Ongoing",
+      });
+      expect(result.isStatusSuggested).toBe(false);
+      expect(result.isStatusResolved).toBe(false);
       expect(result.catalog).toEqual([
         { browserNodeId: "1", parentBrowserNodeId: null, title: "Bookmarks Bar" },
       ]);
+    });
+
+    it("loadDraft resolves PlanToRead when API suggests it for a series root URL", async () => {
+      await repo.savePendingCreateDraft({
+        ...draft,
+        url: "https://novelfire.net/book/radiant-blade-of-the-wilderness",
+      });
+      const fakeApi = {
+        suggestBookmarkStatus: async (_url: string) => ({
+          status: "PlanToRead",
+          isSuggested: true,
+        }),
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadDraft();
+      expect(result.draft?.status).toBe("Plan to Read");
+      expect(result.isStatusSuggested).toBe(true);
+      expect(result.isStatusResolved).toBe(true);
+    });
+
+    it("loadDraft falls back cleanly to Ongoing when API suggestion fails", async () => {
+      await repo.savePendingCreateDraft(draft);
+      const fakeApi = {
+        suggestBookmarkStatus: async (_url: string) => {
+          throw new Error("Network error");
+        },
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadDraft();
+      expect(result.draft?.status).toBe("Ongoing");
+      expect(result.isStatusSuggested).toBe(false);
+      expect(result.isStatusResolved).toBe(false);
+    });
+
+    it("loadDraft preserves explicit transient status over server suggestion", async () => {
+      await repo.savePendingCreateDraft({
+        ...draft,
+        status: "Completed",
+      });
+      let suggestCalled = false;
+      const fakeApi = {
+        suggestBookmarkStatus: async (_url: string) => {
+          suggestCalled = true;
+          return { status: "PlanToRead", isSuggested: true };
+        },
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadDraft();
+      expect(result.draft?.status).toBe("Completed");
+      expect(result.isStatusSuggested).toBe(false);
+      expect(result.isStatusResolved).toBe(true);
+      expect(suggestCalled).toBe(false);
     });
 
     it("commitDraft creates the bookmark with the given title/folder and clears the draft", async () => {
@@ -452,6 +531,61 @@ describe("PopupController", () => {
       expect(created).toEqual([{ parentId: "9", title: "Edited Title", url: draft.url }]);
       expect(await repo.getPendingCreateDraft()).toBeNull();
       expect(await repo.getLastActiveFolder()).toBe("9");
+    });
+
+    it("commitDraft omits status when status is undefined (offline untouched draft)", async () => {
+      await repo.savePendingCreateDraft(draft);
+      const created: { parentId: string; title: string; url: string }[] = [];
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async (input) => {
+            created.push(input);
+            return { id: "new-id-123" };
+          },
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitDraft({
+        url: draft.url,
+        title: "Edited Title",
+        folderId: "9",
+      });
+
+      expect(result).toEqual({ success: true, error: null });
+      expect((await repo.getPendingStatusUpdates())["new-id-123"]).toBeUndefined();
+    });
+
+    it("commitDraft saves pending status update when status is provided (offline manual selection)", async () => {
+      await repo.savePendingCreateDraft(draft);
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async () => ({ id: "new-id-456" }),
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitDraft({
+        url: draft.url,
+        title: "Edited Title",
+        folderId: "9",
+        status: "Completed",
+      });
+
+      expect(result).toEqual({ success: true, error: null });
+      expect((await repo.getPendingStatusUpdates())["new-id-456"]).toBe("Completed");
     });
 
     it("commitDraft rejects an empty title without creating anything", async () => {
@@ -531,7 +665,194 @@ describe("PopupController", () => {
     it("dismissDraft clears the pending draft without creating anything", async () => {
       await repo.savePendingCreateDraft(draft);
       await controller.dismissDraft();
-      expect(await controller.loadDraft()).toEqual({ draft: null, catalog: [] });
+      expect(await controller.loadDraft()).toEqual({ draft: null, catalog: [], isStatusSuggested: false, isStatusResolved: false });
+    });
+  });
+
+  describe("loadEditorState status resolution", () => {
+    const editorState = {
+      bookmarkId: "b-100",
+      url: "https://example.com/novel/series-root",
+      title: "Novel Title",
+      parentId: "1",
+      capturedAt: "2026-07-20T00:00:00.000Z",
+      wasCreated: false,
+    };
+
+    it("authoritative enrichment status wins for an existing bookmark", async () => {
+      await repo.saveShortcutEditorState(editorState);
+      const fakeApi = {
+        getBookmarkEnrichmentByBrowserId: async (_id: string) => ({
+          id: "server-id-1",
+          title: "Novel Title",
+          folderPath: "Novels",
+          tags: [],
+          status: "Completed",
+          coverImageUrl: null,
+        }),
+        suggestBookmarkStatus: async (_url: string) => ({
+          status: "PlanToRead",
+          isSuggested: true,
+        }),
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadEditorState();
+      expect(result.editor?.status).toBe("Completed");
+      expect(result.isStatusSuggested).toBe(false);
+      expect(result.isStatusResolved).toBe(true);
+    });
+
+    it("explicit transient status wins over enrichment and suggestion", async () => {
+      await repo.saveShortcutEditorState({
+        ...editorState,
+        status: "Dropped",
+      });
+      let enrichmentCalled = false;
+      const fakeApi = {
+        getBookmarkEnrichmentByBrowserId: async () => {
+          enrichmentCalled = true;
+          return null;
+        },
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadEditorState();
+      expect(result.editor?.status).toBe("Dropped");
+      expect(result.isStatusSuggested).toBe(false);
+      expect(result.isStatusResolved).toBe(true);
+      expect(enrichmentCalled).toBe(false);
+    });
+
+    it("uses server suggestion when bookmark has no enrichment status", async () => {
+      await repo.saveShortcutEditorState(editorState);
+      const fakeApi = {
+        getBookmarkEnrichmentByBrowserId: async (_id: string) => ({
+          id: "server-id-1",
+          title: "Novel Title",
+          folderPath: null,
+          tags: [],
+          status: null,
+          coverImageUrl: null,
+        }),
+        suggestBookmarkStatus: async (_url: string) => ({
+          status: "PlanToRead",
+          isSuggested: true,
+        }),
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadEditorState();
+      expect(result.editor?.status).toBe("Plan to Read");
+      expect(result.isStatusSuggested).toBe(true);
+      expect(result.isStatusResolved).toBe(true);
+    });
+
+    it("falls back to Ongoing visually with isStatusResolved=false on API error", async () => {
+      await repo.saveShortcutEditorState(editorState);
+      const fakeApi = {
+        getBookmarkEnrichmentByBrowserId: async () => {
+          throw new Error("Offline");
+        },
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+      });
+
+      const result = await controller.loadEditorState();
+      expect(result.editor?.status).toBe("Ongoing");
+      expect(result.isStatusSuggested).toBe(false);
+      expect(result.isStatusResolved).toBe(false);
+    });
+
+    it("commitEditor omits status when status is undefined (offline untouched editor)", async () => {
+      await repo.saveShortcutEditorState(editorState);
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async () => ({ id: "1" }),
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitEditor({
+        bookmarkId: "b-100",
+        title: "Edited Title",
+        folderId: "1",
+        currentParentId: "1",
+      });
+
+      expect(result).toEqual({ success: true, error: null });
+      expect((await repo.getPendingStatusUpdates())["b-100"]).toBeUndefined();
+    });
+
+    it("commitEditor saves pending status update when status is provided (offline manual selection)", async () => {
+      await repo.saveShortcutEditorState(editorState);
+      controller = new PopupController({
+        storage: repo,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async () => ({ id: "1" }),
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitEditor({
+        bookmarkId: "b-100",
+        title: "Edited Title",
+        folderId: "1",
+        currentParentId: "1",
+        status: "Dropped",
+      });
+
+      expect(result).toEqual({ success: true, error: null });
+      expect((await repo.getPendingStatusUpdates())["b-100"]).toBe("Dropped");
+    });
+  });
+
+  describe("normalizeReadingStatus", () => {
+    it("normalizes canonical and legacy tokens to 4 display values", () => {
+      expect(normalizeReadingStatus("Ongoing")).toBe("Ongoing");
+      expect(normalizeReadingStatus("Reading")).toBe("Ongoing");
+      expect(normalizeReadingStatus("PlanToRead")).toBe("Plan to Read");
+      expect(normalizeReadingStatus("Plan to Read")).toBe("Plan to Read");
+      expect(normalizeReadingStatus("Later")).toBe("Plan to Read");
+      expect(normalizeReadingStatus("Completed")).toBe("Completed");
+      expect(normalizeReadingStatus("Dropped")).toBe("Dropped");
+      expect(normalizeReadingStatus(null)).toBe("Ongoing");
+      expect(normalizeReadingStatus(undefined)).toBe("Ongoing");
+      expect(normalizeReadingStatus("unknown-status")).toBe("Ongoing");
     });
   });
 });

@@ -121,6 +121,7 @@ if (isBrowser) {
     editorTitle:   document.getElementById("editor-title")    as HTMLInputElement | null,
     editorFolder:  document.getElementById("editor-folder")   as HTMLSelectElement | null,
     editorStatus:  document.getElementById("editor-status")   as HTMLSelectElement | null,
+    editorStatusHelper: document.getElementById("editor-status-helper") as HTMLElement | null,
     editorMsg:     document.getElementById("editor-message")  as HTMLElement | null,
     editorDoneBtn: document.getElementById("editor-done-btn") as HTMLButtonElement | null,
     editorRemoveBtn: document.getElementById("editor-remove-btn") as HTMLButtonElement | null,
@@ -131,6 +132,8 @@ if (isBrowser) {
   // (drafts have no bookmarkId to key off of, unlike the editor).
   let activeMode: ActiveMode = null;
   let currentDraftUrl: string | null = null;
+  let currentStatusResolved = false;
+  let userChangedStatus = false;
 
   // ── Status helpers ──────────────────────────────────────────────────────────
 
@@ -356,7 +359,12 @@ if (isBrowser) {
     select.value = selectedId;
   }
 
-  function renderEditor(editor: ShortcutEditorState, catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[]): void {
+  function renderEditor(
+    editor: ShortcutEditorState,
+    catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[],
+    isStatusSuggested?: boolean,
+    isStatusResolved?: boolean,
+  ): void {
     let host = editor.url;
     try {
       host = new URL(editor.url).hostname;
@@ -388,9 +396,12 @@ if (isBrowser) {
     // storage-driven re-renders don't clobber what the user is typing.
     const sameTarget = els.editorTitle?.dataset.bookmarkId === editor.bookmarkId;
     if (!sameTarget) {
+      currentStatusResolved = isStatusResolved === true;
+      userChangedStatus = false;
       if (els.editorTitle) {
         els.editorTitle.value = editor.title;
         els.editorTitle.dataset.bookmarkId = editor.bookmarkId;
+        delete els.editorTitle.dataset.draftUrl;
       }
       if (els.editorFolder) {
         populateFolderSelect(els.editorFolder, catalog, editor.parentId);
@@ -398,17 +409,29 @@ if (isBrowser) {
       if (els.editorStatus) {
         els.editorStatus.value = editor.status ?? "Ongoing";
       }
+      if (els.editorStatusHelper) {
+        if (isStatusSuggested) {
+          els.editorStatusHelper.textContent = "Suggested from series URL";
+          els.editorStatusHelper.hidden = false;
+        } else {
+          els.editorStatusHelper.hidden = true;
+        }
+      }
     }
     setEditorMsg("");
   }
 
   /**
    * Renders a pending create draft into the shared `#editor-mode` markup.
-   * There is only ever one draft at a time, so repopulate unconditionally
-   * (unlike `renderEditor`, which guards against clobbering in-progress
-   * typing on storage-driven re-renders keyed by bookmarkId).
+   * Only repopulates editable fields when the target draft changes, so
+   * storage-driven re-renders don't clobber what the user is typing.
    */
-  function renderDraft(draft: PendingCreateDraft, catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[]): void {
+  function renderDraft(
+    draft: PendingCreateDraft,
+    catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[],
+    isStatusSuggested?: boolean,
+    isStatusResolved?: boolean,
+  ): void {
     let host = draft.url;
     try {
       host = new URL(draft.url).hostname;
@@ -430,15 +453,30 @@ if (isBrowser) {
     }
     if (els.editorHost) els.editorHost.textContent = host;
     if (els.editorModeLabel) els.editorModeLabel.textContent = "New bookmark";
-    if (els.editorTitle) {
-      els.editorTitle.value = draft.title;
-      delete els.editorTitle.dataset.bookmarkId;
-    }
-    if (els.editorFolder) {
-      populateFolderSelect(els.editorFolder, catalog, draft.folderId);
-    }
-    if (els.editorStatus) {
-      els.editorStatus.value = draft.status ?? "Ongoing";
+
+    const sameTarget = els.editorTitle?.dataset.draftUrl === draft.url;
+    if (!sameTarget) {
+      currentStatusResolved = isStatusResolved === true;
+      userChangedStatus = false;
+      if (els.editorTitle) {
+        els.editorTitle.value = draft.title;
+        els.editorTitle.dataset.draftUrl = draft.url;
+        delete els.editorTitle.dataset.bookmarkId;
+      }
+      if (els.editorFolder) {
+        populateFolderSelect(els.editorFolder, catalog, draft.folderId);
+      }
+      if (els.editorStatus) {
+        els.editorStatus.value = draft.status ?? "Ongoing";
+      }
+      if (els.editorStatusHelper) {
+        if (isStatusSuggested) {
+          els.editorStatusHelper.textContent = "Suggested from series URL";
+          els.editorStatusHelper.hidden = false;
+        } else {
+          els.editorStatusHelper.hidden = true;
+        }
+      }
     }
     // Nothing exists yet to remove.
     if (els.editorRemoveBtn) els.editorRemoveBtn.hidden = true;
@@ -451,7 +489,9 @@ if (isBrowser) {
       const btn = els.editorDoneBtn;
       const title = els.editorTitle?.value?.trim() ?? "";
       const folderId = els.editorFolder?.value ?? "";
-      const status = els.editorStatus?.value || "Ongoing";
+      const status = (currentStatusResolved || userChangedStatus)
+        ? (els.editorStatus?.value || "Ongoing")
+        : undefined;
       if (title.length === 0) {
         setEditorMsg("Name cannot be empty", "error");
         return;
@@ -481,7 +521,9 @@ if (isBrowser) {
       }
       const title = els.editorTitle?.value?.trim() ?? "";
       const folderId = els.editorFolder?.value ?? editor.parentId;
-      const status = els.editorStatus?.value || "Ongoing";
+      const status = (currentStatusResolved || userChangedStatus)
+        ? (els.editorStatus?.value || "Ongoing")
+        : undefined;
       if (title.length === 0) {
         setEditorMsg("Name cannot be empty", "error");
         return;
@@ -523,9 +565,14 @@ if (isBrowser) {
 
     // Pending create draft outranks the post-create editor: they are
     // mutually exclusive states of the same shared markup.
-    const { draft, catalog: draftCatalog } = await controller.loadDraft();
+    const {
+      draft,
+      catalog: draftCatalog,
+      isStatusSuggested: draftSuggested,
+      isStatusResolved: draftResolved,
+    } = await controller.loadDraft();
     if (draft) {
-      renderDraft(draft, draftCatalog);
+      renderDraft(draft, draftCatalog, draftSuggested, draftResolved);
       showEditorMode(true);
       activeMode = "draft";
       await refreshNormalStatus();
@@ -533,9 +580,14 @@ if (isBrowser) {
     }
     activeMode = null;
 
-    const { editor, catalog } = await controller.loadEditorState();
+    const {
+      editor,
+      catalog,
+      isStatusSuggested: editorSuggested,
+      isStatusResolved: editorResolved,
+    } = await controller.loadEditorState();
     if (editor) {
-      renderEditor(editor, catalog);
+      renderEditor(editor, catalog, editorSuggested, editorResolved);
       showEditorMode(true);
       activeMode = "editor";
     } else {
@@ -650,6 +702,16 @@ if (isBrowser) {
     } else {
       await controller.dismissEditor();
     }
+  });
+
+  els.editorStatus?.addEventListener("change", () => {
+    userChangedStatus = true;
+    if (els.editorStatusHelper) els.editorStatusHelper.hidden = true;
+  });
+
+  els.editorStatus?.addEventListener("input", () => {
+    userChangedStatus = true;
+    if (els.editorStatusHelper) els.editorStatusHelper.hidden = true;
   });
 
   // ── Duplicate confirmation listeners ────────────────────────────────────────

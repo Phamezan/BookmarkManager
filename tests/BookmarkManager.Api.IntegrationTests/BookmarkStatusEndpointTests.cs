@@ -440,6 +440,36 @@ public sealed class BookmarkStatusEndpointTests : IntegrationTestBase
         Assert.NotEqual(mangaFolder.Id, updated.ParentId);
     }
 
+    [Fact]
+    public async Task SuggestStatus_NovelfireSeriesRootUrl_SuggestsPlanToRead()
+    {
+        using var client = Factory.CreateClient();
+        var url = "https://novelfire.net/book/radiant-blade-of-the-wilderness";
+
+        using var response = await client.GetAsync($"/api/bookmarks/suggest-status?url={Uri.EscapeDataString(url)}");
+        response.EnsureSuccessStatusCode();
+
+        var suggestion = await response.Content.ReadFromJsonAsync<BookmarkStatusSuggestionDto>(Options);
+        Assert.NotNull(suggestion);
+        Assert.Equal(BookmarkReadingStatus.PlanToRead, suggestion!.Status);
+        Assert.True(suggestion.IsSuggested);
+    }
+
+    [Fact]
+    public async Task SuggestStatus_NovelfireChapterUrl_SuggestsOngoing()
+    {
+        using var client = Factory.CreateClient();
+        var url = "https://novelfire.net/book/radiant-blade-of-the-wilderness/chapter-1";
+
+        using var response = await client.GetAsync($"/api/bookmarks/suggest-status?url={Uri.EscapeDataString(url)}");
+        response.EnsureSuccessStatusCode();
+
+        var suggestion = await response.Content.ReadFromJsonAsync<BookmarkStatusSuggestionDto>(Options);
+        Assert.NotNull(suggestion);
+        Assert.Equal(BookmarkReadingStatus.Ongoing, suggestion!.Status);
+        Assert.False(suggestion.IsSuggested);
+    }
+
     private static async Task<ClaimResponse> ClaimAsync(HttpClient client)
     {
         using var response = await client.PostAsJsonAsync(

@@ -63,10 +63,18 @@ under that category root.
 ### Extension (primary entry point)
 
 The existing quick-bookmark draft/editor flow gets a compact status selector.
-`Ongoing` is the initial choice; `Plan to Read`, `Completed`, and `Dropped`
-are explicit alternatives. Saving applies the selected status and creates the
-needed folder only when necessary. A secondary action may find likely related
-bookmarks after the save, then opens a review list before a group change.
+`Ongoing` is the default when no series-root suggestion applies;
+`Plan to Read`, `Completed`, and `Dropped` are explicit alternatives. Saving
+applies the selected status and creates the needed folder only when necessary.
+A secondary action may find likely related bookmarks after the save, then opens
+a review list before a group change.
+
+The popup obtains its initial status from `GET api/bookmarks/suggest-status`,
+which reuses `BookmarkPlanToReadHeuristic`. Media series-root URLs preselect
+`Plan to Read`; explicit transient choices and synchronized bookmark metadata
+take precedence. If the API is unavailable, the popup displays `Ongoing` as a
+fallback but does not submit it unless the user changes the control, allowing
+the server heuristic to remain authoritative when synchronization resumes.
 
 ### Dashboard
 

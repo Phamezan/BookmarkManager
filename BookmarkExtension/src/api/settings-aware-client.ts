@@ -1,5 +1,6 @@
 import type {
   ApiClient,
+  BookmarkStatusSuggestionDto,
   ClaimRequest,
   ClaimResponse,
   CompletionRequest,
@@ -91,5 +92,9 @@ export class SettingsAwareApiClient implements ApiClient {
     return this.getClient().then((c) =>
       c.updateBookmarkStatus(bookmarkId, status),
     );
+  }
+
+  suggestBookmarkStatus(url: string): Promise<BookmarkStatusSuggestionDto> {
+    return this.getClient().then((c) => c.suggestBookmarkStatus(url));
   }
 }

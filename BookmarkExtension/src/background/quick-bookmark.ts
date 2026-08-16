@@ -139,7 +139,6 @@ export class QuickBookmarkHandler {
           parentId: match.parentId,
           capturedAt: this.deps.now().toISOString(),
           wasCreated: false,
-          status: "Ongoing",
         });
       } else {
         // Genuinely new bookmark: defer creation to `commitDraft` so
@@ -151,7 +150,6 @@ export class QuickBookmarkHandler {
           title,
           folderId,
           capturedAt: this.deps.now().toISOString(),
-          status: "Ongoing",
         });
       }
 

@@ -1,5 +1,6 @@
 import type {
   ApiClient,
+  BookmarkStatusSuggestionDto,
   ClaimRequest,
   ClaimResponse,
   CompletionRequest,
@@ -203,6 +204,13 @@ export class HttpApiClient implements ApiClient {
       "PUT",
       `/api/bookmarks/${encodeURIComponent(bookmarkId)}/status`,
       { status },
+    );
+  }
+
+  suggestBookmarkStatus(url: string): Promise<BookmarkStatusSuggestionDto> {
+    return this.request<BookmarkStatusSuggestionDto>(
+      "GET",
+      `/api/bookmarks/suggest-status?url=${encodeURIComponent(url)}`,
     );
   }
 }

@@ -291,6 +291,13 @@ export interface ApiClient {
   aiRetag(serverId: string): Promise<string[]>;
   /** Updates personal lifecycle status on server; server projects folder automatically. */
   updateBookmarkStatus(bookmarkId: string, status: string): Promise<void>;
+  /** Suggests reading status (e.g. PlanToRead for series root) for a given URL without mutating data. */
+  suggestBookmarkStatus(url: string): Promise<BookmarkStatusSuggestionDto>;
+}
+
+export interface BookmarkStatusSuggestionDto {
+  status: string;
+  isSuggested: boolean;
 }
 
 /** Toast enrichment after a Brave create syncs (GET by-browser-id). */

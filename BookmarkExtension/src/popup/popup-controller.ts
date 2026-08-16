@@ -2,6 +2,7 @@ import type {
   ApiClient,
   PendingCreateDraft,
   PendingDuplicateState,
+  PersonalReadingStatus,
   ShortcutEditorState,
   StorageRepository,
 } from "../api/contracts";
@@ -11,6 +12,16 @@ import { validateApiBaseUrl } from "../storage/url-validator";
 export const DEFAULT_API_BASE_URL = "http://localhost:5080";
 
 const MAX_RECENT_API_BASE_URLS = 5;
+
+export function normalizeReadingStatus(status: string | null | undefined): PersonalReadingStatus {
+  if (!status) return "Ongoing";
+  const trimmed = status.trim().toLowerCase();
+  if (trimmed === "ongoing" || trimmed === "reading") return "Ongoing";
+  if (trimmed === "plantoread" || trimmed === "plan to read" || trimmed === "later") return "Plan to Read";
+  if (trimmed === "completed") return "Completed";
+  if (trimmed === "dropped") return "Dropped";
+  return "Ongoing";
+}
 
 /** Moves `value` to the front of `recent`, de-duplicated, capped at MAX_RECENT_API_BASE_URLS. */
 export function withRecentApiBaseUrl(recent: string[] | undefined, value: string): string[] {
@@ -169,10 +180,73 @@ export class PopupController {
   async loadEditorState(): Promise<{
     editor: ShortcutEditorState | null;
     catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[];
+    isStatusSuggested?: boolean;
+    isStatusResolved?: boolean;
   }> {
     const editor = await this.deps.storage.getShortcutEditorState();
     const catalog = this.deps.bookmarks ? await this.deps.bookmarks.getFolders() : [];
-    return { editor, catalog };
+    if (!editor) {
+      return { editor: null, catalog, isStatusSuggested: false, isStatusResolved: false };
+    }
+
+    // 1. Explicit transient status wins
+    if (editor.status && editor.status.trim().length > 0) {
+      return {
+        editor: {
+          ...editor,
+          status: normalizeReadingStatus(editor.status),
+        },
+        catalog,
+        isStatusSuggested: false,
+        isStatusResolved: true,
+      };
+    }
+
+    // 2. Authoritative enrichment status wins when available for existing bookmark
+    let resolvedStatus: PersonalReadingStatus = "Ongoing";
+    let isSuggested = false;
+    let isResolved = false;
+    let foundEnrichmentStatus = false;
+
+    if (this.deps.api && editor.bookmarkId) {
+      try {
+        const enrichment = await this.deps.api.getBookmarkEnrichmentByBrowserId(editor.bookmarkId);
+        if (enrichment && enrichment.status && enrichment.status.trim().length > 0) {
+          resolvedStatus = normalizeReadingStatus(enrichment.status);
+          foundEnrichmentStatus = true;
+          isResolved = true;
+        }
+      } catch {
+        // Fall through to server suggestion
+      }
+    }
+
+    // 3. Otherwise use the server suggestion
+    if (!foundEnrichmentStatus && this.deps.api && editor.url) {
+      try {
+        const suggestion = await this.deps.api.suggestBookmarkStatus(editor.url);
+        if (suggestion) {
+          resolvedStatus = normalizeReadingStatus(suggestion.status);
+          isSuggested = suggestion.isSuggested === true || resolvedStatus === "Plan to Read";
+          isResolved = true;
+        }
+      } catch {
+        // Fall back cleanly to Ongoing visually, but mark as unresolved
+        resolvedStatus = "Ongoing";
+        isSuggested = false;
+        isResolved = false;
+      }
+    }
+
+    return {
+      editor: {
+        ...editor,
+        status: resolvedStatus,
+      },
+      catalog,
+      isStatusSuggested: isSuggested,
+      isStatusResolved: isResolved,
+    };
   }
 
   /** Updates title and (optionally) moves the bookmark, remembers the folder, clears editor state. */
@@ -181,7 +255,7 @@ export class PopupController {
     title: string;
     folderId: string;
     currentParentId: string;
-    status?: string;
+    status?: string | undefined;
   }): Promise<{ success: boolean; error: string | null }> {
     if (!this.deps.bookmarks) {
       return { success: false, error: "Bookmark API unavailable" };
@@ -252,10 +326,58 @@ export class PopupController {
   async loadDraft(): Promise<{
     draft: PendingCreateDraft | null;
     catalog: { browserNodeId: string; parentBrowserNodeId: string | null; title: string }[];
+    isStatusSuggested?: boolean;
+    isStatusResolved?: boolean;
   }> {
     const draft = await this.deps.storage.getPendingCreateDraft();
     const catalog = this.deps.bookmarks ? await this.deps.bookmarks.getFolders() : [];
-    return { draft, catalog };
+    if (!draft) {
+      return { draft: null, catalog, isStatusSuggested: false, isStatusResolved: false };
+    }
+
+    // 1. Explicit transient status wins
+    if (draft.status && draft.status.trim().length > 0) {
+      return {
+        draft: {
+          ...draft,
+          status: normalizeReadingStatus(draft.status),
+        },
+        catalog,
+        isStatusSuggested: false,
+        isStatusResolved: true,
+      };
+    }
+
+    // 2. Server suggestion
+    let resolvedStatus: PersonalReadingStatus = "Ongoing";
+    let isSuggested = false;
+    let isResolved = false;
+
+    if (this.deps.api && draft.url) {
+      try {
+        const suggestion = await this.deps.api.suggestBookmarkStatus(draft.url);
+        if (suggestion) {
+          resolvedStatus = normalizeReadingStatus(suggestion.status);
+          isSuggested = suggestion.isSuggested === true || resolvedStatus === "Plan to Read";
+          isResolved = true;
+        }
+      } catch {
+        // Fall back cleanly to Ongoing visually, but mark as unresolved
+        resolvedStatus = "Ongoing";
+        isSuggested = false;
+        isResolved = false;
+      }
+    }
+
+    return {
+      draft: {
+        ...draft,
+        status: resolvedStatus,
+      },
+      catalog,
+      isStatusSuggested: isSuggested,
+      isStatusResolved: isResolved,
+    };
   }
 
   /** Actually creates the bookmark with the (possibly edited) title, then clears the draft. */
@@ -263,7 +385,7 @@ export class PopupController {
     url: string;
     title: string;
     folderId: string;
-    status?: string;
+    status?: string | undefined;
   }): Promise<{ success: boolean; error: string | null }> {
     if (!this.deps.bookmarks) {
       return { success: false, error: "Bookmark API unavailable" };

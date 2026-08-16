@@ -13,6 +13,7 @@ import type {
   SnapshotResponse,
   SnapshotRequest,
   ExtensionBookmarkEnrichment,
+  BookmarkStatusSuggestionDto,
   TagCount,
 } from "../../src/api/contracts";
 import { ApiError } from "../../src/api/errors";
@@ -76,6 +77,10 @@ export class MockApiServer implements ApiClient {
     this.tags = [];
     this.savedTags = {};
     this.aiTagSuggestions = [];
+    this.statusSuggestion = {
+      status: "Ongoing",
+      isSuggested: false,
+    };
   }
 
   setConfigVersion(version: number): void {
@@ -263,6 +268,22 @@ export class MockApiServer implements ApiClient {
     this.log("updateBookmarkStatus", { bookmarkId, status });
     await this.delay();
   }
+
+  private statusSuggestion: BookmarkStatusSuggestionDto = {
+    status: "Ongoing",
+    isSuggested: false,
+  };
+
+  setStatusSuggestion(suggestion: BookmarkStatusSuggestionDto): void {
+    this.statusSuggestion = suggestion;
+  }
+
+  async suggestBookmarkStatus(url: string): Promise<BookmarkStatusSuggestionDto> {
+    this.log("suggestBookmarkStatus", url);
+    await this.delay();
+    return { ...this.statusSuggestion };
+  }
 }
+
 
 export { DETERMINISTIC_GUIDS };

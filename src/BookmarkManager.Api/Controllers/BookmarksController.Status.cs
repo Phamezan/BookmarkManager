@@ -1,3 +1,4 @@
+using BookmarkManager.Api.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
 
@@ -5,6 +6,17 @@ namespace BookmarkManager.Api.Controllers;
 
 public partial class BookmarksController
 {
+    [HttpGet("suggest-status")]
+    public ActionResult<BookmarkStatusSuggestionDto> SuggestStatus([FromQuery] string? url)
+    {
+        var shouldMarkPlanToRead = BookmarkPlanToReadHeuristic.ShouldMarkPlanToRead(url);
+        var status = shouldMarkPlanToRead ? BookmarkReadingStatus.PlanToRead : BookmarkReadingStatus.Ongoing;
+        return Ok(new BookmarkStatusSuggestionDto
+        {
+            Status = status,
+            IsSuggested = shouldMarkPlanToRead
+        });
+    }
     [HttpPut("{id:guid}/status")]
     public async Task<ActionResult<BookmarkNodeDto>> UpdateStatusAsync(
         Guid id,
