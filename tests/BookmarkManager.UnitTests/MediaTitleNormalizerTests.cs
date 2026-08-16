@@ -30,6 +30,11 @@ public sealed class MediaTitleNormalizerTests
     [InlineData("https://zorox.to/watch/fruits-basket-2019/ep-1", "fruits basket 2019")]
     [InlineData("https://9animetv.to/watch/solo-leveling.yqqv0/ep-1", "solo leveling")]
     [InlineData("https://zorox.to/watch/yqqv0-fate-stay-night/ep-1", "fate stay night")]
+    // Trailing pure-digit tokens are site ids only when long enough ("49100", "1296") - shorter
+    // ones are season/part numbers that pick the correct franchise entry, so they stay.
+    [InlineData("https://aniwatchtv.to/watch/konosuba-gods-blessing-on-this-wonderful-world-3-49100?ep=123214", "konosuba gods blessing on this wonderful world 3")]
+    [InlineData("https://aniwatchtv.to/watch/frieren-beyond-journeys-end-season-2-20409?ep=160598", "frieren beyond journeys end season 2")]
+    [InlineData("https://aniwatchtv.to/watch/recreators-1296?ep=18880", "recreators")]
     public void TryTitleFromStreamingUrl_ExtractsCleanTitle(string url, string expected)
     {
         Assert.Equal(expected, MediaTitleNormalizer.TryTitleFromStreamingUrl(url));

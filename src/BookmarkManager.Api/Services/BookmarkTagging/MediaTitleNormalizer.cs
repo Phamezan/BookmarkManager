@@ -730,6 +730,8 @@ public static partial class MediaTitleNormalizer
     private static void StripRemovableSlugIdTokens(List<string> tokens)
     {
         // Trailing: site ids are often pure digits ("15516") or short hashes ("yqqv0").
+        // Pure-digit ids must be long enough to not be season/part numbers - "world-3-49100"
+        // strips "49100" but keeps the "3" that picks the correct AniList entry.
         while (tokens.Count > 1 && IsRemovableSlugIdToken(tokens[^1], allowPureDigits: true))
             tokens.RemoveAt(tokens.Count - 1);
 
@@ -755,6 +757,12 @@ public static partial class MediaTitleNormalizer
             return false;
 
         if (!allowPureDigits && token.Length > 0 && token.All(char.IsDigit))
+            return false;
+
+        // Pure-digit trailing tokens are only site ids when long enough ("49100", "1296") -
+        // 1-2 digit trailing numbers are season/part markers ("world-3", "season-2") and
+        // 3-digit ones are usually title words ("mob-psycho-100"), so leave them alone.
+        if (allowPureDigits && token.Length > 0 && token.All(char.IsDigit) && token.Length < 4)
             return false;
 
         return SoftSlugIdTokenRegex().IsMatch(token);

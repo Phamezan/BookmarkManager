@@ -356,6 +356,10 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         // aggregator sites that host one series usually host most others, so later bookmarks in
         // the same run should try landing back there before scattering across the open web.
         var userSuggestedHost = string.IsNullOrWhiteSpace(request.SuggestedHost) ? null : request.SuggestedHost.Trim();
+        if (userSuggestedHost is not null && userSuggestedHost.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
+        {
+            userSuggestedHost = userSuggestedHost[4..];
+        }
         string? preferredHost = userSuggestedHost;
         var restrictToPreferredHost = userSuggestedHost != null;
 
@@ -473,7 +477,10 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         {
             var direct = await TryResolveViaAniListIdAsync(
                 preferredHost, deadHost, bookmark, anilistProvider, episodeIdResolver, verificationService, extraction, ct).ConfigureAwait(false);
-            if (direct != null)
+            // Honor previously rejected URLs here too - the direct path is deterministic, so
+            // without this check a re-run would re-propose the exact URL the user just declined
+            // instead of letting web search look elsewhere.
+            if (direct != null && !excludedUrls.Contains(NormalizeUrlForComparison(direct.Candidate.Url)))
             {
                 proposal.ProposedUrl = direct.Candidate.Url;
                 proposal.ProposedHost = TryGetHost(direct.Candidate.Url);
@@ -847,7 +854,13 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 
         if (episodeNumber != null)
         {
-            var deepLinkUrl = $"https://{preferredHost}/watch/{aniListId}?ep={episodeNumber}";
+            // Include the series slug like the site's own watch URLs - without it the path
+            // carries no title tokens, and verification (which matches the series name against
+            // the SPA's path text) can never confirm the deep link, silently discarding the
+            // recovered episode number.
+            var deepLinkUrl = string.IsNullOrEmpty(slug)
+                ? $"https://{preferredHost}/watch/{aniListId}?ep={episodeNumber}"
+                : $"https://{preferredHost}/watch/{aniListId}/{slug}?ep={episodeNumber}";
             var deepLinkCandidate = new SearchCandidate(deepLinkUrl, title, "AniList ID + Wayback episode-id mapping");
             var deepLinkVerification = await TryVerifyAsync(deepLinkCandidate, extraction, verificationService, ct).ConfigureAwait(false);
 
@@ -955,7 +968,14 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                uri.Host.EndsWith("." + deadHost, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string? TryGetHost(string? url) => Infrastructure.UrlHelpers.TryGetHost(url);
+    private static string? TryGetHost(string? url)
+    {
+        // "www.miruro.tv" and "miruro.tv" are the same site - collapsing the prefix keeps a
+        // site's proposals in one UI group and keeps the learned preferredHost comparable
+        // against AniListIdKeyedHosts.
+        var host = Infrastructure.UrlHelpers.TryGetHost(url);
+        return host is not null && host.StartsWith("www.", StringComparison.OrdinalIgnoreCase) ? host[4..] : host;
+    }
 
     private sealed record UrlMigrationRunRequest(Guid RunId, string DeadHost, bool Force = false, string? SuggestedHost = null);
 }

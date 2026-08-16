@@ -236,8 +236,192 @@ public sealed partial class AnilistTaggingService : IAnilistScheduleProvider
             results[id] = new BestMatchLookupResult(ScoreBestCandidate(query, fromSlug, candidates), Unavailable: false);
         }
 
+        await ApplyFallbackQueriesAsync(items, resolved, results, cancellationToken).ConfigureAwait(false);
+
         return results;
     }
+
+    // AniList's search is a strict phrase matcher: one merged token ("takopis" for "Takopi's",
+    // "fatestrange" for "Fate/strange") or extra word ("akaza returns") in a long slug-derived
+    // query makes it return ZERO candidates, and the primary query gets exactly one shot. For
+    // unmatched items, retry with progressively shortened slug prefixes plus the cleaned
+    // page-title query (which keeps punctuation-derived token splits the slug lost), scoring
+    // everything against the ORIGINAL query so season/part tokens still discriminate.
+    private const int MaxSlugPrefixVariants = 10;
+    private const int MaxTitlePrefixVariants = 5;
+
+    private async Task ApplyFallbackQueriesAsync(
+        IReadOnlyList<(Guid Id, string Title, string? Url)> items,
+        Dictionary<Guid, (string Query, bool FromSlug)> resolved,
+        Dictionary<Guid, BestMatchLookupResult> results,
+        CancellationToken cancellationToken)
+    {
+        var fallbackByItem = new Dictionary<Guid, IReadOnlyList<string>>();
+        foreach (var item in items)
+        {
+            if (!results.TryGetValue(item.Id, out var result) || result.Unavailable || result.Match is not null)
+                continue;
+
+            var (query, fromSlug) = resolved[item.Id];
+            var variants = BuildFallbackQueries(item.Title, item.Url, query, fromSlug);
+            if (variants.Count > 0)
+                fallbackByItem[item.Id] = variants;
+        }
+
+        if (fallbackByItem.Count == 0)
+            return;
+
+        Dictionary<string, List<AnimeMatchCandidateDto>> fallbackCandidates;
+        try
+        {
+            fallbackCandidates = await SearchCandidatesBatchAsync(
+                fallbackByItem.Values.SelectMany(variants => variants).ToList(), cancellationToken).ConfigureAwait(false);
+        }
+        catch (AniListUnavailableException)
+        {
+            // The primary lookups succeeded - only the broadened retry failed, so leave the
+            // items merely unmatched (retryable next run) instead of flagging them Unavailable.
+            return;
+        }
+
+        foreach (var (id, variants) in fallbackByItem)
+        {
+            var (query, fromSlug) = resolved[id];
+            var pooled = variants
+                .SelectMany(variant => fallbackCandidates.GetValueOrDefault(variant, [])
+                    .Select(candidate => (Candidate: candidate, Variant: variant)))
+                .GroupBy(pair => pair.Candidate.AniListId)
+                .Select(group => group.First())
+                .ToList();
+            var best = ScoreBestFallbackCandidate(query, fromSlug, pooled);
+            if (best is not null)
+                results[id] = new BestMatchLookupResult(best, Unavailable: false);
+        }
+    }
+
+    private static IReadOnlyList<string> BuildFallbackQueries(string title, string? url, string primaryQuery, bool primaryFromSlug)
+    {
+        var variants = new List<string>();
+
+        void AddPrefixes(string query, int max)
+        {
+            var tokens = query.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            for (var length = tokens.Length - 1; length >= 1 && tokens.Length - length <= max; length--)
+            {
+                var prefix = string.Join(' ', tokens.Take(length));
+                if (prefix.Length >= 2)
+                    variants.Add(prefix);
+            }
+        }
+
+        if (primaryFromSlug)
+        {
+            AddPrefixes(primaryQuery, MaxSlugPrefixVariants);
+        }
+
+        // The title-derived query (the non-slug cleaning path): slug tokenization only splits on
+        // '-' so "fatestrange-fake" stays merged, while the page title keeps the punctuation the
+        // words were split on ("Fate/strange Fake").
+        var preCleaned = StripStreamingSiteJunk(title, url);
+        var titleCandidate = MediaTitleNormalizer.Normalize(preCleaned, url, BookmarkTagDomain.Anime)
+            .Candidates.FirstOrDefault()?.Query ?? preCleaned;
+        var titleQuery = MediaTitleNormalizer.BuildLooseQuery(titleCandidate);
+        if (!string.IsNullOrWhiteSpace(titleQuery))
+        {
+            variants.Add(titleQuery);
+
+            // AniList tokenizes ON apostrophes ("Takopi's" -> "takopi s") while our normalizer
+            // merges them ("takopis"), which its phrase matcher can't find - emit the split form.
+            var apostropheSplit = FallbackWhitespaceRegex().Replace(
+                FallbackPunctuationRegex().Replace(
+                    FallbackApostropheRegex().Replace(titleCandidate, " "), " "), " ").Trim().ToLowerInvariant();
+            if (apostropheSplit.Length >= 2)
+            {
+                variants.Add(apostropheSplit);
+                AddPrefixes(apostropheSplit, MaxTitlePrefixVariants);
+            }
+
+            AddPrefixes(titleQuery, MaxTitlePrefixVariants);
+        }
+
+        return variants
+            .Where(variant => !string.Equals(variant, primaryQuery, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    // Numeric tokens ("3", "2", "1") decide between franchise entries, but NormalizeForSearch
+    // erases "season N" markers from BOTH sides, so S1 and S2 tie on the plain similarity score.
+    // Reward candidates that share the ORIGINAL query's numbers and penalize ones carrying
+    // contradicting numbers ("Infinity Castle Part 2" when the query says "part 1").
+    private const double FallbackNumberHitBonus = 0.05;
+    private const double FallbackNumberContradictionPenalty = 0.10;
+
+    private static AnimeMatchCandidateDto? ScoreBestFallbackCandidate(
+        string query, bool fromSlug, List<(AnimeMatchCandidateDto Candidate, string Variant)> pooled)
+    {
+        if (pooled.Count == 0)
+            return null;
+
+        var queryNumbers = NumberTokenRegex().Matches(query).Select(match => match.Value).ToHashSet(StringComparer.Ordinal);
+        var queryTokenCount = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+
+        AnimeMatchCandidateDto? best = null;
+        var bestScore = double.NegativeInfinity;
+        var bestRanking = double.NegativeInfinity;
+        foreach (var (candidate, variant) in pooled)
+        {
+            var candidateTitles = new List<string> { candidate.RomajiTitle };
+            if (!string.IsNullOrEmpty(candidate.EnglishTitle))
+                candidateTitles.Add(candidate.EnglishTitle);
+
+            // Score against the original query AND the variant that surfaced the candidate -
+            // merged-token queries ("fatestrange fake") can't reach threshold against split-token
+            // titles ("Fate/strange Fake"), while the variant that found it matches by
+            // construction. The variant score is discounted by how much of the original query
+            // the variant preserves, so a 4-token franchise prefix ("demon slayer kimetsu no
+            // yaiba") can't make EVERY entry in that franchise a perfect 1.0 match. Numeric
+            // agreement still comes from the original query, so season numbers keep
+            // discriminating between franchise entries.
+            var variantTokenCount = variant.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+            var variantDiscount = Math.Min(1.0, (double)variantTokenCount / Math.Max(1, queryTokenCount));
+            var score = Math.Max(
+                MediaTitleNormalizer.ScoreTitleSimilarity(query, candidateTitles),
+                MediaTitleNormalizer.ScoreTitleSimilarity(variant, candidateTitles) * variantDiscount);
+
+            var ranking = score;
+            if (queryNumbers.Count > 0)
+            {
+                var candidateNumbers = candidateTitles
+                    .SelectMany(candidateTitle => NumberTokenRegex().Matches(candidateTitle).Select(match => match.Value))
+                    .ToHashSet(StringComparer.Ordinal);
+                ranking += candidateNumbers.Count(queryNumbers.Contains) * FallbackNumberHitBonus;
+                ranking -= candidateNumbers.Count(number => !queryNumbers.Contains(number)) * FallbackNumberContradictionPenalty;
+            }
+
+            if (ranking > bestRanking)
+            {
+                bestRanking = ranking;
+                bestScore = score;
+                best = candidate;
+            }
+        }
+
+        var threshold = fromSlug ? SlugSimilarityThreshold : MediaTitleNormalizer.DefaultSimilarityThreshold;
+        return bestScore >= threshold ? best : null;
+    }
+
+    [GeneratedRegex(@"['’‘`´""]")]
+    private static partial Regex FallbackApostropheRegex();
+
+    [GeneratedRegex(@"[^\p{L}\p{N}]+")]
+    private static partial Regex FallbackPunctuationRegex();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex FallbackWhitespaceRegex();
+
+    [GeneratedRegex(@"\b\d+\b")]
+    private static partial Regex NumberTokenRegex();
 
     // How many SEQUEL hops to follow before giving up. A bookmarked finished season can sit
     // several seasons behind the currently-airing one (e.g. a franchise on its 4th cour); a small

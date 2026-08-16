@@ -89,7 +89,8 @@ builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.HttpCan
 builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.WaybackEpisodeIdResolver.HttpClientName)
     .ConfigureHttpClient(c =>
     {
-        c.Timeout = TimeSpan.FromSeconds(20);
+        // CDX index queries are slow - 15-20s server-side even for small pages is normal.
+        c.Timeout = TimeSpan.FromSeconds(60);
         // Archive.org frequently blocks requests carrying the default .NET HttpClient User-Agent.
         c.DefaultRequestHeaders.UserAgent.ParseAdd(
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
