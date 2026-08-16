@@ -16,9 +16,10 @@
 
             <MudSelect T="string" @bind-Value="_status" Label="Status" Variant="Variant.Outlined"
                        Clearable="true" Class="mb-4">
-                <MudSelectItem T="string" Value="@BookmarkReadingStatus.PlanToRead">Saved for later</MudSelectItem>
-                <MudSelectItem T="string" Value="@BookmarkReadingStatus.Reading">Reading</MudSelectItem>
+                <MudSelectItem T="string" Value="@BookmarkReadingStatus.Ongoing">Ongoing</MudSelectItem>
+                <MudSelectItem T="string" Value="@BookmarkReadingStatus.PlanToRead">Plan to Read</MudSelectItem>
                 <MudSelectItem T="string" Value="@BookmarkReadingStatus.Completed">Completed</MudSelectItem>
+                <MudSelectItem T="string" Value="@BookmarkReadingStatus.Dropped">Dropped</MudSelectItem>
             </MudSelect>
 
             <div class="mb-4">

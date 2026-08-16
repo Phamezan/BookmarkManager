@@ -26,9 +26,9 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await InvokeOrNullAsync<BookmarkNodeDto>(
             () => _apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Get, $"api/bookmarks/{id}", cancellationToken: cancellationToken));
 
-    public async Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default)
+    public async Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, string? status = null, CancellationToken cancellationToken = default)
     {
-        var request = new CreateBookmarkRequest { Title = title, Url = url, Type = NodeType.Bookmark };
+        var request = new CreateBookmarkRequest { Title = title, Url = url, Type = NodeType.Bookmark, Status = status };
         return await _apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Post, $"api/bookmarks/{parentId}", request, cancellationToken)
                ?? throw new ApiException(HttpStatusCode.OK, "Bookmark response was empty.");
     }
@@ -263,6 +263,21 @@ public sealed class HttpBookmarkService : IBookmarkService
         => await _apiClient.SendAsync<UrlMigrationProposalDto>(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/update-url", new UpdateProposalUrlRequest(url), cancellationToken);
 
 
+
+    public async Task<BookmarkNodeDto?> UpdateBookmarkStatusAsync(Guid id, string status, CancellationToken cancellationToken = default)
+    {
+        var request = new UpdateBookmarkStatusRequest { Status = status };
+        return await InvokeOrNullAsync<BookmarkNodeDto>(
+            () => _apiClient.SendAsync<BookmarkNodeDto>(HttpMethod.Put, $"api/bookmarks/{id}/status", request, cancellationToken));
+    }
+
+    public async Task<BulkUpdateBookmarkStatusResponse> BulkUpdateBookmarkStatusAsync(BulkUpdateBookmarkStatusRequest request, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<BulkUpdateBookmarkStatusResponse>(HttpMethod.Post, "api/bookmarks/bulk-status", request, cancellationToken)
+           ?? new BulkUpdateBookmarkStatusResponse();
+
+    public async Task<RelatedSeriesPreviewResponse> GetRelatedStatusCandidatesAsync(Guid id, string targetStatus, CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<RelatedSeriesPreviewResponse>($"api/bookmarks/{id}/related-status-candidates?targetStatus={Uri.EscapeDataString(targetStatus)}", cancellationToken)
+           ?? new RelatedSeriesPreviewResponse();
 
     private static async Task<T?> InvokeOrNullAsync<T>(Func<Task<T?>> action) where T : class
     {

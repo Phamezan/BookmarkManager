@@ -84,8 +84,18 @@ public class FakeBookmarkService : IBookmarkService
     public Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
         => Task.FromResult(Bookmarks.FirstOrDefault(b => b.Id == id) ?? DeletedBookmarks.FirstOrDefault(b => b.Id == id));
     
-    public Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default) 
-        => OnCreateBookmark != null ? OnCreateBookmark(parentId, title, url) : Task.FromResult(new BookmarkNodeDto { Id = Guid.NewGuid(), Title = title, Url = url, ParentId = parentId, Type = NodeType.Bookmark });
+    public Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, string? status = null, CancellationToken cancellationToken = default)
+        => OnCreateBookmark != null
+            ? OnCreateBookmark(parentId, title, url)
+            : Task.FromResult(new BookmarkNodeDto
+            {
+                Id = Guid.NewGuid(),
+                Title = title,
+                Url = url,
+                ParentId = parentId,
+                Type = NodeType.Bookmark,
+                Metadata = !string.IsNullOrWhiteSpace(status) ? new BookmarkMetadataDto { Status = status } : null
+            });
 
     public Task<BookmarkNodeDto> CreateFolderAsync(Guid parentId, string title, CancellationToken cancellationToken = default) 
         => OnCreateFolder != null ? OnCreateFolder(parentId, title) : Task.FromResult(new BookmarkNodeDto { Id = Guid.NewGuid(), Title = title, ParentId = parentId, Type = NodeType.Folder });
@@ -235,5 +245,64 @@ public class FakeBookmarkService : IBookmarkService
             }
         }
         return Task.FromResult(proposal);
+    }
+
+    public Func<Guid, string, Task<BookmarkNodeDto?>>? OnUpdateBookmarkStatus { get; set; }
+    public Func<BulkUpdateBookmarkStatusRequest, Task<BulkUpdateBookmarkStatusResponse>>? OnBulkUpdateBookmarkStatus { get; set; }
+    public Func<Guid, string, Task<RelatedSeriesPreviewResponse>>? OnGetRelatedStatusCandidates { get; set; }
+
+    public virtual Task<BookmarkNodeDto?> UpdateBookmarkStatusAsync(Guid id, string status, CancellationToken cancellationToken = default)
+    {
+        if (OnUpdateBookmarkStatus != null) return OnUpdateBookmarkStatus(id, status);
+        var bookmark = Bookmarks.FirstOrDefault(b => b.Id == id);
+        if (bookmark != null)
+        {
+            bookmark.Metadata ??= new BookmarkMetadataDto();
+            bookmark.Metadata.Status = status;
+        }
+        return Task.FromResult(bookmark);
+    }
+
+    public virtual Task<BulkUpdateBookmarkStatusResponse> BulkUpdateBookmarkStatusAsync(BulkUpdateBookmarkStatusRequest request, CancellationToken cancellationToken = default)
+    {
+        if (OnBulkUpdateBookmarkStatus != null) return OnBulkUpdateBookmarkStatus(request);
+        var response = new BulkUpdateBookmarkStatusResponse();
+        foreach (var id in request.BookmarkIds)
+        {
+            var bookmark = Bookmarks.FirstOrDefault(b => b.Id == id);
+            if (bookmark != null)
+            {
+                bookmark.Metadata ??= new BookmarkMetadataDto();
+                bookmark.Metadata.Status = request.Status;
+                response.Results.Add(new BookmarkStatusItemResult
+                {
+                    BookmarkId = id,
+                    Outcome = BookmarkStatusOutcome.Changed,
+                    CurrentStatus = request.Status,
+                    Node = bookmark
+                });
+            }
+            else
+            {
+                response.Results.Add(new BookmarkStatusItemResult
+                {
+                    BookmarkId = id,
+                    Outcome = BookmarkStatusOutcome.Skipped,
+                    Message = "Not found"
+                });
+            }
+        }
+        return Task.FromResult(response);
+    }
+
+    public virtual Task<RelatedSeriesPreviewResponse> GetRelatedStatusCandidatesAsync(Guid id, string targetStatus, CancellationToken cancellationToken = default)
+    {
+        if (OnGetRelatedStatusCandidates != null) return OnGetRelatedStatusCandidates(id, targetStatus);
+        return Task.FromResult(new RelatedSeriesPreviewResponse
+        {
+            SourceBookmarkId = id,
+            TargetStatus = targetStatus,
+            Candidates = []
+        });
     }
 }

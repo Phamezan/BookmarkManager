@@ -197,4 +197,12 @@ export class HttpApiClient implements ApiClient {
       `/api/bookmarks/${encodeURIComponent(serverId)}/ai-tags`,
     );
   }
+
+  updateBookmarkStatus(bookmarkId: string, status: string): Promise<void> {
+    return this.request<void>(
+      "PUT",
+      `/api/bookmarks/${encodeURIComponent(bookmarkId)}/status`,
+      { status },
+    );
+  }
 }

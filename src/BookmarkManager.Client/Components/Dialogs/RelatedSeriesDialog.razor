@@ -1,0 +1,230 @@
+@namespace BookmarkManager.Client.Components
+@using BookmarkManager.Client.Services
+@using BookmarkManager.Contracts
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.AutoStories" Color="Color.Primary" />
+            <MudText Typo="Typo.h6">Review Related Series</MudText>
+        </div>
+    </TitleContent>
+
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-3">
+            Found likely related bookmarks for <strong>@SourceTitle</strong>. Select which bookmarks to update to <strong>@TargetStatus</strong>.
+        </MudText>
+
+        @if (!string.IsNullOrEmpty(_applyErrorAlert))
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-3">
+                @_applyErrorAlert
+            </MudAlert>
+        }
+
+        @if (_loading)
+        {
+            <div class="d-flex flex-column align-center justify-center py-8">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mb-2" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Searching for related series bookmarks…</MudText>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            <MudAlert Severity="Severity.Error" Class="mb-3">
+                @_errorMessage
+            </MudAlert>
+            <div class="d-flex justify-center">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadCandidatesAsync">
+                    Retry Search
+                </MudButton>
+            </div>
+        }
+        else if (_candidates.Count == 0)
+        {
+            <div class="d-flex flex-column align-center justify-center py-6 text-center">
+                <MudIcon Icon="@Icons.Material.Filled.DoneAll" Color="Color.Success" Size="Size.Large" Class="mb-2" />
+                <MudText Typo="Typo.body1" Class="font-weight-medium">No other related bookmarks found</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">All other bookmarks in this series are already up to date.</MudText>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex justify-space-between align-center mb-2">
+                <MudText Typo="Typo.subtitle2">@_candidates.Count(c => c.Selected) of @_candidates.Count selected</MudText>
+                <MudButton Variant="Variant.Text" Size="Size.Small" OnClick="ToggleSelectAll">
+                    @(_candidates.All(c => c.Selected) ? "Deselect All" : "Select All")
+                </MudButton>
+            </div>
+
+            <MudPaper Outlined="true" Class="pa-0 overflow-hidden" Style="max-height: 380px; overflow-y: auto;">
+                <MudList T="RelatedSeriesCandidateDto" Dense="true">
+                    @foreach (var candidate in _candidates)
+                    {
+                        <MudListItem T="RelatedSeriesCandidateDto" OnClick="@(() => candidate.Selected = !candidate.Selected)">
+                            <div class="d-flex align-center justify-space-between w-100 py-1">
+                                <div class="d-flex align-center gap-3" style="min-width: 0;">
+                                    <MudCheckBox T="bool" @bind-Value="candidate.Selected" Color="Color.Primary" StopClickPropagation="true" />
+                                    <div class="d-flex flex-column" style="min-width: 0;">
+                                        <MudText Typo="Typo.body2" Class="text-truncate font-weight-medium" title="@candidate.Title">
+                                            @candidate.Title
+                                        </MudText>
+                                        <div class="d-flex align-center gap-2">
+                                            @if (!string.IsNullOrEmpty(candidate.ParentFolderName))
+                                            {
+                                                <MudText Typo="Typo.caption" Class="mud-text-secondary text-truncate">
+                                                    @candidate.ParentFolderName
+                                                </MudText>
+                                            }
+                                            <span class="mud-text-secondary" style="font-size: 0.75rem;">•</span>
+                                            <span class="status-badge" style="font-size: 0.68rem; padding: 1px 5px;">
+                                                @(candidate.CurrentStatus ?? "Ongoing")
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="d-flex align-center gap-1 pl-2">
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info" Style="font-size: 0.72rem;">
+                                        @candidate.MatchReason
+                                    </MudChip>
+                                </div>
+                            </div>
+                        </MudListItem>
+                        <MudDivider />
+                    }
+                </MudList>
+            </MudPaper>
+        }
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel" Disabled="_applying">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ApplyAsync"
+                   Disabled="@(_loading || _applying || _candidates.Count == 0 || !_candidates.Any(c => c.Selected))">
+            @if (_applying)
+            {
+                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                <span>Applying…</span>
+            }
+            else
+            {
+                <span>Apply (@_candidates.Count(c => c.Selected))</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    [Parameter] public Guid SourceBookmarkId { get; set; }
+    [Parameter] public string SourceTitle { get; set; } = string.Empty;
+    [Parameter] public string TargetStatus { get; set; } = string.Empty;
+    [Parameter] public List<RelatedSeriesCandidateDto>? InitialCandidates { get; set; }
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private List<RelatedSeriesCandidateDto> _candidates = [];
+    private bool _loading = true;
+    private bool _applying;
+    private string? _errorMessage;
+    private string? _applyErrorAlert;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (InitialCandidates is { Count: > 0 })
+        {
+            _candidates = InitialCandidates;
+            _loading = false;
+        }
+        else
+        {
+            await LoadCandidatesAsync();
+        }
+    }
+
+    private async Task LoadCandidatesAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+        _applyErrorAlert = null;
+        try
+        {
+            var response = await BookmarkService.GetRelatedStatusCandidatesAsync(SourceBookmarkId, TargetStatus);
+            _candidates = response.Candidates ?? [];
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Failed to find related bookmarks: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ToggleSelectAll()
+    {
+        var allSelected = _candidates.All(c => c.Selected);
+        foreach (var candidate in _candidates)
+        {
+            candidate.Selected = !allSelected;
+        }
+    }
+
+    private async Task ApplyAsync()
+    {
+        var selectedCandidates = _candidates.Where(c => c.Selected).ToList();
+        var selectedIds = selectedCandidates.Select(c => c.Id).ToList();
+        if (selectedIds.Count == 0)
+        {
+            MudDialog.Close(DialogResult.Ok(0));
+            return;
+        }
+
+        _applying = true;
+        _applyErrorAlert = null;
+        try
+        {
+            var result = await BookmarkService.BulkUpdateBookmarkStatusAsync(new BulkUpdateBookmarkStatusRequest
+            {
+                BookmarkIds = selectedIds,
+                Status = TargetStatus
+            });
+
+            if (result.FailedCount > 0 || result.SkippedCount > 0)
+            {
+                var succeededIds = result.Results
+                    .Where(r => r.Outcome == BookmarkStatusOutcome.Changed || r.Outcome == BookmarkStatusOutcome.AlreadyCorrect)
+                    .Select(r => r.BookmarkId)
+                    .ToHashSet();
+
+                _candidates.RemoveAll(c => succeededIds.Contains(c.Id));
+                foreach (var remaining in _candidates)
+                {
+                    remaining.Selected = true;
+                }
+
+                _applyErrorAlert = $"Updated {result.ChangedCount} bookmarks. {result.FailedCount} failed, {result.SkippedCount} skipped. You can retry the remaining items.";
+                Snackbar.Add(_applyErrorAlert, Severity.Warning);
+            }
+            else
+            {
+                MudDialog.Close(DialogResult.Ok(result.ChangedCount));
+            }
+        }
+        catch (Exception ex)
+        {
+            _applyErrorAlert = $"Failed to update related bookmarks: {ex.Message}";
+            Snackbar.Add(_applyErrorAlert, Severity.Error);
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

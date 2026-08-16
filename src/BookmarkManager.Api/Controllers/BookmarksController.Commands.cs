@@ -51,12 +51,50 @@ public partial class BookmarksController
     // Auto-tag new bookmarks created through the web UI/API.
     if (node.Type == NodeType.Bookmark)
     {
-        BookmarkPlanToReadHeuristic.ApplyAutoStatus(node);
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            var norm = BookmarkReadingStatus.Normalize(request.Status);
+            if (norm is null)
+            {
+                return Problem(
+                    detail: $"Status '{request.Status}' is invalid. Approved statuses are Ongoing, Plan to Read, Completed, Dropped.",
+                    statusCode: StatusCodes.Status400BadRequest,
+                    title: "Invalid Lifecycle Status");
+            }
+            node.Status = norm;
+        }
+        else
+        {
+            BookmarkPlanToReadHeuristic.ApplyAutoStatus(node);
+        }
+
         var folderPath = await FolderHierarchy.BuildFolderPathAsync(_db, parentNode?.Id, ct);
         var autoTags = await _bookmarkTagging.GetTagsAsync(node.Title, node.Url, folderPath, BookmarkTagDomainDto.Auto, ct);
         if (autoTags.Count > 0)
             node.Tags = string.Join(",", autoTags);
     }
+
+    var targetFolder = parentNode;
+    if (node.Type == NodeType.Bookmark && !string.IsNullOrWhiteSpace(node.Status))
+    {
+        var categoryRoot = await _statusProjectionService.ResolveCategoryRootAsync(
+            new BookmarkNode { ParentId = parentId == Guid.Empty ? null : parentId }, ct);
+
+        if (categoryRoot != null && _statusProjectionService.IsSupportedCategory(node.Category, categoryRoot, node.Url, node.Title))
+        {
+            var (resolvedFolder, _) = await _statusProjectionService.ResolveTargetFolderAsync(categoryRoot, node.Status, ct);
+            targetFolder = resolvedFolder;
+            node.ParentId = targetFolder.Id;
+        }
+    }
+
+    var isRootTarget = node.ParentId == null;
+    var maxPosTarget = isRootTarget
+        ? await _db.BookmarkNodes.Where(n => n.ParentId == null).MaxAsync(n => (int?)n.Position, ct) ?? -1
+        : await _db.BookmarkNodes.Where(n => n.ParentId == node.ParentId).MaxAsync(n => (int?)n.Position, ct) ?? -1;
+
+    node.Position = maxPosTarget + 1;
+    parentBrowserNodeId = targetFolder?.BrowserNodeId ?? "0";
 
     _db.BookmarkNodes.Add(node);
 
@@ -79,7 +117,7 @@ public partial class BookmarksController
         ExpectedVersion = node.Version,
         PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
         CreatedAt = DateTime.UtcNow,
-        Status = Services.DeferredCommandHelper.InitialStatus(parentNode)
+        Status = Services.DeferredCommandHelper.InitialStatus(targetFolder)
     });
 
     await _db.SaveChangesAsync(ct);
@@ -112,6 +150,47 @@ public partial class BookmarksController
         return trimmed.Length <= MaxBookmarkTitleLength
             ? trimmed
             : trimmed[..MaxBookmarkTitleLength];
+    }
+
+    [HttpPut("{id:guid}/metadata")]
+    public async Task<ActionResult<BookmarkNodeDto>> UpdateMetadataAsync(
+    Guid id,
+    [FromBody] BookmarkMetadataDto metadata,
+    CancellationToken ct)
+    {
+    var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
+    if (node is null) return NotFound();
+
+    if (!string.IsNullOrWhiteSpace(metadata.Status))
+    {
+        var norm = BookmarkReadingStatus.Normalize(metadata.Status);
+        if (norm is null)
+        {
+            return Problem(
+                detail: $"Status '{metadata.Status}' is invalid. Approved statuses are Ongoing, Plan to Read, Completed, Dropped.",
+                statusCode: StatusCodes.Status400BadRequest,
+                title: "Invalid Lifecycle Status");
+        }
+
+        var previousNorm = BookmarkReadingStatus.Normalize(node.Status);
+        if (previousNorm != norm)
+        {
+            node = await _statusProjectionService.UpdateStatusAsync(node.Id, norm, ct);
+        }
+    }
+
+    node.Category = metadata.Category;
+    node.CurrentProgress = metadata.CurrentProgress;
+    node.TotalProgress = metadata.TotalProgress;
+    node.Tags = metadata.Tags is { Count: > 0 } ? string.Join(",", metadata.Tags) : null;
+    node.Rating = metadata.Rating;
+    node.Notes = metadata.Notes;
+    node.IsFavorite = metadata.IsFavorite;
+    node.CoverImageUrl = metadata.CoverImageUrl;
+    node.UpdatedAt = DateTime.UtcNow;
+
+    await _db.SaveChangesAsync(ct);
+    return _mapper.Map<BookmarkNodeDto>(node);
     }
 
     /// <summary>
@@ -159,30 +238,6 @@ public partial class BookmarksController
         CreatedAt = DateTime.UtcNow,
         Status = "Pending"
     });
-    }
-
-    [HttpPut("{id:guid}/metadata")]
-    public async Task<ActionResult<BookmarkNodeDto>> UpdateMetadataAsync(
-    Guid id,
-    [FromBody] BookmarkMetadataDto metadata,
-    CancellationToken ct)
-    {
-    var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
-    if (node is null) return NotFound();
-
-    node.Category = metadata.Category;
-    node.Status = metadata.Status;
-    node.CurrentProgress = metadata.CurrentProgress;
-    node.TotalProgress = metadata.TotalProgress;
-    node.Tags = metadata.Tags is { Count: > 0 } ? string.Join(",", metadata.Tags) : null;
-    node.Rating = metadata.Rating;
-    node.Notes = metadata.Notes;
-    node.IsFavorite = metadata.IsFavorite;
-    node.CoverImageUrl = metadata.CoverImageUrl;
-    node.UpdatedAt = DateTime.UtcNow;
-
-    await _db.SaveChangesAsync(ct);
-    return _mapper.Map<BookmarkNodeDto>(node);
     }
 
     [HttpPut("{id:guid}/move/{newParentId:guid}")]

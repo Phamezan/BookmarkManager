@@ -65,13 +65,14 @@ public partial class Bookmarks
 
         try
         {
-            var created = await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url);
-            if ((data.Tags != null && data.Tags.Count > 0) || !string.IsNullOrWhiteSpace(data.Status))
+            var normStatus = !string.IsNullOrWhiteSpace(data.Status) ? BookmarkReadingStatus.Normalize(data.Status) : null;
+            var created = await BookmarkService.CreateBookmarkAsync(_selectedFolderId.Value, data.Title, data.Url, normStatus);
+
+            if (data.Tags != null && data.Tags.Count > 0)
             {
                 var metadata = new BookmarkMetadataDto
                 {
-                    Tags = data.Tags ?? [],
-                    Status = data.Status
+                    Tags = data.Tags
                 };
                 await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
             }
@@ -97,14 +98,24 @@ public partial class Bookmarks
 
         var originalTitle = item.Title;
         var originalUrl = item.Url;
+        var originalStatus = item.Metadata?.Status;
         var titleOrUrlChanged = originalTitle != data.Title || originalUrl != data.Url;
 
         try
         {
             await BookmarkService.UpdateBookmarkAsync(item.Id, data.Title, data.Url);
+
+            if (!string.IsNullOrWhiteSpace(data.Status))
+            {
+                var norm = BookmarkReadingStatus.Normalize(data.Status);
+                if (norm != null && norm != BookmarkReadingStatus.Normalize(originalStatus))
+                {
+                    await BookmarkService.UpdateBookmarkStatusAsync(item.Id, norm);
+                }
+            }
+
             var metadata = item.Metadata ?? new BookmarkMetadataDto();
             metadata.Tags = data.Tags;
-            metadata.Status = data.Status;
             await BookmarkService.UpdateMetadataAsync(item.Id, metadata);
 
             if (_selectedFolderId.HasValue)
@@ -294,13 +305,14 @@ public partial class Bookmarks
 
         try
         {
-            var created = await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url);
-            if ((data.Tags != null && data.Tags.Count > 0) || !string.IsNullOrWhiteSpace(data.Status))
+            var normStatus = !string.IsNullOrWhiteSpace(data.Status) ? BookmarkReadingStatus.Normalize(data.Status) : null;
+            var created = await BookmarkService.CreateBookmarkAsync(folderId, data.Title, data.Url, normStatus);
+
+            if (data.Tags != null && data.Tags.Count > 0)
             {
                 var metadata = new BookmarkMetadataDto
                 {
-                    Tags = data.Tags ?? [],
-                    Status = data.Status
+                    Tags = data.Tags
                 };
                 await BookmarkService.UpdateMetadataAsync(created.Id, metadata);
             }

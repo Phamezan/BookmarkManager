@@ -11,6 +11,8 @@ export interface BrowserNode {
   children?: BrowserNode[];
 }
 
+export type PersonalReadingStatus = "Ongoing" | "Plan to Read" | "Completed" | "Dropped";
+
 /**
  * Transient state written by the `quick-bookmark` command and consumed by the
  * popup to render the bookmark editor. Lives in `chrome.storage.local` under
@@ -24,6 +26,7 @@ export interface ShortcutEditorState {
   capturedAt: string;
   /** True when the command created a new node; false when it reused an existing one. */
   wasCreated: boolean;
+  status?: string;
 }
 
 /**
@@ -39,6 +42,7 @@ export interface PendingCreateDraft {
   title: string;
   folderId: string;
   capturedAt: string;
+  status?: string;
 }
 
 /**
@@ -285,6 +289,8 @@ export interface ApiClient {
   bulkSaveTags(tagsByBookmarkId: Record<string, string[]>): Promise<void>;
   /** Suggest-only: returns AI-suggested tags without persisting anything. */
   aiRetag(serverId: string): Promise<string[]>;
+  /** Updates personal lifecycle status on server; server projects folder automatically. */
+  updateBookmarkStatus(bookmarkId: string, status: string): Promise<void>;
 }
 
 /** Toast enrichment after a Brave create syncs (GET by-browser-id). */
@@ -342,5 +348,8 @@ export interface StorageRepository {
   saveBackupState(state: BackupState): Promise<void>;
   getBackupSettings(): Promise<BackupSettings>;
   saveBackupSettings(settings: BackupSettings): Promise<void>;
+  getPendingStatusUpdates(): Promise<Record<string, string>>;
+  savePendingStatusUpdate(browserNodeId: string, status: string): Promise<void>;
+  removePendingStatusUpdate(browserNodeId: string): Promise<void>;
   clearAll(): Promise<void>;
 }

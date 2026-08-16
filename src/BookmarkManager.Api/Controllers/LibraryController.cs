@@ -142,7 +142,7 @@ public sealed class LibraryController(
             .AsNoTracking()
             .Where(n => !n.IsDeleted
                         && n.Type == NodeType.Bookmark
-                        && n.Status == BookmarkReadingStatus.PlanToRead
+                        && (n.Status == BookmarkReadingStatus.PlanToRead || n.Status == BookmarkReadingStatus.PlanToReadFolder || n.Status == BookmarkReadingStatus.Later)
                         && n.Url != null)
             .OrderByDescending(n => n.UpdatedAt)
             .Take(200)

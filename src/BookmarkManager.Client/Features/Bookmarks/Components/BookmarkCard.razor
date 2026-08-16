@@ -68,9 +68,21 @@
                     {
                         <span class="status-badge @GetMediaStatusClass(Item.MediaStatus)" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;">@GetMediaStatusLabel(Item.MediaStatus)</span>
                     }
-                    @if (string.Equals(Item.Metadata?.Status, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal))
+                    @if (!string.IsNullOrEmpty(Item.Metadata?.Status))
                     {
-                        <span class="status-badge status-badge--active" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;">Later</span>
+                        var personalNorm = BookmarkReadingStatus.Normalize(Item.Metadata.Status);
+                        if (personalNorm != null)
+                        {
+                            <span class="status-badge @GetPersonalStatusClass(personalNorm)" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;">@BookmarkReadingStatus.GetDisplayLabel(personalNorm)</span>
+                        }
+                    }
+                    @if (Item.SyncState == SyncState.Pending)
+                    {
+                        <span class="status-badge status-badge--warning" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;" title="Projection pending browser sync">Pending</span>
+                    }
+                    else if (Item.SyncState == SyncState.Failed)
+                    {
+                        <span class="status-badge status-badge--error" style="padding: 2px 6px; font-size: 0.66rem; line-height: 1.2;" title="Projection failed browser sync. Click to retry.">Failed</span>
                     }
                     @if (Item.Metadata?.Category != null)
                     {
@@ -248,6 +260,19 @@
             "RELEASING" or "ONGOING" => "Ongoing",
             "NOT_YET_RELEASED" or "UPCOMING" => "Upcoming",
             _ => status
+        };
+    }
+
+    private static string GetPersonalStatusClass(string? status)
+    {
+        var norm = BookmarkReadingStatus.Normalize(status);
+        return norm switch
+        {
+            BookmarkReadingStatus.PlanToRead => "status-badge--active",
+            BookmarkReadingStatus.Completed => "status-badge--success",
+            BookmarkReadingStatus.Dropped => "status-badge--danger",
+            BookmarkReadingStatus.Ongoing => "status-badge--watching",
+            _ => "status-badge--favorite"
         };
     }
 

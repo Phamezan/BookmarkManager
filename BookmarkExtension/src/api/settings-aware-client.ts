@@ -86,4 +86,10 @@ export class SettingsAwareApiClient implements ApiClient {
   aiRetag(serverId: string): Promise<string[]> {
     return this.getClient().then((c) => c.aiRetag(serverId));
   }
+
+  updateBookmarkStatus(bookmarkId: string, status: string): Promise<void> {
+    return this.getClient().then((c) =>
+      c.updateBookmarkStatus(bookmarkId, status),
+    );
+  }
 }
