@@ -39,6 +39,7 @@ public class UrlMigrationProposalDto
 
 public record DecideProposalsRequest(List<Guid> ProposalIds);         // approve or reject
 public record SetManualProposalUrlRequest(string Url);                // manual URL entry for an Unresolved proposal
+public record UpdateProposalUrlRequest(string Url);                   // edit proposed URL before approval
 public record DecideProposalsResponse(int Succeeded, int Failed, List<string> Errors);
 
 public class DeadDomainCandidateDto      // for the "detected dead domains" panel

@@ -229,6 +229,9 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/cancel", cancellationToken));
 
+    public async Task<bool> ResetUrlMigrationAsync(CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/reset", cancellationToken));
+
     public async Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<UrlMigrationStatusDto>("api/bookmarks/url-migration/status", cancellationToken);
 
@@ -255,6 +258,9 @@ public sealed class HttpBookmarkService : IBookmarkService
 
     public async Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<DecideProposalsResponse>(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/manual", new SetManualProposalUrlRequest(url), cancellationToken);
+
+    public async Task<UrlMigrationProposalDto?> UpdateProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<UrlMigrationProposalDto>(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/update-url", new UpdateProposalUrlRequest(url), cancellationToken);
 
 
 

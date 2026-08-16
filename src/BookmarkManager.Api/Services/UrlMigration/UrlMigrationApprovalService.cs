@@ -159,6 +159,71 @@ public sealed class UrlMigrationApprovalService
         return await ApproveAsync(new[] { proposalId }, ct).ConfigureAwait(false);
     }
 
+    public async Task<UrlMigrationProposalDto?> UpdateProposedUrlAsync(
+        Guid proposalId,
+        string url,
+        ICandidateVerificationService verificationService,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(url) ||
+            !Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return null;
+        }
+
+        var proposal = await _db.UrlMigrationProposals
+            .FirstOrDefaultAsync(p => p.Id == proposalId, ct).ConfigureAwait(false);
+        if (proposal == null || !string.Equals(proposal.Status, Pending, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var bookmark = await _db.BookmarkNodes
+            .FirstOrDefaultAsync(b => b.Id == proposal.BookmarkId, ct).ConfigureAwait(false);
+
+        proposal.ProposedUrl = url;
+        proposal.ProposedHost = uri.Host;
+
+        // Verify the edited candidate URL
+        var extraction = new SeriesExtraction(proposal.SeriesName ?? bookmark?.Title ?? string.Empty, proposal.ChapterNumber, "unknown", false);
+        var verification = await verificationService.VerifyAsync(new SearchCandidate(url, null, null), extraction, ct).ConfigureAwait(false);
+
+        if (verification.Reachable && verification.SeriesMatched)
+        {
+            proposal.Confidence = verification.ChapterMatched ? "High" : "Medium";
+            proposal.Detail = $"Manual edit verified: {verification.Detail}";
+        }
+        else if (verification.Reachable)
+        {
+            proposal.Confidence = "Low";
+            proposal.Detail = $"Manual edit reachable but series did not match: {verification.Detail}";
+        }
+        else
+        {
+            proposal.Confidence = "Low";
+            proposal.Detail = $"Manual edit unverified: {verification.Detail}";
+        }
+
+        await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        return new UrlMigrationProposalDto
+        {
+            Id = proposal.Id,
+            BookmarkId = proposal.BookmarkId,
+            BookmarkTitle = bookmark?.Title ?? string.Empty,
+            OldUrl = proposal.OldUrl,
+            ProposedUrl = proposal.ProposedUrl,
+            ProposedHost = proposal.ProposedHost,
+            SeriesName = proposal.SeriesName,
+            ChapterNumber = proposal.ChapterNumber,
+            Confidence = proposal.Confidence,
+            Detail = proposal.Detail,
+            Status = proposal.Status,
+            CreatedAt = proposal.CreatedAt
+        };
+    }
+
     public async Task<DecideProposalsResponse> RejectAsync(IReadOnlyCollection<Guid> proposalIds, CancellationToken ct)
     {
         var errors = new List<string>();

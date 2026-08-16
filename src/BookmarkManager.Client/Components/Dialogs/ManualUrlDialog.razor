@@ -4,7 +4,7 @@
 
 <MudDialog>
     <TitleContent>
-        <MudText Typo="Typo.h6">Enter URL manually</MudText>
+        <MudText Typo="Typo.h6">@(string.IsNullOrWhiteSpace(Title) ? "Enter URL manually" : Title)</MudText>
     </TitleContent>
 
     <DialogContent>
@@ -14,7 +14,7 @@
         <MudAutocomplete T="string"
                           @bind-Value="_url"
                           SearchFunc="SearchUrlsAsync"
-                          Label="New URL"
+                          Label="URL"
                           Placeholder="https://"
                           Variant="Variant.Outlined"
                           Immediate="true"
@@ -33,7 +33,7 @@
                    OnClick="Submit"
                    Disabled="@(!IsValidUrl(_url))"
                    Class="manual-url-submit">
-            Use this URL
+            Save URL
         </MudButton>
     </DialogActions>
 </MudDialog>
@@ -41,8 +41,18 @@
 @code {
     [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
     [Parameter] public string BookmarkTitle { get; set; } = string.Empty;
+    [Parameter] public string? InitialUrl { get; set; }
+    [Parameter] public string? Title { get; set; }
 
     private string _url = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        if (!string.IsNullOrWhiteSpace(InitialUrl))
+        {
+            _url = InitialUrl;
+        }
+    }
 
     private static bool IsValidUrl(string? url)
         => !string.IsNullOrWhiteSpace(url)

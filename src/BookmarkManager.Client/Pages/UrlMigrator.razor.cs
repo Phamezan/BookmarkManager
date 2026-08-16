@@ -2,6 +2,7 @@ using BookmarkManager.Client.Components;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
+using Microsoft.JSInterop;
 using MudBlazor;
 
 namespace BookmarkManager.Client.Pages;
@@ -11,6 +12,7 @@ public partial class UrlMigrator : IDisposable
     [Inject] private IBookmarkService BookmarkService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
     [Inject] private IDialogService DialogService { get; set; } = default!;
+    [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
 
     private const string StatusPending = "Pending";
     private const string StatusApproved = "Approved";
@@ -103,17 +105,17 @@ public partial class UrlMigrator : IDisposable
 
     private async Task StartMigrationAsync(string? host, bool force, string? suggestedHost)
     {
-        host = host?.Trim() ?? string.Empty;
+        host = NormalizeHost(host);
         if (!IsValidHost(host))
         {
-            Snackbar.Add("Enter a valid hostname (no scheme, path, or spaces).", Severity.Warning);
+            Snackbar.Add("Enter a valid hostname (e.g. flamecomics.xyz or https://flamecomics.xyz).", Severity.Warning);
             return;
         }
 
-        suggestedHost = suggestedHost?.Trim();
+        suggestedHost = NormalizeHost(suggestedHost);
         if (!string.IsNullOrEmpty(suggestedHost) && !IsValidHost(suggestedHost))
         {
-            Snackbar.Add("Suggested target host must be a valid hostname (no scheme, path, or spaces).", Severity.Warning);
+            Snackbar.Add("Suggested target host must be a valid hostname (e.g. weebcentral.com or https://weebcentral.com).", Severity.Warning);
             return;
         }
 
@@ -178,6 +180,41 @@ public partial class UrlMigrator : IDisposable
         finally
         {
             _canceling = false;
+        }
+    }
+
+    private async Task ResetEngineAsync()
+    {
+        try
+        {
+            _pollCts?.Cancel();
+            _polling = false;
+            await BookmarkService.ResetUrlMigrationAsync();
+            await RefreshStatusAsync();
+            await LoadCurrentProposalsAsync();
+            await LoadHistoryAsync();
+            Snackbar.Add("Migration engine was reset.", Severity.Info);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reset engine: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task CopyToClipboardAsync(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        try
+        {
+            await JsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", text);
+            Snackbar.Add("Copied URL to clipboard", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to copy URL: {ex.Message}", Severity.Warning);
         }
     }
 
@@ -383,7 +420,9 @@ public partial class UrlMigrator : IDisposable
     {
         var parameters = new DialogParameters<ManualUrlDialog>
         {
-            { x => x.BookmarkTitle, proposal.BookmarkTitle }
+            { x => x.BookmarkTitle, proposal.BookmarkTitle },
+            { x => x.InitialUrl, string.Empty },
+            { x => x.Title, "Enter URL manually" }
         };
 
         var dialog = await DialogService.ShowAsync<ManualUrlDialog>("Enter URL manually", parameters);
@@ -402,6 +441,43 @@ public partial class UrlMigrator : IDisposable
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to update bookmark: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OpenEditProposalUrlDialogAsync(UrlMigrationProposalDto proposal)
+    {
+        var parameters = new DialogParameters<ManualUrlDialog>
+        {
+            { x => x.BookmarkTitle, proposal.BookmarkTitle },
+            { x => x.InitialUrl, proposal.ProposedUrl ?? string.Empty },
+            { x => x.Title, "Edit Proposed URL" }
+        };
+
+        var dialog = await DialogService.ShowAsync<ManualUrlDialog>("Edit Proposed URL", parameters);
+        var dialogResult = await dialog.Result;
+        if (dialogResult is null || dialogResult.Canceled)
+            return;
+
+        if (dialogResult.Data is not string url || string.IsNullOrWhiteSpace(url))
+            return;
+
+        try
+        {
+            var updated = await BookmarkService.UpdateProposalUrlAsync(proposal.Id, url);
+            if (updated != null)
+            {
+                proposal.ProposedUrl = updated.ProposedUrl;
+                proposal.ProposedHost = updated.ProposedHost;
+                proposal.Confidence = updated.Confidence;
+                proposal.Detail = updated.Detail;
+                Snackbar.Add("Proposed URL updated.", Severity.Success);
+                await LoadCurrentProposalsAsync();
+                StateHasChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to update proposed URL: {ex.Message}", Severity.Error);
         }
     }
 
@@ -462,6 +538,29 @@ public partial class UrlMigrator : IDisposable
         "Reverted" => "status-badge--watching",
         _ => "status-badge--active",
     };
+
+    private static string NormalizeHost(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+            return string.Empty;
+
+        input = input.Trim();
+        if (input.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            input.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (Uri.TryCreate(input, UriKind.Absolute, out var uri))
+            {
+                return uri.Host;
+            }
+        }
+        else if (input.Contains('/'))
+        {
+            var firstPart = input.Split('/', StringSplitOptions.RemoveEmptyEntries)[0];
+            return firstPart.Trim();
+        }
+
+        return input;
+    }
 
     private static bool IsValidHost(string host)
     {

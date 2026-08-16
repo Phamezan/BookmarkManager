@@ -77,9 +77,24 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
             return new VerificationResult(false, false, false, "Cloudflare challenge");
         }
 
+        if (fetch.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable or HttpStatusCode.Unauthorized)
+        {
+            return new VerificationResult(false, false, false, $"Access denied (HTTP {(int)fetch.StatusCode})");
+        }
+
         if (!fetch.IsSuccessStatusCode)
         {
             return new VerificationResult(false, false, false, $"HTTP {(int)fetch.StatusCode} {fetch.StatusCode}");
+        }
+
+        if (LooksLikeErrorContent(title) || LooksLikeErrorContent(ogTitle) || LooksLikeErrorContent(fetch.Body))
+        {
+            return new VerificationResult(false, false, false, "Page contains error content (404/403/Not Found)");
+        }
+
+        if (LooksLikeParkedDomain(fetch.Body))
+        {
+            return new VerificationResult(false, false, false, "Domain appears parked or expired");
         }
 
         // Many streaming sites (e.g. Miruro) are client-rendered SPAs - a raw HTTP GET returns
@@ -109,7 +124,8 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
     /// </summary>
     public async Task<bool> IsDomainAliveAsync(IEnumerable<string> urls, CancellationToken ct)
     {
-        var urlList = urls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList();
+        // Sample up to 10 URLs to prevent slow sequential loops on large bookmark collections
+        var urlList = urls.Where(u => !string.IsNullOrWhiteSpace(u)).Take(10).ToList();
         if (urlList.Count == 0)
             return false;
 
@@ -127,12 +143,16 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
             try
             {
                 var fetch = await FetchWithRedirectsAsync(uri, ct);
-                if (fetch.IsSuccessStatusCode && !IsChallengeResponse(fetch) && !LooksLikeParkedDomain(fetch.Body))
+                if (fetch.IsSuccessStatusCode && !IsChallengeResponse(fetch) && !LooksLikeParkedDomain(fetch.Body) && !LooksLikeErrorContent(fetch.Body))
                     aliveCount++;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
             {
-                // Treat failures as "dead" for the purposes of this check.
+                // Treat timeouts/network failures as "dead" for the purposes of this check.
             }
         }
 
@@ -152,6 +172,10 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         try
         {
             fetch = await FetchWithRedirectsAsync(uri, ct);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException && !ct.IsCancellationRequested)
         {
@@ -193,6 +217,12 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
             request.Headers.UserAgent.ParseAdd(BrowserUserAgent);
+            request.Headers.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+            request.Headers.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
+            request.Headers.Add("Sec-Fetch-Dest", "document");
+            request.Headers.Add("Sec-Fetch-Mode", "navigate");
+            request.Headers.Add("Sec-Fetch-Site", "none");
+            request.Headers.Add("Sec-Fetch-User", "?1");
 
             using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
 
@@ -249,7 +279,27 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
             return false;
 
         return text.Contains("cf-challenge", StringComparison.OrdinalIgnoreCase) ||
-               text.Contains("just a moment", StringComparison.OrdinalIgnoreCase);
+               text.Contains("just a moment", StringComparison.OrdinalIgnoreCase) ||
+               text.Contains("attention required! | cloudflare", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static readonly string[] ErrorContentMarkers =
+    [
+        "403 forbidden",
+        "access to this resource on the server is denied",
+        "access denied",
+        "error 404",
+        "page not found",
+        "chapter not found",
+        "chapter does not exist"
+    ];
+
+    private static bool LooksLikeErrorContent(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return false;
+
+        return ErrorContentMarkers.Any(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
