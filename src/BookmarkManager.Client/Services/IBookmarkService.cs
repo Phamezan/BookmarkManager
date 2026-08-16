@@ -8,7 +8,7 @@ public interface IBookmarkService
     Task<List<BookmarkNodeDto>> GetBookmarksAsync(Guid parentId, CancellationToken cancellationToken = default);
     Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default);
-    Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, CancellationToken cancellationToken = default);
+    Task<BookmarkNodeDto> CreateBookmarkAsync(Guid parentId, string title, string? url, string? status = null, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto> CreateFolderAsync(Guid parentId, string title, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> UpdateBookmarkAsync(Guid id, string title, string? url, CancellationToken cancellationToken = default);
     Task<BookmarkNodeDto?> UpdateMetadataAsync(Guid id, BookmarkMetadataDto metadata, CancellationToken cancellationToken = default);
@@ -68,4 +68,8 @@ public interface IBookmarkService
     Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default);
     Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default);
     Task<UrlMigrationProposalDto?> UpdateProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default);
+    // ── Personal Status Projection ─────────────────────────────────────────
+    Task<BookmarkNodeDto?> UpdateBookmarkStatusAsync(Guid id, string status, CancellationToken cancellationToken = default);
+    Task<BulkUpdateBookmarkStatusResponse> BulkUpdateBookmarkStatusAsync(BulkUpdateBookmarkStatusRequest request, CancellationToken cancellationToken = default);
+    Task<RelatedSeriesPreviewResponse> GetRelatedStatusCandidatesAsync(Guid id, string targetStatus, CancellationToken cancellationToken = default);
 }

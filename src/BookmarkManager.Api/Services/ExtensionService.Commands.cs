@@ -86,10 +86,10 @@ public sealed partial class ExtensionService
                             child.ParentBrowserNodeId = node.BrowserNodeId;
                             child.SyncState = SyncState.Pending;
 
-                            var hasPendingMove = await db.ExtensionCommands
-                                .AnyAsync(c => c.BookmarkId == child.Id && c.CommandType == "Move" && c.Status == "Pending", ct);
+                            var hasMoveCommand = db.ExtensionCommands.Local.Any(c => c.BookmarkId == child.Id && c.CommandType == "Move" && (c.Status == "Pending" || c.Status == "Deferred"))
+                                || await db.ExtensionCommands.AnyAsync(c => c.BookmarkId == child.Id && c.CommandType == "Move" && (c.Status == "Pending" || c.Status == "Deferred"), ct);
 
-                            if (!hasPendingMove && !string.IsNullOrEmpty(child.BrowserNodeId))
+                            if (!hasMoveCommand && !string.IsNullOrEmpty(child.BrowserNodeId))
                             {
                                 var movePayload = new
                                 {

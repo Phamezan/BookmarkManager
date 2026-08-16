@@ -258,6 +258,11 @@ export class MockApiServer implements ApiClient {
     await this.delay();
     return [...this.aiTagSuggestions];
   }
+
+  async updateBookmarkStatus(bookmarkId: string, status: string): Promise<void> {
+    this.log("updateBookmarkStatus", { bookmarkId, status });
+    await this.delay();
+  }
 }
 
 export { DETERMINISTIC_GUIDS };

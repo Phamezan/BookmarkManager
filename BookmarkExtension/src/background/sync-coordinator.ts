@@ -63,6 +63,7 @@ export class SyncCoordinator {
       await this.flushOutbox();
       await this.fulfillSnapshot();
       await this.processCommands();
+      await this.drainPendingStatusUpdates();
       console.log("[sync] Cycle completed — Healthy");
       await this.updateStatus("Healthy");
     } catch (error) {
@@ -197,6 +198,24 @@ export class SyncCoordinator {
     await this.executor.executeCommands(claimResponse.commands, async (operationId, input) => {
       await this.deps.api.completeCommand(operationId, input);
     });
+  }
+
+  private async drainPendingStatusUpdates(): Promise<void> {
+    const pending = await this.deps.storage.getPendingStatusUpdates();
+    const entries = Object.entries(pending);
+    if (entries.length === 0) return;
+
+    for (const [browserNodeId, status] of entries) {
+      try {
+        const enrichment = await this.deps.api.getBookmarkEnrichmentByBrowserId(browserNodeId);
+        if (enrichment?.id) {
+          await this.deps.api.updateBookmarkStatus(enrichment.id, status);
+          await this.deps.storage.removePendingStatusUpdate(browserNodeId);
+        }
+      } catch (err) {
+        console.warn(`[sync] pending status update failed for browser node ${browserNodeId}:`, err);
+      }
+    }
   }
 
   private async handleError(error: unknown): Promise<void> {

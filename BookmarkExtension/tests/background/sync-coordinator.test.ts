@@ -160,4 +160,50 @@ describe("SyncCoordinator", () => {
     const heartbeatCalls = mock.getCalls().filter((c) => c.method === "heartbeat").length;
     expect(heartbeatCalls).toBe(1);
   });
+
+  it("drains pending status updates when mapped and keeps unmapped updates for next cycle", async () => {
+    await repo.saveSettings({
+      apiBaseUrl: "http://localhost:8080",
+      setupComplete: true,
+    });
+
+    // Save two pending status updates
+    await repo.savePendingStatusUpdate("browser-node-1", "Plan to Read");
+    await repo.savePendingStatusUpdate("browser-node-unmapped", "Completed");
+
+    // Stub mock API getBookmarkEnrichmentByBrowserId
+    mock.getBookmarkEnrichmentByBrowserId = async (browserId: string) => {
+      if (browserId === "browser-node-1") {
+        return {
+          id: "server-guid-1",
+          title: "Series A",
+          folderPath: "Manga",
+          tags: [],
+          status: "Ongoing",
+          coverImageUrl: null,
+        };
+      }
+      return null;
+    };
+
+    await coordinator.runSyncCycle();
+
+    // Verify updateBookmarkStatus was called for mapped bookmark
+    const statusCalls = mock.getCalls().filter((c) => c.method === "updateBookmarkStatus");
+    expect(statusCalls.map((c) => ({ method: c.method, input: c.input }))).toEqual([
+      { method: "updateBookmarkStatus", input: { bookmarkId: "server-guid-1", status: "Plan to Read" } },
+    ]);
+
+    // Verify mapped bookmark was removed and unmapped was retained
+    const remainingPending = await repo.getPendingStatusUpdates();
+    expect(remainingPending).toEqual({
+      "browser-node-unmapped": "Completed",
+    });
+
+    // Verify persistence across a new repository instance
+    const freshRepo = new ChromeStorageRepository(storage);
+    expect(await freshRepo.getPendingStatusUpdates()).toEqual({
+      "browser-node-unmapped": "Completed",
+    });
+  });
 });

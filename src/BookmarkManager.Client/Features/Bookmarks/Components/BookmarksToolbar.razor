@@ -1,3 +1,5 @@
+@using BookmarkManager.Contracts
+
 <div class="header-select-row" style="display: block;">
     <div class="header-content-container">
         @if (SelectedCount > 0)
@@ -17,6 +19,14 @@
                         <MudText Typo="Typo.subtitle2" Class="ml-2 selection-count">@SelectedCount selected</MudText>
                     </MudStack>
                     <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                        <MudMenu Label="Status" Variant="Variant.Outlined" Color="Color.Primary"
+                                 EndIcon="@Icons.Material.Filled.ArrowDropDown" Size="Size.Small"
+                                 Class="selection-action-btn" Dense="true" AnchorOrigin="Origin.BottomRight">
+                            <MudMenuItem OnClick="@(() => ChangeBulkStatus.InvokeAsync(BookmarkReadingStatus.Ongoing))">Ongoing</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeBulkStatus.InvokeAsync(BookmarkReadingStatus.PlanToRead))">Plan to Read</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeBulkStatus.InvokeAsync(BookmarkReadingStatus.Completed))">Completed</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeBulkStatus.InvokeAsync(BookmarkReadingStatus.Dropped))">Dropped</MudMenuItem>
+                        </MudMenu>
                         <MudButton Variant="Variant.Outlined" Color="Color.Primary"
                                    StartIcon="@MoveIcon" Size="Size.Small"
                                    Class="selection-action-btn" OnClick="MoveSelected">
@@ -75,10 +85,28 @@
                                     @if (TypeFilter == "Favorites") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
                                 </div>
                             </MudMenuItem>
-                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Later"))">
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Ongoing"))">
                                 <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
-                                    <span>Later</span>
-                                    @if (TypeFilter == "Later") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                    <span>Ongoing</span>
+                                    @if (TypeFilter == "Ongoing") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("PlanToRead"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Plan to Read</span>
+                                    @if (TypeFilter == "PlanToRead" || TypeFilter == "Later") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Completed"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Completed</span>
+                                    @if (TypeFilter == "Completed") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
+                                </div>
+                            </MudMenuItem>
+                            <MudMenuItem OnClick="@(() => ChangeTypeFilter("Dropped"))">
+                                <div style="display: flex; justify-content: space-between; align-items: center; width: 150px;">
+                                    <span>Dropped</span>
+                                    @if (TypeFilter == "Dropped") { <MudIcon Icon="@Icons.Material.Filled.Check" Size="Size.Small" Color="Color.Primary" /> }
                                 </div>
                             </MudMenuItem>
                         </MudMenu>
@@ -132,6 +160,7 @@
     [Parameter] public EventCallback ClearSelection { get; set; }
     [Parameter] public EventCallback MoveSelected { get; set; }
     [Parameter] public EventCallback DeleteSelected { get; set; }
+    [Parameter] public EventCallback<string> ChangeBulkStatus { get; set; }
     [Parameter] public EventCallback<string?> SearchChanged { get; set; }
     [Parameter] public EventCallback CreateBookmark { get; set; }
     [Parameter] public EventCallback OpenAutoTaggerDialog { get; set; }

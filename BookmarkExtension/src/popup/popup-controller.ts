@@ -1,4 +1,5 @@
 import type {
+  ApiClient,
   PendingCreateDraft,
   PendingDuplicateState,
   ShortcutEditorState,
@@ -36,6 +37,8 @@ export interface PopupDeps {
   getTab?: (tabId: number) => Promise<{ url?: string }>;
   /** Active tab in the current window — confirm only valid while still focused there. */
   getActiveTab?: () => Promise<{ id?: number; url?: string } | null>;
+  /** Optional API client to propagate personal status updates. */
+  api?: ApiClient;
 }
 
 export class PopupController {
@@ -178,6 +181,7 @@ export class PopupController {
     title: string;
     folderId: string;
     currentParentId: string;
+    status?: string;
   }): Promise<{ success: boolean; error: string | null }> {
     if (!this.deps.bookmarks) {
       return { success: false, error: "Bookmark API unavailable" };
@@ -192,7 +196,21 @@ export class PopupController {
         await this.deps.bookmarks.move(input.bookmarkId, { parentId: input.folderId });
       }
       await this.deps.storage.saveLastActiveFolder(input.folderId);
+      if (input.status) {
+        await this.deps.storage.savePendingStatusUpdate(input.bookmarkId, input.status);
+      }
       await this.deps.storage.clearShortcutEditorState();
+      if (input.status && this.deps.api) {
+        try {
+          const enrichment = await this.deps.api.getBookmarkEnrichmentByBrowserId(input.bookmarkId);
+          if (enrichment?.id) {
+            await this.deps.api.updateBookmarkStatus(enrichment.id, input.status);
+            await this.deps.storage.removePendingStatusUpdate(input.bookmarkId);
+          }
+        } catch {
+          // Stays in pending status queue to be drained by sync cycle
+        }
+      }
       return { success: true, error: null };
     } catch (e) {
       return {
@@ -245,6 +263,7 @@ export class PopupController {
     url: string;
     title: string;
     folderId: string;
+    status?: string;
   }): Promise<{ success: boolean; error: string | null }> {
     if (!this.deps.bookmarks) {
       return { success: false, error: "Bookmark API unavailable" };
@@ -254,9 +273,23 @@ export class PopupController {
       return { success: false, error: "Name cannot be empty" };
     }
     try {
-      await this.deps.bookmarks.create({ parentId: input.folderId, title, url: input.url });
+      const created = await this.deps.bookmarks.create({ parentId: input.folderId, title, url: input.url });
       await this.deps.storage.saveLastActiveFolder(input.folderId);
+      if (input.status) {
+        await this.deps.storage.savePendingStatusUpdate(created.id, input.status);
+      }
       await this.deps.storage.clearPendingCreateDraft();
+      if (input.status && this.deps.api) {
+        try {
+          const enrichment = await this.deps.api.getBookmarkEnrichmentByBrowserId(created.id);
+          if (enrichment?.id) {
+            await this.deps.api.updateBookmarkStatus(enrichment.id, input.status);
+            await this.deps.storage.removePendingStatusUpdate(created.id);
+          }
+        } catch {
+          // Stays in pending status queue to be drained by sync cycle
+        }
+      }
       return { success: true, error: null };
     } catch (e) {
       return {

@@ -445,6 +445,7 @@ describe("PopupController", () => {
         url: draft.url,
         title: "  Edited Title  ",
         folderId: "9",
+        status: "Plan to Read",
       });
 
       expect(result).toEqual({ success: true, error: null });
@@ -483,6 +484,48 @@ describe("PopupController", () => {
       await repo.savePendingCreateDraft(draft);
       const result = await controller.commitDraft({ url: draft.url, title: "Title", folderId: "9" });
       expect(result).toEqual({ success: false, error: "Bookmark API unavailable" });
+    });
+
+    it("commitDraft propagates status update via api client when available", async () => {
+      await repo.savePendingCreateDraft(draft);
+      let updatedStatus: { id: string; status: string } | null = null;
+      const fakeApi = {
+        getBookmarkEnrichmentByBrowserId: async (_id: string) => ({
+          id: "server-guid-123",
+          title: "Title",
+          folderPath: "Manga",
+          tags: [],
+          status: "Ongoing",
+          coverImageUrl: null,
+        }),
+        updateBookmarkStatus: async (id: string, status: string) => {
+          updatedStatus = { id, status };
+        },
+      } as unknown as import("../../src/api/contracts").ApiClient;
+
+      controller = new PopupController({
+        storage: repo,
+        api: fakeApi,
+        sendMessage: async () => ({ success: true }),
+        requestPermission: async () => permissionGranted,
+        bookmarks: {
+          update: async () => {},
+          move: async () => {},
+          remove: async () => {},
+          create: async () => ({ id: "browser-node-99" }),
+          getFolders: async () => [],
+        },
+      });
+
+      const result = await controller.commitDraft({
+        url: draft.url,
+        title: "Some Title",
+        folderId: "9",
+        status: "Plan to Read",
+      });
+
+      expect(result).toEqual({ success: true, error: null });
+      expect(updatedStatus).toEqual({ id: "server-guid-123", status: "Plan to Read" });
     });
 
     it("dismissDraft clears the pending draft without creating anything", async () => {

@@ -73,6 +73,7 @@ public partial class Bookmarks : IDisposable
     }
 
     private List<BookmarkNodeDto>? _cachedVisibleItems;
+    private void InvalidateVisibleItemsCache() => _cachedVisibleItems = null;
     private List<BookmarkNodeDto>? _lastVisibleSourceItems;
     private int _lastVisibleSourceItemsCount;
     private string? _lastVisibleTypeFilter;
@@ -111,11 +112,29 @@ public partial class Bookmarks : IDisposable
                 {
                     items = items.Where(i => i.Metadata?.IsFavorite == true);
                 }
-                else if (_typeFilter == "Later")
+                else if (_typeFilter == "Later" || _typeFilter == "PlanToRead")
                 {
                     items = items.Where(i =>
                         i.Type == NodeType.Bookmark
-                        && string.Equals(i.Metadata?.Status, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal));
+                        && BookmarkReadingStatus.IsPlanToRead(i.Metadata?.Status));
+                }
+                else if (_typeFilter == "Ongoing")
+                {
+                    items = items.Where(i =>
+                        i.Type == NodeType.Bookmark
+                        && BookmarkReadingStatus.Normalize(i.Metadata?.Status) == BookmarkReadingStatus.Ongoing);
+                }
+                else if (_typeFilter == "Completed")
+                {
+                    items = items.Where(i =>
+                        i.Type == NodeType.Bookmark
+                        && BookmarkReadingStatus.Normalize(i.Metadata?.Status) == BookmarkReadingStatus.Completed);
+                }
+                else if (_typeFilter == "Dropped")
+                {
+                    items = items.Where(i =>
+                        i.Type == NodeType.Bookmark
+                        && BookmarkReadingStatus.Normalize(i.Metadata?.Status) == BookmarkReadingStatus.Dropped);
                 }
                 if (_activeTagFilters.Count > 0)
                 {

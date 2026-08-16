@@ -34,6 +34,7 @@ builder.Services.Configure<HostOptions>(options =>
 });
 
 builder.Services.AddScoped<IExtensionService, ExtensionService>();
+builder.Services.AddScoped<IBookmarkStatusProjectionService, BookmarkStatusProjectionService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.TagExtractorService>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.AiTaggingSettingsService>();
 builder.Services.AddSingleton<AiRequestThrottle>();

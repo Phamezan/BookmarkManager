@@ -36,6 +36,7 @@ interface CoverStashEntry {
 }
 const BACKUP_STATE_KEY = "bm.backupState";
 const BACKUP_SETTINGS_KEY = "bm.backupSettings";
+const PENDING_STATUS_KEY = "bm.pendingStatusUpdates";
 
 export const DEFAULT_BACKUP_SUBFOLDER = "BookmarkManagerBackups";
 
@@ -276,6 +277,25 @@ export class ChromeStorageRepository implements StorageRepository {
     await this.storage.set({ [BACKUP_SETTINGS_KEY]: settings });
   }
 
+  async getPendingStatusUpdates(): Promise<Record<string, string>> {
+    const result = await this.storage.get(PENDING_STATUS_KEY);
+    return (result[PENDING_STATUS_KEY] as Record<string, string> | undefined) ?? {};
+  }
+
+  async savePendingStatusUpdate(browserNodeId: string, status: string): Promise<void> {
+    const current = await this.getPendingStatusUpdates();
+    current[browserNodeId] = status;
+    await this.storage.set({ [PENDING_STATUS_KEY]: current });
+  }
+
+  async removePendingStatusUpdate(browserNodeId: string): Promise<void> {
+    const current = await this.getPendingStatusUpdates();
+    if (browserNodeId in current) {
+      delete current[browserNodeId];
+      await this.storage.set({ [PENDING_STATUS_KEY]: current });
+    }
+  }
+
   async clearAll(): Promise<void> {
     await this.storage.remove([
       "bm.settings",
@@ -291,6 +311,7 @@ export class ChromeStorageRepository implements StorageRepository {
       BACKUP_STATE_KEY,
       BACKUP_SETTINGS_KEY,
       DUPLICATE_NOTIFIED_KEY,
+      PENDING_STATUS_KEY,
     ]);
   }
 }

@@ -60,14 +60,14 @@ public static partial class BookmarkPlanToReadHeuristic
 
         var current = node.Status;
         var canTouch = string.IsNullOrWhiteSpace(current)
-            || string.Equals(current, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal);
+            || BookmarkReadingStatus.IsPlanToRead(current);
 
         if (!canTouch)
             return;
 
         if (ShouldMarkPlanToRead(node.Url))
             node.Status = BookmarkReadingStatus.PlanToRead;
-        else if (string.Equals(current, BookmarkReadingStatus.PlanToRead, StringComparison.Ordinal))
+        else if (BookmarkReadingStatus.IsPlanToRead(current))
             node.Status = null;
     }
 

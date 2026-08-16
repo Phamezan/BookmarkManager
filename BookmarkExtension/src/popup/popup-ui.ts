@@ -1,4 +1,9 @@
-import type { PendingCreateDraft, PendingDuplicateState, ShortcutEditorState } from "../api/contracts";
+import type {
+  PendingCreateDraft,
+  PendingDuplicateState,
+  ShortcutEditorState,
+} from "../api/contracts";
+import { SettingsAwareApiClient } from "../api/settings-aware-client";
 import { ChromeStorageRepository } from "../storage/storage-repository";
 import {
   DEFAULT_API_BASE_URL,
@@ -15,9 +20,11 @@ type ActiveMode = "draft" | "editor" | null;
 
 if (isBrowser) {
   const storage = new ChromeStorageRepository(chrome.storage.local);
+  const api = new SettingsAwareApiClient(storage);
 
   const controller = new PopupController({
     storage,
+    api,
     sendMessage: async (message: unknown) => {
       try {
         return await chrome.runtime.sendMessage(message);
@@ -113,6 +120,7 @@ if (isBrowser) {
     editorCloseBtn:document.getElementById("editor-close-btn") as HTMLButtonElement | null,
     editorTitle:   document.getElementById("editor-title")    as HTMLInputElement | null,
     editorFolder:  document.getElementById("editor-folder")   as HTMLSelectElement | null,
+    editorStatus:  document.getElementById("editor-status")   as HTMLSelectElement | null,
     editorMsg:     document.getElementById("editor-message")  as HTMLElement | null,
     editorDoneBtn: document.getElementById("editor-done-btn") as HTMLButtonElement | null,
     editorRemoveBtn: document.getElementById("editor-remove-btn") as HTMLButtonElement | null,
@@ -387,6 +395,9 @@ if (isBrowser) {
       if (els.editorFolder) {
         populateFolderSelect(els.editorFolder, catalog, editor.parentId);
       }
+      if (els.editorStatus) {
+        els.editorStatus.value = editor.status ?? "Ongoing";
+      }
     }
     setEditorMsg("");
   }
@@ -426,6 +437,9 @@ if (isBrowser) {
     if (els.editorFolder) {
       populateFolderSelect(els.editorFolder, catalog, draft.folderId);
     }
+    if (els.editorStatus) {
+      els.editorStatus.value = draft.status ?? "Ongoing";
+    }
     // Nothing exists yet to remove.
     if (els.editorRemoveBtn) els.editorRemoveBtn.hidden = true;
     setEditorMsg("");
@@ -437,6 +451,7 @@ if (isBrowser) {
       const btn = els.editorDoneBtn;
       const title = els.editorTitle?.value?.trim() ?? "";
       const folderId = els.editorFolder?.value ?? "";
+      const status = els.editorStatus?.value || "Ongoing";
       if (title.length === 0) {
         setEditorMsg("Name cannot be empty", "error");
         return;
@@ -447,7 +462,7 @@ if (isBrowser) {
       }
       if (btn) btn.disabled = true;
       setEditorMsg("Saving…", "info");
-      const result = await controller.commitDraft({ url: currentDraftUrl, title, folderId });
+      const result = await controller.commitDraft({ url: currentDraftUrl, title, folderId, status });
       if (btn) btn.disabled = false;
       if (result.success) {
         window.close();
@@ -466,6 +481,7 @@ if (isBrowser) {
       }
       const title = els.editorTitle?.value?.trim() ?? "";
       const folderId = els.editorFolder?.value ?? editor.parentId;
+      const status = els.editorStatus?.value || "Ongoing";
       if (title.length === 0) {
         setEditorMsg("Name cannot be empty", "error");
         return;
@@ -477,6 +493,7 @@ if (isBrowser) {
         title,
         folderId,
         currentParentId: editor.parentId,
+        status,
       });
       if (btn) btn.disabled = false;
       if (result.success) {

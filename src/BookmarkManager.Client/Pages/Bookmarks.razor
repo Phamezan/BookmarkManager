@@ -45,6 +45,7 @@ else
                                   ClearSelection="@ClearSelectionAndAnchor"
                                   MoveSelected="MoveSelected"
                                   DeleteSelected="DeleteSelected"
+                                  ChangeBulkStatus="@ChangeBulkStatusAsync"
                                   CreateBookmark="CreateBookmark"
                                   OpenAutoTaggerDialog="OpenAutoTaggerDialog"
                                   SortMode="@_sortMode"
@@ -277,6 +278,24 @@ else
             <button class="custom-context-menu-item" @onclick="ArchiveContextBookmark">
                 <MudIcon Icon="@Icons.Material.Filled.Archive" Size="Size.Small" />
                 <span>Archive</span>
+            </button>
+            <div class="custom-context-menu-divider" />
+            <div class="custom-context-menu-subheader">Personal Status</div>
+            <button class="custom-context-menu-item" @onclick="@(() => ChangeBookmarkStatusAsync(_contextMenuBookmark, BookmarkReadingStatus.Ongoing))">
+                <MudIcon Icon="@Icons.Material.Filled.PlayCircle" Size="Size.Small" />
+                <span>Ongoing</span>
+            </button>
+            <button class="custom-context-menu-item" @onclick="@(() => ChangeBookmarkStatusAsync(_contextMenuBookmark, BookmarkReadingStatus.PlanToRead))">
+                <MudIcon Icon="@Icons.Material.Filled.BookmarkAdd" Size="Size.Small" />
+                <span>Plan to Read</span>
+            </button>
+            <button class="custom-context-menu-item" @onclick="@(() => ChangeBookmarkStatusAsync(_contextMenuBookmark, BookmarkReadingStatus.Completed))">
+                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Size="Size.Small" />
+                <span>Completed</span>
+            </button>
+            <button class="custom-context-menu-item" @onclick="@(() => ChangeBookmarkStatusAsync(_contextMenuBookmark, BookmarkReadingStatus.Dropped))">
+                <MudIcon Icon="@Icons.Material.Filled.Cancel" Size="Size.Small" />
+                <span>Dropped</span>
             </button>
             <div class="custom-context-menu-divider" />
             <button class="custom-context-menu-item danger" @onclick="DeleteContextBookmark">

@@ -73,6 +73,7 @@ describe("QuickBookmarkHandler", () => {
       title: "Some Series",
       folderId: "1",
       capturedAt: NOW_ISO,
+      status: "Ongoing",
     });
     expect(await repo.getShortcutEditorState()).toBeNull();
   });
@@ -103,6 +104,7 @@ describe("QuickBookmarkHandler", () => {
       parentId: "1",
       capturedAt: NOW_ISO,
       wasCreated: false,
+      status: "Ongoing",
     });
   });
 
@@ -144,6 +146,7 @@ describe("QuickBookmarkHandler", () => {
       title: "Some Novel",
       folderId: "20",
       capturedAt: NOW_ISO,
+      status: "Ongoing",
     });
   });
 
