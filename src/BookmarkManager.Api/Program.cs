@@ -165,6 +165,7 @@ builder.Services.AddHostedService<PurgeBackgroundJob>();
 builder.Services.Configure<BookmarkManager.Api.Services.Backup.BackupOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Backup.BackupOptions.SectionName));
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Backup.IBackupService, BookmarkManager.Api.Services.Backup.BackupService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Backup.HtmlBookmarkRestoreService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Backup.BackupBackgroundJob>();
 builder.Services.AddAutoMapper(cfg => { }, typeof(MappingProfile));
 builder.Services.AddProblemDetails(options =>

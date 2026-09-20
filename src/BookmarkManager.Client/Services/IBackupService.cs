@@ -9,5 +9,6 @@ public interface IBackupService
     Task<BackupManifestDto> CreateBackupAsync(CancellationToken cancellationToken = default);
     Task DeleteBackupAsync(Guid id, CancellationToken cancellationToken = default);
     Task<BackupRestoreResultDto> RestoreAsync(Guid id, string confirm, CancellationToken cancellationToken = default);
+    Task<HtmlBookmarkRestoreResultDto> RestoreHtmlAsync(Stream file, string fileName, string confirm, CancellationToken cancellationToken = default);
     string GetDownloadUrl(Guid id);
 }
