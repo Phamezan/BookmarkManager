@@ -47,15 +47,18 @@ public static partial class NetscapeBookmarkHtmlParser
                 if (anchor.Success)
                 {
                     var href = Decode(anchor.Groups["href"].Value).Trim();
-                    if (!Uri.TryCreate(href, UriKind.Absolute, out var uri) ||
-                        (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-                    {
+                    if (string.IsNullOrWhiteSpace(href))
                         continue;
-                    }
+                    if (href.Length > 2048)
+                        throw new InvalidDataException("The bookmark file contains a URL longer than 2048 characters.");
 
+                    // Bookmark exports can legitimately contain file:// links,
+                    // browser-internal URLs, and javascript: bookmarklets. This
+                    // restore path never navigates to them server-side, so keep
+                    // the exported URL verbatim instead of silently dropping it.
                     current.Add(new ImportedBookmarkNode(
                         ClampTitle(Decode(anchor.Groups["title"].Value)),
-                        uri.AbsoluteUri,
+                        href,
                         []));
                     EnsureNodeLimit(++nodeCount);
                 }
