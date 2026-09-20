@@ -58,7 +58,7 @@ public sealed class NetscapeBookmarkHtmlParserTests
     }
 
     [Fact]
-    public void Parse_SkipsNonHttpBookmarks()
+    public void Parse_PreservesNonHttpBookmarks()
     {
         const string html = """
             <!DOCTYPE NETSCAPE-Bookmark-file-1>
@@ -73,9 +73,11 @@ public sealed class NetscapeBookmarkHtmlParserTests
             """;
 
         var root = Assert.Single(NetscapeBookmarkHtmlParser.Parse(html));
-        var bookmark = Assert.Single(root.Children);
-        Assert.Equal("Safe", bookmark.Title);
-        Assert.Equal("https://example.com/safe", bookmark.Url);
+        Assert.Collection(
+            root.Children,
+            bookmark => Assert.Equal("javascript:alert(1)", bookmark.Url),
+            bookmark => Assert.Equal("file:///tmp/test", bookmark.Url),
+            bookmark => Assert.Equal("https://example.com/safe", bookmark.Url));
     }
 
     [Fact]
