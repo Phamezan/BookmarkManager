@@ -104,6 +104,7 @@
 [data-theme="anime"] .backups-page .backups-ribbon .cell,
 [data-theme="anime"] .backups-page .backups-activity .panel,
 [data-theme="anime"] .backups-page .backups-history,
+[data-theme="anime"] .backups-page .backups-html-restore,
 [data-theme="anime"] .backups-page .backups-settings,
 [data-theme="anime"] .backups-page .backups-modal {
     position: relative;
@@ -120,6 +121,7 @@
 [data-theme="anime"] .backups-page .backups-ribbon .cell::before,
 [data-theme="anime"] .backups-page .backups-activity .panel::before,
 [data-theme="anime"] .backups-page .backups-history::before,
+[data-theme="anime"] .backups-page .backups-html-restore::before,
 [data-theme="anime"] .backups-page .backups-settings::before,
 [data-theme="anime"] .backups-page .backups-modal::before {
     content: '';
@@ -878,3 +880,10 @@
     0%, 100% { box-shadow: 0 4px 0 #6e1c10, 0 10px 26px rgba(150, 40, 27, 0.4); }
     50% { box-shadow: 0 4px 0 #6e1c10, 0 12px 34px rgba(199, 62, 46, 0.6); }
 }
+
+
+[data-theme="anime"] .backups-page .backups-html-restore { border: 1px solid rgba(74, 48, 24, 0.28); color: #221c14; }
+[data-theme="anime"] .backups-page .backups-html-restore h2 { font-family: "Marcellus", serif; font-weight: 400; }
+[data-theme="anime"] .backups-page .backups-html-restore p,
+[data-theme="anime"] .backups-page .html-restore-selected,
+[data-theme="anime"] .backups-page .html-restore-file { color: #5a4f3e; }
