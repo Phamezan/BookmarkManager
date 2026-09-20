@@ -12,6 +12,7 @@ namespace BookmarkManager.Api.Controllers;
 [Route("api/backups")]
 public sealed class BackupsController(
     IBackupService backupService,
+    HtmlBookmarkRestoreService htmlBookmarkRestoreService,
     IHostApplicationLifetime lifetime,
     IOptions<BackupOptions> backupOptions) : ControllerBase
 {
@@ -100,6 +101,71 @@ public sealed class BackupsController(
                 StatusCodes.Status500InternalServerError,
                 "restore_failed",
                 "Restore failed",
+                ex.Message));
+        }
+    }
+
+    [HttpPost("restore-html")]
+    [RequestSizeLimit(20 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 20 * 1024 * 1024)]
+    public async Task<ActionResult<HtmlBookmarkRestoreResultDto>> RestoreHtmlAsync(
+        [FromForm] IFormFile file,
+        [FromForm] string confirm,
+        CancellationToken ct)
+    {
+        if (file.Length == 0)
+        {
+            return BadRequest(ApiProblem.Create(
+                StatusCodes.Status400BadRequest,
+                "empty_bookmark_html",
+                "Empty bookmark file",
+                "Select a non-empty Chromium/Brave bookmark HTML export."));
+        }
+
+        try
+        {
+            await using var stream = file.OpenReadStream(20 * 1024 * 1024);
+            var result = await htmlBookmarkRestoreService.RestoreAsync(stream, confirm, ct);
+            return Accepted(result);
+        }
+        catch (BackupInvalidConfirmException ex)
+        {
+            return BadRequest(ApiProblem.Create(
+                StatusCodes.Status400BadRequest,
+                "invalid_confirm",
+                "Invalid confirmation",
+                ex.Message));
+        }
+        catch (InvalidDataException ex)
+        {
+            return BadRequest(ApiProblem.Create(
+                StatusCodes.Status400BadRequest,
+                "invalid_bookmark_html",
+                "Invalid bookmark HTML",
+                ex.Message));
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ApiProblem.Create(
+                StatusCodes.Status409Conflict,
+                "bookmark_roots_not_ready",
+                "Browser roots are not synchronized",
+                ex.Message));
+        }
+        catch (BackupAlreadyRunningException)
+        {
+            return Conflict(ApiProblem.Create(
+                StatusCodes.Status409Conflict,
+                "backup_in_progress",
+                "Backup already in progress",
+                "Wait for the current backup to finish before restoring bookmarks."));
+        }
+        catch (BackupRestoreException ex)
+        {
+            return StatusCode(StatusCodes.Status500InternalServerError, ApiProblem.Create(
+                StatusCodes.Status500InternalServerError,
+                "html_restore_failed",
+                "Bookmark restore failed",
                 ex.Message));
         }
     }
