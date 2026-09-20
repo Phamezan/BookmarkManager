@@ -7,7 +7,17 @@ namespace BookmarkManager.Api.Services.Backup;
 
 public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService backupService)
 {
-    public async Task<HtmlBookmarkRestoreResultDto> RestoreAsync(Stream htmlStream, string confirm, CancellationToken ct)
+    private static readonly HashSet<string> ReplaceableBrowserRootIds = ["1", "2", "3"];
+
+    private sealed record PreparedImport(
+        BookmarkNode Node,
+        ImportedBookmarkNode Imported,
+        List<PreparedImport> Children);
+
+    public async Task<HtmlBookmarkRestoreResultDto> RestoreAsync(
+        Stream htmlStream,
+        string confirm,
+        CancellationToken ct)
     {
         if (!string.Equals(confirm, "RESTORE", StringComparison.Ordinal))
             throw new BackupInvalidConfirmException("Type RESTORE exactly to replace the current bookmark tree.");
@@ -15,8 +25,6 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
         using var reader = new StreamReader(htmlStream, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
         var html = await reader.ReadToEndAsync(ct);
         var importedRoots = NetscapeBookmarkHtmlParser.Parse(html);
-        if (importedRoots.Sum(r => r.Children.Count) == 0)
-            throw new InvalidDataException("The bookmark file does not contain any restorable bookmarks or folders.");
 
         var safety = await backupService.CreateBackupAsync(BackupManifestTrigger.PreRestore, ct);
         if (safety.Status != BackupManifestStatus.Succeeded)
@@ -26,29 +34,30 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
         try
         {
             var now = DateTime.UtcNow;
-            var protectedRoots = await db.BookmarkNodes
-                .Where(n => !n.IsDeleted && n.IsProtected && n.BrowserNodeId != null)
+
+            // IsProtected is inherited by descendants in the browser snapshot mapper, so
+            // identify Chromium's actual fixed roots by their well-known browser IDs.
+            var browserRoots = await db.BookmarkNodes
+                .Where(n => !n.IsDeleted &&
+                            n.BrowserNodeId != null &&
+                            ReplaceableBrowserRootIds.Contains(n.BrowserNodeId))
                 .ToDictionaryAsync(n => n.BrowserNodeId!, ct);
 
-            foreach (var requiredId in importedRoots.Select(r => r.BrowserRootId).Where(id => id is not null).Distinct())
+            foreach (var requiredId in importedRoots.Select(root => root.BrowserRootId).Distinct())
             {
-                if (!protectedRoots.ContainsKey(requiredId!))
-                    throw new InvalidOperationException($"Browser root {requiredId} is not synchronized yet. Run a manual sync and try again.");
+                if (!browserRoots.ContainsKey(requiredId))
+                {
+                    throw new InvalidOperationException(
+                        $"Browser root {requiredId} is not synchronized yet. Run a manual sync and try again.");
+                }
             }
 
-            var targetRootIds = importedRoots
-                .Select(r => r.BrowserRootId)
-                .Where(id => id is not null)
-                .Cast<string>()
-                .ToHashSet(StringComparer.Ordinal);
-
-            var targetDbIds = protectedRoots
-                .Where(kvp => targetRootIds.Contains(kvp.Key))
-                .Select(kvp => kvp.Value.Id)
-                .ToHashSet();
-
+            // This is a replacement restore, not an additive import. Clear every
+            // replaceable browser root that exists locally even when the HTML export
+            // omits that root because it was empty at backup time.
+            var rootDbIds = browserRoots.Values.Select(root => root.Id).ToHashSet();
             var oldTopLevel = await db.BookmarkNodes
-                .Where(n => !n.IsDeleted && n.ParentId != null && targetDbIds.Contains(n.ParentId.Value))
+                .Where(n => !n.IsDeleted && n.ParentId != null && rootDbIds.Contains(n.ParentId.Value))
                 .OrderBy(n => n.Position)
                 .ToListAsync(ct);
 
@@ -80,23 +89,28 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
 
             foreach (var importedRoot in importedRoots)
             {
-                var browserRootId = importedRoot.BrowserRootId ?? "1";
-                if (!protectedRoots.TryGetValue(browserRootId, out var dbRoot))
-                    throw new InvalidOperationException($"Browser root {browserRootId} is not synchronized yet.");
+                var dbRoot = browserRoots[importedRoot.BrowserRootId];
 
                 for (var i = 0; i < importedRoot.Children.Count; i++)
                 {
-                    var imported = importedRoot.Children[i];
-                    var node = AddImportedTree(imported, dbRoot.Id, browserRootId, i, ref restoredBookmarks, ref restoredFolders);
+                    var prepared = AddImportedTree(
+                        importedRoot.Children[i],
+                        dbRoot.Id,
+                        importedRoot.BrowserRootId,
+                        i,
+                        ref restoredBookmarks,
+                        ref restoredFolders);
+
                     db.ExtensionCommands.Add(new ExtensionCommandEntry
                     {
                         Id = Guid.NewGuid(),
                         OperationId = Guid.NewGuid(),
                         CommandType = "Restore",
-                        BookmarkId = node.Id,
+                        BookmarkId = prepared.Node.Id,
                         BrowserNodeId = null,
-                        ExpectedVersion = node.Version,
-                        PayloadJson = JsonSerializer.Serialize(BuildRestorePayload(node, imported, browserRootId)),
+                        ExpectedVersion = prepared.Node.Version,
+                        PayloadJson = JsonSerializer.Serialize(
+                            BuildRestorePayload(prepared, importedRoot.BrowserRootId)),
                         CreatedAt = restoreCreatedAt,
                         Status = "Pending"
                     });
@@ -123,7 +137,10 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
         }
     }
 
-    private async Task<int> MarkDeletedRecursiveAsync(BookmarkNode node, DateTime now, CancellationToken ct)
+    private async Task<int> MarkDeletedRecursiveAsync(
+        BookmarkNode node,
+        DateTime now,
+        CancellationToken ct)
     {
         var count = 1;
         node.IsDeleted = true;
@@ -137,6 +154,7 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
             var children = await db.BookmarkNodes
                 .Where(n => !n.IsDeleted && n.ParentId == node.Id)
                 .ToListAsync(ct);
+
             foreach (var child in children)
                 count += await MarkDeletedRecursiveAsync(child, now, ct);
         }
@@ -144,10 +162,10 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
         return count;
     }
 
-    private BookmarkNode AddImportedTree(
+    private PreparedImport AddImportedTree(
         ImportedBookmarkNode imported,
         Guid parentId,
-        string parentBrowserNodeId,
+        string? parentBrowserNodeId,
         int position,
         ref int bookmarkCount,
         ref int folderCount)
@@ -167,40 +185,53 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
         };
         db.BookmarkNodes.Add(node);
 
-        if (imported.IsFolder) folderCount++;
-        else bookmarkCount++;
+        if (imported.IsFolder)
+            folderCount++;
+        else
+            bookmarkCount++;
 
+        var children = new List<PreparedImport>(imported.Children.Count);
         for (var i = 0; i < imported.Children.Count; i++)
-            AddImportedTree(imported.Children[i], node.Id, string.Empty, i, ref bookmarkCount, ref folderCount);
+        {
+            children.Add(AddImportedTree(
+                imported.Children[i],
+                node.Id,
+                null,
+                i,
+                ref bookmarkCount,
+                ref folderCount));
+        }
 
-        return node;
+        return new PreparedImport(node, imported, children);
     }
 
-    private static object BuildRestorePayload(BookmarkNode node, ImportedBookmarkNode imported, string parentBrowserNodeId)
+    private static object BuildRestorePayload(
+        PreparedImport prepared,
+        string parentBrowserNodeId)
         => new
         {
-            bookmarkId = node.Id,
-            type = imported.IsFolder ? "Folder" : "Bookmark",
+            bookmarkId = prepared.Node.Id,
+            type = prepared.Imported.IsFolder ? "Folder" : "Bookmark",
             parentBrowserNodeId,
-            title = imported.Title,
-            url = imported.Url,
-            position = node.Position,
-            children = imported.IsFolder
-                ? imported.Children.Select((child, index) => BuildRestoreChildPayload(child, index)).ToList()
+            title = prepared.Imported.Title,
+            url = prepared.Imported.Url,
+            position = prepared.Node.Position,
+            children = prepared.Imported.IsFolder
+                ? prepared.Children.Select(BuildRestoreChildPayload).ToList()
                 : null
         };
 
-    private static object BuildRestoreChildPayload(ImportedBookmarkNode imported, int position)
+    private static object BuildRestoreChildPayload(PreparedImport prepared)
         => new
         {
-            bookmarkId = Guid.Empty,
-            type = imported.IsFolder ? "Folder" : "Bookmark",
+            bookmarkId = prepared.Node.Id,
+            type = prepared.Imported.IsFolder ? "Folder" : "Bookmark",
             parentBrowserNodeId = string.Empty,
-            title = imported.Title,
-            url = imported.Url,
-            position,
-            children = imported.IsFolder
-                ? imported.Children.Select((child, index) => BuildRestoreChildPayload(child, index)).ToList()
+            title = prepared.Imported.Title,
+            url = prepared.Imported.Url,
+            position = prepared.Node.Position,
+            children = prepared.Imported.IsFolder
+                ? prepared.Children.Select(BuildRestoreChildPayload).ToList()
                 : null
         };
 }
