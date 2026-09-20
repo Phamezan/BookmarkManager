@@ -8,7 +8,7 @@ public sealed record ImportedBookmarkNode(string Title, string? Url, List<Import
     public bool IsFolder => Url is null;
 }
 
-public sealed record ImportedBookmarkRoot(string? BrowserRootId, List<ImportedBookmarkNode> Children);
+public sealed record ImportedBookmarkRoot(string BrowserRootId, List<ImportedBookmarkNode> Children);
 
 public static partial class NetscapeBookmarkHtmlParser
 {
@@ -23,8 +23,9 @@ public static partial class NetscapeBookmarkHtmlParser
         }
 
         var roots = new List<ImportedBookmarkRoot>();
+        var topLevel = new List<ImportedBookmarkNode>();
         var stack = new Stack<List<ImportedBookmarkNode>>();
-        var current = new List<ImportedBookmarkNode>();
+        var current = topLevel;
         string? pendingFolderTitle = null;
         string? pendingFolderAttributes = null;
         var nodeCount = 0;
@@ -42,10 +43,10 @@ public static partial class NetscapeBookmarkHtmlParser
                     continue;
                 }
 
-                var a = AnchorRegex().Match(value);
-                if (a.Success)
+                var anchor = AnchorRegex().Match(value);
+                if (anchor.Success)
                 {
-                    var href = Decode(a.Groups["href"].Value).Trim();
+                    var href = Decode(anchor.Groups["href"].Value).Trim();
                     if (!Uri.TryCreate(href, UriKind.Absolute, out var uri) ||
                         (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
                     {
@@ -53,7 +54,7 @@ public static partial class NetscapeBookmarkHtmlParser
                     }
 
                     current.Add(new ImportedBookmarkNode(
-                        ClampTitle(Decode(a.Groups["title"].Value)),
+                        ClampTitle(Decode(anchor.Groups["title"].Value)),
                         uri.AbsoluteUri,
                         []));
                     EnsureNodeLimit(++nodeCount);
@@ -67,7 +68,12 @@ public static partial class NetscapeBookmarkHtmlParser
                 if (pendingFolderTitle is not null)
                 {
                     var browserRootId = ResolveBrowserRootId(pendingFolderTitle, pendingFolderAttributes);
-                    if (stack.Count == 0 && browserRootId is not null)
+
+                    // The first <DL> is the Netscape document container. Its direct H3
+                    // children are Chromium's protected roots. Keep those roots out of
+                    // the imported node tree and restore their children directly into
+                    // the existing browser root instead.
+                    if (stack.Count == 1 && browserRootId is not null)
                     {
                         stack.Push(current);
                         current = [];
@@ -99,82 +105,30 @@ public static partial class NetscapeBookmarkHtmlParser
             }
         }
 
+        if (topLevel.Count > 0)
+        {
+            var bookmarksBar = roots.FirstOrDefault(r => r.BrowserRootId == "1");
+            if (bookmarksBar is null)
+            {
+                roots.Insert(0, new ImportedBookmarkRoot("1", topLevel));
+            }
+            else
+            {
+                bookmarksBar.Children.InsertRange(0, topLevel);
+            }
+        }
+
         if (roots.Count == 0)
         {
-            // Bookmark Manager's own exporter emits the browser roots as plain top-level H3
-            // sections. If a third-party exporter omitted root attributes entirely, preserve
-            // the parsed top-level content under the bookmarks bar rather than wrapping it
-            // in an "Imported bookmarks" folder.
-            var parsed = ParseTopLevelFallback(html, ref nodeCount);
-            roots.Add(new ImportedBookmarkRoot("1", parsed));
+            throw new InvalidDataException("The bookmark file does not contain any restorable bookmarks or folders.");
         }
 
         return roots
-            .GroupBy(r => r.BrowserRootId)
-            .Select(g => new ImportedBookmarkRoot(g.Key, g.SelectMany(x => x.Children).ToList()))
+            .GroupBy(r => r.BrowserRootId, StringComparer.Ordinal)
+            .Select(group => new ImportedBookmarkRoot(
+                group.Key,
+                group.SelectMany(root => root.Children).ToList()))
             .ToList();
-    }
-
-    private static List<ImportedBookmarkNode> ParseTopLevelFallback(string html, ref int nodeCount)
-    {
-        var root = new List<ImportedBookmarkNode>();
-        var stack = new Stack<List<ImportedBookmarkNode>>();
-        var current = root;
-        string? pendingFolder = null;
-
-        foreach (Match token in TokenRegex().Matches(html))
-        {
-            var value = token.Value;
-            if (value.StartsWith("<DT", StringComparison.OrdinalIgnoreCase))
-            {
-                var h3 = H3Regex().Match(value);
-                if (h3.Success)
-                {
-                    pendingFolder = Decode(h3.Groups["title"].Value);
-                    continue;
-                }
-
-                var a = AnchorRegex().Match(value);
-                if (a.Success)
-                {
-                    var href = Decode(a.Groups["href"].Value).Trim();
-                    if (!Uri.TryCreate(href, UriKind.Absolute, out var uri) ||
-                        (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
-                        continue;
-
-                    current.Add(new ImportedBookmarkNode(
-                        ClampTitle(Decode(a.Groups["title"].Value)),
-                        uri.AbsoluteUri,
-                        []));
-                    EnsureNodeLimit(++nodeCount);
-                }
-
-                continue;
-            }
-
-            if (value.StartsWith("<DL", StringComparison.OrdinalIgnoreCase))
-            {
-                if (pendingFolder is not null)
-                {
-                    var folder = new ImportedBookmarkNode(ClampTitle(pendingFolder), null, []);
-                    current.Add(folder);
-                    EnsureNodeLimit(++nodeCount);
-                    stack.Push(current);
-                    current = folder.Children;
-                    pendingFolder = null;
-                }
-                else
-                {
-                    stack.Push(current);
-                }
-                continue;
-            }
-
-            if (value.StartsWith("</DL", StringComparison.OrdinalIgnoreCase) && stack.Count > 0)
-                current = stack.Pop();
-        }
-
-        return root;
     }
 
     private static string? ResolveBrowserRootId(string title, string? attrs)
@@ -194,7 +148,8 @@ public static partial class NetscapeBookmarkHtmlParser
         };
     }
 
-    private static string Decode(string value) => WebUtility.HtmlDecode(StripTagsRegex().Replace(value, string.Empty)).Trim();
+    private static string Decode(string value)
+        => WebUtility.HtmlDecode(StripTagsRegex().Replace(value, string.Empty)).Trim();
 
     private static string ClampTitle(string title)
     {
