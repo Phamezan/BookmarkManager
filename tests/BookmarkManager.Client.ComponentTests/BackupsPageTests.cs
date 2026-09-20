@@ -100,6 +100,20 @@ public sealed class BackupsPageTests
             });
         }
 
+        public Task<HtmlBookmarkRestoreResultDto> RestoreHtmlAsync(
+            Stream file,
+            string fileName,
+            string confirm,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new HtmlBookmarkRestoreResultDto
+            {
+                SafetyBackupId = Guid.NewGuid(),
+                RestoredBookmarkCount = 2,
+                RestoredFolderCount = 1,
+                ReplacedNodeCount = 3,
+                Message = "Restore queued."
+            });
+
         public string GetDownloadUrl(Guid id) => $"api/backups/{id}/download";
     }
 
@@ -118,6 +132,8 @@ public sealed class BackupsPageTests
             Assert.Contains("Back up now", page.Markup);
             Assert.Contains("bookmarks-2026-07-14-0300.db", page.Markup);
             Assert.Contains("Live DB size", page.Markup);
+            Assert.Contains("Restore bookmarks from HTML", page.Markup);
+            Assert.Contains("without an extra Imported bookmarks folder", page.Markup);
         });
     }
 

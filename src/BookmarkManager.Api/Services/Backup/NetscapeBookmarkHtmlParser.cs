@@ -138,6 +138,8 @@ public static partial class NetscapeBookmarkHtmlParser
             return "1";
         if (attrs.Contains("UNFILED_BOOKMARKS_FOLDER", StringComparison.OrdinalIgnoreCase))
             return "2";
+        if (attrs.Contains("MOBILE_BOOKMARKS_FOLDER", StringComparison.OrdinalIgnoreCase))
+            return "3";
 
         return title.Trim().ToLowerInvariant() switch
         {
