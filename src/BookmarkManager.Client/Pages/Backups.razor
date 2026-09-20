@@ -185,6 +185,39 @@
             </table>
         </section>
 
+        <section class="backups-html-restore">
+            <div class="html-restore-copy">
+                <div class="backups-eyebrow mono">Bookmark recovery</div>
+                <h2>Restore bookmarks from HTML</h2>
+                <p>
+                    Replace the current Brave bookmark tree from a Chromium/Netscape <span class="mono">.html</span> export.
+                    Browser roots such as Bookmarks bar and Other bookmarks are kept; their contents are replaced directly,
+                    without an extra Imported bookmarks folder.
+                </p>
+                <p class="html-restore-note">
+                    A full database safety snapshot is created automatically before anything is replaced.
+                </p>
+            </div>
+            <div class="html-restore-actions">
+                <InputFile id="html-restore-file"
+                           class="html-restore-file"
+                           OnChange="SelectHtmlRestoreFile"
+                           accept=".html,text/html" />
+                @if (_htmlRestoreFile is not null)
+                {
+                    <div class="html-restore-selected mono">
+                        @_htmlRestoreFile.Name · @FormatBytes(_htmlRestoreFile.Size)
+                    </div>
+                }
+                <button type="button"
+                        class="backups-cta secondary"
+                        disabled="@(_htmlRestoreFile is null || _htmlRestoring)"
+                        @onclick="OpenHtmlRestoreDialog">
+                    Restore from HTML
+                </button>
+            </div>
+        </section>
+
         <section class="backups-settings">
             <h2>Settings</h2>
             <dl>
@@ -221,6 +254,35 @@
                         The extension will re-baseline after reconnect.
                     </p>
                 </div>
+            </div>
+        </div>
+    }
+    else if (_htmlRestoreDialog && _htmlRestoreFile is not null)
+    {
+        <div class="backups-modal-backdrop" @onclick="CloseHtmlRestoreDialog">
+            <div class="backups-modal" @onclick:stopPropagation="true">
+                <header>
+                    <div class="t">Restore bookmarks from HTML</div>
+                    <button type="button" class="x linkish" @onclick="CloseHtmlRestoreDialog" disabled="@_htmlRestoring">esc</button>
+                </header>
+                <div class="body">
+                    <p>
+                        Replace the current bookmark contents with
+                        <span class="mono">@_htmlRestoreFile.Name</span>.
+                        Bookmarks not present in this file will be removed from Brave after the extension processes the restore queue.
+                    </p>
+                    <p class="mono warn">
+                        Type RESTORE to confirm. A database safety snapshot will be created first.
+                    </p>
+                    <label class="mono" for="html-restore-confirm">Type RESTORE</label>
+                    <input id="html-restore-confirm" class="mono" @bind="_htmlRestoreConfirm" @bind:event="oninput" disabled="@_htmlRestoring" />
+                </div>
+                <footer>
+                    <button type="button" class="linkish" @onclick="CloseHtmlRestoreDialog" disabled="@_htmlRestoring">Cancel</button>
+                    <button type="button" class="backups-cta" disabled="@(_htmlRestoreConfirm != "RESTORE" || _htmlRestoring)" @onclick="ConfirmHtmlRestoreAsync">
+                        @(_htmlRestoring ? "Restoring…" : "Replace bookmarks")
+                    </button>
+                </footer>
             </div>
         </div>
     }

@@ -124,7 +124,7 @@ public sealed class BackupsController(
 
         try
         {
-            await using var stream = file.OpenReadStream(20 * 1024 * 1024);
+            await using var stream = file.OpenReadStream();
             var result = await htmlBookmarkRestoreService.RestoreAsync(stream, confirm, ct);
             return Accepted(result);
         }
