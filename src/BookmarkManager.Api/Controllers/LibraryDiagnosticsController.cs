@@ -5,12 +5,14 @@ using System.Threading;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Api.Services.Rerank;
 using BookmarkManager.Api.Services.Search;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BookmarkManager.Api.Controllers;
 
@@ -30,8 +32,11 @@ public sealed class LibraryDiagnosticsController(
     IHybridSearchService hybridSearch,
     IRerankerService reranker,
     AppDbContext db,
-    ILogger<LibraryDiagnosticsController> logger) : ControllerBase
+    ILogger<LibraryDiagnosticsController> logger,
+    IOptions<LibraryOptions> libraryOptions) : LibraryFeatureControllerBase
 {
+    protected override bool LibraryEnabled => libraryOptions.Value.Enabled;
+
     /// <summary>Floor low enough to surface a title even when its cosine similarity is far below the
     /// retrieval threshold (cosine ranges [-1, 1]); used only for the wider title-rank probe.</summary>
     private const float WideSearchFloor = -1f;
@@ -81,7 +86,33 @@ public sealed class LibraryDiagnosticsController(
         if (!string.IsNullOrWhiteSpace(query))
         {
             var trimmedQuery = query.Trim();
-            var queryVector = await embeddingService.EmbedQueryAsync(trimmedQuery, cancellationToken).ConfigureAwait(false);
+            float[] queryVector;
+            try
+            {
+                queryVector = await embeddingService.EmbedQueryAsync(trimmedQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                // Files were present (IsReady was true) but the lazy session load failed; report the same
+                // ModelReady:false diagnostic the not-ready branch above returns instead of a 500.
+                logger.LogWarning(ex, "Embedding the diagnostic query failed; reporting the model as unavailable.");
+                return Ok(new LibraryEmbeddingDiagnosticDto(
+                    ModelReady: false,
+                    TotalCount: totalCount,
+                    EmbeddedCount: embeddedCount,
+                    EmbeddedPercent: embeddedPercent,
+                    Title: titleResult?.Dto,
+                    QueryMatches: null,
+                    TitleRank: null,
+                    UpToDateCount: upToDateCount,
+                    HybridMatches: null,
+                    RerankerReady: reranker.IsReady));
+            }
+
             queryMatches = await RunQueryAsync(queryVector, cancellationToken).ConfigureAwait(false);
             hybridMatches = await RunHybridQueryAsync(trimmedQuery, queryVector, cancellationToken).ConfigureAwait(false);
             rerankMatches = await RunRerankQueryAsync(trimmedQuery, queryVector, cancellationToken).ConfigureAwait(false);

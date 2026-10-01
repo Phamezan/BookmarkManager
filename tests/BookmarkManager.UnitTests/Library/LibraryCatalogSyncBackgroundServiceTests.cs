@@ -11,6 +11,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace BookmarkManager.UnitTests.Library;
@@ -107,7 +108,7 @@ public sealed class LibraryCatalogSyncBackgroundServiceTests
         var matchService = new BookmarkSeriesMatchService(scopeFactory, NullLogger<BookmarkSeriesMatchService>.Instance);
         var service = new LibraryCatalogSyncBackgroundService(
             scopeFactory, NullLogger<LibraryCatalogSyncBackgroundService>.Instance, registry, matchService,
-            embeddingService, new FakeVectorSearchService());
+            embeddingService, new FakeVectorSearchService(), Options.Create(new LibraryOptions()));
         return (service, scopeFactory);
     }
 

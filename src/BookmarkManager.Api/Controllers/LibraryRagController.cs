@@ -1,15 +1,21 @@
 using System.Threading;
 using System.Threading.Tasks;
+using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Api.Services.Rag;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace BookmarkManager.Api.Controllers;
 
 [ApiController]
 [Route("api/library")]
-public sealed class LibraryRagController(ILibraryRagService ragService) : ControllerBase
+public sealed class LibraryRagController(
+    ILibraryRagService ragService,
+    IOptions<LibraryOptions> libraryOptions) : LibraryFeatureControllerBase
 {
+    protected override bool LibraryEnabled => libraryOptions.Value.Enabled;
+
     /// <summary>Answers a natural-language question grounded on the local catalog and returns markdown
     /// plus the series cards the answer drew from.</summary>
     [HttpPost("chat")]

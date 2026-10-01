@@ -13,7 +13,7 @@ using BookmarkManager.Api.Services.Rerank;
 
 namespace BookmarkManager.Api.IntegrationTests;
 
-public sealed class IntegrationTestWebApplicationFactory : WebApplicationFactory<Program>
+public class IntegrationTestWebApplicationFactory : WebApplicationFactory<Program>
 {
     // The live db lives in its own per-factory directory (not directly in the shared OS temp
     // folder) because restore-on-restart stages/reads files "next to" the live db

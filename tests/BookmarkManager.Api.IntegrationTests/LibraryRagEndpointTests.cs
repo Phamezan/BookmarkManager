@@ -64,6 +64,25 @@ public sealed class LibraryRagEndpointTests : IDisposable
     }
 
     [Fact]
+    public async Task Chat_WhenEmbeddingThrowsAfterReady_ReturnsModelUnavailableMessage()
+    {
+        // IsReady is true (files present) but the lazy session load fails on the first embed: the chat
+        // must degrade to its existing "model not ready" response, not surface a 500.
+        _factory.Embedding.ThrowOnEmbed = true;
+        await SetRagApiKeyAsync("test-rag-key");
+
+        using var client = _factory.CreateClient();
+        var request = new LibraryChatRequestDto("Recommend a time loop novel");
+        using var response = await client.PostAsJsonAsync("/api/library/chat", request, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<LibraryChatResponseDto>(JsonOptions);
+        Assert.NotNull(body);
+        Assert.Contains("not ready", body!.Markdown);
+        Assert.Empty(body.Series);
+    }
+
+    [Fact]
     public async Task Chat_WithRerankerReady_ReturnsRerankOrder_NotHybridOrder()
     {
         var lowId = await SeedCatalogEntryAsync("Shared Vocabulary Story", "A story that shares words with the query but isn't the answer.");
@@ -148,6 +167,7 @@ public sealed class LibraryRagEndpointTests : IDisposable
 
     private sealed class FakeEmbeddingService : IEmbeddingService
     {
+        public bool ThrowOnEmbed { get; set; }
         public bool IsReady => true;
 
         public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) => EmbedAsync(text, cancellationToken);
@@ -155,6 +175,8 @@ public sealed class LibraryRagEndpointTests : IDisposable
 
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken)
         {
+            if (ThrowOnEmbed)
+                throw new InvalidOperationException("simulated lazy session load failure");
             var vector = new float[EmbeddingConstants.EmbeddingDimensions];
             vector[0] = 1f;
             return Task.FromResult(vector);
@@ -218,6 +240,7 @@ public sealed class LibraryRagEndpointTests : IDisposable
         private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"bm-library-rag-{Guid.NewGuid():N}.db");
         private readonly string _dataDir = Path.Combine(Path.GetTempPath(), $"bm-rag-data-{Guid.NewGuid():N}");
 
+        public FakeEmbeddingService Embedding { get; } = new();
         public FakeVectorSearchService Vector { get; } = new();
         public FakeHybridSearchService Hybrid { get; } = new();
         public FakeRerankerService Reranker { get; } = new();
@@ -242,7 +265,7 @@ public sealed class LibraryRagEndpointTests : IDisposable
 
                 // Mock the embedding model and vector search so no ONNX/model download happens.
                 services.RemoveAll<IEmbeddingService>();
-                services.AddSingleton<IEmbeddingService, FakeEmbeddingService>();
+                services.AddSingleton<IEmbeddingService>(Embedding);
                 services.RemoveAll<IVectorSearchService>();
                 services.AddSingleton<IVectorSearchService>(Vector);
                 services.RemoveAll<IHybridSearchService>();
