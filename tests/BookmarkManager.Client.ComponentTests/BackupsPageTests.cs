@@ -193,7 +193,7 @@ public sealed class BackupsPageTests
 
         page.WaitForAssertion(() => Assert.NotNull(page.Find("#restore-confirm")));
 
-        var restoreCta = page.FindAll(".backups-cta")
+        var restoreCta = page.FindAll(".backups-modal .backups-cta")
             .First(button => button.TextContent.Contains("Restore", StringComparison.Ordinal)
                              && button.TagName.Equals("BUTTON", StringComparison.OrdinalIgnoreCase));
         Assert.True(restoreCta.HasAttribute("disabled"));
@@ -205,7 +205,7 @@ public sealed class BackupsPageTests
         page.Find("#restore-confirm").Input("RESTORE");
         page.WaitForAssertion(() =>
         {
-            restoreCta = page.FindAll(".backups-cta")
+            restoreCta = page.FindAll(".backups-modal .backups-cta")
                 .First(button => button.TextContent.Contains("Restore", StringComparison.Ordinal)
                                  && button.TagName.Equals("BUTTON", StringComparison.OrdinalIgnoreCase));
             Assert.False(restoreCta.HasAttribute("disabled"));
