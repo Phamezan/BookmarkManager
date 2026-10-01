@@ -5,12 +5,14 @@ using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.Backup;
 using BookmarkManager.Api.Services.Embedding;
 using BookmarkManager.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BookmarkManager.Api.Services.Library;
 
@@ -27,8 +29,6 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
 {
     private const int MaxAttempts = 5;
     private const int DefaultTopUpPages = 2;
-    private static readonly TimeSpan TopUpInterval = TimeSpan.FromHours(24);
-    private static readonly TimeSpan EmptyQueuePollDelay = TimeSpan.FromMinutes(2);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<LibraryCatalogSyncBackgroundService> _logger;
@@ -36,6 +36,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     private readonly BookmarkSeriesMatchService _matchService;
     private readonly IEmbeddingService _embeddingService;
     private readonly IVectorSearchService _vectorSearch;
+    private readonly IOptions<LibraryOptions> _options;
     private readonly Channel<bool> _resyncChannel = Channel.CreateUnbounded<bool>();
     private readonly object _statusLock = new();
     private bool _isCrawling;
@@ -46,7 +47,8 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         LibraryProviderRegistry registry,
         BookmarkSeriesMatchService matchService,
         IEmbeddingService embeddingService,
-        IVectorSearchService vectorSearch)
+        IVectorSearchService vectorSearch,
+        IOptions<LibraryOptions> options)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -54,6 +56,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
         _matchService = matchService;
         _embeddingService = embeddingService;
         _vectorSearch = vectorSearch;
+        _options = options;
     }
 
     /// <summary>Forces a fresh, unbounded ground-up crawl of every sequence, ignoring any prior progress.</summary>
@@ -131,50 +134,33 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
     {
         _logger.LogInformation("Library catalog sync background service started.");
 
+        // Startup pass: reset stale queue rows and, on a fresh install only, seed the first crawl.
+        // A populated catalog is deliberately NOT topped up at startup - the crawl now runs nightly
+        // (Library:BackgroundScheduleTime) instead of continuously.
         try
         {
-            await EnsureQueueSeededAsync(forceFullUnboundedCrawl: false, stoppingToken).ConfigureAwait(false);
+            await EnsureQueueSeededAsync(forceFullUnboundedCrawl: false, stoppingToken, seedPopulatedCatalog: false)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to seed catalog sync queue on startup.");
         }
 
-        var loops = GetBulkProviders()
-            .Select(provider => RunProviderLoopAsync(provider, stoppingToken))
-            .ToArray();
+        // Drain anything pending (fresh-install seed, or a crawl interrupted by the previous container)
+        // before waiting for the nightly window.
+        await DrainQueueAsync(stoppingToken).ConfigureAwait(false);
 
-        var topUpTimer = RunTopUpTimerAsync(stoppingToken);
-
-        await Task.WhenAll(loops.Append(topUpTimer)).ConfigureAwait(false);
-    }
-
-    private IEnumerable<IBulkCatalogProvider> GetBulkProviders() =>
-        _registry.AllProviders.OfType<IBulkCatalogProvider>();
-
-    private async Task RunTopUpTimerAsync(CancellationToken stoppingToken)
-    {
         while (!stoppingToken.IsCancellationRequested)
         {
-            using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-            var delayTask = Task.Delay(TopUpInterval, waitCts.Token);
-            var resyncTask = _resyncChannel.Reader.ReadAsync(waitCts.Token).AsTask();
-
-            Task completed;
-            try
-            {
-                completed = await Task.WhenAny(delayTask, resyncTask).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
+            var fullResync = await WaitForNextScheduledRunAsync(stoppingToken).ConfigureAwait(false);
+            if (stoppingToken.IsCancellationRequested)
             {
                 break;
-            }
-            waitCts.Cancel();
-
-            var fullResync = completed == resyncTask;
-            if (fullResync)
-            {
-                while (_resyncChannel.Reader.TryRead(out _)) { }
             }
 
             try
@@ -189,14 +175,87 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             {
                 _logger.LogError(ex, "Failed to seed catalog sync queue.");
             }
+
+            await DrainQueueAsync(stoppingToken).ConfigureAwait(false);
         }
+    }
+
+    private IEnumerable<IBulkCatalogProvider> GetBulkProviders() =>
+        _registry.AllProviders.OfType<IBulkCatalogProvider>();
+
+    /// <summary>Processes pending queue items for every bulk provider until the queue drains, then
+    /// returns. Replaces the old always-on polling loop - the crawl is bounded to one scheduled window
+    /// (or the startup bootstrap pass).</summary>
+    private async Task DrainQueueAsync(CancellationToken stoppingToken)
+    {
+        var loops = GetBulkProviders()
+            .Select(provider => RunProviderLoopAsync(provider, stoppingToken))
+            .ToArray();
+
+        await Task.WhenAll(loops).ConfigureAwait(false);
+    }
+
+    /// <summary>Waits until the next configured nightly run or a manual resync request. Returns true
+    /// when the wake was a manual full-resync (unbounded crawl) request.</summary>
+    private async Task<bool> WaitForNextScheduledRunAsync(CancellationToken stoppingToken)
+    {
+        TimeSpan delay;
+        try
+        {
+            var options = _options.Value;
+            var nextRunUtc = BackupScheduleHelper.GetNextScheduledRunUtc(
+                DateTime.UtcNow, options.BackgroundScheduleTime, options.TimeZoneId);
+            delay = nextRunUtc - DateTime.UtcNow;
+            if (delay <= TimeSpan.Zero)
+            {
+                delay = TimeSpan.FromMinutes(1);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never let a bad schedule/time-zone config or a DST edge case escape ExecuteAsync - the
+            // default hosted-service behavior would stop the whole application.
+            _logger.LogError(ex, "Failed to compute the next library catalog sync time; retrying in 1 hour.");
+            delay = TimeSpan.FromHours(1);
+        }
+
+        _logger.LogInformation("Next library catalog sync in {Delay}.", delay);
+
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        var delayTask = Task.Delay(delay, waitCts.Token);
+        var resyncTask = _resyncChannel.Reader.ReadAsync(waitCts.Token).AsTask();
+
+        Task completed;
+        try
+        {
+            completed = await Task.WhenAny(delayTask, resyncTask).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+
+        waitCts.Cancel();
+
+        if (completed != resyncTask)
+        {
+            return false;
+        }
+
+        while (_resyncChannel.Reader.TryRead(out _)) { }
+        return true;
     }
 
     /// <summary>Seeds one pending item per (provider, sequence) that doesn't already have an
     /// active (pending/processing) item. Unbounded (full crawl) when explicitly requested, or when a
     /// provider has zero catalog rows yet (fresh install); otherwise a small bounded top-up.
-    /// Internal (not private) so unit tests can exercise seeding without running the full hosted-service loop.</summary>
-    internal async Task EnsureQueueSeededAsync(bool forceFullUnboundedCrawl, CancellationToken cancellationToken)
+    /// <paramref name="seedPopulatedCatalog"/> false suppresses the bounded top-up so the startup pass
+    /// doesn't kick off a crawl just because the app restarted. Internal (not private) so unit tests can
+    /// exercise seeding without running the full hosted-service loop.</summary>
+    internal async Task EnsureQueueSeededAsync(
+        bool forceFullUnboundedCrawl,
+        CancellationToken cancellationToken,
+        bool seedPopulatedCatalog = true)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -221,6 +280,9 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             var hasAnyEntries = await db.LibraryCatalogEntries
                 .AnyAsync(e => e.Provider == provider.ProviderName, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (!forceFullUnboundedCrawl && !seedPopulatedCatalog && hasAnyEntries)
+                continue;
 
             foreach (var key in provider.CatalogMediaTypeQueries)
             {
@@ -261,16 +323,9 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
 
             if (item is null)
             {
+                // Queue drained (or every remaining item is in backoff); this pass is done.
                 lock (_statusLock) { _isCrawling = false; }
-                try
-                {
-                    await Task.Delay(EmptyQueuePollDelay, stoppingToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                continue;
+                return;
             }
 
             lock (_statusLock) { _isCrawling = true; }
@@ -281,7 +336,7 @@ public sealed class LibraryCatalogSyncBackgroundService : BackgroundService
             }
             catch (OperationCanceledException)
             {
-                break;
+                return;
             }
             catch (Exception ex)
             {

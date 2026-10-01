@@ -6,8 +6,10 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using BookmarkManager.Api.Services.Library;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.ML.OnnxRuntime;
 using Microsoft.ML.OnnxRuntime.Tensors;
 using OnnxTokenizer = Tokenizers.DotNet.Tokenizer;
@@ -17,48 +19,61 @@ namespace BookmarkManager.Api.Services.Rerank;
 /// <summary>Singleton, in-process stage-2 cross-encoder reranker backed by a local ONNX bge-reranker-base
 /// model. Mirrors <see cref="BookmarkManager.Api.Services.Embedding.OnnxEmbeddingService"/>'s lifecycle:
 /// downloads model + tokenizer to the app data dir if missing (graceful offline degrade -
-/// <see cref="IsReady"/> stays false and callers fall back to hybrid order via <see cref="RerankPipeline"/>),
-/// loads an <see cref="InferenceSession"/>, then for each (query, passage) pair builds a single joint
-/// sequence via <see cref="RerankerPairEncoder"/> so the model attends across both texts instead of
-/// comparing two independent vectors. Runs are serialized behind a semaphore since the tokenizer is not
-/// known to be thread-safe.</summary>
+/// <see cref="IsReady"/> stays false and callers fall back to hybrid order via <see cref="RerankPipeline"/>)
+/// but does NOT load the <see cref="InferenceSession"/> until the first inference call, and disposes it
+/// again after <c>Library:ModelIdleUnloadMinutes</c> idle. For each (query, passage) pair it builds a
+/// single joint sequence via <see cref="RerankerPairEncoder"/> so the model attends across both texts
+/// instead of comparing two independent vectors. Runs are serialized behind a semaphore since the
+/// tokenizer is not known to be thread-safe.</summary>
 public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDisposable
 {
     private readonly string _modelDirectory;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<OnnxRerankerService> _logger;
     private readonly SemaphoreSlim _runLock = new(1, 1);
+    private readonly IdleUnloadingResource<LoadedModel> _modelLoader;
 
-    private InferenceSession? _session;
-    private OnnxTokenizer? _tokenizer;
-    private RerankerTokenizerAssets? _assets;
-    private IReadOnlyList<string> _inputNames = Array.Empty<string>();
-    private volatile bool _isReady;
+    private volatile bool _filesReady;
+    private volatile bool _loadFailed;
 
     public OnnxRerankerService(
         IHostEnvironment environment,
         IHttpClientFactory httpClientFactory,
-        ILogger<OnnxRerankerService> logger)
+        ILogger<OnnxRerankerService> logger,
+        IOptions<LibraryOptions> options,
+        TimeProvider timeProvider)
     {
         ArgumentNullException.ThrowIfNull(environment);
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(timeProvider);
         _modelDirectory = Path.Combine(environment.ContentRootPath, "models", RerankConstants.RerankerModelTag);
+        var idleMinutes = Math.Max(1, options.Value.ModelIdleUnloadMinutes);
+        _modelLoader = new IdleUnloadingResource<LoadedModel>(
+            LoadModelAsync,
+            static model => model.Dispose(),
+            TimeSpan.FromMinutes(idleMinutes),
+            timeProvider);
     }
 
-    public bool IsReady => _isReady;
+    /// <summary>True once the model files are present and a load has not permanently failed. Independent
+    /// of whether the ONNX session is currently resident: callers gate on it and then trigger the lazy
+    /// load, so it must mean "usable", not "session loaded".</summary>
+    public bool IsReady => _filesReady && !_loadFailed;
 
-    // Warm the model on startup without blocking host startup - same rationale as OnnxEmbeddingService:
-    // first-boot download can be slow or fail offline, and neither should hold up the rest of the app.
+    // Download the model files on startup without blocking host startup and without constructing an
+    // InferenceSession - same rationale as OnnxEmbeddingService. The session loads on first ScoreAsync.
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _ = Task.Run(() => InitializeAsync(cancellationToken), cancellationToken);
+        _modelLoader.StartIdleMonitor();
+        _ = Task.Run(() => DownloadModelFilesAsync(cancellationToken), cancellationToken);
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private async Task InitializeAsync(CancellationToken cancellationToken)
+    private async Task DownloadModelFilesAsync(CancellationToken cancellationToken)
     {
         try
         {
@@ -67,30 +82,67 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
 
             var modelPath = await EnsureModelFileAsync(cancellationToken).ConfigureAwait(false);
 
-            var options = new Microsoft.ML.OnnxRuntime.SessionOptions
-            {
-                IntraOpNumThreads = 1,
-                InterOpNumThreads = 1,
-                ExecutionMode = ExecutionMode.ORT_SEQUENTIAL
-            };
-            _session = new InferenceSession(modelPath, options);
-            _inputNames = _session.InputMetadata.Keys.ToList();
-            _tokenizer = new OnnxTokenizer(vocabPath: tokenizerPath);
-            _assets = RerankerTokenizerAssets.Load(tokenizerPath);
-            _isReady = true;
-            _logger.LogInformation("Reranker model ready from {Directory} (using {ModelFile}).",
+            _filesReady = true;
+            _logger.LogInformation(
+                "Reranker model files ready from {Directory} (using {ModelFile}); session loads on first use.",
                 _modelDirectory, Path.GetFileName(modelPath));
         }
         catch (OperationCanceledException)
         {
-            // Host shutting down mid-warmup; leave IsReady false.
+            // Host shutting down mid-download; leave IsReady false.
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
-                "Reranker model unavailable (offline first boot or load failure); stage-2 rerank disabled, " +
+                "Reranker model unavailable (offline first boot or download failure); stage-2 rerank disabled, " +
                 "callers fall back to hybrid ordering until restart.");
         }
+    }
+
+    private Task<LoadedModel> LoadModelAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            var tokenizerPath = Path.Combine(_modelDirectory, RerankConstants.TokenizerFileName);
+            var modelPath = ResolveExistingModelPath();
+
+            var options = new Microsoft.ML.OnnxRuntime.SessionOptions
+            {
+                IntraOpNumThreads = 1,
+                InterOpNumThreads = 1,
+                ExecutionMode = ExecutionMode.ORT_SEQUENTIAL,
+                EnableCpuMemArena = false
+            };
+            var session = new InferenceSession(modelPath, options);
+            var tokenizer = new OnnxTokenizer(vocabPath: tokenizerPath);
+            var assets = RerankerTokenizerAssets.Load(tokenizerPath);
+            var inputNames = session.InputMetadata.Keys.ToList();
+
+            _logger.LogInformation("Reranker session loaded from {Directory} (using {ModelFile}).",
+                _modelDirectory, Path.GetFileName(modelPath));
+            return Task.FromResult(new LoadedModel(session, tokenizer, assets, inputNames));
+        }
+        catch (Exception ex)
+        {
+            _loadFailed = true;
+            _logger.LogWarning(ex,
+                "Reranker session failed to load; stage-2 rerank disabled, callers fall back to hybrid ordering until restart.");
+            throw;
+        }
+    }
+
+    private string ResolveExistingModelPath()
+    {
+        var quantizedPath = Path.Combine(_modelDirectory, RerankConstants.ModelFileName);
+        if (File.Exists(quantizedPath))
+            return quantizedPath;
+
+        var fallbackPath = Path.Combine(_modelDirectory, RerankConstants.ModelFallbackFileName);
+        if (File.Exists(fallbackPath))
+            return fallbackPath;
+
+        return quantizedPath;
     }
 
     // Prefers the quantized model (smaller, faster on CPU where this runs synchronously per query); falls
@@ -151,13 +203,14 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
         ArgumentNullException.ThrowIfNull(passages);
         if (passages.Count == 0)
             return Array.Empty<float>();
-        if (!_isReady || _session is null || _tokenizer is null || _assets is null)
+        if (!IsReady)
             throw new InvalidOperationException("Reranker model is not ready.");
 
         await _runLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return ScoreBatch(query, passages, cancellationToken);
+            using var lease = await _modelLoader.AcquireAsync(cancellationToken).ConfigureAwait(false);
+            return ScoreBatch(lease.Resource, query, passages, cancellationToken);
         }
         finally
         {
@@ -168,14 +221,15 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
     // Encodes every (query, passage) pair, pads to the batch max length, and runs the whole batch through
     // ONNX in one call (same technique as OnnxEmbeddingService.EmbedBatch) rather than looping per pair.
     // Assumes the run lock is held by the caller.
-    private IReadOnlyList<float> ScoreBatch(string query, IReadOnlyList<string> passages, CancellationToken cancellationToken)
+    private IReadOnlyList<float> ScoreBatch(
+        LoadedModel model, string query, IReadOnlyList<string> passages, CancellationToken cancellationToken)
     {
         var pairs = new (uint[] Ids, long[] Types)[passages.Count];
         var maxLength = 0;
         for (var i = 0; i < passages.Count; i++)
         {
             pairs[i] = RerankerPairEncoder.Encode(
-                _tokenizer!.Encode, _assets!, query, passages[i] ?? string.Empty, RerankConstants.MaxSequenceLength);
+                model.Tokenizer.Encode, model.Assets, query, passages[i] ?? string.Empty, RerankConstants.MaxSequenceLength);
             if (pairs[i].Ids.Length > maxLength)
                 maxLength = pairs[i].Ids.Length;
         }
@@ -197,13 +251,13 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
             }
             for (var col = ids.Length; col < maxLength; col++)
             {
-                inputIds[row, col] = _assets!.PadId;
+                inputIds[row, col] = model.Assets.PadId;
                 // attentionMask/tokenTypeIds stay 0 (DenseTensor default) for padded positions.
             }
         }
 
         var inputs = new List<NamedOnnxValue>(3);
-        foreach (var name in _inputNames)
+        foreach (var name in model.InputNames)
         {
             var tensor = name switch
             {
@@ -216,7 +270,7 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
                 inputs.Add(NamedOnnxValue.CreateFromTensor(name, tensor));
         }
 
-        using var results = _session!.Run(inputs);
+        using var results = model.Session.Run(inputs);
         var logits = results[0].AsTensor<float>(); // [batch, 1]
         var scores = new float[batch];
         for (var row = 0; row < batch; row++)
@@ -226,7 +280,28 @@ public sealed class OnnxRerankerService : IRerankerService, IHostedService, IDis
 
     public void Dispose()
     {
-        _session?.Dispose();
-        _runLock.Dispose();
+        // _modelLoader defers unloading until any in-flight inference releases its lease; _runLock is
+        // deliberately NOT disposed because that inference's finally block still has to release it.
+        // Both are process-lifetime singletons, so leaving the semaphore undisposed is harmless.
+        _modelLoader.Dispose();
+    }
+
+    // The tokenizer, assets, and session load/unload together as one unit so an idle unload reclaims both.
+    private sealed class LoadedModel(
+        InferenceSession session,
+        OnnxTokenizer tokenizer,
+        RerankerTokenizerAssets assets,
+        IReadOnlyList<string> inputNames) : IDisposable
+    {
+        public InferenceSession Session { get; } = session;
+        public OnnxTokenizer Tokenizer { get; } = tokenizer;
+        public RerankerTokenizerAssets Assets { get; } = assets;
+        public IReadOnlyList<string> InputNames { get; } = inputNames;
+
+        public void Dispose()
+        {
+            Session.Dispose();
+            Tokenizer.Dispose();
+        }
     }
 }

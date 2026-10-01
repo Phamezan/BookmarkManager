@@ -1,9 +1,11 @@
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Library;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace BookmarkManager.UnitTests.Library;
@@ -59,7 +61,7 @@ public sealed class VectorSearchServiceTests
     }
 
     private static VectorSearchService CreateService(TestDatabase testDb) =>
-        new(testDb.ScopeFactory, NullLogger<VectorSearchService>.Instance);
+        new(testDb.ScopeFactory, NullLogger<VectorSearchService>.Instance, TimeProvider.System, Options.Create(new LibraryOptions()));
 
     [Fact]
     public async Task SearchAsync_RanksByCosineSimilarity_WithKnownVectors()
@@ -124,5 +126,56 @@ public sealed class VectorSearchServiceTests
             .SearchAsync(Normalize([1f, 0f, 0f]), k: 8, floor: 0.3f, CancellationToken.None);
 
         Assert.Empty(results);
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private DateTimeOffset _now = start;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan delta) => _now += delta;
+    }
+
+    private static VectorSearchService CreateService(TestDatabase testDb, TimeProvider time) =>
+        new(testDb.ScopeFactory, NullLogger<VectorSearchService>.Instance, time,
+            Options.Create(new LibraryOptions { ModelIdleUnloadMinutes = 15 }));
+
+    [Fact]
+    public async Task IdleTimeout_ReleasesCache_AndNextSearchReloads()
+    {
+        using var testDb = new TestDatabase();
+        testDb.Db.LibraryCatalogEntries.Add(CreateEntry("idle", [1f, 0f, 0f]));
+        await testDb.Db.SaveChangesAsync();
+
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var service = CreateService(testDb, time);
+        var query = Normalize([1f, 0f, 0f]);
+
+        _ = await service.SearchAsync(query, k: 5, floor: -1f, CancellationToken.None);
+        Assert.True(service.IsCacheLoaded);
+
+        time.Advance(TimeSpan.FromMinutes(16));
+        service.UnloadIfIdle();
+        Assert.False(service.IsCacheLoaded);
+
+        _ = await service.SearchAsync(query, k: 5, floor: -1f, CancellationToken.None);
+        Assert.True(service.IsCacheLoaded);
+    }
+
+    [Fact]
+    public async Task NotYetIdle_KeepsCache()
+    {
+        using var testDb = new TestDatabase();
+        testDb.Db.LibraryCatalogEntries.Add(CreateEntry("warm", [1f, 0f, 0f]));
+        await testDb.Db.SaveChangesAsync();
+
+        var time = new MutableTimeProvider(DateTimeOffset.UnixEpoch);
+        var service = CreateService(testDb, time);
+
+        _ = await service.SearchAsync(Normalize([1f, 0f, 0f]), k: 5, floor: -1f, CancellationToken.None);
+
+        time.Advance(TimeSpan.FromMinutes(10));
+        service.UnloadIfIdle();
+
+        Assert.True(service.IsCacheLoaded);
     }
 }

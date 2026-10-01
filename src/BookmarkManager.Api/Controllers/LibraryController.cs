@@ -8,6 +8,7 @@ using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BookmarkManager.Api.Controllers;
 
@@ -18,8 +19,11 @@ public sealed class LibraryController(
     LibraryProviderRegistry registry,
     LibraryCatalogSyncBackgroundService catalogSync,
     BookmarkSeriesMatchService matchService,
-    AppDbContext db) : ControllerBase
+    AppDbContext db,
+    IOptions<LibraryOptions> libraryOptions) : LibraryFeatureControllerBase
 {
+    protected override bool LibraryEnabled => libraryOptions.Value.Enabled;
+
     [HttpGet("search")]
     public async Task<ActionResult<LibrarySearchResponse>> Search(
         [FromQuery] string q,

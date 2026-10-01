@@ -6,10 +6,12 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Api.Services.Rerank;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace BookmarkManager.UnitTests.Rerank;
@@ -119,7 +121,12 @@ public sealed class OnnxRerankerServiceSanityTests
     private static async Task<DisposableRerankerService> CreateReadyServiceAsync()
     {
         var environment = new FakeHostEnvironment(ApiContentRoot!);
-        var service = new OnnxRerankerService(environment, new ThrowingHttpClientFactory(), NullLogger<OnnxRerankerService>.Instance);
+        var service = new OnnxRerankerService(
+            environment,
+            new ThrowingHttpClientFactory(),
+            NullLogger<OnnxRerankerService>.Instance,
+            Options.Create(new LibraryOptions()),
+            TimeProvider.System);
         await service.StartAsync(CancellationToken.None);
 
         var deadline = DateTime.UtcNow.AddSeconds(60);

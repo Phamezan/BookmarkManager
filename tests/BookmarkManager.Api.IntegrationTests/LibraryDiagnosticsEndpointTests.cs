@@ -138,6 +138,23 @@ public sealed class LibraryDiagnosticsEndpointTests : IDisposable
         Assert.Null(body.TitleRank);
     }
 
+    [Fact]
+    public async Task Embedding_ModelThrowsAfterReady_ReturnsCountsWithoutQuery()
+    {
+        // IsReady reports true (files present), but the lazy session load fails on the first embed: the
+        // diagnostic must report ModelReady:false, not surface a 500.
+        _factory.Embedding.ThrowOnEmbed = true;
+        await SeedAsync("Mother of Learning", embedded: true);
+
+        var body = await GetAsync("/api/library/diagnostics/embedding?query=anything");
+
+        Assert.False(body.ModelReady);
+        Assert.Equal(1, body.TotalCount);
+        Assert.Equal(1, body.EmbeddedCount);
+        Assert.Null(body.QueryMatches);
+        Assert.Null(body.TitleRank);
+    }
+
     private async Task<LibraryEmbeddingDiagnosticDto> GetAsync(string url)
     {
         using var client = _factory.CreateClient();
@@ -182,6 +199,7 @@ public sealed class LibraryDiagnosticsEndpointTests : IDisposable
     private sealed class FakeEmbeddingService : IEmbeddingService
     {
         public bool Ready { get; set; } = true;
+        public bool ThrowOnEmbed { get; set; }
         public bool IsReady => Ready;
 
         public Task<float[]> EmbedQueryAsync(string text, CancellationToken cancellationToken) => EmbedAsync(text, cancellationToken);
@@ -189,6 +207,8 @@ public sealed class LibraryDiagnosticsEndpointTests : IDisposable
 
         public Task<float[]> EmbedAsync(string text, CancellationToken cancellationToken)
         {
+            if (ThrowOnEmbed)
+                throw new InvalidOperationException("simulated lazy session load failure");
             var vector = new float[EmbeddingConstants.EmbeddingDimensions];
             vector[0] = 1f;
             return Task.FromResult(vector);

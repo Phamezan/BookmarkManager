@@ -102,7 +102,24 @@ public sealed class LibraryRagService : ILibraryRagService
         // Stage 1 retrieves a wide pool (RerankCandidatePool) so stage 2 has real material to reorder;
         // RerankPipeline falls back to the first RagTopK of this hybrid order untouched if the reranker
         // isn't ready or fails.
-        var queryVector = await _embeddingService.EmbedQueryAsync(request.Message, cancellationToken).ConfigureAwait(false);
+        float[] queryVector;
+        try
+        {
+            queryVector = await _embeddingService.EmbedQueryAsync(request.Message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // The files existed (IsReady was true) but the lazy session load failed; report the same
+            // "model not available" message the not-ready branch above returns instead of a 500.
+            _logger.LogWarning(ex, "Embedding the RAG query failed; reporting the model as unavailable.");
+            return new LibraryChatResponseDto(
+                "The semantic search model is not ready yet. Please try again once catalog embeddings have finished loading.",
+                Array.Empty<LibraryRecommendedSeriesDto>());
+        }
         var hits = await _hybridSearch
             .SearchAsync(request.Message, queryVector, RerankConstants.RerankCandidatePool, cancellationToken)
             .ConfigureAwait(false);

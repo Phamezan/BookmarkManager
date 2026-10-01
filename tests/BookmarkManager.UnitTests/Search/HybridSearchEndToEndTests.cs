@@ -5,11 +5,13 @@ using System.Threading;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.Embedding;
+using BookmarkManager.Api.Services.Library;
 using BookmarkManager.Api.Services.Search;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace BookmarkManager.UnitTests.Search;
@@ -93,7 +95,11 @@ public sealed class HybridSearchEndToEndTests
         testDb.Db.LibraryCatalogEntries.Add(target);
         await testDb.Db.SaveChangesAsync();
 
-        var vectorSearch = new VectorSearchService(testDb.ScopeFactory, NullLogger<VectorSearchService>.Instance);
+        var vectorSearch = new VectorSearchService(
+            testDb.ScopeFactory,
+            NullLogger<VectorSearchService>.Instance,
+            TimeProvider.System,
+            Options.Create(new LibraryOptions()));
         var keywordSearch = new FtsKeywordSearchService(testDb.Db);
         var hybridSearch = new HybridSearchService(vectorSearch, keywordSearch, testDb.Db);
 

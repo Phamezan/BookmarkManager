@@ -10,6 +10,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace BookmarkManager.UnitTests.Library;
@@ -99,7 +100,8 @@ public sealed class LibraryEmbeddingBackfillServiceTests
         IServiceScopeFactory scopeFactory,
         IEmbeddingService embeddingService,
         IVectorSearchService? vectorSearch = null) =>
-        new(scopeFactory, embeddingService, vectorSearch ?? new FakeVectorSearchService(), NullLogger<LibraryEmbeddingBackfillService>.Instance);
+        new(scopeFactory, embeddingService, vectorSearch ?? new FakeVectorSearchService(),
+            NullLogger<LibraryEmbeddingBackfillService>.Instance, Options.Create(new LibraryOptions()));
 
     [Fact]
     public async Task RunBackfillPassAsync_EmbedsRowsWithNullEmbedding()

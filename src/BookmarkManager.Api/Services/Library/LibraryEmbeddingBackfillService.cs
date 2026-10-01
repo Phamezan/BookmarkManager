@@ -4,44 +4,47 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.Backup;
 using BookmarkManager.Api.Services.Embedding;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace BookmarkManager.Api.Services.Library;
 
 /// <summary>
-/// Background pass that fills in embeddings the interactive sync path missed: rows crawled before the
-/// ONNX model finished downloading, rows whose embed text changed while embeddings were unavailable, and
-/// the whole existing catalog on the first boot after this feature ships. Scans the catalog in batches of
-/// <see cref="EmbeddingConstants.BackfillBatchSize"/>, re-embedding any row whose <see cref="LibraryEmbeddingText"/>
-/// hash no longer matches its stored <see cref="LibraryCatalogEntry.EmbeddingSourceHash"/> (or that has no
-/// embedding yet). Each batch commits independently so a restart resumes without redoing finished work, and
-/// the whole worker is gated on <see cref="IEmbeddingService.IsReady"/> so it stays idle until the model
-/// loads. Complements <see cref="LibraryCatalogSyncBackgroundService"/> - it never blocks the crawl.
+/// Background pass that fills in embeddings the interactive sync path missed: rows crawled while the
+/// ONNX model was unavailable, rows whose embed text changed, and the existing catalog after an upgrade.
+/// Scans the catalog in batches of <see cref="EmbeddingConstants.BackfillBatchSize"/>, re-embedding any row
+/// whose <see cref="LibraryEmbeddingText"/> hash no longer matches its stored
+/// <see cref="LibraryCatalogEntry.EmbeddingSourceHash"/> (or that has no embedding yet). Each batch commits
+/// independently so a restart resumes without redoing finished work. Runs once per night in the
+/// <c>Library:BackgroundScheduleTime</c> window rather than continuously; triggering the pass loads the
+/// ONNX session, and the idle unload reclaims it once the pass finishes. Complements
+/// <see cref="LibraryCatalogSyncBackgroundService"/> - it never blocks the crawl.
 /// </summary>
 public sealed class LibraryEmbeddingBackfillService : BackgroundService
 {
-    private static readonly TimeSpan ModelNotReadyPollDelay = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan IdlePassInterval = TimeSpan.FromMinutes(30);
-
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IEmbeddingService _embeddingService;
     private readonly IVectorSearchService _vectorSearch;
     private readonly ILogger<LibraryEmbeddingBackfillService> _logger;
+    private readonly IOptions<LibraryOptions> _options;
 
     public LibraryEmbeddingBackfillService(
         IServiceScopeFactory scopeFactory,
         IEmbeddingService embeddingService,
         IVectorSearchService vectorSearch,
-        ILogger<LibraryEmbeddingBackfillService> logger)
+        ILogger<LibraryEmbeddingBackfillService> logger,
+        IOptions<LibraryOptions> options)
     {
         _scopeFactory = scopeFactory;
         _embeddingService = embeddingService;
         _vectorSearch = vectorSearch;
         _logger = logger;
+        _options = options;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -50,10 +53,13 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (!await DelayUntilNextRunAsync(stoppingToken).ConfigureAwait(false))
+                break;
+
             if (!_embeddingService.IsReady)
             {
-                if (!await DelayAsync(ModelNotReadyPollDelay, stoppingToken).ConfigureAwait(false))
-                    break;
+                _logger.LogWarning(
+                    "Skipping embedding backfill pass: the embedding model files are not present yet.");
                 continue;
             }
 
@@ -69,11 +75,40 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Embedding backfill pass failed; will retry after the idle interval.");
+                _logger.LogError(ex, "Embedding backfill pass failed; will retry at the next scheduled run.");
             }
+        }
+    }
 
-            if (!await DelayAsync(IdlePassInterval, stoppingToken).ConfigureAwait(false))
-                break;
+    /// <summary>Waits until the next configured nightly run, returning false if cancellation fired.</summary>
+    private async Task<bool> DelayUntilNextRunAsync(CancellationToken stoppingToken)
+    {
+        TimeSpan delay;
+        try
+        {
+            var options = _options.Value;
+            var nextRunUtc = BackupScheduleHelper.GetNextScheduledRunUtc(
+                DateTime.UtcNow, options.BackgroundScheduleTime, options.TimeZoneId);
+            delay = nextRunUtc - DateTime.UtcNow;
+            if (delay <= TimeSpan.Zero)
+                delay = TimeSpan.FromMinutes(1);
+        }
+        catch (Exception ex)
+        {
+            // Never let a bad schedule/time-zone config or a DST edge case escape ExecuteAsync.
+            _logger.LogError(ex, "Failed to compute the next embedding backfill time; retrying in 1 hour.");
+            delay = TimeSpan.FromHours(1);
+        }
+
+        _logger.LogInformation("Next embedding backfill in {Delay}.", delay);
+        try
+        {
+            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            return !stoppingToken.IsCancellationRequested;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
         }
     }
 
@@ -147,20 +182,5 @@ public sealed class LibraryEmbeddingBackfillService : BackgroundService
         // the cache would keep serving the stale vector this pass just replaced.
         _vectorSearch.InvalidateCatalog();
         return pending.Count;
-    }
-
-    /// <summary>Delays for <paramref name="delay"/>, returning false if cancellation fired (the caller
-    /// should stop) or true if the delay elapsed normally.</summary>
-    private static async Task<bool> DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
     }
 }

@@ -1,6 +1,6 @@
 ---
 status: live
-last_verified: 2026-07-20
+last_verified: 2026-10-01
 note: Technical system map for AI agents and contributors. Formerly the repo root README; moved here so the root README could become a human-facing project page.
 ---
 
@@ -109,6 +109,7 @@ sequenceDiagram
 - Each "fetch next page" step is a durable `LibraryCatalogSyncQueueItem` row, not in-memory state — a container restart mid-crawl resumes exactly where it left off.
 - One worker loop per bulk-capable provider, throttled by that provider's existing rate limiter (shared with live search/trending, so the crawl never starves interactive requests).
 - Failed pages get exponential backoff and a max attempt count before landing in a `Failed` state for inspection in Settings; a stalled sequence (next token == current token) self-terminates instead of looping forever.
+- **Lazy model + nightly cadence (memory):** the embedding and reranker ONNX `InferenceSession`s are no longer loaded at startup — the hosted service still downloads the model files, but the session is created on first inference and disposed after `Library:ModelIdleUnloadMinutes` (default 15) idle, so a rarely-used Library doesn't hold ~1–2 GB. `VectorSearchService` drops its in-memory vector cache on the same idle timeout. Catalog sync and embedding backfill no longer run continuously: each runs once per night at `Library:BackgroundScheduleTime` (default `"04:00"`, interpreted in `Library:TimeZoneId`), with a fresh install still crawling once on first boot. `IsReady` now means "model files present, not permanently failed" rather than "session resident", so callers trigger the lazy load instead of falling back forever. Set `Library:Enabled=false` to turn the whole feature off: its background workers aren't registered and the `api/library` endpoints return a 503 ProblemDetails (`LIBRARY_DISABLED`).
 
 ### 3. Safeguarded Folder Creation Deferral (BrokenLinksFolderHelper)
 - Used by the manual "file into Broken Links" action (`POST /triage-domain`, `ActionType=ManualFolder`), not by the automatic scan — the automatic `LinkCheckerService` scan only sets `IsLinkBroken` on matching bookmarks (see §1 above), which the URL Migrator v2 pipeline (`BookmarksController.Migration.cs`) then reads to propose replacement URLs.
