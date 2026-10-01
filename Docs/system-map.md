@@ -68,7 +68,7 @@ sequenceDiagram
 ### Server API (C# / .NET 10)
 - 📄 [Program.cs](src/BookmarkManager.Api/Program.cs) — Services registration (SQLite connection, `LinkCheckerService`, design protection, WebSocket router).
 - 📄 [AppDbContext.cs](src/BookmarkManager.Api/Data/AppDbContext.cs) — Configures EF Core models, index keys, and cascade/restrict deletes.
-- 📄 [BookmarksController.cs](src/BookmarkManager.Api/Controllers/BookmarksController.cs) — Handles CRUD, favorites, batch-delete, and manual link checker execution triggers.
+- 📄 [BookmarksController.cs](src/BookmarkManager.Api/Controllers/BookmarksController.cs) — Handles CRUD, favorites, batch-delete, and manual link checker execution triggers. `GET api/bookmarks/export` returns every live bookmark flat (`BookmarkExportDto`: title, url, `FolderPath`, tags, favorite, status) for AI agents.
 - 📄 [ExtensionService.cs](src/BookmarkManager.Api/Services/ExtensionService.cs) — Ingests snapshot uploads, compares state, and soft-deletes orphan records.
 - 📄 [LinkCheckerService.cs](src/BookmarkManager.Api/Services/LinkCheckerService.cs) — Background worker checking bookmarks for dead URLs.
 
