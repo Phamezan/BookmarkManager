@@ -13,6 +13,13 @@ function addDateSeconds(dateAdded: number | undefined, fallback: Date): number {
   return Math.floor(ms / 1000);
 }
 
+function browserRootAttribute(id: string): string {
+  if (id === "1") return ' PERSONAL_TOOLBAR_FOLDER="true"';
+  if (id === "2") return ' UNFILED_BOOKMARKS_FOLDER="true"';
+  if (id === "3") return ' MOBILE_BOOKMARKS_FOLDER="true"';
+  return "";
+}
+
 function renderNode(node: BraveBookmarkTreeNode, generatedAt: Date, indent: string): string {
   const isFolder = node.url === undefined;
   const addDate = addDateSeconds(node.dateAdded, generatedAt);
@@ -20,8 +27,9 @@ function renderNode(node: BraveBookmarkTreeNode, generatedAt: Date, indent: stri
   if (isFolder) {
     const children = node.children ?? [];
     const inner = children.map((c) => renderNode(c, generatedAt, indent + "    ")).join("");
+    const rootAttribute = browserRootAttribute(node.id);
     return (
-      `${indent}<DT><H3 ADD_DATE="${addDate}">${escapeHtml(node.title)}</H3>\n` +
+      `${indent}<DT><H3 ADD_DATE="${addDate}"${rootAttribute}>${escapeHtml(node.title)}</H3>\n` +
       `${indent}<DL><p>\n${inner}${indent}</DL><p>\n`
     );
   }

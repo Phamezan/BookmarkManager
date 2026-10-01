@@ -20,7 +20,7 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
         CancellationToken ct)
     {
         if (!string.Equals(confirm, "RESTORE", StringComparison.Ordinal))
-            throw new BackupInvalidConfirmException("Type RESTORE exactly to replace the current bookmark tree.");
+            throw new BackupInvalidConfirmException();
 
         using var reader = new StreamReader(htmlStream, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
         var html = await reader.ReadToEndAsync(ct);

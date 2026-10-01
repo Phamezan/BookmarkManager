@@ -23,8 +23,28 @@ describe("buildNetscapeBookmarksHtml", () => {
       },
     ];
     const html = buildNetscapeBookmarksHtml(tree, generatedAt);
-    expect(html).toContain('<H3 ADD_DATE="1767225600">Bookmarks Bar</H3>');
-    expect(html).toContain('<H3 ADD_DATE="1767225600">Other Bookmarks</H3>');
+    expect(html).toContain('<H3 ADD_DATE="1767225600" PERSONAL_TOOLBAR_FOLDER="true">Bookmarks Bar</H3>');
+    expect(html).toContain('<H3 ADD_DATE="1767225600" UNFILED_BOOKMARKS_FOLDER="true">Other Bookmarks</H3>');
+  });
+
+  it("marks protected root ids independently of localized titles", () => {
+    const tree: BraveBookmarkTreeNode[] = [
+      {
+        id: "0",
+        title: "",
+        children: [
+          { id: "1", title: "Bogmærkelinje", children: [] },
+          { id: "2", title: "Andre bogmærker", children: [] },
+          { id: "3", title: "Mobilbogmærker", children: [] },
+        ],
+      },
+    ];
+
+    const html = buildNetscapeBookmarksHtml(tree, generatedAt);
+
+    expect(html).toContain('PERSONAL_TOOLBAR_FOLDER="true">Bogmærkelinje</H3>');
+    expect(html).toContain('UNFILED_BOOKMARKS_FOLDER="true">Andre bogmærker</H3>');
+    expect(html).toContain('MOBILE_BOOKMARKS_FOLDER="true">Mobilbogmærker</H3>');
   });
 
   it("nests folders and bookmarks correctly", () => {

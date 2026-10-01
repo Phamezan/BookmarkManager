@@ -100,6 +100,20 @@ public sealed class BackupsPageTests
             });
         }
 
+        public Task<HtmlBookmarkRestoreResultDto> RestoreHtmlAsync(
+            Stream file,
+            string fileName,
+            string confirm,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(new HtmlBookmarkRestoreResultDto
+            {
+                SafetyBackupId = Guid.NewGuid(),
+                RestoredBookmarkCount = 2,
+                RestoredFolderCount = 1,
+                ReplacedNodeCount = 3,
+                Message = "Restore queued."
+            });
+
         public string GetDownloadUrl(Guid id) => $"api/backups/{id}/download";
     }
 
@@ -118,6 +132,8 @@ public sealed class BackupsPageTests
             Assert.Contains("Back up now", page.Markup);
             Assert.Contains("bookmarks-2026-07-14-0300.db", page.Markup);
             Assert.Contains("Live DB size", page.Markup);
+            Assert.Contains("Restore bookmarks from HTML", page.Markup);
+            Assert.Contains("without an extra Imported bookmarks folder", page.Markup);
         });
     }
 
@@ -177,7 +193,7 @@ public sealed class BackupsPageTests
 
         page.WaitForAssertion(() => Assert.NotNull(page.Find("#restore-confirm")));
 
-        var restoreCta = page.FindAll(".backups-cta")
+        var restoreCta = page.FindAll(".backups-modal .backups-cta")
             .First(button => button.TextContent.Contains("Restore", StringComparison.Ordinal)
                              && button.TagName.Equals("BUTTON", StringComparison.OrdinalIgnoreCase));
         Assert.True(restoreCta.HasAttribute("disabled"));
@@ -189,7 +205,7 @@ public sealed class BackupsPageTests
         page.Find("#restore-confirm").Input("RESTORE");
         page.WaitForAssertion(() =>
         {
-            restoreCta = page.FindAll(".backups-cta")
+            restoreCta = page.FindAll(".backups-modal .backups-cta")
                 .First(button => button.TextContent.Contains("Restore", StringComparison.Ordinal)
                                  && button.TagName.Equals("BUTTON", StringComparison.OrdinalIgnoreCase));
             Assert.False(restoreCta.HasAttribute("disabled"));

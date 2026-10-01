@@ -2,6 +2,7 @@ using BookmarkManager.Client.Components;
 using BookmarkManager.Client.Services;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Forms;
 using MudBlazor;
 
 namespace BookmarkManager.Client.Pages;
@@ -9,6 +10,7 @@ namespace BookmarkManager.Client.Pages;
 public partial class Backups
 {
     private const long ChartMaxBytes = 4_000_000;
+    private const long MaxHtmlRestoreBytes = 20 * 1024 * 1024;
 
     [Inject] private IBackupService BackupService { get; set; } = default!;
     [Inject] private ISnackbar Snackbar { get; set; } = default!;
@@ -22,6 +24,10 @@ public partial class Backups
     private string _restoreConfirm = string.Empty;
     private bool _restoring;
     private bool _restoreRestartPending;
+    private IBrowserFile? _htmlRestoreFile;
+    private bool _htmlRestoreDialog;
+    private string _htmlRestoreConfirm = string.Empty;
+    private bool _htmlRestoring;
     private BackupActivityDayDto? _hoveredDay;
 
     protected override async Task OnInitializedAsync()
@@ -159,6 +165,67 @@ public partial class Backups
         finally
         {
             _restoring = false;
+        }
+    }
+
+    private void SelectHtmlRestoreFile(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file.Size > MaxHtmlRestoreBytes)
+        {
+            _htmlRestoreFile = null;
+            Snackbar.Add("Bookmark HTML must be 20 MB or smaller.", Severity.Warning);
+            return;
+        }
+
+        _htmlRestoreFile = file;
+        _htmlRestoreConfirm = string.Empty;
+    }
+
+    private void OpenHtmlRestoreDialog()
+    {
+        if (_htmlRestoreFile is null || _htmlRestoring || _restoreRestartPending)
+            return;
+
+        _htmlRestoreConfirm = string.Empty;
+        _htmlRestoreDialog = true;
+    }
+
+    private void CloseHtmlRestoreDialog()
+    {
+        if (_htmlRestoring)
+            return;
+
+        _htmlRestoreDialog = false;
+        _htmlRestoreConfirm = string.Empty;
+    }
+
+    private async Task ConfirmHtmlRestoreAsync()
+    {
+        if (_htmlRestoreFile is null || _htmlRestoreConfirm != "RESTORE" || _htmlRestoring)
+            return;
+
+        _htmlRestoring = true;
+        try
+        {
+            await using var stream = _htmlRestoreFile.OpenReadStream(MaxHtmlRestoreBytes);
+            var result = await BackupService.RestoreHtmlAsync(stream, _htmlRestoreFile.Name, _htmlRestoreConfirm);
+
+            _htmlRestoreDialog = false;
+            _htmlRestoreConfirm = string.Empty;
+            _htmlRestoreFile = null;
+            Snackbar.Add(
+                $"Restore queued: {result.RestoredBookmarkCount:N0} bookmarks and {result.RestoredFolderCount:N0} folders. Safety snapshot {result.SafetyBackupId} was created.",
+                Severity.Success);
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"HTML restore failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _htmlRestoring = false;
         }
     }
 

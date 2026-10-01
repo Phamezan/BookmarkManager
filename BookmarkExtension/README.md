@@ -35,7 +35,7 @@ See [Docs/quickstart.md](../Docs/quickstart.md) for the full setup flow alongsid
 - **In-tab command palette** — injected into every page (`http://*/*`, `https://*/*`) to search/launch bookmarks without leaving the current tab. Default shortcut is `Ctrl+Shift+P`; rebind to `Ctrl+P` at `chrome://extensions/shortcuts` to match the dashboard's own palette shortcut.
 - **Address-bar search** — type `bm` + space in the omnibox to search and launch bookmarks.
 - **Quick bookmark** — `Ctrl+Shift+F` bookmarks the current tab into the last-used folder, with duplicate-series detection for tracked anime/manga/novels.
-- **HTML export** — manual Netscape-format bookmark export to Downloads, independent of the server's own SQLite backups.
+- **HTML export** — manual Netscape-format bookmark export to Downloads. The server's Backups page can restore this file as a bookmark-tree replacement without Chromium's extra Imported bookmarks folder; full database recovery still uses SQLite snapshots.
 
 ## Permissions
 
