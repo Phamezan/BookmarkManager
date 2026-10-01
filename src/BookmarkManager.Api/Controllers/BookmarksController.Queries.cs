@@ -19,6 +19,47 @@ public partial class BookmarksController
     return Ok(tags);
     }
 
+    [HttpGet("export")]
+    public async Task<List<BookmarkExportDto>> ExportAsync(CancellationToken ct)
+    {
+        var folders = await _db.BookmarkNodes.AsNoTracking()
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Folder)
+            .Select(n => new { n.Id, n.ParentId, n.Title })
+            .ToDictionaryAsync(n => n.Id, ct);
+        var bookmarks = await _db.BookmarkNodes.AsNoTracking()
+            .Where(n => !n.IsDeleted && n.Type == NodeType.Bookmark)
+            .ToListAsync(ct);
+
+        string PathOf(Guid? parentId)
+        {
+            var parts = new List<string>();
+            var seen = new HashSet<Guid>();
+            while (parentId is { } id && seen.Add(id) && folders.TryGetValue(id, out var f))
+            {
+                parts.Add(f.Title);
+                parentId = f.ParentId;
+            }
+            parts.Reverse();
+            return string.Join(" / ", parts);
+        }
+
+        return bookmarks
+            .Select(b => (b.Position, Dto: new BookmarkExportDto
+            {
+                Id = b.Id,
+                Title = b.Title,
+                Url = b.Url,
+                FolderPath = PathOf(b.ParentId),
+                Tags = b.Tags?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList() ?? [],
+                IsFavorite = b.IsFavorite,
+                Status = b.Status,
+                UpdatedAt = b.UpdatedAt
+            }))
+            .OrderBy(e => e.Dto.FolderPath, StringComparer.Ordinal).ThenBy(e => e.Position)
+            .Select(e => e.Dto)
+            .ToList();
+    }
+
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<BookmarkNodeDto>> GetAsync(Guid id, CancellationToken ct)
     {
