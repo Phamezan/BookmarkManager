@@ -34,12 +34,14 @@ This project runs as a single ASP.NET Core API container that serves the Blazor 
    cp .env.example .env
    ```
 
-4. Edit `.env` if you want a different host port or data location:
+4. Edit `.env` if you want a different host port or data location, and set a SearXNG secret (used by the URL Migrator fallback — see [SearXNG](#searxng-url-migrator-search-fallback) below):
 
    ```dotenv
    BOOKMARK_MANAGER_IMAGE=bookmarkmanager:local
    BOOKMARK_MANAGER_PORT=8080
    BOOKMARK_MANAGER_DATA_DIR=./data
+   # Required by the `searxng` service. Generate one with: openssl rand -hex 32
+   SEARXNG_SECRET=<random hex>
    ```
 
 5. Create the persistent data directory:
@@ -89,6 +91,25 @@ https://<machine>.<tailnet>.ts.net:<tls-port>
 ```
 
 which stays correct even if the server's LAN IP changes later.
+
+## SearXNG (URL Migrator search fallback)
+
+The URL Migrator's old DuckDuckGo/Yahoo HTML fallback was removed after both sites began returning bot challenges and HTTP 500s in production. A self-hosted SearXNG container (the `searxng` service in `docker-compose.yml`) now backs the fallback stage: the chain is Gemini grounding (or Groq compound) first, and SearXNG only when that primary stage fails or returns nothing. The API reaches it at `http://searxng:8080` over the Compose network; the container is **not** published to the host, so there is no new firewall rule and nothing to open in a browser.
+
+- Configuration is `deploy/searxng/settings.yml`, mounted read-only at `/etc/searxng/settings.yml`. It enables JSON output and disables the rate limiter / bot detection because the instance is internal-only.
+- `server.secret_key` is provided at runtime by the `SEARXNG_SECRET` environment variable (SearXNG's documented env mapping). Compose refuses to start `searxng` until it is set in `.env`. The deploy workflow generates one automatically the first time it is missing (`.env` is untracked, so it survives `git reset`); for a manual `docker compose up`, add it yourself:
+
+  ```bash
+  printf '\nSEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+  ```
+
+- `docker compose up -d` (and the deploy workflow's compose invocation) starts `searxng` before the API. Verify it answers JSON:
+
+  ```bash
+  docker compose exec searxng wget -qO- 'http://localhost:8080/search?q=test&format=json' | head -c 200
+  ```
+
+- To disable the fallback, set `UrlMigration__SearxngBaseUrl=` (empty) on the `bookmarkmanager` service; the provider then reports `SearXNG: not configured (empty base URL)` in migration diagnostics and contributes no candidates.
 
 ## TLS for the In-Tab Command Palette (optional)
 

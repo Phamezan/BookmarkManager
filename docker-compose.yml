@@ -15,6 +15,24 @@ services:
       - ${BOOKMARK_MANAGER_DATA_DIR:-./data}:/data
     restart: unless-stopped
 
+  # Internal search backend for URL Migrator fallback. Not published to the host: the API
+  # reaches it at http://searxng:8080 over the Compose network. Settings live in
+  # deploy/searxng/settings.yml (json format on, limiter/bot detection off).
+  # SEARXNG_SECRET must be set in .env - generate with: openssl rand -hex 32
+  searxng:
+    image: searxng/searxng:2026.10.2-19ffbcd30
+    container_name: searxng
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?SEARXNG_SECRET must be set in .env - generate with: openssl rand -hex 32}"
+      SEARXNG_BASE_URL: http://searxng:8080/
+      # Config is mounted read-only; skip the entrypoint's chown so a deploy-time `git reset`
+      # can still overwrite the repo checkout.
+      FORCE_OWNERSHIP: "false"
+    volumes:
+      - ./deploy/searxng:/etc/searxng:ro
+      - searxng-cache:/var/cache/searxng
+    restart: unless-stopped
+
   dozzle:
     image: amir20/dozzle:latest
     container_name: dozzle
@@ -24,3 +42,5 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     restart: unless-stopped
 
+volumes:
+  searxng-cache:

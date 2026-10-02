@@ -92,7 +92,7 @@ public sealed class GeminiGroundedSearchServiceTests
     }
 
     [Fact]
-    public async Task RateLimited_FallsBackToHtmlChain_WithoutLeakingResponseBody()
+    public async Task RateLimited_FallsBackToSearxng_WithoutLeakingResponseBody()
     {
         var geminiCalls = 0;
         var handler = new RoutingHandler(request =>
@@ -109,24 +109,24 @@ public sealed class GeminiGroundedSearchServiceTests
             return new HttpResponseMessage(HttpStatusCode.BadRequest);
         });
 
-        var ddg = new StubDuckDuckGo(["https://asuracomic.net/series/solo-leveling/chapter-112"]);
+        var searxng = new StubSearxng(["https://asuracomic.net/series/solo-leveling/chapter-112"]);
         var gemini = new GeminiGroundedSearchService(
             new SingleClientFactory(new HttpClient(handler)),
             new InMemoryAiTaggingSettingsService(GeminiSettings()),
             NullLogger<GeminiGroundedSearchService>.Instance);
         var fallbackSettings = GeminiSettings();
-        fallbackSettings.GroqApiKey = string.Empty; // no Groq key -> return raw HTML candidates
+        fallbackSettings.GroqApiKey = string.Empty;
         var service = new GroqCompoundSearchService(
             new SingleClientFactory(new HttpClient(handler)),
             new InMemoryAiTaggingSettingsService(fallbackSettings),
-            ddg,
+            searxng,
             NullLogger<GroqCompoundSearchService>.Instance,
             gemini: gemini);
 
         var result = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
 
         Assert.Equal(1, geminiCalls);
-        Assert.True(ddg.WasCalled);
+        Assert.True(searxng.WasCalled);
         Assert.Contains("Gemini: rate limited (HTTP 429)", result.Detail);
         Assert.DoesNotContain("SECRET", result.Detail);
         Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result.Candidates).Url);
@@ -155,7 +155,7 @@ public sealed class GeminiGroundedSearchServiceTests
         var service = new GroqCompoundSearchService(
             new SingleClientFactory(new HttpClient(handler)),
             new InMemoryAiTaggingSettingsService(GeminiSettings(provider: "Groq")),
-            new StubDuckDuckGo([]),
+            new StubSearxng([]),
             NullLogger<GroqCompoundSearchService>.Instance,
             gemini: gemini);
 
@@ -504,16 +504,20 @@ public sealed class GeminiGroundedSearchServiceTests
         }
     }
 
-    private sealed class StubDuckDuckGo : IDuckDuckGoSearchService
+    private sealed class StubSearxng : ISearxngSearchService
     {
-        private readonly IReadOnlyList<string> _candidates;
+        private readonly IReadOnlyList<SearchCandidate> _candidates;
         public bool WasCalled { get; private set; }
-        public StubDuckDuckGo(IReadOnlyList<string> candidates) => _candidates = candidates;
 
-        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
+        public StubSearxng(IReadOnlyList<string> urls)
+            => _candidates = urls.Select(url => new SearchCandidate(url, null, null)).ToArray();
+
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+            SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+            string? preferredHost = null, bool restrictToPreferredHost = false)
         {
             WasCalled = true;
-            return Task.FromResult(new SearchOutcome<string>(_candidates, [new("DuckDuckGo", _candidates.Count, null)]));
+            return Task.FromResult(new SearchOutcome<SearchCandidate>(_candidates, [new("SearXNG", _candidates.Count, null)]));
         }
     }
 }

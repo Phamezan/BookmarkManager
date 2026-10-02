@@ -86,6 +86,12 @@ builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.GeminiG
     .ConfigureHttpClient(c => c.Timeout = BookmarkManager.Api.Services.UrlMigration.GeminiGroundedSearchService.ProviderTimeout + TimeSpan.FromSeconds(5))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.GeminiGroundedSearchService>();
+builder.Services.Configure<BookmarkManager.Api.Services.UrlMigration.UrlMigrationOptions>(
+    builder.Configuration.GetSection(BookmarkManager.Api.Services.UrlMigration.UrlMigrationOptions.SectionName));
+// SearXNG runs on the Compose network (http://searxng:8080), never published to the host.
+builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.SearxngSearchService.HttpClientName)
+    .ConfigureHttpClient(c => c.Timeout = BookmarkManager.Api.Services.UrlMigration.SearxngSearchService.ProviderTimeout + TimeSpan.FromSeconds(5));
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ISearxngSearchService, BookmarkManager.Api.Services.UrlMigration.SearxngSearchService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ISeriesExtractionService, BookmarkManager.Api.Services.UrlMigration.GroqSeriesExtractionService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IAlternativeUrlSearchService, BookmarkManager.Api.Services.UrlMigration.GroqCompoundSearchService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>();

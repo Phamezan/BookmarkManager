@@ -1,0 +1,42 @@
+# SearXNG configuration for the LAN-only BookmarkManager URL Migrator fallback.
+# Docs: https://docs.searxng.org/admin/settings/ (settings schema)
+#       https://docs.searxng.org/admin/settings/settings_server.html
+#       https://docs.searxng.org/admin/settings/settings_search.html
+#
+# Mounted read-only at /etc/searxng/settings.yml by docker-compose.yml and merged over the
+# image's default settings.yml, so only the overrides below are needed.
+use_default_settings: true
+
+server:
+  # server.secret_key is supplied at runtime by the SEARXNG_SECRET environment variable
+  # (documented at https://docs.searxng.org/admin/settings/settings_server.html). Never commit
+  # a real secret. The compose file refuses to start until .env provides one.
+  #
+  # Internal LAN instance reached only by the API over the Compose network: no rate limiter or
+  # bot detection. `limiter` would otherwise require valkey and reject the API's JSON calls, and
+  # `public_instance` enables extra public-instance-only bot defenses.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+search:
+  # `/search?format=json` is required by SearxngSearchService. A format not listed here is
+  # rejected with HTTP 403 (https://docs.searxng.org/dev/search_api.html).
+  formats:
+    - html
+    - json
+
+# General-web engines that reliably surface manga/manhwa/webtoon/novel reader pages.
+# Names are the image's engine names (searx/settings.yml): google, bing, brave,
+# duckduckgo, startpage.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: duckduckgo
+    disabled: false
+  - name: startpage
+    disabled: false
