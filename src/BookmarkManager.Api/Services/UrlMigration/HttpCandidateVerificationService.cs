@@ -114,9 +114,29 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
                               IsChapterMatch(extraction.ChapterNumber, fetch.FinalUri, ogTitle);
 
         var loose = threshold != SeriesTokenMatchThreshold;
-        var detail = seriesMatched
-            ? (chapterMatched ? "Series and chapter matched" : "Series matched, chapter unconfirmed") + (loose ? " (loose title match)" : string.Empty)
-            : "Reachable but series did not match";
+        string detail;
+        if (!seriesMatched)
+        {
+            // Diagnostics for the migrator's per-candidate "Tried:" list: name the observed title
+            // (capped) so a series mismatch is reviewable without storing page bodies.
+            detail = $"series mismatch (\"{TruncateForDiagnostics(title ?? ogTitle, 60)}\")";
+        }
+        else if (!chapterMatched)
+        {
+            var foundChapter = ExtractChapterFromPath(fetch.FinalUri.AbsolutePath)
+                ?? ExtractChapterFromTitle(title)
+                ?? ExtractChapterFromTitle(ogTitle);
+            detail = $"chapter mismatch (expected {extraction.ChapterNumber}, found {foundChapter ?? "none"})";
+        }
+        else
+        {
+            detail = "Series and chapter matched";
+        }
+
+        if (loose)
+        {
+            detail += " (loose title match)";
+        }
 
         return new VerificationResult(true, seriesMatched, chapterMatched, detail);
     }
@@ -395,26 +415,110 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         if (string.IsNullOrWhiteSpace(chapterNumber))
             return false;
 
-        var escaped = Regex.Escape(chapterNumber);
-        // Require an explicit chapter/episode marker or a digit-only path segment.
-        // Do NOT treat bare hyphen boundaries as matches — that false-positives on
-        // paths like /season-1-cour-2 for chapter "1" or "2".
-        var pathPattern = new Regex(
-            $@"(?:^|/)(?:chapter|ch|episode|ep)[-_/. ]*{escaped}(?!\d)|(?:^|/)c0*{escaped}(?!\d)(?:/|$)|(?:^|/){escaped}(?:/|$)",
-            RegexOptions.IgnoreCase);
+        var expected = chapterNumber.Trim();
 
-        if (pathPattern.IsMatch(finalUri.AbsolutePath))
-            return true;
+        // When the URL names a chapter, that segment is authoritative - never fall through to the
+        // title (a "chapter-93" page must not match expected "94" just because the title has a 94
+        // somewhere). A "/page/N" segment is pagination, not a chapter, so it is excluded.
+        var fromPath = ExtractChapterFromPath(finalUri.AbsolutePath);
+        if (fromPath != null)
+            return ChapterValuesEqual(fromPath, expected);
 
-        if (!string.IsNullOrWhiteSpace(pageText))
+        var fromTitle = ExtractChapterFromTitle(pageText);
+        return fromTitle != null && ChapterValuesEqual(fromTitle, expected);
+    }
+
+    /// <summary>
+    /// Pulls the chapter number out of a URL path: an explicit chapter/ch/episode/ep/c marker
+    /// segment (including the split <c>/chapter/12</c> form) wins; otherwise a bare numeric path
+    /// segment counts, except when it is the page number of a <c>/page/N</c> (or <c>page-N</c>)
+    /// pagination segment. Returns null when the path carries no chapter.
+    /// </summary>
+    private static string? ExtractChapterFromPath(string absolutePath)
+    {
+        var segments = absolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return null;
+
+        for (var i = 0; i < segments.Length; i++)
         {
-            var wordBoundaryPattern = new Regex($@"\b{escaped}\b", RegexOptions.IgnoreCase);
-            if (wordBoundaryPattern.IsMatch(pageText))
-                return true;
+            var segment = Uri.UnescapeDataString(segments[i]);
+            var match = ChapterPathSegmentRegex().Match(segment);
+            if (match.Success)
+                return match.Groups[1].Value;
+
+            if (i + 1 < segments.Length &&
+                IsChapterMarkerSegment(segment) &&
+                NumericSegmentRegex().IsMatch(segments[i + 1]))
+            {
+                return segments[i + 1];
+            }
         }
 
-        return false;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (!NumericSegmentRegex().IsMatch(segments[i]))
+                continue;
+
+            // "/page/127" is a pagination index, not chapter 127.
+            if (i > 0 && segments[i - 1].Equals("page", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return segments[i];
+        }
+
+        return null;
     }
+
+    /// <summary>
+    /// Title-based chapter match: requires an explicit <c>Chapter N</c> / <c>Ch. N</c> /
+    /// <c>Episode N</c> token, so an unrelated "330 views" never counts as chapter 330.
+    /// </summary>
+    private static string? ExtractChapterFromTitle(string? pageText)
+    {
+        if (string.IsNullOrWhiteSpace(pageText))
+            return null;
+
+        var match = ChapterInTitleRegex().Match(pageText);
+        return match.Success ? match.Groups[1].Value : null;
+    }
+
+    private static bool ChapterValuesEqual(string found, string expected)
+    {
+        if (decimal.TryParse(found, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var foundValue) &&
+            decimal.TryParse(expected, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var expectedValue))
+        {
+            return foundValue == expectedValue;
+        }
+
+        return string.Equals(found.Trim(), expected.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsChapterMarkerSegment(string segment) =>
+        segment.Equals("chapter", StringComparison.OrdinalIgnoreCase) ||
+        segment.Equals("ch", StringComparison.OrdinalIgnoreCase) ||
+        segment.Equals("episode", StringComparison.OrdinalIgnoreCase) ||
+        segment.Equals("ep", StringComparison.OrdinalIgnoreCase);
+
+    private static string TruncateForDiagnostics(string? value, int maxLength)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "(no title)";
+
+        var trimmed = value.Trim();
+        return trimmed.Length <= maxLength ? trimmed : trimmed[..maxLength].TrimEnd() + "...";
+    }
+
+    [GeneratedRegex(@"^(?:chapter|ch|episode|ep|c)[-_.]?0*(\d+(?:\.\d+)?)$", RegexOptions.IgnoreCase)]
+    private static partial Regex ChapterPathSegmentRegex();
+
+    [GeneratedRegex(@"^\d+(?:\.\d+)?$")]
+    private static partial Regex NumericSegmentRegex();
+
+    [GeneratedRegex(@"\b(?:chapter|ch|episode|ep)\.?\s*[-:#]?\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)]
+    private static partial Regex ChapterInTitleRegex();
 
     private sealed record FetchResult(HttpStatusCode StatusCode, Uri FinalUri, string Body, bool HasCfRayHeader)
     {

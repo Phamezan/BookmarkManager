@@ -308,6 +308,160 @@ public sealed class UrlMigrationBackgroundJobTests
         Assert.Equal(8, job.MaxConcurrency);
     }
 
+    [Fact]
+    public async Task DirectRewrite_ChapterUrlVerifies_ProducesHighAndSkipsSearch()
+    {
+        var search = new RecordingSearch([new("https://reader.example/academy-0/chapter-51", null, null)]);
+        var verification = new ScriptedVerification(c => c.Url == "https://comizy.io/academy-0/chapter-51"
+            ? new VerificationResult(true, true, true, "Series and chapter matched")
+            : new VerificationResult(false, false, false, "HTTP 404 NotFound"));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true, suggestedHost: "comizy.io");
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        Assert.Equal(1, status.Resolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("High", proposal.Confidence);
+        Assert.Equal("https://comizy.io/academy-0/chapter-51", proposal.ProposedUrl);
+        Assert.Equal(0, search.Calls);
+    }
+
+    [Fact]
+    public async Task DirectRewrite_Chapter404SeriesPageMatches_ProducesMediumSeriesPage()
+    {
+        var search = new RecordingSearch([]);
+        var verification = new ScriptedVerification(c => c.Url == "https://comizy.io/academy-0"
+            ? new VerificationResult(true, true, false, "chapter mismatch (expected 51, found none)")
+            : new VerificationResult(false, false, false, "HTTP 404 NotFound"));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true, suggestedHost: "comizy.io");
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        Assert.Equal(1, status.Resolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("Medium", proposal.Confidence);
+        Assert.Equal("https://comizy.io/academy-0", proposal.ProposedUrl);
+        Assert.Equal(0, search.Calls);
+    }
+
+    [Fact]
+    public async Task DirectRewrite_BothCandidatesFail_FallsThroughToSearch()
+    {
+        var search = new RecordingSearch([new("https://reader.example/academy-0/chapter-51", null, null)]);
+        var verification = new ScriptedVerification(c => c.Url.StartsWith("https://comizy.io/", StringComparison.Ordinal)
+            ? new VerificationResult(false, false, false, "HTTP 404 NotFound")
+            : new VerificationResult(true, true, true, "Series and chapter matched"));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true, suggestedHost: "comizy.io");
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("High", proposal.Confidence);
+        Assert.Equal("https://reader.example/academy-0/chapter-51", proposal.ProposedUrl);
+        Assert.Equal(1, search.Calls);
+    }
+
+    [Fact]
+    public async Task DirectRewrite_NoTargetHost_IsNotAttempted()
+    {
+        var verified = new System.Collections.Concurrent.ConcurrentBag<string>();
+        var search = new RecordingSearch([new("https://reader.example/academy-0/chapter-51", null, null)]);
+        var verification = new ScriptedVerification(c =>
+        {
+            verified.Add(c.Url);
+            return new VerificationResult(true, true, true, "Series and chapter matched");
+        });
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        Assert.Equal(1, search.Calls);
+        Assert.DoesNotContain(verified, u => u.StartsWith("https://comizy.io/", StringComparison.Ordinal));
+        Assert.DoesNotContain(verified, u => u.StartsWith("https://www.webtoon.xyz/read/academy-0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task DirectRewrite_DecimalChapter_BuildsDecimalChapterUrl()
+    {
+        var search = new RecordingSearch([]);
+        var verification = new ScriptedVerification(c => c.Url == "https://comizy.io/omniscient-reader/chapter-112.5"
+            ? new VerificationResult(true, true, true, "Series and chapter matched")
+            : new VerificationResult(false, false, false, "HTTP 404 NotFound"));
+        var extraction = new FixedExtraction("Omniscient Reader", "112.5", "manga");
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification, extractionService: extraction);
+        await harness.SeedWithUrl("Omniscient Reader", "https://www.webtoon.xyz/read/omniscient-reader/chapter-112.5/");
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true, suggestedHost: "comizy.io");
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("High", proposal.Confidence);
+        Assert.Equal("https://comizy.io/omniscient-reader/chapter-112.5", proposal.ProposedUrl);
+        Assert.Equal(0, search.Calls);
+    }
+
+    [Fact]
+    public async Task Unresolved_RecordsPerCandidateDiagnostics_CappedAndBodyFree()
+    {
+        var candidates = Enumerable.Range(0, 6)
+            .Select(i => new SearchCandidate($"https://reader.example/series/other-{i}/chapter-{i}", null, null))
+            .ToList();
+        var search = new RecordingSearch(candidates);
+        var verification = new ScriptedVerification(c =>
+            new VerificationResult(true, false, false, $"series mismatch (\"Observed Title {c.Url}\")"));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        var status = await harness.WaitStopped();
+
+        Assert.Equal(1, status.Unresolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.StartsWith("Tried: ", proposal.Detail);
+        Assert.Contains("reader.example", proposal.Detail);
+        Assert.Contains("series mismatch", proposal.Detail);
+        // Capped at 5 entries and ~400 chars, and never leaks page bodies.
+        Assert.True(proposal.Detail!.Split("; ").Length <= 5, proposal.Detail);
+        Assert.True(proposal.Detail.Length <= 403, proposal.Detail);
+        Assert.DoesNotContain("<html>", proposal.Detail);
+    }
+
+    [Fact]
+    public async Task DiscoveredChapterLink_FromDifferentSeries_IsNotAcceptedAsHigh()
+    {
+        // Regression for the production "spooky-in-love" wrong proposal: a series-matched tag page
+        // links out to another series' chapter-16 page. The chapter matches, the series does not,
+        // so it must never become a High proposal.
+        const string seriesPage = "https://comizy.io/manga-tag/read-the-former-supreme";
+        const string wrongChapter = "https://comizy.io/spooky-in-love/chapter-16";
+        var search = new RecordingSearch([new(seriesPage, "Read The Former Supreme Manga Scan", null)]);
+        var verification = new DiscoveredLinkVerification(seriesPage, wrongChapter);
+        var extraction = new FixedExtraction("The Former Supreme", "16", "manhwa");
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification, extractionService: extraction);
+        await harness.SeedWithUrl("The Former Supreme - Chapter 16", "https://www.webtoon.xyz/read/the-former-supreme/chapter-16/");
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.NotEqual("High", proposal.Confidence);
+        Assert.NotEqual(wrongChapter, proposal.ProposedUrl);
+    }
+
     private sealed class Harness : IAsyncDisposable
     {
         public required ServiceProvider Services { get; init; }
@@ -320,7 +474,8 @@ public sealed class UrlMigrationBackgroundJobTests
         public static async Task<Harness> CreateWithSearch(
             IAlternativeUrlSearchService searchService,
             bool autoApprove = false,
-            ICandidateVerificationService? verificationService = null)
+            ICandidateVerificationService? verificationService = null,
+            ISeriesExtractionService? extractionService = null)
         {
             var path = Path.Combine(Path.GetTempPath(), $"urlmig-unit-{Guid.NewGuid():N}.db");
             var services = new ServiceCollection();
@@ -332,7 +487,7 @@ public sealed class UrlMigrationBackgroundJobTests
                 .UseSqlite($"Data Source={path};Pooling=False")
                 .AddInterceptors(txInterceptor));
             services.AddSingleton<AiTaggingSettingsService>(new InMemoryAiTaggingSettingsService(new() { MigrationAutoApproveHigh = autoApprove }));
-            services.AddSingleton<ISeriesExtractionService, Extraction>();
+            services.AddSingleton<ISeriesExtractionService>(extractionService ?? new Extraction());
             services.AddScoped<IAlternativeUrlSearchService>(_ => searchService);
             services.AddSingleton<ICandidateVerificationService>(verificationService ?? new Verification());
             // Liveness always reports "dead" so the run proceeds; candidate verification is the scripted double.
@@ -358,6 +513,19 @@ public sealed class UrlMigrationBackgroundJobTests
             db.BookmarkNodes.AddRange(nodes);
             await db.SaveChangesAsync();
             return nodes;
+        }
+        public async Task<BookmarkNode> SeedWithUrl(string title, string url)
+        {
+            using var scope = Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var node = new BookmarkNode
+            {
+                Id = Guid.NewGuid(), Title = title, Url = url,
+                Type = NodeType.Bookmark, UpdatedAt = DateTime.UtcNow, SyncState = SyncState.Synced
+            };
+            db.BookmarkNodes.Add(node);
+            await db.SaveChangesAsync();
+            return node;
         }
         public async Task<UrlMigrationStatusDto> WaitStopped()
         {
@@ -466,5 +634,46 @@ public sealed class UrlMigrationBackgroundJobTests
         public Task<AnimeScheduleResult> GetAiringScheduleAsync(int id, CancellationToken ct) => throw new NotSupportedException();
         public Task<Dictionary<int, AnimeScheduleResult>> GetAiringSchedulesBatchAsync(IReadOnlyList<int> ids, CancellationToken ct) => throw new NotSupportedException();
         public Task<Dictionary<Guid, BestMatchLookupResult>> FindBestMatchesBatchAsync(IReadOnlyList<(Guid Id, string Title, string? Url)> items, CancellationToken ct) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingSearch(IReadOnlyList<SearchCandidate> candidates) : IAlternativeUrlSearchService
+    {
+        public int Calls;
+
+        public Task<IReadOnlyList<SearchCandidate>> SearchAsync(SeriesExtraction extraction, string deadHost, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false) => throw new NotSupportedException();
+
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false)
+        {
+            Interlocked.Increment(ref Calls);
+            return Task.FromResult(new SearchOutcome<SearchCandidate>(candidates, [new("Groq", candidates.Count, null)]));
+        }
+    }
+
+    private sealed class FixedExtraction(string series, string? chapter, string mediaType) : ISeriesExtractionService
+    {
+        public Task<SeriesExtraction> ExtractAsync(string title, string url, string? category, CancellationToken ct)
+            => Task.FromResult(new SeriesExtraction(series, chapter, mediaType, true));
+    }
+
+    /// <summary>
+    /// Verification double for the discovered-chapter-link regression: the series/tag page matches
+    /// the series (but not the chapter), and its discovered link points at a different series whose
+    /// page matches the chapter number only.
+    /// </summary>
+    private sealed class DiscoveredLinkVerification(string seriesPageUrl, string wrongChapterUrl) : ICandidateVerificationService
+    {
+        public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct)
+        {
+            var result = candidate.Url switch
+            {
+                var u when u == seriesPageUrl => new VerificationResult(true, true, false, "chapter mismatch (expected 16, found none)"),
+                var u when u == wrongChapterUrl => new VerificationResult(true, false, true, "series mismatch (\"Spooky in Love - Chapter 16 - Comizy\")"),
+                _ => new VerificationResult(false, false, false, "HTTP 404 NotFound")
+            };
+            return Task.FromResult(result);
+        }
+
+        public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>([wrongChapterUrl]);
     }
 }

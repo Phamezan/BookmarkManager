@@ -27,7 +27,9 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     public const string LivenessAbortMessage =
         "Domain appears alive — run Link Checker first or double-check the host.";
 
-    private const int MaxCandidatesToVerify = 3;
+    private const int MaxCandidatesToVerify = 5;
+    private const int MaxDiagnosticEntries = 5;
+    private const int MaxDiagnosticChars = 400;
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<UrlMigrationBackgroundJob> _logger;
@@ -544,6 +546,22 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             }
         }
 
+        var attempts = new List<CandidateAttempt>();
+        var diagnosticStages = new List<SearchStage>();
+
+        // Direct target-host rewrite: the user already named the replacement host, and aggregator
+        // sites frequently keep the dead site's slug, so try "{target}/{slug}/chapter-{n}" and the
+        // series page before spending a search. Only runs when the run has a user-chosen target.
+        if (restrictToPreferredHost && preferredHost != null && !AniListIdKeyedHosts.Contains(preferredHost))
+        {
+            var rewritten = await TryDirectHostRewriteAsync(proposal, deadHost, preferredHost, bookmark.Id,
+                extraction, verificationService, attempts, diagnosticStages, ct).ConfigureAwait(false);
+            if (rewritten != null)
+            {
+                return rewritten;
+            }
+        }
+
         var combinedCandidates = new List<SearchCandidate>();
 
         // Query local library catalog for verified series source URLs (if compatible with host preferences)
@@ -602,7 +620,9 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         {
             var outcome = await searchService.SearchWithDiagnosticsAsync(extraction, deadHost, searchRun, ct, preferredHost, restrictToPreferredHost).ConfigureAwait(false);
             candidates = outcome.Candidates;
-            searchDetail = outcome.Detail;
+            searchDetail = diagnosticStages.Count > 0
+                ? string.Join("; ", diagnosticStages.Concat(outcome.Stages).Select(s => s.Detail))
+                : outcome.Detail;
             var providers = outcome.Stages
                 .Where(stage => stage.CandidateCount > 0)
                 .Select(stage => stage.Provider)
@@ -632,9 +652,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         if (combinedCandidates.Count == 0)
         {
             proposal.Confidence = "Unresolved";
-            proposal.Detail = string.IsNullOrWhiteSpace(searchDetail) ? "Search: 0 results" : searchDetail;
-            if (excludedUrls.Count > 0)
-                proposal.Detail += "; previously rejected URL(s) excluded";
+            proposal.Detail = BuildUnresolvedDetail(attempts, searchDetail, excludedUrls);
             return proposal;
         }
 
@@ -660,8 +678,13 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Verification failed for candidate {Url}", candidate.Url);
+                attempts.Add(new CandidateAttempt(candidate.Url, "verification error"));
                 continue;
             }
+
+            _logger.LogInformation(
+                "URL migration candidate {Url} for bookmark {BookmarkId}: reachable={Reachable} series={SeriesMatched} chapter={ChapterMatched} - {Reason}",
+                candidate.Url, bookmark.Id, result.Reachable, result.SeriesMatched, result.ChapterMatched, result.Detail);
 
             if (result.Reachable && result.SeriesMatched)
             {
@@ -669,6 +692,8 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 bestSeriesMatchResult = result;
                 break; // Stop at first candidate that passes (plan §6.4).
             }
+
+            attempts.Add(new CandidateAttempt(candidate.Url, result.Detail));
 
             // A blocked candidate (Cloudflare/403/429) could still be the right page - the check
             // just couldn't see it. Keep the strongest-evidence blocked candidate as a fallback
@@ -717,10 +742,144 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         }
 
         proposal.Confidence = "Unresolved";
-        proposal.Detail = excludedUrls.Count > 0
+        proposal.Detail = BuildUnresolvedDetail(attempts, searchDetail, excludedUrls);
+        return proposal;
+    }
+
+    /// <summary>
+    /// Direct rewrite against a user-chosen target host: derive the series slug and chapter from the
+    /// old URL and try <c>https://{target}/{slug}/chapter-{n}</c> then the series page, verifying
+    /// with the normal HTTP verifier before any search. Returns a High proposal when the chapter
+    /// URL verifies (series+chapter), a Medium one when only the series page verifies, and null to
+    /// fall through to the catalog/search flow when neither does. Attempts are recorded for the
+    /// per-candidate diagnostics.
+    /// </summary>
+    private async Task<UrlMigrationProposal?> TryDirectHostRewriteAsync(
+        UrlMigrationProposal proposal,
+        string deadHost,
+        string preferredHost,
+        Guid bookmarkId,
+        SeriesExtraction extraction,
+        ICandidateVerificationService verificationService,
+        List<CandidateAttempt> attempts,
+        List<SearchStage> diagnosticStages,
+        CancellationToken ct)
+    {
+        if (!SeriesExtractionFallback.TryParseSeriesSlugAndChapter(proposal.OldUrl, out var slug, out var chapter) ||
+            string.IsNullOrWhiteSpace(slug))
+        {
+            return null;
+        }
+
+        var chapterNumber = !string.IsNullOrWhiteSpace(chapter) ? chapter : extraction.ChapterNumber;
+        var candidates = new List<SearchCandidate>();
+        if (!string.IsNullOrWhiteSpace(chapterNumber))
+        {
+            candidates.Add(new SearchCandidate($"https://{preferredHost}/{slug}/chapter-{chapterNumber}", null, "Direct rewrite"));
+        }
+
+        candidates.Add(new SearchCandidate($"https://{preferredHost}/{slug}", null, "Direct rewrite"));
+
+        // Same SSRF/noise guard every other candidate passes.
+        candidates = SearchCandidateFilter.Filter(candidates, deadHost, maxResults: candidates.Count).ToList();
+        if (candidates.Count == 0)
+        {
+            diagnosticStages.Add(new SearchStage("Direct rewrite", 0, "candidates filtered"));
+            return null;
+        }
+
+        SearchCandidate? seriesPageCandidate = null;
+        foreach (var candidate in candidates)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var result = await TryVerifyAsync(candidate, extraction, verificationService, ct).ConfigureAwait(false);
+            if (result is null)
+            {
+                attempts.Add(new CandidateAttempt(candidate.Url, "verification error"));
+                continue;
+            }
+
+            _logger.LogInformation(
+                "URL migration candidate {Url} for bookmark {BookmarkId}: reachable={Reachable} series={SeriesMatched} chapter={ChapterMatched} - {Reason}",
+                candidate.Url, bookmarkId, result.Reachable, result.SeriesMatched, result.ChapterMatched, result.Detail);
+
+            if (result.Reachable && result.SeriesMatched && result.ChapterMatched)
+            {
+                proposal.ProposedUrl = candidate.Url;
+                proposal.ProposedHost = TryGetHost(candidate.Url);
+                proposal.Confidence = "High";
+                proposal.Detail = "Series and chapter matched (direct slug rewrite to target host).";
+                return proposal;
+            }
+
+            if (result.Reachable && result.SeriesMatched)
+            {
+                seriesPageCandidate ??= candidate;
+                continue;
+            }
+
+            attempts.Add(new CandidateAttempt(candidate.Url, result.Detail));
+        }
+
+        diagnosticStages.Add(new SearchStage("Direct rewrite", candidates.Count, seriesPageCandidate is null ? "no series match" : null));
+
+        if (seriesPageCandidate != null)
+        {
+            proposal.ProposedUrl = seriesPageCandidate.Url;
+            proposal.ProposedHost = TryGetHost(seriesPageCandidate.Url);
+            proposal.Confidence = "Medium";
+            proposal.Detail = "series page, chapter not confirmed (direct slug rewrite to target host).";
+            return proposal;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Builds the Unresolved proposal detail: a compact, capped list of the candidate URLs that
+    /// were tried and why each failed, falling back to the search stage summary (or the generic
+    /// catch-all) only when nothing was tried. Never includes page bodies or credentials.
+    /// </summary>
+    private static string BuildUnresolvedDetail(
+        IReadOnlyList<CandidateAttempt> attempts, string searchDetail, IReadOnlySet<string> excludedUrls)
+    {
+        if (attempts.Count > 0)
+        {
+            var detail = BuildTriedDetail(attempts);
+            return excludedUrls.Count > 0 ? detail + "; previously rejected URL(s) excluded" : detail;
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchDetail))
+        {
+            return excludedUrls.Count > 0 ? searchDetail + "; previously rejected URL(s) excluded" : searchDetail;
+        }
+
+        return excludedUrls.Count > 0
             ? "No new candidates found (previously rejected URL(s) excluded)."
             : "No candidates survived verification (unreachable, 403 Forbidden, or title did not match).";
-        return proposal;
+    }
+
+    private static string BuildTriedDetail(IReadOnlyList<CandidateAttempt> attempts)
+    {
+        var parts = attempts.Take(MaxDiagnosticEntries)
+            .Select(a => $"{CompactUrlForDiagnostics(a.Url)} - {a.Reason}")
+            .ToList();
+        var text = "Tried: " + string.Join("; ", parts);
+        if (attempts.Count > MaxDiagnosticEntries)
+            text += "; ...";
+        if (text.Length > MaxDiagnosticChars)
+            text = text[..(MaxDiagnosticChars - 3)].TrimEnd() + "...";
+        return text;
+    }
+
+    private static string CompactUrlForDiagnostics(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return url;
+
+        var path = uri.AbsolutePath.TrimEnd('/');
+        return uri.Host + path;
     }
 
     /// <summary>
@@ -881,7 +1040,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 continue;
             }
 
-            if (result.Reachable && result.ChapterMatched)
+            if (result.Reachable && result.SeriesMatched && result.ChapterMatched)
             {
                 return link;
             }
@@ -1088,4 +1247,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     private static string? TryGetHost(string? url) => Infrastructure.UrlHelpers.TryGetHost(url);
 
     private sealed record UrlMigrationRunRequest(Guid RunId, string DeadHost, bool Force = false, string? SuggestedHost = null);
+
+    /// <summary>One verified candidate and why it did not become a proposal, for Unresolved diagnostics.</summary>
+    private sealed record CandidateAttempt(string Url, string Reason);
 }
