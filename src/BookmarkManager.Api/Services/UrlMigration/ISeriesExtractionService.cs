@@ -18,4 +18,14 @@ public interface ISeriesExtractionService
 /// <param name="ChapterNumber">The chapter/episode string (e.g. "112", "112.5"), or null if absent.</param>
 /// <param name="MediaType">One of manga, manhwa, manhua, lightnovel, webnovel, anime, unknown.</param>
 /// <param name="UsedFallback">True when the heuristic fallback path produced this result instead of Groq.</param>
-public sealed record SeriesExtraction(string SeriesName, string? ChapterNumber, string MediaType, bool UsedFallback);
+public sealed record SeriesExtraction(string SeriesName, string? ChapterNumber, string MediaType, bool UsedFallback)
+{
+    /// <summary>
+    /// True when the media type carries information. <c>unknown</c> is the placeholder used when AI
+    /// extraction could not classify the bookmark, so search queries and prompts must omit the media
+    /// type entirely rather than send a literal "unknown" token to upstream search engines.
+    /// </summary>
+    public bool HasKnownMediaType =>
+        !string.IsNullOrWhiteSpace(MediaType) &&
+        !string.Equals(MediaType, "unknown", StringComparison.OrdinalIgnoreCase);
+}

@@ -133,6 +133,89 @@ public sealed class GeminiGroundedSearchServiceTests
     }
 
     [Fact]
+    public async Task PaymentRequired_ParsesGoogleErrorJson_AndSurfacesSanitizedReason()
+    {
+        var handler = new RoutingHandler(_ => GoogleError(HttpStatusCode.PaymentRequired));
+        var result = await CreateService(handler).SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        var reason = Assert.Single(result.Stages).FailureReason;
+        Assert.Equal(
+            "HTTP 402 PAYMENT_REQUIRED: Prepayment credits are depleted. Please top up your billing account.",
+            reason);
+        Assert.Contains("402", reason);
+        Assert.Contains("PAYMENT_REQUIRED", reason);
+        // Never the key, the request URL/query, or the raw body beyond Google's message.
+        Assert.DoesNotContain("test-key", reason);
+        Assert.DoesNotContain("key=", reason);
+        Assert.DoesNotContain("generativelanguage", reason);
+    }
+
+    [Fact]
+    public async Task HttpFailure_NonJsonBody_ReportsStatusOnly_WithoutLeakingBody()
+    {
+        var handler = new RoutingHandler(_ => new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = new StringContent("SECRET-RAW-GOOGLE-BODY", Encoding.UTF8, "text/plain")
+        });
+
+        var result = await CreateService(handler).SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        Assert.Equal("HTTP 402", Assert.Single(result.Stages).FailureReason);
+        Assert.DoesNotContain("SECRET", result.Detail);
+    }
+
+    [Fact]
+    public async Task RepeatedPaymentRequired_OpensTheRunCircuit_LikeOtherHardFailures()
+    {
+        var calls = 0;
+        var handler = new RoutingHandler(_ => { calls++; return GoogleError(HttpStatusCode.PaymentRequired); });
+        var service = CreateService(handler);
+        var run = new SearchRunContext();
+
+        for (var i = 0; i < SearchRunContext.FailureThreshold; i++)
+        {
+            await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", run, default);
+        }
+
+        var skipped = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", run, default);
+
+        Assert.Equal(SearchRunContext.FailureThreshold, calls);
+        Assert.Contains("402", skipped.Detail);
+        Assert.Contains("skipped for this run", skipped.Detail);
+    }
+
+    [Theory]
+    [InlineData("line one\nline two\r\n", 160)]
+    public void GeminiErrorHelpers_TruncateAndCollapseMessage(string prefix, int cap)
+    {
+        var message = prefix + new string('x', 300);
+        var sanitized = GeminiApiError.SanitizeMessage(message);
+
+        Assert.NotNull(sanitized);
+        Assert.Equal(cap, sanitized!.Length);
+        Assert.StartsWith("line one line two x", sanitized);
+        Assert.DoesNotContain('\n', sanitized);
+        Assert.DoesNotContain('\r', sanitized);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("SECRET-RAW-GOOGLE-BODY")]
+    [InlineData("{ \"not\": \"an error envelope\" }")]
+    public void Describe_NonErrorEnvelope_FallsBackToStatusCode(string? body)
+    {
+        Assert.Equal("HTTP 402", GeminiApiError.Describe(HttpStatusCode.PaymentRequired, body));
+    }
+
+    private static HttpResponseMessage GoogleError(HttpStatusCode status) => new(status)
+    {
+        Content = new StringContent(
+            """{"error":{"code":402,"status":"PAYMENT_REQUIRED","message":"Prepayment credits are depleted.\nPlease top up your billing account."}}""",
+            Encoding.UTF8,
+            "application/json")
+    };
+
+    [Fact]
     public async Task GroqProvider_DoesNotCallGemini()
     {
         var geminiCalls = 0;
