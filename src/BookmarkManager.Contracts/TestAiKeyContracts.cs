@@ -10,6 +10,11 @@ public class TestAiKeyRequest
 
     // "OpenRouter" (default) or "Groq" - selects which provider's test logic runs the request.
     public string Provider { get; set; } = "OpenRouter";
+
+    // Which stored secret to fall back to when ApiKey is empty or still the masked value from GET.
+    // One of: ApiKey, GroqApiKey, GeminiApiKey, RagApiKey, RagFallbackApiKey. When null/unknown the
+    // server falls back to Provider ("Groq" -> GroqApiKey, otherwise ApiKey) for backwards compatibility.
+    public string? SecretName { get; set; }
 }
 
 public class TestAiKeyResponse

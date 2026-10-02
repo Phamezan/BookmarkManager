@@ -158,7 +158,9 @@ public class FakeBookmarkService : IBookmarkService
     public Task<AiAutoTagSummaryDto> AiAutoTagFolderBatchAsync(Guid folderId, AiAutoTagBatchRequestDto request, CancellationToken cancellationToken = default) 
         => OnAiAutoTagFolderBatch != null ? OnAiAutoTagFolderBatch(folderId, request) : Task.FromResult(new AiAutoTagSummaryDto());
 
-    public Task<AiTaggingSettingsDto> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(new AiTaggingSettingsDto());
+    public AiTaggingSettingsDto AiTaggingSettings { get; set; } = new();
+
+    public Task<AiTaggingSettingsDto> GetAiTaggingSettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(AiTaggingSettings);
     
     public Task<AiTaggingSettingsDto> SaveAiTaggingSettingsAsync(AiTaggingSettingsDto settings, CancellationToken cancellationToken = default) 
         => OnSaveAiTaggingSettings != null ? OnSaveAiTaggingSettings(settings) : Task.FromResult(settings);
