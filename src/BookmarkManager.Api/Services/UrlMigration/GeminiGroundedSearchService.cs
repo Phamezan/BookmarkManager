@@ -29,9 +29,23 @@ namespace BookmarkManager.Api.Services.UrlMigration;
 /// </remarks>
 public sealed partial class GeminiGroundedSearchService
 {
-    public static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(15);
+    /// <summary>Budget for the grounded <c>generateContent</c> call itself. A grounded call on
+    /// Gemini 3.8 Flash routinely takes ~8 s and can exceed 15 s, so it must not share a budget
+    /// with redirect resolution (which used to be charged against the same 15 s window).</summary>
+    public static readonly TimeSpan GenerateContentTimeout = TimeSpan.FromSeconds(30);
     private const int MaxRedirectsToResolve = 6;
-    private static readonly TimeSpan RedirectTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>Overall budget for resolving every grounding redirect in parallel. Independent of
+    /// the generateContent call; slow redirects are skipped and never fail the whole provider.</summary>
+    private static readonly TimeSpan DefaultRedirectResolutionTimeout = TimeSpan.FromSeconds(6);
+    private static readonly TimeSpan DefaultRedirectRequestTimeout = TimeSpan.FromSeconds(5);
+    /// <summary>Outer per-provider budget (call plus redirects) consumed by the run circuit.</summary>
+    public static readonly TimeSpan ProviderTimeout = GenerateContentTimeout + DefaultRedirectResolutionTimeout;
+
+    // Test seams (InternalsVisibleTo): production uses the static defaults above.
+    internal TimeSpan GenerateContentBudget { get; init; } = GenerateContentTimeout;
+    internal TimeSpan RedirectResolutionBudget { get; init; } = DefaultRedirectResolutionTimeout;
+    internal TimeSpan RedirectRequestBudget { get; init; } = DefaultRedirectRequestTimeout;
+    internal TimeSpan ProviderBudget { get; init; } = ProviderTimeout;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AiTaggingSettingsService _settings;
@@ -61,7 +75,7 @@ public sealed partial class GeminiGroundedSearchService
         ArgumentException.ThrowIfNullOrWhiteSpace(deadHost);
 
         var settings = await _settings.GetAsync(ct).ConfigureAwait(false);
-        return await run.ExecuteAsync("Gemini", ProviderTimeout, async token =>
+        return await run.ExecuteAsync("Gemini", ProviderBudget, async token =>
         {
             var raw = await SearchAsync(extraction, deadHost, preferredHost, restrictToPreferredHost, settings, token).ConfigureAwait(false);
             return SearchCandidateFilter.Filter(raw, deadHost);
@@ -90,7 +104,10 @@ public sealed partial class GeminiGroundedSearchService
         var body = new
         {
             contents = new[] { new { parts = new[] { new { text = BuildPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost) } } } },
-            tools = new[] { new { google_search = new { } } }
+            tools = new[] { new { google_search = new { } } },
+            // Gemini 3.x uses thinkingLevel (not the 2.5 thinkingBudget); "low" minimises latency
+            // for this retrieval call. Docs: https://ai.google.dev/gemini-api/docs/thinking
+            generationConfig = new { thinkingConfig = new { thinkingLevel = "low" } }
         };
 
         var http = _httpClientFactory.CreateClient(HttpClientName);
@@ -98,38 +115,64 @@ public sealed partial class GeminiGroundedSearchService
         request.Headers.TryAddWithoutValidation("x-goog-api-key", settings.GeminiApiKey);
         request.Content = JsonContent.Create(body);
 
-        using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        if (response.StatusCode == HttpStatusCode.TooManyRequests)
+        string json;
+        using (var callBudget = CancellationTokenSource.CreateLinkedTokenSource(ct))
         {
-            throw new HttpRequestException("Gemini rate limit reached.", null, HttpStatusCode.TooManyRequests);
+            callBudget.CancelAfter(GenerateContentBudget);
+            using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, callBudget.Token).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                throw new HttpRequestException("Gemini rate limit reached.", null, HttpStatusCode.TooManyRequests);
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException(
+                    $"Gemini API request failed with status {(int)response.StatusCode}.",
+                    null,
+                    response.StatusCode);
+            }
+
+            json = await response.Content.ReadAsStringAsync(callBudget.Token).ConfigureAwait(false);
         }
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException(
-                $"Gemini API request failed with status {(int)response.StatusCode}.",
-                null,
-                response.StatusCode);
-        }
-
-        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         var (sources, textUrls) = ParseResponse(json);
 
+        // Redirect resolution is best-effort and parallel under its own budget: a slow or hanging
+        // redirect is skipped, never allowed to turn a successful grounded answer into a timeout.
+        var redirectsToResolve = sources
+            .Where(source => IsGoogleGroundingRedirect(source.Uri))
+            .Take(MaxRedirectsToResolve)
+            .ToList();
+
+        var resolvedRedirects = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (redirectsToResolve.Count > 0)
+        {
+            using var redirectBudget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            redirectBudget.CancelAfter(RedirectResolutionBudget);
+            var tasks = redirectsToResolve
+                .Select(async source => (Uri: source.Uri!, Final: await ResolveRedirectAsync(http, source.Uri!, ct, redirectBudget.Token).ConfigureAwait(false)))
+                .ToArray();
+            try
+            {
+                foreach (var (redirectUri, final) in await Task.WhenAll(tasks).ConfigureAwait(false))
+                {
+                    resolvedRedirects[redirectUri] = final;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
+
         var resolved = new List<SearchCandidate>();
-        var redirectBudget = MaxRedirectsToResolve;
         foreach (var source in sources)
         {
-            ct.ThrowIfCancellationRequested();
             string url;
             if (IsGoogleGroundingRedirect(source.Uri))
             {
-                if (redirectBudget-- <= 0)
-                {
-                    continue;
-                }
-
-                var finalUrl = await ResolveRedirectAsync(http, source.Uri!, ct).ConfigureAwait(false);
-                if (finalUrl is null)
+                if (!resolvedRedirects.TryGetValue(source.Uri!, out var finalUrl) || finalUrl is null)
                 {
                     continue;
                 }
@@ -164,10 +207,10 @@ public sealed partial class GeminiGroundedSearchService
             "Avoid wikis, forums, Reddit, YouTube, social media, news, and store pages.";
     }
 
-    private async Task<string?> ResolveRedirectAsync(HttpClient http, string redirectUrl, CancellationToken ct)
+    private async Task<string?> ResolveRedirectAsync(HttpClient http, string redirectUrl, CancellationToken runToken, CancellationToken redirectBudgetToken)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(RedirectTimeout);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(runToken, redirectBudgetToken);
+        timeout.CancelAfter(RedirectRequestBudget);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, redirectUrl);
@@ -192,7 +235,7 @@ public sealed partial class GeminiGroundedSearchService
             // destination is never a reader page.
             return IsGoogleHost(resolved) ? null : resolved;
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (OperationCanceledException) when (runToken.IsCancellationRequested)
         {
             throw;
         }
