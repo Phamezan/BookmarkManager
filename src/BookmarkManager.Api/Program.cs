@@ -86,6 +86,11 @@ builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.GeminiG
     .ConfigureHttpClient(c => c.Timeout = BookmarkManager.Api.Services.UrlMigration.GeminiGroundedSearchService.ProviderTimeout + TimeSpan.FromSeconds(5))
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.GeminiGroundedSearchService>();
+// Tavily Search is a plain search API (the default migration provider); fixed endpoint, key in
+// the Authorization header only.
+builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.TavilySearchService.HttpClientName)
+    .ConfigureHttpClient(c => c.Timeout = BookmarkManager.Api.Services.UrlMigration.TavilySearchService.ProviderTimeout + TimeSpan.FromSeconds(5));
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.TavilySearchService>();
 builder.Services.Configure<BookmarkManager.Api.Services.UrlMigration.UrlMigrationOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.UrlMigration.UrlMigrationOptions.SectionName));
 // SearXNG runs on the Compose network (http://searxng:8080), never published to the host.

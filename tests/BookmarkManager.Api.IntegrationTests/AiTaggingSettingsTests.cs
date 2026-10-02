@@ -14,6 +14,7 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
     private const string OpenRouterKey = "sk-openrouter-REAL-a1b2";
     private const string GroqKey = "gsk-groq-REAL-c3d4";
     private const string GeminiKey = "AIza-gemini-REAL-e5f6";
+    private const string TavilyKey = "tvly-tavily-REAL-k1l2";
     private const string RagKey = "gsk-rag-REAL-g7h8";
     private const string RagFallbackKey = "nvapi-ragfallback-REAL-i9j0";
 
@@ -23,6 +24,7 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         ApiKey = OpenRouterKey,
         GroqApiKey = GroqKey,
         GeminiApiKey = GeminiKey,
+        TavilyApiKey = TavilyKey,
         RagApiKey = RagKey,
         RagFallbackApiKey = RagFallbackKey
     };
@@ -50,6 +52,7 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         Assert.DoesNotContain(OpenRouterKey, body);
         Assert.DoesNotContain(GroqKey, body);
         Assert.DoesNotContain(GeminiKey, body);
+        Assert.DoesNotContain(TavilyKey, body);
         Assert.DoesNotContain(RagKey, body);
         Assert.DoesNotContain(RagFallbackKey, body);
 
@@ -58,11 +61,13 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         Assert.True(loaded!.HasApiKey);
         Assert.True(loaded.HasGroqApiKey);
         Assert.True(loaded.HasGeminiApiKey);
+        Assert.True(loaded.HasTavilyApiKey);
         Assert.True(loaded.HasRagApiKey);
         Assert.True(loaded.HasRagFallbackApiKey);
         Assert.Equal("••••" + OpenRouterKey[^4..], loaded.ApiKey);
         Assert.Equal("••••" + GroqKey[^4..], loaded.GroqApiKey);
         Assert.Equal("••••" + GeminiKey[^4..], loaded.GeminiApiKey);
+        Assert.Equal("••••" + TavilyKey[^4..], loaded.TavilyApiKey);
         Assert.Equal("••••" + RagKey[^4..], loaded.RagApiKey);
         Assert.Equal("••••" + RagFallbackKey[^4..], loaded.RagFallbackApiKey);
     }
@@ -78,9 +83,11 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         Assert.False(loaded!.HasApiKey);
         Assert.False(loaded.HasGroqApiKey);
         Assert.False(loaded.HasGeminiApiKey);
+        Assert.False(loaded.HasTavilyApiKey);
         Assert.False(loaded.HasRagApiKey);
         Assert.False(loaded.HasRagFallbackApiKey);
         Assert.Equal(string.Empty, loaded.ApiKey);
+        Assert.Equal(string.Empty, loaded.TavilyApiKey);
     }
 
     [Fact]
@@ -99,6 +106,7 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         Assert.Equal(OpenRouterKey, afterMasked.ApiKey);
         Assert.Equal(GroqKey, afterMasked.GroqApiKey);
         Assert.Equal(GeminiKey, afterMasked.GeminiApiKey);
+        Assert.Equal(TavilyKey, afterMasked.TavilyApiKey);
         Assert.Equal(RagKey, afterMasked.RagApiKey);
         Assert.Equal(RagFallbackKey, afterMasked.RagFallbackApiKey);
         Assert.Equal("some-new-model", afterMasked.Model);
@@ -109,6 +117,7 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
             ApiKey = string.Empty,
             GroqApiKey = "   ",
             GeminiApiKey = null!,
+            TavilyApiKey = string.Empty,
             RagApiKey = string.Empty,
             RagFallbackApiKey = string.Empty
         });
@@ -118,6 +127,7 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         Assert.Equal(OpenRouterKey, afterEmpty.ApiKey);
         Assert.Equal(GroqKey, afterEmpty.GroqApiKey);
         Assert.Equal(GeminiKey, afterEmpty.GeminiApiKey);
+        Assert.Equal(TavilyKey, afterEmpty.TavilyApiKey);
         Assert.Equal(RagKey, afterEmpty.RagApiKey);
         Assert.Equal(RagFallbackKey, afterEmpty.RagFallbackApiKey);
     }
@@ -170,6 +180,50 @@ public sealed class AiTaggingSettingsTests : IntegrationTestBase
         Assert.False(returned!.HasGroqApiKey);
         Assert.Equal(string.Empty, returned.GroqApiKey);
         Assert.True(returned.HasApiKey);
+    }
+
+    [Fact]
+    public async Task PutAiTaggingSettings_WithTavilyClearFlag_ClearsOnlyTavilyKey()
+    {
+        await SeedAsync();
+        using var client = Factory.CreateClient();
+
+        using var response = await client.PutAsJsonAsync("/api/settings/ai-tagging", new AiTaggingSettingsDto
+        {
+            ClearTavilyApiKey = true
+        });
+        response.EnsureSuccessStatusCode();
+
+        var stored = await ReadStoredAsync();
+        Assert.Equal(string.Empty, stored.TavilyApiKey);
+        Assert.Equal(GeminiKey, stored.GeminiApiKey);
+        Assert.Equal(GroqKey, stored.GroqApiKey);
+
+        var returned = await response.Content.ReadFromJsonAsync<AiTaggingSettingsDto>();
+        Assert.False(returned!.HasTavilyApiKey);
+        Assert.Equal(string.Empty, returned.TavilyApiKey);
+        Assert.True(returned.HasGeminiApiKey);
+    }
+
+    [Fact]
+    public async Task PutAiTaggingSettings_WithForeignTavilyMask_Returns400AndSavesNothing()
+    {
+        await SeedAsync();
+        using var client = Factory.CreateClient();
+
+        // Paste the Gemini key's mask into the Tavily field: it must not be stored as a literal key.
+        using var response = await client.PutAsJsonAsync("/api/settings/ai-tagging", new AiTaggingSettingsDto
+        {
+            TavilyApiKey = "••••" + GeminiKey[^4..]
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("Tavily", body);
+
+        var stored = await ReadStoredAsync();
+        Assert.Equal(TavilyKey, stored.TavilyApiKey);
+        Assert.DoesNotContain("••••", stored.TavilyApiKey);
     }
 
     [Theory]

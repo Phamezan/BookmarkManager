@@ -67,9 +67,10 @@ public class AiTaggingSettingsService
             GroqModel = "llama-3.3-70b-versatile",
             GroqBaseUrl = "https://api.groq.com/openai/v1",
             GroqRequestsPerMinute = 25,
-            MigrationSearchProvider = "Gemini",
+            MigrationSearchProvider = "Tavily",
             GeminiApiKey = string.Empty,
             GeminiSearchModel = "gemini-3.8-flash",
+            TavilyApiKey = string.Empty,
             RagModel = "llama-3.3-70b-versatile",
             RagApiKey = string.Empty,
             RagBaseUrl = "https://api.groq.com/openai/v1",
@@ -103,13 +104,21 @@ public class AiTaggingSettingsService
             MigrationSearchModel = string.IsNullOrWhiteSpace(settings.MigrationSearchModel)
                 ? "groq/compound-mini"
                 : settings.MigrationSearchModel.Trim(),
-            MigrationSearchProvider = string.Equals(settings.MigrationSearchProvider, "Groq", StringComparison.OrdinalIgnoreCase)
-                ? "Groq"
-                : "Gemini",
+            // Only a recognized explicit choice is preserved. Missing/empty/unknown values fall
+            // back to Tavily (the default for new installs and pre-Tavily persisted settings),
+            // without silently rewriting a stored "Gemini" or "Groq" choice.
+            MigrationSearchProvider = settings.MigrationSearchProvider switch
+            {
+                var p when string.Equals(p, "Groq", StringComparison.OrdinalIgnoreCase) => "Groq",
+                var p when string.Equals(p, "Gemini", StringComparison.OrdinalIgnoreCase) => "Gemini",
+                var p when string.Equals(p, "Tavily", StringComparison.OrdinalIgnoreCase) => "Tavily",
+                _ => "Tavily"
+            },
             GeminiApiKey = settings.GeminiApiKey?.Trim() ?? string.Empty,
             GeminiSearchModel = string.IsNullOrWhiteSpace(settings.GeminiSearchModel)
                 ? "gemini-3.8-flash"
                 : settings.GeminiSearchModel.Trim(),
+            TavilyApiKey = settings.TavilyApiKey?.Trim() ?? string.Empty,
             MigrationAutoApproveHigh = settings.MigrationAutoApproveHigh,
             RagModel = string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel.Trim(),
             RagApiKey = settings.RagApiKey?.Trim() ?? string.Empty,

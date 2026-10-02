@@ -1,6 +1,6 @@
 ---
 status: operational
-last_verified: 2026-08-01
+last_verified: 2026-10-02
 note: Evergreen runbook. Keep current with docker-compose, port, TLS, and backup-volume conventions. Verify against docker-compose.yml + Program.cs when those change.
 ---
 
@@ -92,9 +92,17 @@ https://<machine>.<tailnet>.ts.net:<tls-port>
 
 which stays correct even if the server's LAN IP changes later.
 
-## SearXNG (URL Migrator search fallback)
+## URL Migrator search providers (Tavily + SearXNG fallback)
 
-The URL Migrator's old DuckDuckGo/Yahoo HTML fallback was removed after both sites began returning bot challenges and HTTP 500s in production. A self-hosted SearXNG container (the `searxng` service in `docker-compose.yml`) now backs the fallback stage: the chain is Gemini grounding (or Groq compound) first, and SearXNG only when that primary stage fails or returns nothing. The API reaches it at `http://searxng:8080` over the Compose network; the container is **not** published to the host, so there is no new firewall rule and nothing to open in a browser.
+The URL Migrator's primary search provider is chosen on the Settings page's **URL Migrator** tab.
+The default is **Tavily** (a plain search API at `https://api.tavily.com/search`; 1,000 free
+credits/month, 1 credit per basic search). Paste a `tvly-...` key into the **Tavily API Key**
+field and save — no environment variable or redeploy is needed, and the key is stored in the
+`/data` volume alongside the other AI settings. `Gemini` (Google Search grounding) and `Groq`
+(compound web search) remain selectable, with their own keys. Changing the provider does not
+change the deployment; the Tavily endpoint is fixed and not configurable.
+
+The URL Migrator's old DuckDuckGo/Yahoo HTML fallback was removed after both sites began returning bot challenges and HTTP 500s in production. A self-hosted SearXNG container (the `searxng` service in `docker-compose.yml`) now backs the fallback stage: the selected primary provider (Tavily by default, or Gemini/Groq) runs first, and SearXNG only when that primary stage fails or returns nothing. The API reaches it at `http://searxng:8080` over the Compose network; the container is **not** published to the host, so there is no new firewall rule and nothing to open in a browser.
 
 - Configuration is `deploy/searxng/settings.yml`, mounted read-only at `/etc/searxng/settings.yml`. It enables JSON output and disables the rate limiter / bot detection because the instance is internal-only.
 - `server.secret_key` is provided at runtime by the `SEARXNG_SECRET` environment variable (SearXNG's documented env mapping). Compose refuses to start `searxng` until it is set in `.env`. The deploy workflow generates one automatically the first time it is missing (`.env` is untracked, so it survives `git reset`); for a manual `docker compose up`, add it yourself:

@@ -14,12 +14,13 @@ using Microsoft.Extensions.Logging;
 namespace BookmarkManager.Api.Services.UrlMigration;
 
 /// <summary>
-/// Search stage of URL Migrator v2 (plan §6.3). Primary path is Gemini Google Search grounding
-/// by default, or a single Groq "compound" model call (live web search + answer with sources)
-/// when the provider is set to Groq. When the primary stage fails or returns no usable
-/// candidates, the chain falls back to the self-hosted <see cref="ISearxngSearchService"/>.
-/// DuckDuckGo/Yahoo HTML scraping was removed from the migration chain (it is challenged/500s
-/// in production); <c>DuckDuckGoSearchService</c> is retained only for its own direct callers.
+/// Search stage of URL Migrator v2 (plan §6.3). The primary path is selected in Settings: the
+/// default is the plain <see cref="TavilySearchService"/> search API; <c>Gemini</c> uses Google
+/// Search grounding; <c>Groq</c> uses a single Groq "compound" model call (live web search +
+/// answer with sources). When the primary stage fails or returns no usable candidates, the chain
+/// falls back to the self-hosted <see cref="ISearxngSearchService"/>. DuckDuckGo/Yahoo HTML
+/// scraping was removed from the migration chain (it is challenged/500s in production);
+/// <c>DuckDuckGoSearchService</c> is retained only for its own direct callers.
 /// </summary>
 public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
 {
@@ -29,6 +30,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     private readonly AiRequestThrottle _throttle;
     private readonly ILogger<GroqCompoundSearchService> _logger;
     private readonly GeminiGroundedSearchService? _gemini;
+    private readonly TavilySearchService? _tavily;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -41,7 +43,8 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         ISearxngSearchService searxng,
         ILogger<GroqCompoundSearchService> logger,
         AiRequestThrottle? throttle = null,
-        GeminiGroundedSearchService? gemini = null)
+        GeminiGroundedSearchService? gemini = null,
+        TavilySearchService? tavily = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -49,6 +52,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _throttle = throttle ?? new AiRequestThrottle();
         _gemini = gemini;
+        _tavily = tavily;
     }
 
     public async Task<IReadOnlyList<SearchCandidate>> SearchAsync(
@@ -75,12 +79,21 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
             return filtered;
         }
 
-        // Provider is chosen at search time from settings; "Gemini" (Google Search grounding) is the
-        // default because Groq's compound models were decommissioned. Either primary failure falls
-        // through to the self-hosted SearXNG fallback below.
-        var provider = string.IsNullOrWhiteSpace(settings.MigrationSearchProvider) ? "Gemini" : settings.MigrationSearchProvider;
+        // Provider is chosen at search time from settings. "Tavily" (a plain search API, no LLM or
+        // grounding billing dependency) is the default. "Gemini" runs Google Search grounding;
+        // "Groq" keeps the Compound path. Any primary failure or empty result falls through to the
+        // self-hosted SearXNG fallback below.
+        var provider = string.IsNullOrWhiteSpace(settings.MigrationSearchProvider) ? "Tavily" : settings.MigrationSearchProvider;
+        var useTavily = string.Equals(provider, "Tavily", StringComparison.OrdinalIgnoreCase) && _tavily is not null;
         var useGemini = string.Equals(provider, "Gemini", StringComparison.OrdinalIgnoreCase) && _gemini is not null;
-        if (useGemini)
+        if (useTavily)
+        {
+            var tavily = await _tavily!.SearchWithDiagnosticsAsync(extraction, deadHost, run, ct, preferredHost, restrictToPreferredHost);
+            stages.AddRange(tavily.Stages);
+            var tavilyCandidates = Shape(tavily.Candidates);
+            if (tavilyCandidates.Count > 0) return new(tavilyCandidates, stages);
+        }
+        else if (useGemini)
         {
             var gemini = await _gemini!.SearchWithDiagnosticsAsync(extraction, deadHost, run, ct, preferredHost, restrictToPreferredHost);
             stages.AddRange(gemini.Stages);

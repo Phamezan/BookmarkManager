@@ -13,6 +13,7 @@ public sealed class AiTaggingSettingsMaskingTests
             ApiKey = "abcdef1234",
             GroqApiKey = "groqkey5678",
             GeminiApiKey = "geminkey9012",
+            TavilyApiKey = "tvlykey3456",
             RagApiKey = "ragkey3456",
             RagFallbackApiKey = "fallback7890"
         });
@@ -20,11 +21,13 @@ public sealed class AiTaggingSettingsMaskingTests
         Assert.Equal("••••1234", masked.ApiKey);
         Assert.Equal("••••5678", masked.GroqApiKey);
         Assert.Equal("••••9012", masked.GeminiApiKey);
+        Assert.Equal("••••3456", masked.TavilyApiKey);
         Assert.Equal("••••3456", masked.RagApiKey);
         Assert.Equal("••••7890", masked.RagFallbackApiKey);
         Assert.True(masked.HasApiKey);
         Assert.True(masked.HasGroqApiKey);
         Assert.True(masked.HasGeminiApiKey);
+        Assert.True(masked.HasTavilyApiKey);
         Assert.True(masked.HasRagApiKey);
         Assert.True(masked.HasRagFallbackApiKey);
     }
@@ -35,7 +38,9 @@ public sealed class AiTaggingSettingsMaskingTests
         var masked = AiTaggingSettingsMasking.ToMasked(new AiTaggingSettingsDto());
 
         Assert.Equal(string.Empty, masked.ApiKey);
+        Assert.Equal(string.Empty, masked.TavilyApiKey);
         Assert.False(masked.HasApiKey);
+        Assert.False(masked.HasTavilyApiKey);
         Assert.False(masked.HasRagFallbackApiKey);
     }
 
@@ -340,5 +345,65 @@ public sealed class AiTaggingSettingsMaskingTests
 
         Assert.NotNull(violation);
         Assert.Contains("Gemini", violation);
+    }
+
+    [Fact]
+    public void MergeSecrets_TavilyEmptyOrMasked_KeepsStored_NewReplaces_ClearClears()
+    {
+        var stored = new AiTaggingSettingsDto { TavilyApiKey = "tvly-stored-key" };
+
+        var masked = AiTaggingSettingsMasking.MergeSecrets(
+            new AiTaggingSettingsDto { TavilyApiKey = "••••-key" }, stored);
+        Assert.Equal("tvly-stored-key", masked.TavilyApiKey);
+
+        var empty = AiTaggingSettingsMasking.MergeSecrets(
+            new AiTaggingSettingsDto { TavilyApiKey = string.Empty }, stored);
+        Assert.Equal("tvly-stored-key", empty.TavilyApiKey);
+
+        var replaced = AiTaggingSettingsMasking.MergeSecrets(
+            new AiTaggingSettingsDto { TavilyApiKey = "tvly-new" }, stored);
+        Assert.Equal("tvly-new", replaced.TavilyApiKey);
+
+        var cleared = AiTaggingSettingsMasking.MergeSecrets(
+            new AiTaggingSettingsDto { TavilyApiKey = "tvly-new", ClearTavilyApiKey = true }, stored);
+        Assert.Equal(string.Empty, cleared.TavilyApiKey);
+    }
+
+    [Fact]
+    public void FindMaskInjectionViolation_TavilyCrossSecretMask_Rejected()
+    {
+        var stored = new AiTaggingSettingsDto
+        {
+            GeminiApiKey = "gemini-secret-1111",
+            TavilyApiKey = "tvly-secret-2222"
+        };
+
+        // Gemini key's mask pasted into the Tavily field.
+        var violation = AiTaggingSettingsMasking.FindMaskInjectionViolation(new AiTaggingSettingsDto
+        {
+            TavilyApiKey = "••••1111"
+        }, stored);
+
+        Assert.NotNull(violation);
+        Assert.Contains("Tavily", violation);
+    }
+
+    [Fact]
+    public void MergeTestSecret_TavilySecret_PinsConstantEndpointAndProvider()
+    {
+        var stored = new AiTaggingSettingsDto { TavilyApiKey = "tvly-stored-key" };
+
+        var merged = AiTaggingSettingsMasking.MergeTestSecret(new TestAiKeyRequest
+        {
+            Provider = "OpenRouter",
+            SecretName = "TavilyApiKey",
+            BaseUrl = "https://attacker.example/v1",
+            ApiKey = string.Empty
+        }, stored);
+
+        Assert.Equal("tvly-stored-key", merged.ApiKey);
+        Assert.Equal(BookmarkManager.Api.Services.UrlMigration.TavilySearchService.ApiBaseUrl, merged.BaseUrl);
+        Assert.Equal("Tavily", merged.Provider);
+        Assert.DoesNotContain("attacker.example", merged.BaseUrl);
     }
 }

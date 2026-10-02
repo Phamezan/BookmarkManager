@@ -20,6 +20,7 @@ public static class AiTaggingSettingsMasking
     public const string SecretApiKey = "ApiKey";
     public const string SecretGroqApiKey = "GroqApiKey";
     public const string SecretGeminiApiKey = "GeminiApiKey";
+    public const string SecretTavilyApiKey = "TavilyApiKey";
     public const string SecretRagApiKey = "RagApiKey";
     public const string SecretRagFallbackApiKey = "RagFallbackApiKey";
 
@@ -53,18 +54,21 @@ public static class AiTaggingSettingsMasking
         masked.HasApiKey = HasSecret(source.ApiKey);
         masked.HasGroqApiKey = HasSecret(source.GroqApiKey);
         masked.HasGeminiApiKey = HasSecret(source.GeminiApiKey);
+        masked.HasTavilyApiKey = HasSecret(source.TavilyApiKey);
         masked.HasRagApiKey = HasSecret(source.RagApiKey);
         masked.HasRagFallbackApiKey = HasSecret(source.RagFallbackApiKey);
 
         masked.ApiKey = Mask(source.ApiKey);
         masked.GroqApiKey = Mask(source.GroqApiKey);
         masked.GeminiApiKey = Mask(source.GeminiApiKey);
+        masked.TavilyApiKey = Mask(source.TavilyApiKey);
         masked.RagApiKey = Mask(source.RagApiKey);
         masked.RagFallbackApiKey = Mask(source.RagFallbackApiKey);
 
         masked.ClearApiKey = false;
         masked.ClearGroqApiKey = false;
         masked.ClearGeminiApiKey = false;
+        masked.ClearTavilyApiKey = false;
         masked.ClearRagApiKey = false;
         masked.ClearRagFallbackApiKey = false;
         return masked;
@@ -81,6 +85,8 @@ public static class AiTaggingSettingsMasking
     //                       GeminiSeriesIdentificationClient in AiSeriesIdentifierService)
     //   GeminiApiKey     -> Endpoint (GeminiGroundedSearchService)
     //   GroqApiKey       -> GroqBaseUrl (Groq identify, GroqSeriesExtractionService, GroqCompoundSearchService)
+    //   TavilyApiKey     -> none: the Tavily endpoint is a fixed constant (TavilySearchService.ApiEndpoint),
+    //                       so there is no user-editable URL to re-point the key at.
     //   RagApiKey        -> RagBaseUrl (LibraryRagService)
     //   RagFallbackApiKey-> RagFallbackBaseUrl (LibraryRagService)
     public static string? FindEndpointChangeViolation(AiTaggingSettingsDto incoming, AiTaggingSettingsDto stored)
@@ -126,6 +132,7 @@ public static class AiTaggingSettingsMasking
         => CheckMaskInjection(incoming.ApiKey, stored.ApiKey, "OpenRouter")
            ?? CheckMaskInjection(incoming.GroqApiKey, stored.GroqApiKey, "Groq")
            ?? CheckMaskInjection(incoming.GeminiApiKey, stored.GeminiApiKey, "Gemini")
+           ?? CheckMaskInjection(incoming.TavilyApiKey, stored.TavilyApiKey, "Tavily")
            ?? CheckMaskInjection(incoming.RagApiKey, stored.RagApiKey, "Library assistant")
            ?? CheckMaskInjection(incoming.RagFallbackApiKey, stored.RagFallbackApiKey, "fallback");
 
@@ -162,17 +169,20 @@ public static class AiTaggingSettingsMasking
         merged.ApiKey = Resolve(incoming.ApiKey, stored.ApiKey, incoming.ClearApiKey);
         merged.GroqApiKey = Resolve(incoming.GroqApiKey, stored.GroqApiKey, incoming.ClearGroqApiKey);
         merged.GeminiApiKey = Resolve(incoming.GeminiApiKey, stored.GeminiApiKey, incoming.ClearGeminiApiKey);
+        merged.TavilyApiKey = Resolve(incoming.TavilyApiKey, stored.TavilyApiKey, incoming.ClearTavilyApiKey);
         merged.RagApiKey = Resolve(incoming.RagApiKey, stored.RagApiKey, incoming.ClearRagApiKey);
         merged.RagFallbackApiKey = Resolve(incoming.RagFallbackApiKey, stored.RagFallbackApiKey, incoming.ClearRagFallbackApiKey);
 
         merged.HasApiKey = false;
         merged.HasGroqApiKey = false;
         merged.HasGeminiApiKey = false;
+        merged.HasTavilyApiKey = false;
         merged.HasRagApiKey = false;
         merged.HasRagFallbackApiKey = false;
         merged.ClearApiKey = false;
         merged.ClearGroqApiKey = false;
         merged.ClearGeminiApiKey = false;
+        merged.ClearTavilyApiKey = false;
         merged.ClearRagApiKey = false;
         merged.ClearRagFallbackApiKey = false;
         return merged;
@@ -197,6 +207,7 @@ public static class AiTaggingSettingsMasking
         {
             SecretGroqApiKey => stored.GroqApiKey,
             SecretGeminiApiKey => stored.GeminiApiKey,
+            SecretTavilyApiKey => stored.TavilyApiKey,
             SecretRagApiKey => stored.RagApiKey,
             SecretRagFallbackApiKey => stored.RagFallbackApiKey,
             SecretApiKey => stored.ApiKey,
@@ -210,7 +221,7 @@ public static class AiTaggingSettingsMasking
     public static string ResolveSecretName(string? secretName, string? provider)
         => secretName switch
         {
-            SecretApiKey or SecretGroqApiKey or SecretGeminiApiKey or SecretRagApiKey or SecretRagFallbackApiKey => secretName,
+            SecretApiKey or SecretGroqApiKey or SecretGeminiApiKey or SecretTavilyApiKey or SecretRagApiKey or SecretRagFallbackApiKey => secretName,
             _ => string.Equals(provider, "Groq", StringComparison.OrdinalIgnoreCase) ? SecretGroqApiKey : SecretApiKey
         };
 
@@ -223,6 +234,8 @@ public static class AiTaggingSettingsMasking
         {
             SecretGroqApiKey => FirstNonEmpty(stored.GroqBaseUrl, "https://api.groq.com/openai/v1"),
             SecretGeminiApiKey => FirstNonEmpty(stored.Endpoint, "https://generativelanguage.googleapis.com/v1beta"),
+            // Fixed endpoint (no user-editable URL): a stored Tavily key is always pinned here.
+            SecretTavilyApiKey => UrlMigration.TavilySearchService.ApiBaseUrl,
             SecretRagApiKey => FirstNonEmpty(stored.RagBaseUrl, "https://api.groq.com/openai/v1"),
             SecretRagFallbackApiKey => FirstNonEmpty(stored.RagFallbackBaseUrl, "https://integrate.api.nvidia.com/v1"),
             _ => FirstNonEmpty(stored.BaseUrl, "https://openrouter.ai/api/v1")
@@ -236,6 +249,7 @@ public static class AiTaggingSettingsMasking
             SecretApiKey => "OpenRouter",
             SecretGroqApiKey or SecretRagApiKey or SecretRagFallbackApiKey => "Groq",
             SecretGeminiApiKey => "Gemini",
+            SecretTavilyApiKey => "Tavily",
             _ => provider ?? "OpenRouter"
         };
 

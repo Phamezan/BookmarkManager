@@ -206,6 +206,88 @@ public class GroqCompoundSearchServiceTests
     private static string CompoundJson(string url) =>
         System.Text.Json.JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = $"{{\"candidates\":[{{\"url\":\"{url}\",\"why\":\"match\"}}]}}" } } } });
 
+    private static string TavilyJson(string url) =>
+        System.Text.Json.JsonSerializer.Serialize(new { results = new[] { new { url, title = "match", content = "reader" } } });
+
+    private static HttpResponseMessage Json(HttpStatusCode status, string body) =>
+        new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+    [Fact]
+    public async Task MigrationSearchProvider_Tavily_CallsTavily_NotGemini()
+    {
+        var settings = new TestDoubles.InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto
+        {
+            MigrationSearchProvider = "Tavily",
+            TavilyApiKey = "tvly-test",
+            GeminiApiKey = "gemini-test"
+        });
+        // Only the Tavily client is routed: any Gemini call throws "no stub route registered".
+        var factory = new TestDoubles.RoutingHttpClientFactory(new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+        {
+            [TavilySearchService.HttpClientName] = _ => Json(HttpStatusCode.OK, TavilyJson("https://asuracomic.net/series/solo-leveling/chapter-112")),
+        });
+        var tavily = new TavilySearchService(factory, settings, NullLogger<TavilySearchService>.Instance);
+        var gemini = new GeminiGroundedSearchService(factory, settings, NullLogger<GeminiGroundedSearchService>.Instance);
+        var searxng = new StubSearxngSearchService([]);
+        var service = new GroqCompoundSearchService(
+            factory, settings, searxng, NullLogger<GroqCompoundSearchService>.Instance, gemini: gemini, tavily: tavily);
+
+        var result = await service.SearchAsync(Extraction, "webtoon.xyz", CancellationToken.None);
+
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result).Url);
+        Assert.False(searxng.WasCalled);
+    }
+
+    [Fact]
+    public async Task MigrationSearchProvider_Missing_DefaultsToTavily()
+    {
+        var settings = new TestDoubles.InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto
+        {
+            MigrationSearchProvider = string.Empty,
+            TavilyApiKey = "tvly-test"
+        });
+        var factory = new TestDoubles.RoutingHttpClientFactory(new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+        {
+            [TavilySearchService.HttpClientName] = _ => Json(HttpStatusCode.OK, TavilyJson("https://asuracomic.net/series/solo-leveling/chapter-112")),
+        });
+        var tavily = new TavilySearchService(factory, settings, NullLogger<TavilySearchService>.Instance);
+        var searxng = new StubSearxngSearchService([]);
+        var service = new GroqCompoundSearchService(
+            factory, settings, searxng, NullLogger<GroqCompoundSearchService>.Instance, tavily: tavily);
+
+        var result = await service.SearchAsync(Extraction, "webtoon.xyz", CancellationToken.None);
+
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result).Url);
+        Assert.False(searxng.WasCalled);
+    }
+
+    [Fact]
+    public async Task MigrationSearchProvider_TavilyFailure_FallsBackToSearxng()
+    {
+        var settings = new TestDoubles.InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto
+        {
+            MigrationSearchProvider = "Tavily",
+            TavilyApiKey = "tvly-test"
+        });
+        var factory = new TestDoubles.RoutingHttpClientFactory(new Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>>
+        {
+            [TavilySearchService.HttpClientName] = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized)
+            {
+                Content = new StringContent("""{"detail":{"error":"Unauthorized: missing or invalid API key."}}""", Encoding.UTF8, "application/json")
+            },
+        });
+        var tavily = new TavilySearchService(factory, settings, NullLogger<TavilySearchService>.Instance);
+        var searxng = new StubSearxngSearchService(["https://asuracomic.net/series/academy/chapter-51"]);
+        var service = new GroqCompoundSearchService(
+            factory, settings, searxng, NullLogger<GroqCompoundSearchService>.Instance, tavily: tavily);
+
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "www.webtoon.xyz", new(), default);
+
+        Assert.True(searxng.WasCalled);
+        Assert.Contains("Tavily: HTTP 401", result.Detail);
+        Assert.Equal("https://asuracomic.net/series/academy/chapter-51", Assert.Single(result.Candidates).Url);
+    }
+
     private sealed class StubAiTaggingSettingsService : AiTaggingSettingsService
     {
         public StubAiTaggingSettingsService() : base(NullLogger<AiTaggingSettingsService>.Instance, "unused-path.json")
