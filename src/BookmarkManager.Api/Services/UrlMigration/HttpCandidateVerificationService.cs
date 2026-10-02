@@ -74,12 +74,17 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
 
         if (isChallenge)
         {
-            return new VerificationResult(false, false, false, "Cloudflare challenge");
+            return new VerificationResult(false, false, false, "Cloudflare challenge", Blocked: true);
         }
 
         if (fetch.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.ServiceUnavailable or HttpStatusCode.Unauthorized)
         {
-            return new VerificationResult(false, false, false, $"Access denied (HTTP {(int)fetch.StatusCode})");
+            return new VerificationResult(false, false, false, $"Access denied (HTTP {(int)fetch.StatusCode})", Blocked: true);
+        }
+
+        if (fetch.StatusCode is HttpStatusCode.TooManyRequests)
+        {
+            return new VerificationResult(false, false, false, "Rate limited (HTTP 429)", Blocked: true);
         }
 
         if (!fetch.IsSuccessStatusCode)
@@ -344,7 +349,7 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         return match.Success ? WebUtility.HtmlDecode(match.Groups[1].Value).Trim() : null;
     }
 
-    private static double ResolveSeriesTokenThreshold(SeriesExtraction extraction)
+    internal static double ResolveSeriesTokenThreshold(SeriesExtraction extraction)
     {
         var isAnime = string.Equals(extraction.MediaType, "anime", StringComparison.OrdinalIgnoreCase);
         var isMovie = extraction.SeriesName.Contains("Movie", StringComparison.OrdinalIgnoreCase) ||
@@ -352,7 +357,7 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         return isAnime || isMovie ? LooseSeriesTokenMatchThreshold : SeriesTokenMatchThreshold;
     }
 
-    private static bool IsSeriesMatch(string seriesName, string? pageText, double threshold = SeriesTokenMatchThreshold)
+    internal static bool IsSeriesMatch(string seriesName, string? pageText, double threshold = SeriesTokenMatchThreshold)
     {
         if (string.IsNullOrWhiteSpace(seriesName) || string.IsNullOrWhiteSpace(pageText))
             return false;
@@ -385,7 +390,7 @@ public partial class HttpCandidateVerificationService : ICandidateVerificationSe
         "dr", "mr", "ms", "mrs", "jr", "sr", "wo", "ii", "iv"
     };
 
-    private static bool IsChapterMatch(string? chapterNumber, Uri finalUri, string? pageText)
+    internal static bool IsChapterMatch(string? chapterNumber, Uri finalUri, string? pageText)
     {
         if (string.IsNullOrWhiteSpace(chapterNumber))
             return false;

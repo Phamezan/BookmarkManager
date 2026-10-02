@@ -28,4 +28,8 @@ public interface ICandidateVerificationService
 /// <param name="SeriesMatched">True when the page title/og:title normalizes to include most of the series name tokens.</param>
 /// <param name="ChapterMatched">True when the chapter number was found in the final URL path or the page title.</param>
 /// <param name="Detail">Human-readable note surfaced on the proposal (e.g. "Cloudflare challenge", "404 Not Found").</param>
-public sealed record VerificationResult(bool Reachable, bool SeriesMatched, bool ChapterMatched, string Detail);
+/// <param name="Blocked">True when automated access itself was blocked (Cloudflare challenge,
+/// 403/401/503, or 429) rather than the candidate being definitively wrong (404/410, DNS or
+/// connection failure, error page, title mismatch). A blocked candidate is a candidate the
+/// caller may still surface as an unverified proposal; a wrong one must be discarded.</param>
+public sealed record VerificationResult(bool Reachable, bool SeriesMatched, bool ChapterMatched, string Detail, bool Blocked = false);

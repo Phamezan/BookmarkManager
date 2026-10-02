@@ -205,6 +205,99 @@ public sealed class UrlMigrationBackgroundJobTests
     }
 
     [Fact]
+    public async Task BlockedPlausibleCandidate_ProducesMediumUnverifiedProposal()
+    {
+        const string blockedUrl = "https://reader.example/series/academy-player-0/chapter-51";
+        var search = new CandidateSearch([new(blockedUrl, "Academy Player 0", null)]);
+        var verification = new ScriptedVerification(_ =>
+            new VerificationResult(false, false, false, "Cloudflare challenge", Blocked: true));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        Assert.Equal(1, status.Resolved);
+        Assert.Equal(0, status.Unresolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("Medium", proposal.Confidence);
+        Assert.Equal("Pending", proposal.Status);
+        Assert.Equal(blockedUrl, proposal.ProposedUrl);
+        Assert.StartsWith("Unverified: site blocked automated check", proposal.Detail);
+        Assert.Contains("Cloudflare challenge", proposal.Detail);
+        Assert.Contains("review before approving", proposal.Detail);
+    }
+
+    [Fact]
+    public async Task BlockedImplausibleCandidate_StaysUnresolved()
+    {
+        const string blockedUrl = "https://reader.example/series/some-other-series/chapter-99";
+        var search = new CandidateSearch([new(blockedUrl, "Totally Different Series", null)]);
+        var verification = new ScriptedVerification(_ =>
+            new VerificationResult(false, false, false, "Access denied (HTTP 403)", Blocked: true));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        var status = await harness.WaitStopped();
+
+        Assert.Equal(1, status.Unresolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("Unresolved", proposal.Confidence);
+        Assert.Null(proposal.ProposedUrl);
+    }
+
+    [Fact]
+    public async Task VerifiedCandidate_WinsOverBlockedPlausibleCandidate()
+    {
+        const string blockedUrl = "https://reader.example/series/academy-player-0/chapter-51";
+        const string verifiedUrl = "https://goodreader.example/series/academy-player-0/chapter-51";
+        var search = new CandidateSearch(
+        [
+            new(blockedUrl, "Academy Player 0", null),
+            new(verifiedUrl, "Academy Player 0 Chapter 51", null),
+        ]);
+        var verification = new ScriptedVerification(candidate => candidate.Url == blockedUrl
+            ? new VerificationResult(false, false, false, "Cloudflare challenge", Blocked: true)
+            : new VerificationResult(true, true, true, "Series and chapter matched"));
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        var status = await harness.WaitStopped();
+
+        Assert.Equal(1, status.Resolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("High", proposal.Confidence);
+        Assert.Equal(verifiedUrl, proposal.ProposedUrl);
+        Assert.Equal("Series and chapter matched", proposal.Detail);
+    }
+
+    [Fact]
+    public async Task UnverifiedBlockedProposal_IsNotAutoApproved()
+    {
+        const string blockedUrl = "https://reader.example/series/academy-player-0/chapter-51";
+        var search = new CandidateSearch([new(blockedUrl, "Academy Player 0", null)]);
+        var verification = new ScriptedVerification(_ =>
+            new VerificationResult(false, false, false, "Cloudflare challenge", Blocked: true));
+        await using var harness = await Harness.CreateWithSearch(search, autoApprove: true, verificationService: verification);
+        var bookmarks = await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true);
+        await harness.WaitStopped();
+
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("Medium", proposal.Confidence);
+        Assert.Equal("Pending", proposal.Status);
+
+        using var scope = harness.Services.CreateScope();
+        var bookmark = await scope.ServiceProvider.GetRequiredService<AppDbContext>()
+            .BookmarkNodes.SingleAsync(b => b.Id == bookmarks[0].Id);
+        Assert.Equal("https://www.webtoon.xyz/read/academy-0/chapter-51/", bookmark.Url);
+    }
+
+    [Fact]
     public void Configuration_SetsRunTimeoutAndClampsConcurrency()
     {
         using var provider = new ServiceCollection().BuildServiceProvider();
@@ -224,7 +317,10 @@ public sealed class UrlMigrationBackgroundJobTests
         public static Task<Harness> Create(Func<CancellationToken, Task> search, bool resolved = false)
             => CreateWithSearch(new Search(search, resolved), autoApprove: resolved);
 
-        public static async Task<Harness> CreateWithSearch(IAlternativeUrlSearchService searchService, bool autoApprove = false)
+        public static async Task<Harness> CreateWithSearch(
+            IAlternativeUrlSearchService searchService,
+            bool autoApprove = false,
+            ICandidateVerificationService? verificationService = null)
         {
             var path = Path.Combine(Path.GetTempPath(), $"urlmig-unit-{Guid.NewGuid():N}.db");
             var services = new ServiceCollection();
@@ -238,8 +334,9 @@ public sealed class UrlMigrationBackgroundJobTests
             services.AddSingleton<AiTaggingSettingsService>(new InMemoryAiTaggingSettingsService(new() { MigrationAutoApproveHigh = autoApprove }));
             services.AddSingleton<ISeriesExtractionService, Extraction>();
             services.AddScoped<IAlternativeUrlSearchService>(_ => searchService);
-            services.AddSingleton<ICandidateVerificationService, Verification>();
-            services.AddSingleton<IDomainLivenessGuard, Verification>();
+            services.AddSingleton<ICandidateVerificationService>(verificationService ?? new Verification());
+            // Liveness always reports "dead" so the run proceeds; candidate verification is the scripted double.
+            services.AddSingleton<IDomainLivenessGuard>(new Verification());
             services.AddSingleton<IAnilistScheduleProvider, Anilist>();
             services.AddSingleton<IWaybackEpisodeIdResolver, Wayback>();
             services.AddScoped<UrlMigrationApprovalService>();
@@ -340,6 +437,23 @@ public sealed class UrlMigrationBackgroundJobTests
         public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct) => Task.FromResult(new VerificationResult(true, true, true, "matched"));
         public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string url, CancellationToken ct) => throw new NotSupportedException();
         public Task<bool> IsDomainAliveAsync(IEnumerable<string> urls, CancellationToken ct) => Task.FromResult(false);
+    }
+
+    private sealed class CandidateSearch(IReadOnlyList<SearchCandidate> candidates, string provider = "Groq") : IAlternativeUrlSearchService
+    {
+        public Task<IReadOnlyList<SearchCandidate>> SearchAsync(SeriesExtraction extraction, string deadHost, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false) => throw new NotSupportedException();
+
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false)
+            => Task.FromResult(new SearchOutcome<SearchCandidate>(candidates, [new(provider, candidates.Count, null)]));
+    }
+
+    private sealed class ScriptedVerification(Func<SearchCandidate, VerificationResult> verify) : ICandidateVerificationService
+    {
+        public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct)
+            => Task.FromResult(verify(candidate));
+
+        public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>([]);
     }
     private sealed class Wayback : IWaybackEpisodeIdResolver
     {

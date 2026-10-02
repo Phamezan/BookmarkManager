@@ -594,11 +594,22 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 
         IReadOnlyList<SearchCandidate> candidates;
         string searchDetail;
+        // Names the provider(s) that returned candidates, stamped on an unverified proposal's
+        // detail so the user knows where the blocked candidate came from. Falls back to a generic
+        // label when only the local catalog supplied candidates (its own provider is in the snippet).
+        var searchSource = "search";
         try
         {
             var outcome = await searchService.SearchWithDiagnosticsAsync(extraction, deadHost, searchRun, ct, preferredHost, restrictToPreferredHost).ConfigureAwait(false);
             candidates = outcome.Candidates;
             searchDetail = outcome.Detail;
+            var providers = outcome.Stages
+                .Where(stage => stage.CandidateCount > 0)
+                .Select(stage => stage.Provider)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (providers.Count > 0)
+                searchSource = string.Join(", ", providers);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -629,6 +640,9 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 
         SearchCandidate? bestSeriesMatch = null;
         VerificationResult? bestSeriesMatchResult = null;
+        SearchCandidate? bestBlockedCandidate = null;
+        VerificationResult? bestBlockedResult = null;
+        var bestBlockedRank = 0;
 
         foreach (var candidate in combinedCandidates.Take(MaxCandidatesToVerify))
         {
@@ -655,6 +669,20 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 bestSeriesMatchResult = result;
                 break; // Stop at first candidate that passes (plan §6.4).
             }
+
+            // A blocked candidate (Cloudflare/403/429) could still be the right page - the check
+            // just couldn't see it. Keep the strongest-evidence blocked candidate as a fallback
+            // when nothing verifies, instead of discarding it as if it were definitely wrong.
+            if (result.Blocked)
+            {
+                var rank = ScoreBlockedEvidence(candidate, extraction);
+                if (rank > bestBlockedRank)
+                {
+                    bestBlockedRank = rank;
+                    bestBlockedCandidate = candidate;
+                    bestBlockedResult = result;
+                }
+            }
         }
 
         if (bestSeriesMatch != null)
@@ -676,11 +704,66 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             return proposal;
         }
 
+        // Nothing verified, but a blocked candidate carried real series evidence. Surface it as a
+        // Medium "unverified" proposal for the user to eyeball rather than reporting Unresolved -
+        // reader sites routinely sit behind Cloudflare, so "blocked" is not the same as "wrong".
+        if (bestBlockedCandidate != null && bestBlockedResult != null)
+        {
+            proposal.ProposedUrl = bestBlockedCandidate.Url;
+            proposal.ProposedHost = TryGetHost(bestBlockedCandidate.Url);
+            proposal.Confidence = "Medium";
+            proposal.Detail = BuildUnverifiedBlockedDetail(bestBlockedResult, bestBlockedCandidate, searchSource);
+            return proposal;
+        }
+
         proposal.Confidence = "Unresolved";
         proposal.Detail = excludedUrls.Count > 0
             ? "No new candidates found (previously rejected URL(s) excluded)."
             : "No candidates survived verification (unreachable, 403 Forbidden, or title did not match).";
         return proposal;
+    }
+
+    /// <summary>
+    /// Evidence rank for a blocked candidate: a chapter number in the URL outranks a series slug
+    /// in the URL, which outranks a match only on the search result title. Returns 0 when the
+    /// candidate has no series evidence at all, so an implausible blocked URL is not surfaced.
+    /// Reuses the same title normalization/matching the verifier uses, rather than a second rule.
+    /// </summary>
+    private static int ScoreBlockedEvidence(SearchCandidate candidate, SeriesExtraction extraction)
+    {
+        if (string.IsNullOrWhiteSpace(extraction.SeriesName) ||
+            !Uri.TryCreate(candidate.Url, UriKind.Absolute, out var uri))
+        {
+            return 0;
+        }
+
+        var threshold = HttpCandidateVerificationService.ResolveSeriesTokenThreshold(extraction);
+        var pathAsText = Uri.UnescapeDataString(uri.AbsolutePath).Replace('-', ' ').Replace('_', ' ');
+        if (!HttpCandidateVerificationService.IsSeriesMatch(extraction.SeriesName, pathAsText, threshold))
+        {
+            // Title-only evidence is still plausible, but it is the weakest signal.
+            return HttpCandidateVerificationService.IsSeriesMatch(extraction.SeriesName, candidate.Title, threshold) ? 1 : 0;
+        }
+
+        return HttpCandidateVerificationService.IsChapterMatch(extraction.ChapterNumber, uri, null) ? 3 : 2;
+    }
+
+    private static string BuildUnverifiedBlockedDetail(
+        VerificationResult result, SearchCandidate candidate, string searchSource)
+    {
+        var source = DescribeCandidateSource(candidate, searchSource);
+        return $"Unverified: site blocked automated check ({result.Detail}). Found via {source}; review before approving.";
+    }
+
+    private static string DescribeCandidateSource(SearchCandidate candidate, string searchSource)
+    {
+        const string catalogPrefix = "Catalog match (";
+        if (candidate.Snippet is { } snippet && snippet.StartsWith(catalogPrefix, StringComparison.Ordinal))
+        {
+            return snippet[catalogPrefix.Length..].TrimEnd(')');
+        }
+
+        return searchSource;
     }
 
     private static void ApplySeriesMatch(
