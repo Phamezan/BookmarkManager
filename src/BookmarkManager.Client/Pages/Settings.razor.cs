@@ -32,11 +32,13 @@ public partial class Settings
     private string _apiKeyMask = string.Empty;
     private string _groqApiKeyMask = string.Empty;
     private string _geminiApiKeyMask = string.Empty;
+    private string _tavilyApiKeyMask = string.Empty;
     private string _ragApiKeyMask = string.Empty;
     private string _ragFallbackApiKeyMask = string.Empty;
     private bool _clearApiKey;
     private bool _clearGroqApiKey;
     private bool _clearGeminiApiKey;
+    private bool _clearTavilyApiKey;
     private bool _clearRagApiKey;
     private bool _clearRagFallbackApiKey;
 
@@ -62,6 +64,8 @@ public partial class Settings
     private TestAiKeyResponse? _aiKeyTestResult;
     private bool _groqKeyTesting;
     private TestAiKeyResponse? _groqKeyTestResult;
+    private bool _tavilyKeyTesting;
+    private TestAiKeyResponse? _tavilyKeyTestResult;
     private bool _ragKeyTesting;
     private TestAiKeyResponse? _ragKeyTestResult;
     private bool _ragFallbackKeyTesting;
@@ -249,6 +253,7 @@ public partial class Settings
         _apiKeyMask = settings.ApiKey ?? string.Empty;
         _groqApiKeyMask = settings.GroqApiKey ?? string.Empty;
         _geminiApiKeyMask = settings.GeminiApiKey ?? string.Empty;
+        _tavilyApiKeyMask = settings.TavilyApiKey ?? string.Empty;
         _ragApiKeyMask = settings.RagApiKey ?? string.Empty;
         _ragFallbackApiKeyMask = settings.RagFallbackApiKey ?? string.Empty;
 
@@ -256,12 +261,14 @@ public partial class Settings
         form.ApiKey = string.Empty;
         form.GroqApiKey = string.Empty;
         form.GeminiApiKey = string.Empty;
+        form.TavilyApiKey = string.Empty;
         form.RagApiKey = string.Empty;
         form.RagFallbackApiKey = string.Empty;
 
         _clearApiKey = false;
         _clearGroqApiKey = false;
         _clearGeminiApiKey = false;
+        _clearTavilyApiKey = false;
         _clearRagApiKey = false;
         _clearRagFallbackApiKey = false;
 
@@ -291,6 +298,12 @@ public partial class Settings
     {
         _aiSettings.GeminiApiKey = string.Empty;
         _clearGeminiApiKey = true;
+    }
+
+    private void ClearTavilyApiKey()
+    {
+        _aiSettings.TavilyApiKey = string.Empty;
+        _clearTavilyApiKey = true;
     }
 
     private void ClearRagApiKey()
@@ -366,6 +379,36 @@ public partial class Settings
         }
     }
 
+    private async Task TestTavilyKeyAsync()
+    {
+        _tavilyKeyTesting = true;
+        _tavilyKeyTestResult = null;
+        try
+        {
+            // The Tavily endpoint is fixed server-side; BaseUrl is ignored for the probe.
+            var request = new TestAiKeyRequest
+            {
+                Provider = "Tavily",
+                Model = string.Empty,
+                ApiKey = _aiSettings.TavilyApiKey ?? string.Empty,
+                SecretName = "TavilyApiKey"
+            };
+            _tavilyKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
+            Snackbar.Add(
+                _tavilyKeyTestResult.Success ? "Tavily key test passed." : "Tavily key test failed.",
+                _tavilyKeyTestResult.Success ? Severity.Success : Severity.Error);
+        }
+        catch (Exception ex)
+        {
+            _tavilyKeyTestResult = new TestAiKeyResponse { Success = false, Message = ex.Message };
+            Snackbar.Add($"Failed to run Tavily key test: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _tavilyKeyTesting = false;
+        }
+    }
+
     private async Task TestRagKeyAsync()
     {
         _ragKeyTesting = true;
@@ -436,6 +479,7 @@ public partial class Settings
             _aiSettings.ClearApiKey = _clearApiKey;
             _aiSettings.ClearGroqApiKey = _clearGroqApiKey;
             _aiSettings.ClearGeminiApiKey = _clearGeminiApiKey;
+            _aiSettings.ClearTavilyApiKey = _clearTavilyApiKey;
             _aiSettings.ClearRagApiKey = _clearRagApiKey;
             _aiSettings.ClearRagFallbackApiKey = _clearRagFallbackApiKey;
 

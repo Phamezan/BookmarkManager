@@ -17,11 +17,18 @@ This section supersedes the historical provider, sequential-processing, and reru
   ([official notice](https://console.groq.com/docs/deprecations)). These model IDs are skipped on
   `api.groq.com`; custom compatible endpoints and custom model IDs retain the Compound path.
   No replacement Compound model is assumed. HTML search still works without a Groq key.
-- The migration search provider is selectable in Settings: `Gemini` (default) uses Gemini with
-  Google Search grounding, `Groq` uses the Compound path. Both fall back to the same DuckDuckGo/
-  Yahoo HTML chain. New installs and older persisted settings without the field default to
-  Gemini. Gemini request/response shape:
+- The migration search provider is selectable in Settings: `Tavily` (default) is a plain search
+  API (`POST https://api.tavily.com/search`, `search_depth: basic` = 1 free-tier credit, results
+  carry `url`/`title`/`content`; auth is `Authorization: Bearer <key>`, never the URL), `Gemini`
+  uses Gemini with Google Search grounding, and `Groq` uses the Compound path. All fall back to
+  the self-hosted SearXNG stage. New installs and older persisted settings without the field
+  default to Tavily; an explicitly persisted `Gemini`/`Groq` choice is preserved (never silently
+  rewritten). Tavily's endpoint is fixed, so `TavilyApiKey` has no editable URL and no
+  endpoint-change pairing. Gemini request/response shape:
   [Grounding with Google Search](https://ai.google.dev/gemini-api/docs/generate-content/google-search).
+  Tavily shape/errors/credits:
+  [Search endpoint](https://docs.tavily.com/documentation/api-reference/endpoint/search),
+  [Credits & pricing](https://docs.tavily.com/documentation/api-credits).
 - DuckDuckGo HTML falls back to Yahoo. Parsers accept encoded redirects and direct result links,
   decode HTML entities, exclude navigation/provider/noise/dead-host links, and keep manga hosts.
   A filtered-to-empty Compound response now triggers fallback. Failed or unusable reranking
@@ -51,8 +58,8 @@ This section supersedes the historical provider, sequential-processing, and reru
 - `UrlMigration:MaxConcurrency` (environment `UrlMigration__MaxConcurrency`) accepts 1-8, clamped;
   `UrlMigration:RunTimeoutMinutes` (`UrlMigration__RunTimeoutMinutes`) accepts >0 through 1440,
   default 30. Invalid timeout settings retain the default. Configure these in deployment
-  environment/appsettings. Provider and Gemini key/model are also editable in the Settings page's
-  URL Migrator tab.
+  environment/appsettings. Provider, Tavily key, and Gemini key/model are also editable in the
+  Settings page's URL Migrator tab.
 - Rerunning skips only genuinely resolved rows (Pending or Approved with a resolved URL) and
   retries everything else, including unresolved, rejected, and reverted bookmarks plus partial
   timed-out runs. A completed retry atomically replaces its old pending unresolved row;

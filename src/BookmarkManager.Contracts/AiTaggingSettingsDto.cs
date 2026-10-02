@@ -31,15 +31,23 @@ public class AiTaggingSettingsDto
     // URL Migrator v2: model used for the Groq search/rerank stage (Groq compound performs live web search).
     public string MigrationSearchModel { get; set; } = "groq/compound-mini";
 
-    // URL Migrator v2 search provider. "Gemini" uses Google Search grounding (the default, since
-    // Groq's compound models were decommissioned on 2026-09-21); "Groq" keeps the Compound path.
-    // Missing from older persisted settings JSON, so the property initializer must supply the
-    // retired-Compound-safe default for existing installs too.
-    public string MigrationSearchProvider { get; set; } = "Gemini";
+    // URL Migrator v2 search provider. "Tavily" is the default for new installs and for settings
+    // JSON that predates the field (Tavily Search is a plain search API, no LLM/grounding billing
+    // dependency); "Gemini" uses Google Search grounding; "Groq" keeps the Compound path. The
+    // initializer matters because the field is missing from older persisted settings JSON - a
+    // deserialized DTO keeps this value, and an explicit persisted choice is preserved by Normalize.
+    public string MigrationSearchProvider { get; set; } = "Tavily";
     public string? GeminiApiKey { get; set; } = string.Empty;
     public bool HasGeminiApiKey { get; set; }
     public bool ClearGeminiApiKey { get; set; }
     public string GeminiSearchModel { get; set; } = "gemini-3.8-flash";
+
+    // Tavily Search API key. The Tavily endpoint is fixed and non-configurable
+    // (https://api.tavily.com); it is a compile-time constant in TavilySearchService, so there is
+    // no URL pairing for this secret in FindEndpointChangeViolation.
+    public string? TavilyApiKey { get; set; } = string.Empty;
+    public bool HasTavilyApiKey { get; set; }
+    public bool ClearTavilyApiKey { get; set; }
 
     // When enabled, High-confidence migration proposals are auto-approved right after creation.
     public bool MigrationAutoApproveHigh { get; set; } = false;

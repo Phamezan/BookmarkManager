@@ -53,16 +53,21 @@ public sealed class SettingsPageTests
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migration-search-provider-field")));
         Assert.NotEmpty(page.FindAll(".gemini-search-model-field"));
         Assert.NotEmpty(page.FindAll(".gemini-api-key-field"));
+        Assert.NotEmpty(page.FindAll(".tavily-api-key-field"));
+        Assert.Contains("Tavily (search API)", page.Markup);
 
         var keyInput = page.Find(".gemini-api-key-field input");
         keyInput.Input("new-gemini-key");
+        var tavilyInput = page.Find(".tavily-api-key-field input");
+        tavilyInput.Input("new-tavily-key");
 
         page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("button")));
         page.FindAll("button").First(b => b.TextContent.Contains("Save all")).Click();
 
         page.WaitForAssertion(() => Assert.NotNull(saved));
         Assert.Equal("new-gemini-key", saved!.GeminiApiKey);
-        Assert.Equal("Gemini", saved.MigrationSearchProvider);
+        Assert.Equal("new-tavily-key", saved.TavilyApiKey);
+        Assert.Equal("Tavily", saved.MigrationSearchProvider);
     }
 
     [Fact]

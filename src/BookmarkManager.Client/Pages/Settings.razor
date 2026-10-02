@@ -438,7 +438,7 @@
                     <MudTabPanel Text="URL Migrator" Icon="@Icons.Material.Filled.Link">
                         <MudText Typo="Typo.subtitle2">URL Migrator search</MudText>
                         <MudText Typo="Typo.body2" Class="mud-text-secondary">
-                            Choose which AI provider finds replacement reader pages. Gemini uses Google Search grounding; Groq uses its compound web-search model.
+                            Choose which provider finds replacement reader pages. Tavily is a plain search API (recommended, no LLM billing); Gemini uses Google Search grounding; Groq uses its compound web-search model.
                         </MudText>
                         <MudGrid>
                             <MudItem xs="12" sm="6">
@@ -446,7 +446,8 @@
                                            Label="Migration Search Provider"
                                            Variant="Variant.Outlined"
                                            Class="migration-search-provider-field"
-                                           HelperText="Gemini (Google Search grounding) is the recommended default.">
+                                           HelperText="Tavily (plain search API) is the recommended default.">
+                                    <MudSelectItem T="string" Value="@("Tavily")">Tavily (search API)</MudSelectItem>
                                     <MudSelectItem T="string" Value="@("Gemini")">Gemini (Google Search grounding)</MudSelectItem>
                                     <MudSelectItem T="string" Value="@("Groq")">Groq (compound web search)</MudSelectItem>
                                 </MudSelect>
@@ -478,6 +479,45 @@
                                                        aria-label="Clear saved Gemini API key" />
                                     }
                                 </MudStack>
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_aiSettings.TavilyApiKey"
+                                                  Label="Tavily API Key"
+                                                  Variant="Variant.Outlined"
+                                                  InputType="InputType.Password"
+                                                  Immediate="true"
+                                                  Class="flex-grow-1 tavily-api-key-field"
+                                                  HelperText="@KeyHelperText("Tavily API key (tvly-...). Stored locally on this API server.", _aiSettings.HasTavilyApiKey, _tavilyApiKeyMask, _clearTavilyApiKey)" />
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               Class="test-tavily-key-btn"
+                                               Disabled="@_tavilyKeyTesting"
+                                               OnClick="TestTavilyKeyAsync">
+                                        @(_tavilyKeyTesting ? "Testing..." : "Test key (1 credit)")
+                                    </MudButton>
+                                    @if (_aiSettings.HasTavilyApiKey && !_clearTavilyApiKey)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="ClearTavilyApiKey"
+                                                       title="Clear saved key"
+                                                       aria-label="Clear saved Tavily API key" />
+                                    }
+                                </MudStack>
+                                @if (_tavilyKeyTestResult is not null)
+                                {
+                                    <MudAlert Severity="@(_tavilyKeyTestResult.Success ? Severity.Success : Severity.Error)"
+                                              Variant="Variant.Outlined"
+                                              Dense="true"
+                                              Class="mt-2"
+                                              ShowCloseIcon="true"
+                                              CloseIconClicked="@(() => _tavilyKeyTestResult = null)">
+                                        @(_tavilyKeyTestResult.StatusCode > 0 ? $"[{_tavilyKeyTestResult.StatusCode}] " : "")@_tavilyKeyTestResult.Message
+                                    </MudAlert>
+                                }
                             </MudItem>
                             @if (string.Equals(_aiSettings.MigrationSearchProvider, "Groq", StringComparison.OrdinalIgnoreCase))
                             {
