@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -79,6 +80,9 @@ public sealed class GeminiGroundedSearchServiceTests
         using var body = JsonDocument.Parse(capturedBody!);
         Assert.True(body.RootElement.TryGetProperty("tools", out var tools));
         Assert.True(tools[0].TryGetProperty("google_search", out _));
+        // Lowered thinking for this latency-sensitive retrieval call (Gemini 3.x thinkingLevel).
+        Assert.True(body.RootElement.TryGetProperty("generationConfig", out var generationConfig));
+        Assert.Equal("low", generationConfig.GetProperty("thinkingConfig").GetProperty("thinkingLevel").GetString());
 
         Assert.Equal(2, result.Candidates.Count);
         Assert.Contains(result.Candidates, c => c.Url == "https://asuracomic.net/series/solo-leveling/chapter-112");
@@ -258,6 +262,179 @@ public sealed class GeminiGroundedSearchServiceTests
         Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result.Candidates).Url);
     }
 
+    [Fact]
+    public void GenerateContentBudget_IsLargerThanTheOldFifteenSecondWrapper()
+    {
+        // Grounded calls are measured at ~8 s and sometimes exceed 15 s; the old single 15 s budget
+        // discarded a successful answer. The call now owns a larger budget separate from redirects.
+        Assert.True(GeminiGroundedSearchService.GenerateContentTimeout > TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
+    public async Task SlowGenerateContent_WithinItsOwnBudget_DoesNotTimeOutTheProvider()
+    {
+        var handler = new DelayedHandler(async (request, ct) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                // 160 ms stands in for the >15 s and <30 s production call; budgets are injected
+                // small to keep the test fast.
+                await Task.Delay(TimeSpan.FromMilliseconds(160), ct);
+                return Json(HttpStatusCode.OK, Fixture());
+            }
+
+            var token = request.RequestUri!.ToString();
+            return RedirectTo(token.Contains("MANGADEX")
+                ? "https://mangadex.org/title/abc"
+                : token.Contains("DEADHOST")
+                    ? "https://webtoon.xyz/read/solo-leveling/chapter-112"
+                    : "https://asuracomic.net/series/solo-leveling/chapter-112");
+        });
+
+        var service = CreateBudgetedService(handler,
+            generateContent: TimeSpan.FromMilliseconds(300),
+            redirectResolution: TimeSpan.FromMilliseconds(500),
+            redirectRequest: TimeSpan.FromMilliseconds(400),
+            provider: TimeSpan.FromSeconds(3));
+
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        Assert.Null(Assert.Single(result.Stages).FailureReason);
+        Assert.Equal(2, result.Candidates.Count);
+    }
+
+    [Fact]
+    public async Task HangingRedirect_IsSkipped_OtherRedirectsStillResolve_AndCallSucceeds()
+    {
+        var handler = new DelayedHandler(async (request, ct) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return Json(HttpStatusCode.OK, ThreeRedirectChunks("HANG_TOKEN", "OK1_TOKEN", "OK2_TOKEN"));
+            }
+
+            var token = request.RequestUri!.ToString();
+            if (token.Contains("HANG_TOKEN"))
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), ct);
+                return RedirectTo("https://never.example/should-not-arrive");
+            }
+
+            return RedirectTo(token.Contains("OK1_TOKEN")
+                ? "https://asuracomic.net/series/solo-leveling/chapter-112"
+                : "https://mangadex.org/title/abc");
+        });
+
+        var service = CreateBudgetedService(handler,
+            generateContent: TimeSpan.FromMilliseconds(500),
+            redirectResolution: TimeSpan.FromSeconds(2),
+            redirectRequest: TimeSpan.FromMilliseconds(200),
+            provider: TimeSpan.FromSeconds(4));
+
+        var elapsed = Stopwatch.StartNew();
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+        elapsed.Stop();
+
+        Assert.Null(Assert.Single(result.Stages).FailureReason);
+        Assert.Equal(2, result.Candidates.Count);
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(1.5), $"hanging redirect was not bounded: {elapsed.Elapsed}");
+    }
+
+    [Fact]
+    public async Task AllRedirectsFail_TextUrlsFromTheAnswerAreStillReturned()
+    {
+        var handler = new DelayedHandler((request, _) => request.Method == HttpMethod.Post
+            ? Task.FromResult(Json(HttpStatusCode.OK, """
+                {
+                  "candidates": [{
+                    "content": { "parts": [ { "text": "Read at https://asuracomic.net/series/solo-leveling/chapter-112" } ] },
+                    "groundingMetadata": { "groundingChunks": [
+                      { "web": { "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/FAIL_TOKEN", "title": "asuracomic.net" } }
+                    ] }
+                  }]
+                }
+                """))
+            : Task.FromException<HttpResponseMessage>(new HttpRequestException("connection refused")));
+
+        var service = CreateBudgetedService(handler,
+            generateContent: TimeSpan.FromMilliseconds(500),
+            redirectResolution: TimeSpan.FromSeconds(2),
+            redirectRequest: TimeSpan.FromMilliseconds(300),
+            provider: TimeSpan.FromSeconds(4));
+
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        Assert.Null(Assert.Single(result.Stages).FailureReason);
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result.Candidates).Url);
+    }
+
+    [Fact]
+    public async Task RedirectsResolveConcurrently()
+    {
+        var handler = new DelayedHandler(async (request, ct) =>
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return Json(HttpStatusCode.OK, ThreeRedirectChunks("A_TOKEN", "B_TOKEN", "C_TOKEN"));
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(150), ct);
+            return RedirectTo("https://asuracomic.net/series/solo-leveling/chapter-112");
+        });
+
+        var service = CreateBudgetedService(handler,
+            generateContent: TimeSpan.FromSeconds(1),
+            redirectResolution: TimeSpan.FromSeconds(3),
+            redirectRequest: TimeSpan.FromSeconds(2),
+            provider: TimeSpan.FromSeconds(5));
+
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        Assert.True(handler.MaxInFlight >= 2, $"redirects were resolved sequentially (max in flight {handler.MaxInFlight})");
+        Assert.Null(Assert.Single(result.Stages).FailureReason);
+    }
+
+    private static GeminiGroundedSearchService CreateBudgetedService(
+        HttpMessageHandler handler,
+        TimeSpan? generateContent = null,
+        TimeSpan? redirectResolution = null,
+        TimeSpan? redirectRequest = null,
+        TimeSpan? provider = null) =>
+        new(new SingleClientFactory(new HttpClient(handler)),
+            new InMemoryAiTaggingSettingsService(GeminiSettings()),
+            NullLogger<GeminiGroundedSearchService>.Instance)
+        {
+            GenerateContentBudget = generateContent ?? GeminiGroundedSearchService.GenerateContentTimeout,
+            RedirectResolutionBudget = redirectResolution ?? TimeSpan.FromSeconds(6),
+            RedirectRequestBudget = redirectRequest ?? TimeSpan.FromSeconds(5),
+            ProviderBudget = provider ?? GeminiGroundedSearchService.ProviderTimeout,
+        };
+
+    private static string ThreeRedirectChunks(params string[] tokens)
+    {
+        var chunks = tokens
+            .Select(token => new { web = new { uri = $"https://vertexaisearch.cloud.google.com/grounding-api-redirect/{token}", title = token } })
+            .ToArray();
+        return JsonSerializer.Serialize(new
+        {
+            candidates = new[]
+            {
+                new
+                {
+                    content = new { parts = new[] { new { text = "no urls" } } },
+                    groundingMetadata = new { groundingChunks = chunks }
+                }
+            }
+        });
+    }
+
+    private static HttpResponseMessage RedirectTo(string url)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.Found);
+        response.Headers.Location = new Uri(url);
+        return response;
+    }
+
     private static GeminiGroundedSearchService CreateService(HttpMessageHandler handler) =>
         new(new SingleClientFactory(new HttpClient(handler)),
             new InMemoryAiTaggingSettingsService(GeminiSettings()),
@@ -290,6 +467,41 @@ public sealed class GeminiGroundedSearchServiceTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(_responder(request));
+    }
+
+    private sealed class DelayedHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responder;
+        private int _inFlight;
+        private int _maxInFlight;
+
+        public DelayedHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responder) => _responder = responder;
+
+        public int MaxInFlight => Volatile.Read(ref _maxInFlight);
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post)
+            {
+                return await _responder(request, cancellationToken);
+            }
+
+            var current = Interlocked.Increment(ref _inFlight);
+            int observed;
+            while (current > (observed = Volatile.Read(ref _maxInFlight))
+                && Interlocked.CompareExchange(ref _maxInFlight, current, observed) != observed)
+            {
+            }
+
+            try
+            {
+                return await _responder(request, cancellationToken);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _inFlight);
+            }
+        }
     }
 
     private sealed class StubDuckDuckGo : IDuckDuckGoSearchService
