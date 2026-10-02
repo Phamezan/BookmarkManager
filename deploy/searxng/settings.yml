@@ -26,17 +26,29 @@ search:
     - html
     - json
 
-# General-web engines that reliably surface manga/manhwa/webtoon/novel reader pages.
-# Names are the image's engine names (searx/settings.yml): google, bing, brave,
-# duckduckgo, startpage.
+# General-web engines that can surface manga/manhwa/webtoon/novel reader pages.
+# Names are the pinned image's engine names (searxng/searxng:2026.10.2-19ffbcd30,
+# searx/settings.yml at commit 19ffbcd30): google, bing, brave, duckduckgo, startpage, mojeek, qwant.
+# Engine list cross-checked against https://docs.searxng.org/user/configured_engines.html
+# (docs build 2026.10.2+19ffbcd30).
+#
+# Production evidence from this host's IP: google and duckduckgo raise
+# SearxEngineCaptchaException and brave requests fail, so all three are disabled to stop the run
+# circuit from opening on engines that cannot answer. bing and startpage are the reliable defaults;
+# mojeek and qwant are added as two more independent general-web indexes (qwant is disabled by
+# default in the image, so it is explicitly enabled here).
 engines:
   - name: google
-    disabled: false
+    disabled: true
+  - name: duckduckgo
+    disabled: true
+  - name: brave
+    disabled: true
   - name: bing
     disabled: false
-  - name: brave
-    disabled: false
-  - name: duckduckgo
-    disabled: false
   - name: startpage
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: qwant
     disabled: false

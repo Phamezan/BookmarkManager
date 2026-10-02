@@ -340,9 +340,10 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     private static string BuildSearchPrompt(SeriesExtraction extraction, string deadHost, string? preferredHost, bool restrictToPreferredHost)
     {
         var chapterText = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? "an unspecified chapter" : extraction.ChapterNumber;
+        var mediaTypeText = extraction.HasKnownMediaType ? $" ({extraction.MediaType})" : string.Empty;
         var preferredHostLine = BuildPreferredHostLine(preferredHost, restrictToPreferredHost);
         return
-            $"Find working links to read {extraction.SeriesName} ({extraction.MediaType}) at chapter {chapterText}.\n" +
+            $"Find working links to read {extraction.SeriesName}{mediaTypeText} at chapter {chapterText}.\n" +
             $"The site {deadHost} is permanently offline - never return links on it.\n" +
             preferredHostLine +
             "Prefer direct reader pages (the chapter itself), then the series overview page.\n" +

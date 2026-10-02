@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.UrlMigration;
 using BookmarkManager.UnitTests.UrlMigration.TestDoubles;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -105,6 +106,69 @@ public sealed class SearxngSearchServiceTests
         Assert.Contains("site:asuracomic.net", query);
     }
 
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("Unknown")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UnknownOrEmptyMediaType_IsOmittedFromQuery(string mediaType)
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new StubHandler(request =>
+        {
+            captured = request;
+            return Json(HttpStatusCode.OK, """{ "results": [] }""");
+        });
+        var extraction = new SeriesExtraction("Solo Leveling", "112", mediaType, false);
+
+        await CreateService(handler).SearchWithDiagnosticsAsync(extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        var query = Uri.UnescapeDataString(captured!.RequestUri!.Query).Replace('+', ' ');
+        Assert.Contains("q=Solo Leveling chapter 112", query);
+        Assert.DoesNotContain("unknown", query, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("112 ", query);
+    }
+
+    [Fact]
+    public async Task BackToBackCalls_AreSpacedByMinimumInterval_UsingInjectedClock()
+    {
+        var time = new FakeTimeProvider(DateTimeOffset.UnixEpoch);
+        var arrivals = new List<DateTimeOffset>();
+        var handler = new StubHandler(_ =>
+        {
+            arrivals.Add(time.GetUtcNow());
+            return Json(HttpStatusCode.OK, """{ "results": [] }""");
+        });
+        var service = new SearxngSearchService(
+            new SingleClientFactory(new HttpClient(handler)),
+            Options.Create(new UrlMigrationOptions { SearxngBaseUrl = "http://searxng:8080/" }),
+            NullLogger<SearxngSearchService>.Instance,
+            new AiRequestThrottle(time));
+
+        await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default).WaitAsync(TimeSpan.FromSeconds(5));
+        var second = service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
+
+        await WaitUntilAsync(() => time.PendingTimerCount > 0, TimeSpan.FromSeconds(5));
+        time.Advance(SearxngSearchService.MinRequestInterval);
+        await second.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(2, arrivals.Count);
+        Assert.True(
+            arrivals[1] - arrivals[0] >= SearxngSearchService.MinRequestInterval,
+            $"calls were spaced {arrivals[1] - arrivals[0]} apart (minimum {SearxngSearchService.MinRequestInterval}).");
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (!condition() && DateTime.UtcNow < deadline)
+        {
+            await Task.Yield();
+        }
+
+        Assert.True(condition(), "condition was not satisfied before the timeout.");
+    }
+
     [Fact]
     public async Task EmptyBaseUrl_DisablesProvider_WithoutHttpCall()
     {
@@ -177,5 +241,109 @@ public sealed class SearxngSearchServiceTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(_responder(request));
+    }
+
+    // Minimal controllable TimeProvider: fake timers fire only when Advance crosses their due time,
+    // so throttle pacing can be verified without a real sleep.
+    private sealed class FakeTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        private readonly object _lock = new();
+        private readonly List<FakeTimer> _timers = [];
+        private DateTimeOffset _now = start;
+
+        public int PendingTimerCount
+        {
+            get { lock (_lock) { return _timers.Count; } }
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            lock (_lock)
+            {
+                return _now;
+            }
+        }
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+        {
+            var timer = new FakeTimer(this, callback, state, dueTime, period);
+            lock (_lock)
+            {
+                _timers.Add(timer);
+            }
+
+            return timer;
+        }
+
+        public void Advance(TimeSpan delta)
+        {
+            List<FakeTimer> snapshot;
+            lock (_lock)
+            {
+                _now += delta;
+                snapshot = _timers.ToList();
+            }
+
+            foreach (var timer in snapshot)
+            {
+                timer.FireDue(_now);
+            }
+        }
+
+        private sealed class FakeTimer : ITimer
+        {
+            private readonly FakeTimeProvider _owner;
+            private readonly TimerCallback _callback;
+            private readonly object? _state;
+            private readonly TimeSpan _period;
+            private DateTimeOffset _nextDue;
+            private bool _disposed;
+
+            public FakeTimer(FakeTimeProvider owner, TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
+            {
+                _owner = owner;
+                _callback = callback;
+                _state = state;
+                _period = period;
+                _nextDue = owner.GetUtcNow() + (dueTime < TimeSpan.Zero ? TimeSpan.Zero : dueTime);
+            }
+
+            public void FireDue(DateTimeOffset now)
+            {
+                var guard = 0;
+                while (!_disposed && _nextDue <= now && guard++ < 10_000)
+                {
+                    _callback(_state);
+                    if (_period <= TimeSpan.Zero)
+                    {
+                        _disposed = true;
+                        break;
+                    }
+
+                    _nextDue += _period;
+                }
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                _nextDue = _owner.GetUtcNow() + (dueTime < TimeSpan.Zero ? TimeSpan.Zero : dueTime);
+                return true;
+            }
+
+            public void Dispose()
+            {
+                _disposed = true;
+                lock (_owner._lock)
+                {
+                    _owner._timers.Remove(this);
+                }
+            }
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

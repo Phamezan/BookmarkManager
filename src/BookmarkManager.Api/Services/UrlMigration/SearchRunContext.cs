@@ -104,6 +104,7 @@ public sealed class SearchRunContext
         HttpRequestException { StatusCode: { } status } => $"HTTP {(int)status}",
         HttpRequestException => "connection failure",
         SearchResponseException response => response.Message,
+        SearchProviderFailureException failure => failure.Reason,
         System.Text.Json.JsonException => "invalid response JSON",
         _ => "provider error"
     };
@@ -160,3 +161,15 @@ public sealed class SearchRunContext
 
 // Messages must be fixed diagnostic strings, never provider bodies or credentials.
 public sealed class SearchResponseException(string message) : Exception(message);
+
+/// <summary>
+/// Carries a pre-sanitized provider failure reason (e.g.
+/// <c>HTTP 402 PAYMENT_REQUIRED: prepayment credits depleted</c>) so <see cref="SearchRunContext"/>
+/// surfaces it on the proposal detail without ever copying a raw response body. The reason is built
+/// by <c>GeminiApiError</c>, which strips everything except Google's status token and a
+/// length-capped single-line message.
+/// </summary>
+public sealed class SearchProviderFailureException(string reason) : Exception(reason)
+{
+    public string Reason { get; } = reason;
+}

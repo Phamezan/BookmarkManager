@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using BookmarkManager.Api.Services;
 using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Contracts;
@@ -72,5 +73,40 @@ public sealed class CompositeSeriesIdentificationClientTests
 
         Assert.False(result.Success);
         Assert.Equal(401, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task TestConnectionAsync_Gemini_PaymentRequired_ShowsGoogleStatusAndMessage()
+    {
+        var handler = new MockHttpMessageHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.PaymentRequired)
+        {
+            Content = new StringContent(
+                """{"error":{"code":402,"status":"PAYMENT_REQUIRED","message":"Prepayment credits are depleted."}}""",
+                Encoding.UTF8,
+                "application/json")
+        }));
+        var factory = new SingleClientFactory(new HttpClient(handler));
+        var settings = new InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto());
+
+        var composite = new CompositeSeriesIdentificationClient(
+            new OpenRouterSeriesIdentificationClient(factory, settings, new AiRequestThrottle(), NullLogger<OpenRouterSeriesIdentificationClient>.Instance),
+            new GroqSeriesIdentificationClient(factory, settings, NullLogger<GroqSeriesIdentificationClient>.Instance),
+            settings,
+            factory,
+            NullLogger<CompositeSeriesIdentificationClient>.Instance);
+
+        var result = await composite.TestConnectionAsync(new TestAiKeyRequest
+        {
+            Provider = "Gemini",
+            SecretName = "GeminiApiKey",
+            BaseUrl = "https://generativelanguage.example/v1beta",
+            ApiKey = "bad-key"
+        }, default);
+
+        Assert.False(result.Success);
+        Assert.Equal(402, result.StatusCode);
+        Assert.Contains("PAYMENT_REQUIRED", result.Message);
+        Assert.Contains("Prepayment credits are depleted.", result.Message);
+        Assert.DoesNotContain("bad-key", result.Message);
     }
 }

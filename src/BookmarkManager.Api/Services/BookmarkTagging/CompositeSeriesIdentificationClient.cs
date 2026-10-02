@@ -94,6 +94,11 @@ internal sealed class CompositeSeriesIdentificationClient : IAiSeriesIdentificat
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 return new TestAiKeyResponse { Success = true, StatusCode = status, Message = "Key is valid, but Gemini is rate-limiting right now." };
 
+            // Include Google's own status/message (sanitized) so a 402/403 explains itself instead
+            // of only showing the numeric code. Non-JSON bodies fall back to the status code.
+            var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var reason = GeminiApiError.Describe(response.StatusCode, body);
+
             var hint = response.StatusCode switch
             {
                 HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
@@ -103,7 +108,7 @@ internal sealed class CompositeSeriesIdentificationClient : IAiSeriesIdentificat
                 _ => "Gemini request failed."
             };
 
-            return new TestAiKeyResponse { Success = false, StatusCode = status, Message = hint };
+            return new TestAiKeyResponse { Success = false, StatusCode = status, Message = $"{hint} {reason}." };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

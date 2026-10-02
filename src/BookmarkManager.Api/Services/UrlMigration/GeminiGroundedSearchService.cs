@@ -127,10 +127,13 @@ public sealed partial class GeminiGroundedSearchService
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new HttpRequestException(
-                    $"Gemini API request failed with status {(int)response.StatusCode}.",
-                    null,
-                    response.StatusCode);
+                // Google returns {"error":{"code","status","message"}}; surface the status token and
+                // a sanitized message so a 402/403 is diagnosable without leaking the body. The
+                // reason is a hard failure, so a repeated one opens the run circuit like a 429.
+                var failureBody = await response.Content.ReadAsStringAsync(callBudget.Token).ConfigureAwait(false);
+                var reason = GeminiApiError.Describe(response.StatusCode, failureBody);
+                _logger.LogWarning("Gemini search request failed with {Reason}", reason);
+                throw new SearchProviderFailureException(reason);
             }
 
             json = await response.Content.ReadAsStringAsync(callBudget.Token).ConfigureAwait(false);
@@ -194,13 +197,16 @@ public sealed partial class GeminiGroundedSearchService
     private static string BuildPrompt(SeriesExtraction extraction, string deadHost, string? preferredHost, bool restrictToPreferredHost)
     {
         var chapterText = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? "an unspecified chapter" : extraction.ChapterNumber;
+        // "unknown" is the extraction placeholder for an unclassified bookmark; sending it to the
+        // model adds a meaningless token, so omit the parenthetical entirely in that case.
+        var mediaTypeText = extraction.HasKnownMediaType ? $" ({extraction.MediaType})" : string.Empty;
         var preferredHostLine = string.IsNullOrWhiteSpace(preferredHost)
             ? string.Empty
             : restrictToPreferredHost
                 ? $"Only return links on {preferredHost} - the user already picked it as the migration target.\n"
                 : $"Strongly prefer {preferredHost} if it hosts this series.\n";
         return
-            $"Find the current official or working reader page to read {extraction.SeriesName} ({extraction.MediaType}) at chapter {chapterText}.\n" +
+            $"Find the current official or working reader page to read {extraction.SeriesName}{mediaTypeText} at chapter {chapterText}.\n" +
             $"The site {deadHost} is permanently offline - never return links on it.\n" +
             preferredHostLine +
             "Prefer direct reader pages (the chapter itself), then the series overview page.\n" +

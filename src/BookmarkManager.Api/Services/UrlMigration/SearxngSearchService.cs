@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -42,21 +43,43 @@ public sealed class SearxngSearchService : ISearxngSearchService
     /// used to, while still failing fast enough to fall through to verification.</summary>
     public static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(8);
 
+    /// <summary>Minimum spacing between SearXNG calls. One call fans out to several upstream
+    /// engines, and migration workers run concurrently, so a burst can get the instance
+    /// rate-limited. A SearXNG-only static <see cref="AiRequestThrottle"/> enforces this across
+    /// every worker in every run without sharing a queue with the AI tagging/Groq pacing.</summary>
+    public static readonly TimeSpan MinRequestInterval = TimeSpan.FromSeconds(1);
+
     // Test seam (InternalsVisibleTo): production uses the static default above.
     internal TimeSpan ProviderBudget { get; init; } = ProviderTimeout;
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly UrlMigrationOptions _options;
+    private readonly AiRequestThrottle _throttle;
     private readonly ILogger<SearxngSearchService> _logger;
+
+    // Process-wide pacing for SearXNG only; deliberately not the DI AiRequestThrottle singleton,
+    // which paces Groq/AI tagging calls and must not queue behind search requests.
+    private static readonly AiRequestThrottle SharedSearxngThrottle = new();
 
     public SearxngSearchService(
         IHttpClientFactory httpClientFactory,
         IOptions<UrlMigrationOptions> options,
         ILogger<SearxngSearchService> logger)
+        : this(httpClientFactory, options, logger, SharedSearxngThrottle)
+    {
+    }
+
+    // Test seam (InternalsVisibleTo): inject a throttle with a controllable clock.
+    internal SearxngSearchService(
+        IHttpClientFactory httpClientFactory,
+        IOptions<UrlMigrationOptions> options,
+        ILogger<SearxngSearchService> logger,
+        AiRequestThrottle throttle)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _throttle = throttle ?? throw new ArgumentNullException(nameof(throttle));
     }
 
     public async Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
@@ -87,6 +110,9 @@ public sealed class SearxngSearchService : ISearxngSearchService
     private async Task<IReadOnlyList<SearchCandidate>> SearchAsync(
         SeriesExtraction extraction, string? preferredHost, bool restrictToPreferredHost, string baseUrl, CancellationToken ct)
     {
+        // Pace calls to the shared upstream engines before spending the provider budget.
+        await _throttle.AwaitThrottleAsync(MinRequestInterval, ct).ConfigureAwait(false);
+
         var query = BuildQuery(extraction, preferredHost, restrictToPreferredHost);
         var uri = new Uri($"{baseUrl}/search?q={Uri.EscapeDataString(query)}&format=json&categories=general&language=en");
 
@@ -151,7 +177,10 @@ public sealed class SearxngSearchService : ISearxngSearchService
     private static string BuildQuery(SeriesExtraction extraction, string? preferredHost, bool restrictToPreferredHost)
     {
         var chapter = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? string.Empty : $" chapter {extraction.ChapterNumber}";
-        var query = $"{extraction.SeriesName} {extraction.MediaType}{chapter}".Trim();
+        // "unknown" is the extraction placeholder for an unclassified bookmark; sending it as a
+        // literal query token wastes a match term, so omit the media type entirely in that case.
+        var mediaType = extraction.HasKnownMediaType ? $" {extraction.MediaType}" : string.Empty;
+        var query = $"{extraction.SeriesName}{mediaType}{chapter}".Trim();
         if (restrictToPreferredHost && !string.IsNullOrWhiteSpace(preferredHost))
         {
             query += $" site:{preferredHost}";
