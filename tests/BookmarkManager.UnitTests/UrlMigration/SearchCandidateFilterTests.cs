@@ -116,6 +116,49 @@ public class SearchCandidateFilterTests
 
         Assert.Single(result);
     }
+
+    [Theory]
+    [InlineData("http://localhost/x")]
+    [InlineData("http://localhost:8080/api/bookmarks/export")]
+    [InlineData("http://127.0.0.1/x")]
+    [InlineData("http://127.1.2.3:9000/x")]
+    [InlineData("http://10.0.0.1/x")]
+    [InlineData("http://10.255.255.255/x")]
+    [InlineData("http://172.16.0.1/x")]
+    [InlineData("http://172.31.255.255/x")]
+    [InlineData("http://192.168.1.100:8080/x")]
+    [InlineData("http://169.254.169.254/latest/meta-data/")]
+    [InlineData("http://0.0.0.0/x")]
+    [InlineData("http://[::1]/x")]
+    [InlineData("http://[fe80::1]/x")]
+    [InlineData("http://[fc00::1]/x")]
+    [InlineData("http://[fd12:3456:789a::1]/x")]
+    [InlineData("http://[::]/x")]
+    [InlineData("https://vertexaisearch.cloud.google.com/grounding-api-redirect/x")]
+    [InlineData("https://www.google.com/search?q=solo+leveling")]
+    public void Filter_DropsLocalPrivateLinkLocalAndGoogleHosts(string url)
+    {
+        var candidates = new List<SearchCandidate> { new(url, null, null) };
+
+        var result = SearchCandidateFilter.Filter(candidates, "flamecomics.xyz");
+
+        Assert.Empty(result);
+    }
+
+    [Theory]
+    [InlineData("http://8.8.8.8/x")]
+    [InlineData("http://172.15.0.1/x")]
+    [InlineData("http://172.32.0.1/x")]
+    [InlineData("http://192.169.0.1/x")]
+    [InlineData("https://fc00.example.com/x")]
+    public void Filter_KeepsPublicAndLookalikeHosts(string url)
+    {
+        var candidates = new List<SearchCandidate> { new(url, null, null) };
+
+        var result = SearchCandidateFilter.Filter(candidates, "flamecomics.xyz");
+
+        Assert.Single(result);
+    }
 }
 
 public class UrlComparisonNormalizerTests

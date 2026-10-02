@@ -87,7 +87,7 @@ public sealed class PipelineIntegrationTests
         {
             GroqApiKey = "test-key",
             GroqModel = "llama-3.3-70b-versatile",
-            GroqBaseUrl = "https://api.groq.com/openai/v1",
+            GroqBaseUrl = "https://groq-compatible.example/openai/v1",
             GroqRequestsPerMinute = 6000,
             MigrationSearchModel = "groq/compound-mini",
         });
@@ -130,7 +130,7 @@ public sealed class PipelineIntegrationTests
         {
             GroqApiKey = "",
             GroqModel = "llama-3.3-70b-versatile",
-            GroqBaseUrl = "https://api.groq.com/openai/v1",
+            GroqBaseUrl = "https://groq-compatible.example/openai/v1",
             GroqRequestsPerMinute = 6000,
             MigrationSearchModel = "groq/compound-mini",
         });
@@ -188,13 +188,13 @@ public sealed class PipelineIntegrationTests
         private readonly IReadOnlyList<string> _candidates;
         public StubDuckDuckGoSearchService(IReadOnlyList<string> candidates) => _candidates = candidates;
 
-        public Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
-            => Task.FromResult(_candidates);
+        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
+            => Task.FromResult(new SearchOutcome<string>(_candidates, [new("HTML search", _candidates.Count, null)]));
     }
 
     private sealed class NotCalledDuckDuckGoSearchService : IDuckDuckGoSearchService
     {
-        public Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
+        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
             => throw new InvalidOperationException("DuckDuckGo fallback should not be used when Groq compound search succeeds.");
     }
 }

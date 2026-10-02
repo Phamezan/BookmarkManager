@@ -1,0 +1,50 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "You can read Solo Leveling chapter 112 on Asura Scans at https://asuracomic.net/series/solo-leveling/chapter-112 or on MangaDex. Wikipedia has a summary too."
+          }
+        ],
+        "role": "model"
+      },
+      "groundingMetadata": {
+        "webSearchQueries": [
+          "Solo Leveling chapter 112 read online",
+          "Solo Leveling chapter 112 asura"
+        ],
+        "searchEntryPoint": {
+          "renderedContent": "<!-- gsuggestions -->"
+        },
+        "groundingChunks": [
+          {
+            "web": {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/ASURA_TOKEN",
+              "title": "asuracomic.net"
+            }
+          },
+          {
+            "web": {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/MANGADEX_TOKEN",
+              "title": "mangadex.org"
+            }
+          },
+          {
+            "web": {
+              "uri": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/DEADHOST_TOKEN",
+              "title": "webtoon.xyz"
+            }
+          },
+          {
+            "web": {
+              "uri": "https://www.reddit.com/r/manga/comments/abc",
+              "title": "reddit.com"
+            }
+          }
+        ],
+        "groundingSupports": []
+      }
+    }
+  ]
+}

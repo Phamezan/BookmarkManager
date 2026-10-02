@@ -1,32 +1,21 @@
-using System;
-using System.Collections.Generic;
-using System.Net.Http;
+using System.Net;
 using System.Text.RegularExpressions;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
+using BookmarkManager.Api.Services.UrlMigration;
 
 namespace BookmarkManager.Api.Services.BookmarkTagging;
 
 public interface IDuckDuckGoSearchService
 {
-    /// <summary>
-    /// Raw candidate URLs for a query (DuckDuckGo HTML, falling back to Yahoo), with the dead
-    /// domain filtered out. This does not score or select a single "best" result - callers
-    /// (e.g. URL Migrator v2's search stage) do their own reranking/filtering. Used purely as
-    /// a candidate source.
-    /// </summary>
-    Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct);
+    Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct);
 }
 
 public class DuckDuckGoSearchService : IDuckDuckGoSearchService
 {
     private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<DuckDuckGoSearchService> _logger;
-    
-    // Static rate-limiting lock to enforce a 2-second delay between queries globally
-    private static readonly SemaphoreSlim _rateLimitSemaphore = new(1, 1);
+    private static readonly SemaphoreSlim RateLimitGate = new(1, 1);
     private static DateTime _lastRequestTime = DateTime.MinValue;
+    public static readonly TimeSpan ProviderTimeout = TimeSpan.FromSeconds(5);
 
     public DuckDuckGoSearchService(IHttpClientFactory httpFactory, ILogger<DuckDuckGoSearchService> logger)
     {
@@ -34,234 +23,79 @@ public class DuckDuckGoSearchService : IDuckDuckGoSearchService
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
+    public async Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(query)) return new([], []);
+        var ddg = await run.ExecuteAsync("DuckDuckGo", ProviderTimeout, async token =>
         {
-            return [];
-        }
+            await PaceAsync(token);
+            var html = await FetchAsync("DuckDuckGoTriage", $"https://html.duckduckgo.com/html/?q={Uri.EscapeDataString(query)}", token);
+            if (html.Contains("anomaly-modal", StringComparison.OrdinalIgnoreCase) ||
+                html.Contains("bots use DuckDuckGo too", StringComparison.OrdinalIgnoreCase))
+                throw new SearchResponseException("bot challenge");
+            return ParseResults(html, deadDomain, yahoo: false);
+        }, _logger, ct);
+        if (ddg.Candidates.Count > 0) return ddg;
 
-        var searchHtml = await FetchSearchHtmlWithPacingAsync(query, ct);
-        bool isBlocked = !string.IsNullOrEmpty(searchHtml) &&
-                         (searchHtml.Contains("bots use DuckDuckGo too") || searchHtml.Contains("anomaly-modal"));
-
-        List<string> candidates = [];
-        if (!string.IsNullOrWhiteSpace(searchHtml) && !isBlocked)
+        var yahoo = await run.ExecuteAsync("Yahoo", ProviderTimeout, async token =>
         {
-            candidates = ExtractAndCleanUrls(searchHtml, deadDomain);
-        }
-
-        if (isBlocked || candidates.Count == 0)
-        {
-            _logger.LogInformation("DuckDuckGo blocked/empty, falling back to Yahoo Search for query '{Query}'", query);
-            var yahooHtml = await FetchYahooSearchHtmlAsync(query, ct);
-            if (!string.IsNullOrWhiteSpace(yahooHtml))
-            {
-                candidates = ExtractAndCleanYahooUrls(yahooHtml, deadDomain);
-            }
-        }
-
-        return candidates;
+            var html = await FetchAsync("YahooTriage", $"https://search.yahoo.com/search?p={Uri.EscapeDataString(query)}", token);
+            if (html.Contains("captcha", StringComparison.OrdinalIgnoreCase) || html.Contains("consent.yahoo.com", StringComparison.OrdinalIgnoreCase) && !html.Contains("/RU=", StringComparison.OrdinalIgnoreCase) && !html.Contains("algo", StringComparison.OrdinalIgnoreCase))
+                throw new SearchResponseException("challenge or consent page");
+            return ParseResults(html, deadDomain, yahoo: true);
+        }, _logger, ct);
+        return new(yahoo.Candidates, ddg.Stages.Concat(yahoo.Stages).ToArray());
     }
 
-    private async Task<string?> FetchSearchHtmlWithPacingAsync(string query, CancellationToken ct)
+    private static async Task PaceAsync(CancellationToken ct)
     {
-        await _rateLimitSemaphore.WaitAsync(ct);
+        await RateLimitGate.WaitAsync(ct);
         try
         {
-            var now = DateTime.UtcNow;
-            var elapsedSinceLastRequest = now - _lastRequestTime;
-            var requiredDelay = TimeSpan.FromSeconds(2);
-            
-            if (elapsedSinceLastRequest < requiredDelay)
-            {
-                var delayMs = (int)(requiredDelay - elapsedSinceLastRequest).TotalMilliseconds;
-                await Task.Delay(delayMs, ct);
-            }
-
+            var delay = TimeSpan.FromSeconds(2) - (DateTime.UtcNow - _lastRequestTime);
+            if (delay > TimeSpan.Zero) await Task.Delay(delay, ct);
             _lastRequestTime = DateTime.UtcNow;
-            
-            var http = _httpFactory.CreateClient("DuckDuckGoTriage");
-            http.DefaultRequestHeaders.Clear();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-            var searchUrl = $"https://html.duckduckgo.com/html/?q={Uri.EscapeDataString(query)}";
-            using var response = await http.GetAsync(searchUrl, ct);
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("DuckDuckGo search request failed with status: {Status}", response.StatusCode);
-                return null;
-            }
-
-            return await response.Content.ReadAsStringAsync(ct);
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception while fetching search HTML from DuckDuckGo");
-            return null;
-        }
-        finally
-        {
-            _rateLimitSemaphore.Release();
-        }
+        finally { RateLimitGate.Release(); }
     }
 
-    private List<string> ExtractAndCleanUrls(string html, string deadDomain)
+    private async Task<string> FetchAsync(string clientName, string url, CancellationToken ct)
     {
-        var urls = new List<string>();
-        
-        // Match href attributes on result links in DuckDuckGo HTML results (supporting both single and double quotes)
-        var hrefMatches = Regex.Matches(html, @"href=['""]([^'""\s>]+)['""]");
-        
-        var deadDomainHost = ExtractHost(deadDomain);
-
-        foreach (Match match in hrefMatches)
-        {
-            var href = match.Groups[1].Value;
-            var cleanUrl = ExtractActualUrl(href);
-
-            if (string.IsNullOrWhiteSpace(cleanUrl)) continue;
-
-            // Exclude relative links or search engine links
-            if (!cleanUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && 
-                !cleanUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (cleanUrl.Contains("duckduckgo.com/")) continue;
-
-            // Exclude the dead domain
-            var candidateHost = ExtractHost(cleanUrl);
-            if (candidateHost != null && candidateHost.Equals(deadDomainHost, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!urls.Contains(cleanUrl))
-            {
-                urls.Add(cleanUrl);
-            }
-        }
-
-        return urls;
+        using var http = _httpFactory.CreateClient(clientName);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        using var response = await http.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync(ct);
     }
 
-    private static string? ExtractActualUrl(string href)
+    internal static IReadOnlyList<string> ParseResults(string html, string deadDomain, bool yahoo)
     {
-        if (string.IsNullOrWhiteSpace(href)) return null;
-        if (href.StartsWith("//")) href = "https:" + href;
-        
-        // Extract uddg parameter from redirect URL
-        if (href.Contains("uddg="))
+        var urls = new List<SearchCandidate>();
+        // Yahoo serves both /RU= redirect links and direct links in result headings.
+        // Limit direct links to result anchors/headings so navigation and ads aren't candidates.
+        var anchors = Regex.Matches(html, @"<a\b(?<attrs>[^>]*\bhref\s*=\s*['"" ]?(?<url>[^'""\s>]+)['""]?[^>]*)>(?<text>.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        foreach (Match anchor in anchors)
         {
-            var match = Regex.Match(href, @"[?&]uddg=([^&]+)");
-            if (match.Success)
-            {
-                return Uri.UnescapeDataString(match.Groups[1].Value);
-            }
+            var href = WebUtility.HtmlDecode(anchor.Groups["url"].Value);
+            var attrs = anchor.Groups["attrs"].Value;
+            var redirect = yahoo ? Regex.Match(href, @"/RU=([^/]+)", RegexOptions.IgnoreCase)
+                : Regex.Match(href, @"[?&]uddg=([^&]+)", RegexOptions.IgnoreCase);
+            var lastHeading = Math.Max(html.LastIndexOf("<h2", anchor.Index, StringComparison.OrdinalIgnoreCase),
+                html.LastIndexOf("<h3", anchor.Index, StringComparison.OrdinalIgnoreCase));
+            var lastHeadingEnd = Math.Max(html.LastIndexOf("</h2>", anchor.Index, StringComparison.OrdinalIgnoreCase),
+                html.LastIndexOf("</h3>", anchor.Index, StringComparison.OrdinalIgnoreCase));
+            var inHeading = lastHeading > lastHeadingEnd;
+            var resultAnchor = yahoo ? inHeading || attrs.Contains("algo", StringComparison.OrdinalIgnoreCase)
+                : attrs.Contains("result__a", StringComparison.OrdinalIgnoreCase);
+            if (!redirect.Success && !resultAnchor) continue;
+            var url = redirect.Success ? Uri.UnescapeDataString(redirect.Groups[1].Value) : href;
+            if (url.StartsWith("//")) url = "https:" + url;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) continue;
+            if (new[] { "duckduckgo.com", "yahoo.com", "yahoo.co.jp", "yimg.com" }.Any(host =>
+                uri.Host.Equals(host, StringComparison.OrdinalIgnoreCase) || uri.Host.EndsWith("." + host, StringComparison.OrdinalIgnoreCase))) continue;
+            urls.Add(new(url, null, null));
         }
-        return href;
-    }
-
-    private static string? ExtractHost(string? url)
-    {
-        if (string.IsNullOrWhiteSpace(url)) return null;
-        var cleaned = url.Trim();
-        if (!cleaned.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && 
-            !cleaned.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-        {
-            cleaned = "https://" + cleaned;
-        }
-        try
-        {
-            var uri = new Uri(cleaned);
-            return uri.Host;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private async Task<string?> FetchYahooSearchHtmlAsync(string query, CancellationToken ct)
-    {
-        try
-        {
-            var http = _httpFactory.CreateClient("YahooTriage");
-            http.DefaultRequestHeaders.Clear();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-            http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
-
-            var searchUrl = $"https://search.yahoo.com/search?p={Uri.EscapeDataString(query)}";
-            using var response = await http.GetAsync(searchUrl, ct);
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Yahoo search request failed with status: {Status}", response.StatusCode);
-                return null;
-            }
-
-            return await response.Content.ReadAsStringAsync(ct);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception while fetching search HTML from Yahoo");
-            return null;
-        }
-    }
-
-    private List<string> ExtractAndCleanYahooUrls(string html, string deadDomain)
-    {
-        var urls = new List<string>();
-        var hrefMatches = Regex.Matches(html, @"href=['""]([^'""\s>]+)['""]");
-        var deadDomainHost = ExtractHost(deadDomain);
-
-        foreach (Match match in hrefMatches)
-        {
-            var href = match.Groups[1].Value;
-            string? cleanUrl = null;
-
-            // Extract Yahoo redirect URL from /RU=... parameter
-            var ruMatch = Regex.Match(href, @"RU=([^/&?]+)");
-            if (ruMatch.Success)
-            {
-                try
-                {
-                    cleanUrl = Uri.UnescapeDataString(ruMatch.Groups[1].Value);
-                }
-                catch
-                {
-                    // Ignore decoding failures
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(cleanUrl)) continue;
-
-            if (!cleanUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && 
-                !cleanUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (cleanUrl.Contains("yahoo.com") || cleanUrl.Contains("yahoo.co.jp") || cleanUrl.Contains("yimg.com"))
-            {
-                continue;
-            }
-
-            // Exclude the dead domain
-            var candidateHost = ExtractHost(cleanUrl);
-            if (candidateHost != null && candidateHost.Equals(deadDomainHost, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (!urls.Contains(cleanUrl))
-            {
-                urls.Add(cleanUrl);
-            }
-        }
-
-        return urls;
+        return SearchCandidateFilter.Filter(urls, deadDomain, maxResults: 20).Select(c => c.Url).ToArray();
     }
 }

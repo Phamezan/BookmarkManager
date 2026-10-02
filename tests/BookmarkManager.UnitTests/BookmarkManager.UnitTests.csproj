@@ -24,4 +24,9 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="UrlMigration/Fixtures/*.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="UrlMigration/Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

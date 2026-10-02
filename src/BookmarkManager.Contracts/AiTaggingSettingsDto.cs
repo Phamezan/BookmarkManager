@@ -16,8 +16,17 @@ public class AiTaggingSettingsDto
     public string GroqBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public int GroqRequestsPerMinute { get; set; } = 25;
 
-    // URL Migrator v2: model used for the search/rerank stage (Groq compound performs live web search).
+    // URL Migrator v2: model used for the Groq search/rerank stage (Groq compound performs live web search).
     public string MigrationSearchModel { get; set; } = "groq/compound-mini";
+
+    // URL Migrator v2 search provider. "Gemini" uses Google Search grounding (the default, since
+    // Groq's compound models were decommissioned on 2026-09-21); "Groq" keeps the Compound path.
+    // Missing from older persisted settings JSON, so the property initializer must supply the
+    // retired-Compound-safe default for existing installs too.
+    public string MigrationSearchProvider { get; set; } = "Gemini";
+    public string GeminiApiKey { get; set; } = string.Empty;
+    public string GeminiSearchModel { get; set; } = "gemini-3.8-flash";
+
     // When enabled, High-confidence migration proposals are auto-approved right after creation.
     public bool MigrationAutoApproveHigh { get; set; } = false;
 

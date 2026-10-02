@@ -147,6 +147,60 @@ public class GroqCompoundSearchServiceTests
         Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", candidate.Url);
     }
 
+    [Fact]
+    public async Task FilteredCompoundResults_FallBack_AndUnusableRerankPreservesRawCandidates()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new
+            {
+                choices = new[] { new { message = new { content = "{\"candidates\":[{\"url\":\"https://reddit.com/r/manga\"}]}" } } }
+            }))
+        });
+        var ddg = new StubDuckDuckGoSearchService(["https://asuracomic.net/series/academy/chapter-51"]);
+        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), ddg, NullLogger<GroqCompoundSearchService>.Instance);
+        var result = await service.SearchAsync(Extraction, "www.webtoon.xyz", default);
+        Assert.True(ddg.WasCalled);
+        Assert.Equal("https://asuracomic.net/series/academy/chapter-51", Assert.Single(result).Url);
+    }
+
+    [Fact]
+    public async Task RetiredPublicCompoundModel_IsSkippedWithoutHttpCall()
+    {
+        var calls = 0;
+        var handler = new StubHttpMessageHandler(_ => { calls++; throw new InvalidOperationException("Should not call retired model"); });
+        var settings = new TestDoubles.InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto
+        {
+            GroqApiKey = "test", GroqBaseUrl = "https://api.groq.com/openai/v1", MigrationSearchModel = "groq/compound-mini"
+        });
+        var ddg = new StubDuckDuckGoSearchService([]);
+        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), settings, ddg, NullLogger<GroqCompoundSearchService>.Instance);
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "www.webtoon.xyz", new(), default);
+        Assert.Equal(0, calls);
+        Assert.True(ddg.WasCalled);
+        Assert.Contains("model decommissioned", result.Detail);
+    }
+
+    [Fact]
+    public async Task RateLimit_IsReported_AndRecordedInSharedThrottle()
+    {
+        var throttle = new AiRequestThrottle();
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+            response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromMinutes(1));
+            return response;
+        });
+        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), new StubDuckDuckGoSearchService([]), NullLogger<GroqCompoundSearchService>.Instance, throttle);
+        var result = await service.SearchWithDiagnosticsAsync(Extraction, "www.webtoon.xyz", new(), default);
+        Assert.Contains("Groq compound: rate limited (HTTP 429)", result.Detail);
+        // The recorded Retry-After must keep the next caller waiting; an already-cancelled token
+        // proves the wait is cancellable without depending on a wall-clock sleep.
+        using var timeout = new CancellationTokenSource();
+        timeout.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => throttle.AwaitThrottleAsync(1000, timeout.Token));
+    }
+
     private sealed class StubAiTaggingSettingsService : AiTaggingSettingsService
     {
         public StubAiTaggingSettingsService() : base(NullLogger<AiTaggingSettingsService>.Instance, "unused-path.json")
@@ -158,7 +212,7 @@ public class GroqCompoundSearchServiceTests
             {
                 GroqApiKey = "test-key",
                 GroqModel = "llama-3.3-70b-versatile",
-                GroqBaseUrl = "https://api.groq.com/openai/v1",
+                GroqBaseUrl = "https://groq-compatible.example/openai/v1",
                 GroqRequestsPerMinute = 1000,
                 MigrationSearchModel = "groq/compound-mini",
             });
@@ -171,10 +225,10 @@ public class GroqCompoundSearchServiceTests
 
         public StubDuckDuckGoSearchService(IReadOnlyList<string> candidates) => _candidates = candidates;
 
-        public Task<IReadOnlyList<string>> GetSearchCandidatesAsync(string query, string deadDomain, CancellationToken ct)
+        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
         {
             WasCalled = true;
-            return Task.FromResult(_candidates);
+            return Task.FromResult(new SearchOutcome<string>(_candidates, [new("HTML search", _candidates.Count, null)]));
         }
     }
 
