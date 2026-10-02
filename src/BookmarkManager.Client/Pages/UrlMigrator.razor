@@ -165,6 +165,10 @@
                 <div class="migrator-stat-row">
                     <span class="migrator-stat-pill">Resolved <strong>@_status.Resolved</strong></span>
                     <span class="migrator-stat-pill">Unresolved <strong>@_status.Unresolved</strong></span>
+                    @if (_status.Unresolved > 0 && !string.IsNullOrWhiteSpace(_status.TopFailureReason))
+                    {
+                        <span class="migrator-stat-pill migrator-failure-reason">@_status.TopFailureReason</span>
+                    }
                 </div>
                 @if (!string.IsNullOrEmpty(_status.ErrorMessage))
                 {

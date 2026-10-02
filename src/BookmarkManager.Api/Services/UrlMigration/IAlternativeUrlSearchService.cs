@@ -20,6 +20,14 @@ public interface IAlternativeUrlSearchService
     /// </param>
     Task<IReadOnlyList<SearchCandidate>> SearchAsync(
         SeriesExtraction extraction, string deadHost, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false);
+
+    async Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+        SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+        string? preferredHost = null, bool restrictToPreferredHost = false)
+    {
+        var candidates = await SearchAsync(extraction, deadHost, ct, preferredHost, restrictToPreferredHost);
+        return new(candidates, [new("Search", candidates.Count, null)]);
+    }
 }
 
 public sealed record SearchCandidate(string Url, string? Title, string? Snippet);

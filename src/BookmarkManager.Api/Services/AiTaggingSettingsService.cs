@@ -67,6 +67,9 @@ public class AiTaggingSettingsService
             GroqModel = "llama-3.3-70b-versatile",
             GroqBaseUrl = "https://api.groq.com/openai/v1",
             GroqRequestsPerMinute = 25,
+            MigrationSearchProvider = "Gemini",
+            GeminiApiKey = string.Empty,
+            GeminiSearchModel = "gemini-3.8-flash",
             RagModel = "llama-3.3-70b-versatile",
             RagApiKey = string.Empty,
             RagBaseUrl = "https://api.groq.com/openai/v1",
@@ -100,6 +103,13 @@ public class AiTaggingSettingsService
             MigrationSearchModel = string.IsNullOrWhiteSpace(settings.MigrationSearchModel)
                 ? "groq/compound-mini"
                 : settings.MigrationSearchModel.Trim(),
+            MigrationSearchProvider = string.Equals(settings.MigrationSearchProvider, "Groq", StringComparison.OrdinalIgnoreCase)
+                ? "Groq"
+                : "Gemini",
+            GeminiApiKey = settings.GeminiApiKey?.Trim() ?? string.Empty,
+            GeminiSearchModel = string.IsNullOrWhiteSpace(settings.GeminiSearchModel)
+                ? "gemini-3.8-flash"
+                : settings.GeminiSearchModel.Trim(),
             MigrationAutoApproveHigh = settings.MigrationAutoApproveHigh,
             RagModel = string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel.Trim(),
             RagApiKey = settings.RagApiKey?.Trim() ?? string.Empty,

@@ -26,6 +26,26 @@ public sealed class UrlMigratorPageTests
         });
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UnresolvedCount_ShowsTopFailureReason_DuringAndAfterRun(bool running)
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+        context.Services.AddSingleton<IBookmarkService>(new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto
+            {
+                IsRunning = running, RunId = Guid.NewGuid(), DeadHost = "www.webtoon.xyz",
+                TotalFound = 3, Processed = 2, Unresolved = 2, TopFailureReason = "DuckDuckGo: timeout"
+            }
+        });
+        var page = RenderPage(context);
+        page.WaitForAssertion(() => Assert.Equal("DuckDuckGo: timeout", page.Find(".migrator-failure-reason").TextContent));
+    }
+
     [Fact]
     public async Task PendingProposals_GroupedByProposedHost()
     {

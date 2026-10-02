@@ -1,6 +1,6 @@
 ---
 status: done
-last_verified: 2026-07-17
+last_verified: 2026-10-02
 note: Shipped. UrlMigrationProposal entity, UrlMigrationBackgroundJob, UrlMigrationApprovalService, BookmarksController.Migration.cs, and Pages/UrlMigrator.razor all live. Treat as history.
 ---
 
@@ -8,6 +8,59 @@ note: Shipped. UrlMigrationProposal entity, UrlMigrationBackgroundJob, UrlMigrat
 
 Replaces the `AutoSearch` path of the existing Domain Triage & URL Migrator with an
 AI-assisted, verify-before-write migration pipeline and a review/approval UI.
+
+## Search reliability update (2026-10-02)
+
+This section supersedes the historical provider, sequential-processing, and rerun descriptions below.
+
+- Groq decommissioned `groq/compound` and `groq/compound-mini` on September 21, 2026
+  ([official notice](https://console.groq.com/docs/deprecations)). These model IDs are skipped on
+  `api.groq.com`; custom compatible endpoints and custom model IDs retain the Compound path.
+  No replacement Compound model is assumed. HTML search still works without a Groq key.
+- The migration search provider is selectable in Settings: `Gemini` (default) uses Gemini with
+  Google Search grounding, `Groq` uses the Compound path. Both fall back to the same DuckDuckGo/
+  Yahoo HTML chain. New installs and older persisted settings without the field default to
+  Gemini. Gemini request/response shape:
+  [Grounding with Google Search](https://ai.google.dev/gemini-api/docs/generate-content/google-search).
+- DuckDuckGo HTML falls back to Yahoo. Parsers accept encoded redirects and direct result links,
+  decode HTML entities, exclude navigation/provider/noise/dead-host links, and keep manga hosts.
+  A filtered-to-empty Compound response now triggers fallback. Failed or unusable reranking
+  preserves supplied HTML candidates; a reranker cannot introduce new URLs.
+- Each run owns circuits for Groq Compound, Groq rerank, Gemini, DuckDuckGo, and Yahoo. Three hard
+  failures (exceptions/timeouts/challenges) or five consecutive successful-but-empty responses open
+  the circuit. The two streaks are independent and only a response with usable candidates clears
+  them, so an alternating timeout/empty outage still trips the breaker. A legitimate empty page
+  cannot trip the empty circuit alone. A new run resets circuits; the first reason that opens a
+  circuit is preserved (an in-flight empty no longer overwrites an HTTP 429 reason). Admission uses
+  an atomic counter plus an open flag rather than a lock held across the provider call, so provider
+  calls can overlap and the threshold may be overshot by the calls already in flight; cancellation
+  propagates instead of counting as an outage.
+- Candidate filtering is a security boundary shared by every provider: `SearchCandidateFilter`
+  drops non-http(s), the dead host, Google search/grounding hosts, and any loopback/private
+  (10/8, 172.16/12, 192.168/16), link-local (169.254/16, fe80::/10), unique-local (fc00::/7) or
+  unspecified address, so a model-produced URL cannot trigger an internal verification probe.
+  Gemini grounding redirects are only followed for an absolute HTTPS URI whose host is exactly
+  `vertexaisearch.cloud.google.com`, and only a 301/302/303/307/308 `Location` counts as a redirect.
+- Request budgets, including throttle/pacing waits after circuit admission: Compound 12 seconds,
+  rerank 8 seconds, Gemini 15 seconds (including grounding-redirect resolution), each HTML
+  provider 5 seconds. Global DDG pacing and Groq `Retry-After` remain enforced. Groq can record a
+  new rate-limit deadline while other requests wait.
+- Four bookmarks search/verify concurrently by default, each with its own DI/EF scope. Writes
+  and auto-approval transactions are serialized. Target-host hints become available as workers
+  finish; the first four searches may have no learned hint. Explicit target restrictions remain.
+- `UrlMigration:MaxConcurrency` (environment `UrlMigration__MaxConcurrency`) accepts 1-8, clamped;
+  `UrlMigration:RunTimeoutMinutes` (`UrlMigration__RunTimeoutMinutes`) accepts >0 through 1440,
+  default 30. Invalid timeout settings retain the default. Configure these in deployment
+  environment/appsettings. Provider and Gemini key/model are also editable in the Settings page's
+  URL Migrator tab.
+- Rerunning skips only genuinely resolved rows (Pending or Approved with a resolved URL) and
+  retries everything else, including unresolved, rejected, and reverted bookmarks plus partial
+  timed-out runs. A completed retry atomically replaces its old pending unresolved row;
+  cancellation before save leaves the old row intact. Rejected candidate URLs stay excluded.
+- Search logs contain provider, elapsed milliseconds, candidate count and a safe failure reason,
+  with run/bookmark scopes. Proposal `detail` aggregates stage outcomes; the status DTO's additive
+  `topFailureReason` reports the most frequent unresolved reason (ties sorted by text), displayed
+  beside the unresolved count. Status is in-memory; persisted proposal details survive restart.
 
 ## 1. Problem & Goals
 

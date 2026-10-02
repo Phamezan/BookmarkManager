@@ -17,6 +17,7 @@ public class UrlMigrationStatusDto
     public int Processed { get; set; }
     public int Resolved { get; set; }
     public int Unresolved { get; set; }
+    public string? TopFailureReason { get; set; }
     public string? CurrentBookmarkTitle { get; set; }
     public string? ErrorMessage { get; set; }
 }

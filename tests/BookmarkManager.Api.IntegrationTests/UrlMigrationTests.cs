@@ -204,6 +204,8 @@ public sealed class UrlMigrationTests : IntegrationTestBase
         Assert.Equal(1, finalStatus.TotalFound);
         Assert.Equal(1, finalStatus.Processed);
         Assert.Equal(1, finalStatus.Unresolved);
+        // A healthy "<n> results" stage is not a failure reason, so nothing is reported here.
+        Assert.Null(finalStatus.TopFailureReason);
         Assert.Equal(0, finalStatus.Resolved);
 
         var proposals = await client.GetFromJsonAsync<List<UrlMigrationProposalDto>>(
@@ -212,6 +214,30 @@ public sealed class UrlMigrationTests : IntegrationTestBase
         var proposal = Assert.Single(proposals!);
         Assert.Equal(bookmark.Id, proposal.BookmarkId);
         Assert.Equal("Unresolved", proposal.Confidence);
+    }
+
+    [Fact]
+    public async Task Rerun_RetriesPendingUnresolved_AndLeavesResolvedProposalAlone()
+    {
+        const string deadHost = "www.webtoon.xyz";
+        var gate = new GateSeriesExtractionService();
+        gate.Gate.SetResult();
+        using var factory = CreateFactoryWithStubs(Factory, gate);
+        var unresolved = await SeedBookmarkAsync(factory, $"https://{deadHost}/read/one/chapter-51");
+        var resolved = await SeedBookmarkAsync(factory, $"https://{deadHost}/read/two/chapter-51");
+        await SeedProposalAsync(factory, unresolved.Id, deadHost, null);
+        var keep = await SeedProposalAsync(factory, resolved.Id, deadHost, "https://reader.example/two/chapter-51");
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync("/api/bookmarks/url-migration/run", new StartUrlMigrationRequest(deadHost, Force: true));
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var status = await WaitForStoppedStatusAsync(client);
+        Assert.Equal(1, status.Processed);
+        Assert.Equal(1, status.Unresolved);
+        var proposals = await client.GetFromJsonAsync<List<UrlMigrationProposalDto>>("/api/bookmarks/url-migration/proposals?status=Pending", JsonOptions);
+        Assert.NotNull(proposals);
+        Assert.Single(proposals, p => p.BookmarkId == unresolved.Id);
+        Assert.Contains(proposals, p => p.Id == keep.Id);
+        Assert.Contains(proposals, p => p.BookmarkId == unresolved.Id && p.Detail == "Search: 0 results");
     }
 
     [Fact]

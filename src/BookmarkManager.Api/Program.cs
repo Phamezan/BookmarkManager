@@ -80,6 +80,12 @@ builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.UrlMigration.
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
 builder.Services.AddHttpClient(nameof(BookmarkManager.Api.Services.UrlMigration.GroqCompoundSearchService))
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+// Gemini grounding redirect links must be inspected, not auto-followed, so the final destination
+// is read from the Location header.
+builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.GeminiGroundedSearchService.HttpClientName)
+    .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(20))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.GeminiGroundedSearchService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ISeriesExtractionService, BookmarkManager.Api.Services.UrlMigration.GroqSeriesExtractionService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IAlternativeUrlSearchService, BookmarkManager.Api.Services.UrlMigration.GroqCompoundSearchService>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>();

@@ -389,15 +389,48 @@
 
                     <MudTabPanel Text="URL Migrator" Icon="@Icons.Material.Filled.Link">
                         <MudText Typo="Typo.subtitle2">URL Migrator search</MudText>
+                        <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                            Choose which AI provider finds replacement reader pages. Gemini uses Google Search grounding; Groq uses its compound web-search model.
+                        </MudText>
                         <MudGrid>
                             <MudItem xs="12" sm="6">
-                                <MudTextField @bind-Value="_aiSettings.MigrationSearchModel"
-                                              Label="Migration Search Model"
+                                <MudSelect T="string" @bind-Value="_aiSettings.MigrationSearchProvider"
+                                           Label="Migration Search Provider"
+                                           Variant="Variant.Outlined"
+                                           Class="migration-search-provider-field"
+                                           HelperText="Gemini (Google Search grounding) is the recommended default.">
+                                    <MudSelectItem T="string" Value="@("Gemini")">Gemini (Google Search grounding)</MudSelectItem>
+                                    <MudSelectItem T="string" Value="@("Groq")">Groq (compound web search)</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudTextField @bind-Value="_aiSettings.GeminiSearchModel"
+                                              Label="Gemini Search Model"
                                               Variant="Variant.Outlined"
                                               Immediate="true"
-                                              Class="migration-search-model-field"
-                                              HelperText="Groq model used for the URL Migrator search/rerank stage, e.g. groq/compound-mini." />
+                                              Class="gemini-search-model-field"
+                                              HelperText="Gemini Flash model that supports the google_search tool, e.g. gemini-3.8-flash." />
                             </MudItem>
+                            <MudItem xs="12">
+                                <MudTextField @bind-Value="_aiSettings.GeminiApiKey"
+                                              Label="Gemini API Key"
+                                              Variant="Variant.Outlined"
+                                              InputType="InputType.Password"
+                                              Immediate="true"
+                                              Class="gemini-api-key-field"
+                                              HelperText="Google AI Studio key. Stored locally on this API server." />
+                            </MudItem>
+                            @if (string.Equals(_aiSettings.MigrationSearchProvider, "Groq", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <MudItem xs="12" sm="6">
+                                    <MudTextField @bind-Value="_aiSettings.MigrationSearchModel"
+                                                  Label="Groq Migration Search Model"
+                                                  Variant="Variant.Outlined"
+                                                  Immediate="true"
+                                                  Class="migration-search-model-field"
+                                                  HelperText="Groq compound model, e.g. groq/compound-mini." />
+                                </MudItem>
+                            }
                             <MudItem xs="12" sm="6" Class="d-flex flex-column justify-center">
                                 <MudSwitch T="bool" @bind-Value="_aiSettings.MigrationAutoApproveHigh"
                                            Color="Color.Warning"

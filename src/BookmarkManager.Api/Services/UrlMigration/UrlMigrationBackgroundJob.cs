@@ -43,6 +43,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     private int _unresolved;
     private string? _currentBookmarkTitle;
     private string? _errorMessage;
+    private readonly Dictionary<string, int> _failureReasons = new();
     private CancellationTokenSource? _activeRunCancellation;
 
     /// <summary>
@@ -50,11 +51,17 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     /// host configuration to select a short deterministic timeout without delaying in real time.
     /// </summary>
     public TimeSpan RunTimeout { get; set; } = DefaultRunTimeout;
+    public int MaxConcurrency { get; set; } = 4;
 
-    public UrlMigrationBackgroundJob(IServiceScopeFactory scopeFactory, ILogger<UrlMigrationBackgroundJob> logger)
+    public UrlMigrationBackgroundJob(IServiceScopeFactory scopeFactory, ILogger<UrlMigrationBackgroundJob> logger, IConfiguration? configuration = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        if (double.TryParse(configuration?["UrlMigration:RunTimeoutMinutes"], System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var minutes) && minutes > 0 && minutes <= 1440)
+            RunTimeout = TimeSpan.FromMinutes(minutes);
+        if (int.TryParse(configuration?["UrlMigration:MaxConcurrency"], out var concurrency))
+            MaxConcurrency = Math.Clamp(concurrency, 1, 8);
     }
 
     /// <summary>Single-flight enqueue: returns false when a run is already active.</summary>
@@ -78,6 +85,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             _unresolved = 0;
             _currentBookmarkTitle = null;
             _errorMessage = null;
+            _failureReasons.Clear();
             _activeRunCancellation = new CancellationTokenSource();
         }
 
@@ -136,6 +144,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             _resolved = 0;
             _unresolved = 0;
             _currentBookmarkTitle = null;
+            _failureReasons.Clear();
             _errorMessage = "Migration engine was manually reset.";
         }
     }
@@ -154,6 +163,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 Resolved = _resolved,
                 Unresolved = _unresolved,
                 CurrentBookmarkTitle = _currentBookmarkTitle,
+                TopFailureReason = _failureReasons.OrderByDescending(p => p.Value).ThenBy(p => p.Key).Select(p => p.Key).FirstOrDefault(),
                 ErrorMessage = _errorMessage
             };
         }
@@ -267,12 +277,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var livenessGuard = scope.ServiceProvider.GetRequiredService<IDomainLivenessGuard>();
         var extractionService = scope.ServiceProvider.GetRequiredService<ISeriesExtractionService>();
-        var searchService = scope.ServiceProvider.GetRequiredService<IAlternativeUrlSearchService>();
-        var verificationService = scope.ServiceProvider.GetRequiredService<ICandidateVerificationService>();
         var settingsService = scope.ServiceProvider.GetRequiredService<AiTaggingSettingsService>();
-        var approvalService = scope.ServiceProvider.GetRequiredService<UrlMigrationApprovalService>();
-        var anilistProvider = scope.ServiceProvider.GetRequiredService<IAnilistScheduleProvider>();
-        var episodeIdResolver = scope.ServiceProvider.GetRequiredService<IWaybackEpisodeIdResolver>();
 
         var deadHost = request.DeadHost;
 
@@ -306,25 +311,33 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             }
         }
 
-        // Re-run safe: skip bookmarks that already have a Pending proposal for this host from an
-        // earlier (possibly interrupted) run.
-        var alreadyPendingProposals = await db.UrlMigrationProposals
-            .Where(p => p.DeadHost == deadHost && p.Status == "Pending")
+        // Keep usable proposals from earlier runs. Unresolved rows must remain retryable,
+        // including those saved before a timeout; rejected URLs are excluded separately.
+        // Only genuinely resolved rows are skipped. Reverted rows carry a non-null ProposedUrl
+        // and non-Unresolved confidence, so a bare "not Rejected" filter would silently block
+        // re-migrating a bookmark the user reverted back onto the dead host.
+        var existingUsableProposals = await db.UrlMigrationProposals
+            .Where(p => p.DeadHost == deadHost
+                && (p.Status == "Pending" || p.Status == "Approved")
+                && p.Confidence != "Unresolved")
             .Select(p => new { p.BookmarkId, p.RunId })
             .ToListAsync(ct).ConfigureAwait(false);
-        var alreadyPending = new HashSet<Guid>(alreadyPendingProposals.Select(p => p.BookmarkId));
+        var existingUsable = new HashSet<Guid>(existingUsableProposals.Select(p => p.BookmarkId));
 
-        var toProcess = hostMatched.Where(m => !alreadyPending.Contains(m.Id)).ToList();
+        var toProcess = hostMatched.Where(m => !existingUsable.Contains(m.Id)).ToList();
         if (toProcess.Count == 0)
         {
             // Point status back at the run that actually owns these pending proposals, so the
             // client's Current run tab (which queries by _status.RunId) doesn't come up empty —
             // Enqueue already minted a fresh, still-empty RunId for this attempt.
-            var priorRunId = alreadyPendingProposals.Select(p => p.RunId).FirstOrDefault();
+            var priorRunId = existingUsableProposals.Select(p => p.RunId).FirstOrDefault();
             lock (_statusLock)
             {
                 _runId = priorRunId;
-                _errorMessage = $"All {hostMatched.Count} matching bookmark(s) already have a pending proposal for \"{deadHost}\" — check the Current run tab.";
+                _isRunning = false;
+                _activeRunCancellation?.Dispose();
+                _activeRunCancellation = null;
+                _errorMessage = $"All {hostMatched.Count} matching bookmark(s) already have a usable proposal for \"{deadHost}\" — check the Current run tab.";
             }
             return;
         }
@@ -359,58 +372,87 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         string? preferredHost = userSuggestedHost;
         var restrictToPreferredHost = userSuggestedHost != null;
 
-        for (var i = 0; i < toProcess.Count; i++)
+        var searchRun = new SearchRunContext();
+        using var saveGate = new SemaphoreSlim(1, 1);
+        await Parallel.ForEachAsync(Enumerable.Range(0, toProcess.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = Math.Clamp(MaxConcurrency, 1, 8), CancellationToken = ct },
+            async (i, token) =>
         {
-            ct.ThrowIfCancellationRequested();
-
+            using var workerScope = _scopeFactory.CreateScope();
+            var services = workerScope.ServiceProvider;
+            var workerDb = services.GetRequiredService<AppDbContext>();
             var bookmark = toProcess[i];
-            var extraction = extractions[i];
-
+            using var logScope = _logger.BeginScope(new Dictionary<string, object>
+            {
+                ["RunId"] = request.RunId, ["BookmarkId"] = bookmark.Id
+            });
+            string? workerPreferredHost;
             lock (_statusLock)
             {
+                if (_runId != request.RunId) return;
                 _currentBookmarkTitle = bookmark.Title;
+                workerPreferredHost = preferredHost;
             }
+            var excludedUrls = rejectedByBookmark.TryGetValue(bookmark.Id, out var rejected) ? rejected : EmptyExcludedUrls;
+            var proposal = await BuildProposalAsync(request.RunId, deadHost, bookmark, extractions[i],
+                services.GetRequiredService<IAlternativeUrlSearchService>(),
+                services.GetRequiredService<ICandidateVerificationService>(),
+                services.GetRequiredService<IAnilistScheduleProvider>(),
+                services.GetRequiredService<IWaybackEpisodeIdResolver>(),
+                excludedUrls, workerPreferredHost, restrictToPreferredHost, workerDb, searchRun, token).ConfigureAwait(false);
 
-            var excludedUrls = rejectedByBookmark.TryGetValue(bookmark.Id, out var rejected)
-                ? rejected
-                : EmptyExcludedUrls;
-
-            var proposal = await BuildProposalAsync(
-                request.RunId, deadHost, bookmark, extraction, searchService, verificationService, anilistProvider, episodeIdResolver, excludedUrls, preferredHost, restrictToPreferredHost, db, ct).ConfigureAwait(false);
-
-            if (!restrictToPreferredHost && proposal.ProposedHost != null && (proposal.Confidence == "High" || proposal.Confidence == "Medium"))
+            // SQLite writes and auto-approval transactions remain serialized; HTTP work overlaps.
+            await saveGate.WaitAsync(token).ConfigureAwait(false);
+            try
             {
-                preferredHost = proposal.ProposedHost;
-            }
+                // Replace obsolete unresolved proposals only after a retry completed. Cancellation
+                // before this transaction leaves the prior proposal available for another retry.
+                await using (var transaction = await workerDb.Database.BeginTransactionAsync(token))
+                {
+                    await workerDb.UrlMigrationProposals.Where(p => p.BookmarkId == bookmark.Id && p.DeadHost == deadHost &&
+                        p.Status == "Pending" && p.Confidence == "Unresolved").ExecuteDeleteAsync(token);
+                    workerDb.UrlMigrationProposals.Add(proposal);
+                    await workerDb.SaveChangesAsync(token).ConfigureAwait(false);
+                    await transaction.CommitAsync(token);
+                }
 
-            db.UrlMigrationProposals.Add(proposal);
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                lock (_statusLock)
+                {
+                    if (_runId == request.RunId)
+                    {
+                        _processed++;
+                        if (proposal.Confidence == "Unresolved")
+                        {
+                            _unresolved++;
+                            foreach (var reason in (proposal.Detail ?? "Unknown failure").Split("; ").Distinct())
+                            {
+                                var normalized = reason.Replace(" (skipped for this run)", "");
+                                // Healthy stages render as "<n> results"; only real failures count.
+                                if (SearchStage.IsResultCountLabel(normalized))
+                                {
+                                    continue;
+                                }
 
-            lock (_statusLock)
-            {
-                _processed++;
-                if (proposal.Confidence == "Unresolved")
-                {
-                    _unresolved++;
+                                _failureReasons[normalized] = _failureReasons.GetValueOrDefault(normalized) + 1;
+                            }
+                        }
+                        else
+                        {
+                            _resolved++;
+                            if (!restrictToPreferredHost && proposal.ProposedHost != null)
+                                preferredHost = proposal.ProposedHost;
+                        }
+                    }
                 }
-                else
+                if (aiSettings.MigrationAutoApproveHigh && proposal.Confidence == "High")
                 {
-                    _resolved++;
+                    try { await services.GetRequiredService<UrlMigrationApprovalService>().ApproveAsync([proposal.Id], token); }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                    catch (Exception ex) { _logger.LogWarning(ex, "Auto-approve failed for URL migration proposal {ProposalId}", proposal.Id); }
                 }
             }
-
-            if (aiSettings.MigrationAutoApproveHigh && proposal.Confidence == "High")
-            {
-                try
-                {
-                    await approvalService.ApproveAsync([proposal.Id], ct).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Auto-approve failed for URL migration proposal {ProposalId}", proposal.Id);
-                }
-            }
-        }
+            finally { saveGate.Release(); }
+        }).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<SeriesExtraction>> ExtractBatchAsync(
@@ -450,6 +492,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         string? preferredHost,
         bool restrictToPreferredHost,
         AppDbContext db,
+        SearchRunContext searchRun,
         CancellationToken ct)
     {
         var proposal = new UrlMigrationProposal
@@ -550,9 +593,12 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         }
 
         IReadOnlyList<SearchCandidate> candidates;
+        string searchDetail;
         try
         {
-            candidates = await searchService.SearchAsync(extraction, deadHost, ct, preferredHost, restrictToPreferredHost).ConfigureAwait(false);
+            var outcome = await searchService.SearchWithDiagnosticsAsync(extraction, deadHost, searchRun, ct, preferredHost, restrictToPreferredHost).ConfigureAwait(false);
+            candidates = outcome.Candidates;
+            searchDetail = outcome.Detail;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -562,6 +608,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         {
             _logger.LogWarning(ex, "Search failed for bookmark {BookmarkId}; proposal will be Unresolved.", bookmark.Id);
             candidates = [];
+            searchDetail = "Search: " + SearchRunContext.DescribeFailure(ex);
         }
 
         combinedCandidates.AddRange(candidates);
@@ -574,9 +621,9 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         if (combinedCandidates.Count == 0)
         {
             proposal.Confidence = "Unresolved";
-            proposal.Detail = excludedUrls.Count > 0
-                ? "No new candidates found (previously rejected URL(s) excluded)."
-                : "No search candidates found.";
+            proposal.Detail = string.IsNullOrWhiteSpace(searchDetail) ? "Search: 0 results" : searchDetail;
+            if (excludedUrls.Count > 0)
+                proposal.Detail += "; previously rejected URL(s) excluded";
             return proposal;
         }
 

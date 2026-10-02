@@ -27,6 +27,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     private readonly IDuckDuckGoSearchService _duckDuckGo;
     private readonly AiRequestThrottle _throttle;
     private readonly ILogger<GroqCompoundSearchService> _logger;
+    private readonly GeminiGroundedSearchService? _gemini;
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -38,64 +39,93 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         AiTaggingSettingsService settings,
         IDuckDuckGoSearchService duckDuckGo,
         ILogger<GroqCompoundSearchService> logger,
-        AiRequestThrottle? throttle = null)
+        AiRequestThrottle? throttle = null,
+        GeminiGroundedSearchService? gemini = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _duckDuckGo = duckDuckGo ?? throw new ArgumentNullException(nameof(duckDuckGo));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _throttle = throttle ?? new AiRequestThrottle();
+        _gemini = gemini;
     }
 
     public async Task<IReadOnlyList<SearchCandidate>> SearchAsync(
         SeriesExtraction extraction, string deadHost, CancellationToken ct, string? preferredHost = null, bool restrictToPreferredHost = false)
+        => (await SearchWithDiagnosticsAsync(extraction, deadHost, new SearchRunContext(), ct, preferredHost, restrictToPreferredHost)).Candidates;
+
+    public async Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+        SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+        string? preferredHost = null, bool restrictToPreferredHost = false)
     {
         ArgumentNullException.ThrowIfNull(extraction);
-        if (string.IsNullOrWhiteSpace(deadHost))
+        ArgumentException.ThrowIfNullOrWhiteSpace(deadHost);
+        restrictToPreferredHost &= !string.IsNullOrWhiteSpace(preferredHost);
+        var settings = await _settings.GetAsync(ct).ConfigureAwait(false);
+        var stages = new List<SearchStage>();
+        IReadOnlyList<SearchCandidate> Shape(IReadOnlyList<SearchCandidate> candidates)
         {
-            throw new ArgumentException("Dead host is required.", nameof(deadHost));
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            var filtered = ApplyHostShaping(SearchCandidateFilter.Filter(candidates, deadHost), preferredHost, restrictToPreferredHost);
+            var reason = candidates.Count > 0 && filtered.Count == 0 ? "all candidates excluded by URL/host rules" : null;
+            _logger.LogInformation("Migration search provider {Provider} elapsed {ElapsedMs} ms candidates {CandidateCount} input {InputCount} reason {FailureReason}",
+                "Candidate filter", elapsed.ElapsedMilliseconds, filtered.Count, candidates.Count, reason ?? "success");
+            if (reason != null) stages.Add(new("Candidate filter", 0, reason));
+            return filtered;
         }
 
-        restrictToPreferredHost = restrictToPreferredHost && !string.IsNullOrWhiteSpace(preferredHost);
-
-        var settings = await _settings.GetAsync(ct).ConfigureAwait(false);
-
-        if (!string.IsNullOrWhiteSpace(settings.GroqApiKey))
+        // Provider is chosen at search time from settings; "Gemini" (Google Search grounding) is the
+        // default because Groq's compound models were decommissioned. Either primary failure falls
+        // through to the same DDG/Yahoo HTML chain below.
+        var provider = string.IsNullOrWhiteSpace(settings.MigrationSearchProvider) ? "Gemini" : settings.MigrationSearchProvider;
+        var useGemini = string.Equals(provider, "Gemini", StringComparison.OrdinalIgnoreCase) && _gemini is not null;
+        if (useGemini)
         {
-            try
-            {
-                var compoundCandidates = await SearchWithCompoundAsync(extraction, deadHost, preferredHost, restrictToPreferredHost, settings, ct).ConfigureAwait(false);
-                if (compoundCandidates.Count > 0)
-                {
-                    var filtered = ApplyHostShaping(SearchCandidateFilter.Filter(compoundCandidates, deadHost), preferredHost, restrictToPreferredHost);
-                    if (filtered.Count > 0 || !restrictToPreferredHost)
-                    {
-                        return filtered;
-                    }
-                }
-
-                _logger.LogInformation(
-                    "Groq compound search returned no usable candidates for series '{Series}'; falling back to DuckDuckGo + rerank.",
-                    extraction.SeriesName);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Groq compound search failed for series '{Series}'; falling back to DuckDuckGo + rerank.",
-                    extraction.SeriesName);
-            }
+            var gemini = await _gemini!.SearchWithDiagnosticsAsync(extraction, deadHost, run, ct, preferredHost, restrictToPreferredHost);
+            stages.AddRange(gemini.Stages);
+            var geminiCandidates = Shape(gemini.Candidates);
+            if (geminiCandidates.Count > 0) return new(geminiCandidates, stages);
         }
         else
         {
-            _logger.LogInformation("Groq API key not configured; using DuckDuckGo + rerank fallback for search stage.");
+            var model = string.IsNullOrWhiteSpace(settings.MigrationSearchModel) ? "groq/compound-mini" : settings.MigrationSearchModel;
+            var publicGroq = string.IsNullOrWhiteSpace(settings.GroqBaseUrl) ||
+                Uri.TryCreate(settings.GroqBaseUrl, UriKind.Absolute, out var baseUri) && baseUri.Host.Equals("api.groq.com", StringComparison.OrdinalIgnoreCase);
+            var retired = publicGroq && model is "groq/compound-mini" or "groq/compound";
+            if (!string.IsNullOrWhiteSpace(settings.GroqApiKey) && !retired)
+            {
+                var compound = await run.ExecuteAsync("Groq compound", TimeSpan.FromSeconds(12), async token =>
+                    Shape(await SearchWithCompoundAsync(extraction, deadHost, preferredHost, restrictToPreferredHost, settings, token)), _logger, ct);
+                stages.AddRange(compound.Stages);
+                if (compound.Candidates.Count > 0) return new(compound.Candidates, stages);
+            }
+            else
+            {
+                var reason = retired ? "model decommissioned (2026-09-21)" : "API key not configured";
+                stages.Add(new("Groq compound", 0, reason));
+                _logger.LogInformation("Migration search provider {Provider} elapsed {ElapsedMs} ms candidates {CandidateCount} reason {FailureReason}",
+                    "Groq compound", 0, 0, reason);
+            }
         }
 
-        var fallbackCandidates = await SearchWithFallbackAsync(extraction, deadHost, preferredHost, restrictToPreferredHost, settings, ct).ConfigureAwait(false);
-        return ApplyHostShaping(SearchCandidateFilter.Filter(fallbackCandidates, deadHost), preferredHost, restrictToPreferredHost);
+        var query = BuildDuckDuckGoQuery(extraction);
+        if (restrictToPreferredHost) query += $" site:{preferredHost}";
+        var html = await _duckDuckGo.SearchWithDiagnosticsAsync(query, deadHost, run, ct);
+        stages.AddRange(html.Stages);
+        var raw = Shape(html.Candidates.Select(url => new SearchCandidate(url, null, null)).ToArray());
+        if (raw.Count == 0 || string.IsNullOrWhiteSpace(settings.GroqApiKey)) return new(raw, stages);
+
+        var ranked = await run.ExecuteAsync("Groq rerank", TimeSpan.FromSeconds(8), async token =>
+        {
+            var rerankModel = string.IsNullOrWhiteSpace(settings.GroqModel) ? "openai/gpt-oss-120b" : settings.GroqModel;
+            var prompt = BuildRerankPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost, raw.Select(c => c.Url).ToArray());
+            var content = await CallGroqChatAsync(rerankModel, SystemPromptForRerank, prompt, settings, token);
+            // A reranker may only choose supplied URLs. Preserve usable raw results if its output is unusable.
+            var allowed = raw.Select(c => UrlComparisonNormalizer.Normalize(c.Url)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return Shape(ParseSearchResponse(content).Where(c => allowed.Contains(UrlComparisonNormalizer.Normalize(c.Url))).ToArray());
+        }, _logger, ct);
+        stages.AddRange(ranked.Stages);
+        return new(ranked.Candidates.Count > 0 ? ranked.Candidates : raw, stages);
     }
 
     /// <summary>
@@ -136,71 +166,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
         var prompt = BuildSearchPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost);
 
         var content = await CallGroqChatAsync(model, SystemPromptForCompound, prompt, settings, ct).ConfigureAwait(false);
-        return ParseCandidatesJson(content);
-    }
-
-    private async Task<IReadOnlyList<SearchCandidate>> SearchWithFallbackAsync(
-        SeriesExtraction extraction,
-        string deadHost,
-        string? preferredHost,
-        bool restrictToPreferredHost,
-        BookmarkManager.Contracts.AiTaggingSettingsDto settings,
-        CancellationToken ct)
-    {
-        var query = BuildDuckDuckGoQuery(extraction);
-        if (restrictToPreferredHost)
-        {
-            query = $"{query} site:{preferredHost}";
-        }
-
-        IReadOnlyList<string> rawCandidateUrls;
-        try
-        {
-            rawCandidateUrls = await _duckDuckGo.GetSearchCandidatesAsync(query, deadHost, ct).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "DuckDuckGo fallback search failed for query '{Query}'.", query);
-            return [];
-        }
-
-        if (rawCandidateUrls.Count == 0)
-        {
-            return [];
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.GroqApiKey))
-        {
-            // No rerank possible without a key - return the raw (unranked) DDG candidates so the
-            // pipeline still has something to verify, rather than nothing at all.
-            return rawCandidateUrls.Select(url => new SearchCandidate(url, null, null)).ToList();
-        }
-
-        try
-        {
-            var model = string.IsNullOrWhiteSpace(settings.GroqModel) ? "llama-3.3-70b-versatile" : settings.GroqModel;
-            var prompt = BuildRerankPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost, rawCandidateUrls);
-            var content = await CallGroqChatAsync(model, SystemPromptForRerank, prompt, settings, ct).ConfigureAwait(false);
-            var reranked = ParseCandidatesJson(content);
-            if (reranked.Count > 0)
-            {
-                return reranked;
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Plain Groq rerank fallback failed; returning unranked DuckDuckGo candidates.");
-        }
-
-        return rawCandidateUrls.Select(url => new SearchCandidate(url, null, null)).ToList();
+        return ParseSearchResponse(content);
     }
 
     private async Task<string> CallGroqChatAsync(
@@ -250,9 +216,8 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
 
         if (!response.IsSuccessStatusCode)
         {
-            var errorBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             throw new HttpRequestException(
-                $"Groq API request failed with status {(int)response.StatusCode} {response.StatusCode}: {errorBody}",
+                $"Groq API request failed with status {(int)response.StatusCode}.",
                 null,
                 response.StatusCode);
         }
@@ -263,10 +228,22 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            throw new InvalidOperationException("Groq returned an empty search response.");
+            throw new SearchResponseException("empty response");
         }
 
         return text;
+    }
+
+    private static IReadOnlyList<SearchCandidate> ParseSearchResponse(string content)
+    {
+        var json = ExtractJsonObject(content);
+        if (json is null) throw new SearchResponseException("invalid candidate response");
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("candidates", out var candidates) || candidates.ValueKind != JsonValueKind.Array)
+            throw new SearchResponseException("missing candidates array");
+        var parsed = JsonSerializer.Deserialize<CandidatesResponseJson>(json, JsonOptions)!;
+        return parsed.Candidates!.Where(c => !string.IsNullOrWhiteSpace(c.Url))
+            .Select(c => new SearchCandidate(c.Url!, c.Title, c.Why ?? c.Snippet)).ToArray();
     }
 
     internal static IReadOnlyList<SearchCandidate> ParseCandidatesJson(string content)
