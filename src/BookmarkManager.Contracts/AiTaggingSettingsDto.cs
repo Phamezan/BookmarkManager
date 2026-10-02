@@ -2,16 +2,28 @@ namespace BookmarkManager.Contracts;
 
 public class AiTaggingSettingsDto
 {
+    public AiTaggingSettingsDto Clone() => (AiTaggingSettingsDto)MemberwiseClone();
+
     public bool Enabled { get; set; }
     public string Endpoint { get; set; } = string.Empty;
     public string BaseUrl { get; set; } = "https://openrouter.ai/api/v1";
     public string Model { get; set; } = "nvidia/nemotron-3-ultra-550b-a55b:free";
-    public string ApiKey { get; set; } = string.Empty;
+    public string? ApiKey { get; set; } = string.Empty;
+
+    // HTTP-boundary secret handling: GET always masks ApiKey (never the real value) and sets this
+    // flag so the client can show "saved". PUT keeps the stored key when ApiKey is empty/whitespace
+    // or still equals the mask; ClearApiKey forces it to empty. These flags are never persisted
+    // (AiTaggingSettingsService.Normalize drops them) and are meaningless to server-side consumers.
+    public bool HasApiKey { get; set; }
+    public bool ClearApiKey { get; set; }
+
     public int RequestsPerMinute { get; set; } = 15;
     public int PreferredBatchSize { get; set; } = 25;
 
     // Fallback provider used when OpenRouter's daily free-tier quota is exhausted (not just RPM throttled).
-    public string GroqApiKey { get; set; } = string.Empty;
+    public string? GroqApiKey { get; set; } = string.Empty;
+    public bool HasGroqApiKey { get; set; }
+    public bool ClearGroqApiKey { get; set; }
     public string GroqModel { get; set; } = "llama-3.3-70b-versatile";
     public string GroqBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public int GroqRequestsPerMinute { get; set; } = 25;
@@ -24,7 +36,9 @@ public class AiTaggingSettingsDto
     // Missing from older persisted settings JSON, so the property initializer must supply the
     // retired-Compound-safe default for existing installs too.
     public string MigrationSearchProvider { get; set; } = "Gemini";
-    public string GeminiApiKey { get; set; } = string.Empty;
+    public string? GeminiApiKey { get; set; } = string.Empty;
+    public bool HasGeminiApiKey { get; set; }
+    public bool ClearGeminiApiKey { get; set; }
     public string GeminiSearchModel { get; set; } = "gemini-3.8-flash";
 
     // When enabled, High-confidence migration proposals are auto-approved right after creation.
@@ -33,13 +47,17 @@ public class AiTaggingSettingsDto
     // Library RAG assistant: OpenAI-compatible chat model that answers grounded on retrieved catalog
     // entries. Defaults to the same Groq endpoint/model shape as the tagging fallback.
     public string RagModel { get; set; } = "llama-3.3-70b-versatile";
-    public string RagApiKey { get; set; } = string.Empty;
+    public string? RagApiKey { get; set; } = string.Empty;
+    public bool HasRagApiKey { get; set; }
+    public bool ClearRagApiKey { get; set; }
     public string RagBaseUrl { get; set; } = "https://api.groq.com/openai/v1";
     public int RagRequestsPerMinute { get; set; } = 30;
 
     // Optional secondary provider tried automatically when the primary is rate-limited (429) or errors.
     // Defaults to NVIDIA-hosted chat so a different account/quota absorbs the overflow. Blank key = disabled.
-    public string RagFallbackApiKey { get; set; } = string.Empty;
+    public string? RagFallbackApiKey { get; set; } = string.Empty;
+    public bool HasRagFallbackApiKey { get; set; }
+    public bool ClearRagFallbackApiKey { get; set; }
     public string RagFallbackModel { get; set; } = "meta/llama-3.3-70b-instruct";
     public string RagFallbackBaseUrl { get; set; } = "https://integrate.api.nvidia.com/v1";
 

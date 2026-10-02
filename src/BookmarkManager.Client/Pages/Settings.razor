@@ -179,12 +179,24 @@
                                 </MudSelect>
                             </MudItem>
                             <MudItem xs="12">
-                                <MudTextField @bind-Value="_aiSettings.ApiKey"
-                                              Label="OpenRouter API Key"
-                                              Variant="Variant.Outlined"
-                                              InputType="InputType.Password"
-                                              Immediate="true"
-                                              HelperText="Stored locally on this API server." />
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_aiSettings.ApiKey"
+                                                  Class="flex-grow-1 api-key-field"
+                                                  Label="OpenRouter API Key"
+                                                  Variant="Variant.Outlined"
+                                                  InputType="InputType.Password"
+                                                  Immediate="true"
+                                                  HelperText="@KeyHelperText("Stored locally on this API server.", _aiSettings.HasApiKey, _apiKeyMask, _clearApiKey)" />
+                                    @if (_aiSettings.HasApiKey && !_clearApiKey)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="ClearApiKey"
+                                                       title="Clear saved key"
+                                                       aria-label="Clear saved OpenRouter API key" />
+                                    }
+                                </MudStack>
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_aiSettings.RequestsPerMinute"
@@ -244,12 +256,24 @@
                                               HelperText="e.g. llama-3.3-70b-versatile" />
                             </MudItem>
                             <MudItem xs="12">
-                                <MudTextField @bind-Value="_aiSettings.GroqApiKey"
-                                              Label="Groq API Key"
-                                              Variant="Variant.Outlined"
-                                              InputType="InputType.Password"
-                                              Immediate="true"
-                                              HelperText="Stored locally on this API server. Get one at console.groq.com/keys." />
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_aiSettings.GroqApiKey"
+                                                  Class="flex-grow-1 groq-api-key-field"
+                                                  Label="Groq API Key"
+                                                  Variant="Variant.Outlined"
+                                                  InputType="InputType.Password"
+                                                  Immediate="true"
+                                                  HelperText="@KeyHelperText("Stored locally on this API server. Get one at console.groq.com/keys.", _aiSettings.HasGroqApiKey, _groqApiKeyMask, _clearGroqApiKey)" />
+                                    @if (_aiSettings.HasGroqApiKey && !_clearGroqApiKey)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="ClearGroqApiKey"
+                                                       title="Clear saved key"
+                                                       aria-label="Clear saved Groq API key" />
+                                    }
+                                </MudStack>
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudNumericField @bind-Value="_aiSettings.GroqRequestsPerMinute"
@@ -288,12 +312,24 @@
                         </MudText>
                         <MudGrid>
                             <MudItem xs="12">
-                                <MudTextField @bind-Value="_aiSettings.RagApiKey"
-                                              Label="Library Assistant API Key"
-                                              Variant="Variant.Outlined"
-                                              InputType="InputType.Password"
-                                              Immediate="true"
-                                              HelperText="Stored locally on this API server." />
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_aiSettings.RagApiKey"
+                                                  Class="flex-grow-1 rag-api-key-field"
+                                                  Label="Library Assistant API Key"
+                                                  Variant="Variant.Outlined"
+                                                  InputType="InputType.Password"
+                                                  Immediate="true"
+                                                  HelperText="@KeyHelperText("Stored locally on this API server.", _aiSettings.HasRagApiKey, _ragApiKeyMask, _clearRagApiKey)" />
+                                    @if (_aiSettings.HasRagApiKey && !_clearRagApiKey)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="ClearRagApiKey"
+                                                       title="Clear saved key"
+                                                       aria-label="Clear saved Library Assistant API key" />
+                                    }
+                                </MudStack>
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudTextField @bind-Value="_aiSettings.RagBaseUrl"
@@ -343,12 +379,24 @@
                         </MudText>
                         <MudGrid>
                             <MudItem xs="12">
-                                <MudTextField @bind-Value="_aiSettings.RagFallbackApiKey"
-                                              Label="Fallback API Key"
-                                              Variant="Variant.Outlined"
-                                              InputType="InputType.Password"
-                                              Immediate="true"
-                                              HelperText="e.g. an NVIDIA nvapi-… key. Stored locally on this API server." />
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_aiSettings.RagFallbackApiKey"
+                                                  Class="flex-grow-1 rag-fallback-api-key-field"
+                                                  Label="Fallback API Key"
+                                                  Variant="Variant.Outlined"
+                                                  InputType="InputType.Password"
+                                                  Immediate="true"
+                                                  HelperText="@KeyHelperText("e.g. an NVIDIA nvapi-… key. Stored locally on this API server.", _aiSettings.HasRagFallbackApiKey, _ragFallbackApiKeyMask, _clearRagFallbackApiKey)" />
+                                    @if (_aiSettings.HasRagFallbackApiKey && !_clearRagFallbackApiKey)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="ClearRagFallbackApiKey"
+                                                       title="Clear saved key"
+                                                       aria-label="Clear saved Fallback API key" />
+                                    }
+                                </MudStack>
                             </MudItem>
                             <MudItem xs="12" sm="6">
                                 <MudTextField @bind-Value="_aiSettings.RagFallbackBaseUrl"
@@ -412,13 +460,24 @@
                                               HelperText="Gemini Flash model that supports the google_search tool, e.g. gemini-3.8-flash." />
                             </MudItem>
                             <MudItem xs="12">
-                                <MudTextField @bind-Value="_aiSettings.GeminiApiKey"
-                                              Label="Gemini API Key"
-                                              Variant="Variant.Outlined"
-                                              InputType="InputType.Password"
-                                              Immediate="true"
-                                              Class="gemini-api-key-field"
-                                              HelperText="Google AI Studio key. Stored locally on this API server." />
+                                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                    <MudTextField @bind-Value="_aiSettings.GeminiApiKey"
+                                                  Label="Gemini API Key"
+                                                  Variant="Variant.Outlined"
+                                                  InputType="InputType.Password"
+                                                  Immediate="true"
+                                                  Class="flex-grow-1 gemini-api-key-field"
+                                                  HelperText="@KeyHelperText("Google AI Studio key. Stored locally on this API server.", _aiSettings.HasGeminiApiKey, _geminiApiKeyMask, _clearGeminiApiKey)" />
+                                    @if (_aiSettings.HasGeminiApiKey && !_clearGeminiApiKey)
+                                    {
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="ClearGeminiApiKey"
+                                                       title="Clear saved key"
+                                                       aria-label="Clear saved Gemini API key" />
+                                    }
+                                </MudStack>
                             </MudItem>
                             @if (string.Equals(_aiSettings.MigrationSearchProvider, "Groq", StringComparison.OrdinalIgnoreCase))
                             {

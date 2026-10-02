@@ -201,7 +201,7 @@ public sealed class LibraryRagService : ILibraryRagService
         var primary = await CallProviderAsync(
             baseUrl: string.IsNullOrWhiteSpace(settings.RagBaseUrl) ? "https://api.groq.com/openai/v1" : settings.RagBaseUrl,
             model: string.IsNullOrWhiteSpace(settings.RagModel) ? "llama-3.3-70b-versatile" : settings.RagModel,
-            apiKey: settings.RagApiKey,
+            apiKey: settings.RagApiKey ?? string.Empty,
             rpm: settings.RagRequestsPerMinute,
             messages: messages,
             isFallback: false,
@@ -217,7 +217,7 @@ public sealed class LibraryRagService : ILibraryRagService
         var fallback = await CallProviderAsync(
             baseUrl: string.IsNullOrWhiteSpace(settings.RagFallbackBaseUrl) ? "https://integrate.api.nvidia.com/v1" : settings.RagFallbackBaseUrl,
             model: string.IsNullOrWhiteSpace(settings.RagFallbackModel) ? "meta/llama-3.3-70b-instruct" : settings.RagFallbackModel,
-            apiKey: settings.RagFallbackApiKey,
+            apiKey: settings.RagFallbackApiKey ?? string.Empty,
             rpm: settings.RagRequestsPerMinute,
             messages: messages,
             isFallback: true,

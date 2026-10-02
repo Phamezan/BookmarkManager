@@ -65,6 +65,44 @@ public sealed class SettingsPageTests
         Assert.Equal("Gemini", saved.MigrationSearchProvider);
     }
 
+    [Fact]
+    public async Task AiTaggingKey_ShowsSavedHint_AndSaveDoesNotSendMaskedValueAsReplacement()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        AiTaggingSettingsDto? saved = null;
+        var fake = new FakeBookmarkService
+        {
+            AiTaggingSettings = new AiTaggingSettingsDto
+            {
+                Enabled = true,
+                HasApiKey = true,
+                ApiKey = "••••a1b2"
+            },
+            OnSaveAiTaggingSettings = settings =>
+            {
+                saved = settings;
+                return Task.FromResult(settings);
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+        context.Services.AddSingleton<IBookmarkManagerApiClient>(new FakeApiClient());
+        context.Services.AddSingleton<ILibraryService>(new StubLibraryService());
+
+        var page = RenderPage(context);
+
+        page.WaitForAssertion(() => Assert.Contains("Saved (••••a1b2)", page.Markup));
+
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll("button")));
+        page.FindAll("button").First(b => b.TextContent.Contains("Save all")).Click();
+
+        page.WaitForAssertion(() => Assert.NotNull(saved));
+        Assert.Equal(string.Empty, saved!.ApiKey);
+        Assert.False(saved.ClearApiKey);
+    }
+
     private sealed class FakeApiClient : IBookmarkManagerApiClient
     {
         public Task<T?> GetAsync<T>(string uri, CancellationToken cancellationToken = default) => Task.FromResult<T?>(default);

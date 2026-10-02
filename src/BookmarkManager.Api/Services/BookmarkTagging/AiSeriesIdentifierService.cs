@@ -391,14 +391,19 @@ public sealed class AiSeriesIdentifierService
                 ? "https://generativelanguage.googleapis.com/v1beta"
                 : settings.Endpoint.Trim().TrimEnd('/');
             var model = string.IsNullOrWhiteSpace(settings.Model) ? "gemini-2.5-flash" : settings.Model.Trim();
-            var uri = new Uri($"{endpoint}/models/{Uri.EscapeDataString(model)}:generateContent?key={Uri.EscapeDataString(settings.ApiKey)}");
+            var uri = new Uri($"{endpoint}/models/{Uri.EscapeDataString(model)}:generateContent");
             var prompt = JsonSerializer.Serialize(request, JsonOptions);
             var geminiRequest = new GeminiGenerateContentRequest(
                 [new GeminiContent([new GeminiPart($"{request.Instructions}\n\nInput JSON:\n{prompt}")])],
                 new GeminiGenerationConfig("application/json"));
 
             var http = _httpClientFactory.CreateClient(nameof(AiSeriesIdentifierService));
-            using var response = await http.PostAsJsonAsync(uri, geminiRequest, JsonOptions, cancellationToken).ConfigureAwait(false);
+            // Send the key as a header, not a query string: a failed request's exception message
+            // echoes the request URI, which would otherwise leak the key into logs/summaries.
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, uri);
+            httpRequest.Headers.TryAddWithoutValidation("x-goog-api-key", settings.ApiKey);
+            httpRequest.Content = JsonContent.Create(geminiRequest, options: JsonOptions);
+            using var response = await http.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
             var geminiJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
             var geminiResponse = JsonSerializer.Deserialize<GeminiGenerateContentResponse>(geminiJson, JsonOptions);

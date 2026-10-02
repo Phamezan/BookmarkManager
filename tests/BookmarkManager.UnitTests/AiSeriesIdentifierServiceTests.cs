@@ -128,9 +128,11 @@ public sealed class AiSeriesIdentifierServiceTests
         var id = Guid.NewGuid();
         string? requestedUri = null;
         string? requestJson = null;
+        string? apiKeyHeader = null;
         var httpClient = new HttpClient(new GeminiHttpMessageHandler(async request =>
         {
             requestedUri = request.RequestUri!.ToString();
+            apiKeyHeader = request.Headers.TryGetValues("x-goog-api-key", out var values) ? values.Single() : null;
             requestJson = await request.Content!.ReadAsStringAsync();
             return $$"""
                 {
@@ -162,7 +164,8 @@ public sealed class AiSeriesIdentifierServiceTests
         Assert.Equal("One Piece", item.CanonicalTitle);
         Assert.Equal(AiSeriesSourceHint.Anime, item.SourceHint);
         Assert.Contains("models/gemini-2.5-flash:generateContent", requestedUri);
-        Assert.Contains("key=gemini-key", requestedUri);
+        Assert.DoesNotContain("key=", requestedUri);
+        Assert.Equal("gemini-key", apiKeyHeader);
         Assert.Contains("Return JSON only", requestJson);
         Assert.Contains("One Piece Episode 1092", requestJson);
         Assert.Contains("responseMimeType", requestJson);

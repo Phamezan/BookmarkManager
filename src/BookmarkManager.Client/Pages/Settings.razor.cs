@@ -26,6 +26,20 @@ public partial class Settings
     private bool _aiSettingsLoading = true;
     private bool _aiSettingsSaving;
 
+    // GET returns masks, not keys. Remember the mask for the "saved" hint and keep the bound secret
+    // fields empty so an untouched input is not sent back as a replacement. Clear flags mark a
+    // deliberate deletion on save.
+    private string _apiKeyMask = string.Empty;
+    private string _groqApiKeyMask = string.Empty;
+    private string _geminiApiKeyMask = string.Empty;
+    private string _ragApiKeyMask = string.Empty;
+    private string _ragFallbackApiKeyMask = string.Empty;
+    private bool _clearApiKey;
+    private bool _clearGroqApiKey;
+    private bool _clearGeminiApiKey;
+    private bool _clearRagApiKey;
+    private bool _clearRagFallbackApiKey;
+
     // Curated from OpenRouter's live free-tier catalog - excludes moderation-only,
     // vision, code-only, and sub-10B models that aren't reliable for series-title extraction.
     private static readonly string[] OpenRouterFreeModels =
@@ -216,7 +230,7 @@ public partial class Settings
         _aiSettingsLoading = true;
         try
         {
-            _aiSettings = await BookmarkService.GetAiTaggingSettingsAsync();
+            _aiSettings = ApplyLoadedSettings(await BookmarkService.GetAiTaggingSettingsAsync());
         }
         catch (Exception ex)
         {
@@ -226,6 +240,69 @@ public partial class Settings
         {
             _aiSettingsLoading = false;
         }
+    }
+
+    // The server never sends real keys: it sends a mask plus Has<Name>. Capture the masks for the
+    // hint, blank the bound fields, and reset the clear flags so nothing prefills a secret input.
+    private AiTaggingSettingsDto ApplyLoadedSettings(AiTaggingSettingsDto settings)
+    {
+        _apiKeyMask = settings.ApiKey ?? string.Empty;
+        _groqApiKeyMask = settings.GroqApiKey ?? string.Empty;
+        _geminiApiKeyMask = settings.GeminiApiKey ?? string.Empty;
+        _ragApiKeyMask = settings.RagApiKey ?? string.Empty;
+        _ragFallbackApiKeyMask = settings.RagFallbackApiKey ?? string.Empty;
+
+        var form = settings.Clone();
+        form.ApiKey = string.Empty;
+        form.GroqApiKey = string.Empty;
+        form.GeminiApiKey = string.Empty;
+        form.RagApiKey = string.Empty;
+        form.RagFallbackApiKey = string.Empty;
+
+        _clearApiKey = false;
+        _clearGroqApiKey = false;
+        _clearGeminiApiKey = false;
+        _clearRagApiKey = false;
+        _clearRagFallbackApiKey = false;
+
+        return form;
+    }
+
+    private static string KeyHelperText(string fallback, bool hasKey, string mask, bool clear)
+        => clear
+            ? "Will be cleared when you save."
+            : hasKey
+                ? $"Saved ({mask}) - type a new key to replace it."
+                : fallback;
+
+    private void ClearApiKey()
+    {
+        _aiSettings.ApiKey = string.Empty;
+        _clearApiKey = true;
+    }
+
+    private void ClearGroqApiKey()
+    {
+        _aiSettings.GroqApiKey = string.Empty;
+        _clearGroqApiKey = true;
+    }
+
+    private void ClearGeminiApiKey()
+    {
+        _aiSettings.GeminiApiKey = string.Empty;
+        _clearGeminiApiKey = true;
+    }
+
+    private void ClearRagApiKey()
+    {
+        _aiSettings.RagApiKey = string.Empty;
+        _clearRagApiKey = true;
+    }
+
+    private void ClearRagFallbackApiKey()
+    {
+        _aiSettings.RagFallbackApiKey = string.Empty;
+        _clearRagFallbackApiKey = true;
     }
 
     private async Task TestAiKeyAsync()
@@ -240,7 +317,8 @@ public partial class Settings
             {
                 BaseUrl = _aiSettings.BaseUrl,
                 Model = _aiSettings.Model,
-                ApiKey = _aiSettings.ApiKey
+                ApiKey = _aiSettings.ApiKey ?? string.Empty,
+                SecretName = "ApiKey"
             };
             _aiKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
             Snackbar.Add(
@@ -269,7 +347,8 @@ public partial class Settings
                 Provider = "Groq",
                 BaseUrl = _aiSettings.GroqBaseUrl,
                 Model = _aiSettings.GroqModel,
-                ApiKey = _aiSettings.GroqApiKey
+                ApiKey = _aiSettings.GroqApiKey ?? string.Empty,
+                SecretName = "GroqApiKey"
             };
             _groqKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
             Snackbar.Add(
@@ -300,7 +379,8 @@ public partial class Settings
                 Provider = "Groq",
                 BaseUrl = _aiSettings.RagBaseUrl,
                 Model = _aiSettings.RagModel,
-                ApiKey = _aiSettings.RagApiKey
+                ApiKey = _aiSettings.RagApiKey ?? string.Empty,
+                SecretName = "RagApiKey"
             };
             _ragKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
             Snackbar.Add(
@@ -329,7 +409,8 @@ public partial class Settings
                 Provider = "Groq",
                 BaseUrl = _aiSettings.RagFallbackBaseUrl,
                 Model = _aiSettings.RagFallbackModel,
-                ApiKey = _aiSettings.RagFallbackApiKey
+                ApiKey = _aiSettings.RagFallbackApiKey ?? string.Empty,
+                SecretName = "RagFallbackApiKey"
             };
             _ragFallbackKeyTestResult = await BookmarkService.TestAiTaggingKeyAsync(request);
             Snackbar.Add(
@@ -352,7 +433,13 @@ public partial class Settings
         _aiSettingsSaving = true;
         try
         {
-            _aiSettings = await BookmarkService.SaveAiTaggingSettingsAsync(_aiSettings);
+            _aiSettings.ClearApiKey = _clearApiKey;
+            _aiSettings.ClearGroqApiKey = _clearGroqApiKey;
+            _aiSettings.ClearGeminiApiKey = _clearGeminiApiKey;
+            _aiSettings.ClearRagApiKey = _clearRagApiKey;
+            _aiSettings.ClearRagFallbackApiKey = _clearRagFallbackApiKey;
+
+            _aiSettings = ApplyLoadedSettings(await BookmarkService.SaveAiTaggingSettingsAsync(_aiSettings));
             Snackbar.Add("AI tagging settings saved.", Severity.Success);
         }
         catch (Exception ex)
