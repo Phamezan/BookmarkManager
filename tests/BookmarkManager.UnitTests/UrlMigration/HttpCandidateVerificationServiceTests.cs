@@ -55,6 +55,8 @@ public class HttpCandidateVerificationServiceTests
 
         Assert.True(result.Reachable);
         Assert.False(result.SeriesMatched);
+        // A reachable page whose title does not match is definitively wrong, not blocked.
+        Assert.False(result.Blocked);
     }
 
     [Fact]
@@ -71,6 +73,8 @@ public class HttpCandidateVerificationServiceTests
         Assert.False(result.SeriesMatched);
         Assert.False(result.ChapterMatched);
         Assert.Contains("404", result.Detail);
+        // 404 is definitively wrong - must never be offered as an unverified proposal.
+        Assert.False(result.Blocked);
     }
 
     [Fact]
@@ -130,6 +134,7 @@ public class HttpCandidateVerificationServiceTests
 
         Assert.False(result.Reachable);
         Assert.Equal("Cloudflare challenge", result.Detail);
+        Assert.True(result.Blocked);
     }
 
     [Fact]
@@ -145,6 +150,7 @@ public class HttpCandidateVerificationServiceTests
 
         Assert.False(result.Reachable);
         Assert.Equal("Cloudflare challenge", result.Detail);
+        Assert.True(result.Blocked);
     }
 
     [Fact]
@@ -322,6 +328,23 @@ public class HttpCandidateVerificationServiceTests
 
         Assert.False(result.Reachable);
         Assert.Contains("403", result.Detail);
+        // A 403 is access-denied, not "wrong URL" - keep it as a blocked candidate.
+        Assert.True(result.Blocked);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_Returns429_Blocked()
+    {
+        var service = CreateService(_ => new HttpResponseMessage((HttpStatusCode)429)
+        {
+            Content = new StringContent("<html><body>Too many requests</body></html>", Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(Candidate(), Extraction(), CancellationToken.None);
+
+        Assert.False(result.Reachable);
+        Assert.True(result.Blocked);
+        Assert.Contains("429", result.Detail);
     }
 
     [Fact]
