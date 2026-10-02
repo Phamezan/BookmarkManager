@@ -91,12 +91,12 @@ public sealed class PipelineIntegrationTests
             GroqRequestsPerMinute = 6000,
             MigrationSearchModel = "groq/compound-mini",
         });
-        var duckDuckGo = new NotCalledDuckDuckGoSearchService();
+        var searxng = new NotCalledSearxngSearchService();
 
         ISeriesExtractionService extractionService =
             new GroqSeriesExtractionService(factory, settingsService, NullLogger<GroqSeriesExtractionService>.Instance);
         IAlternativeUrlSearchService searchService =
-            new GroqCompoundSearchService(factory, settingsService, duckDuckGo, NullLogger<GroqCompoundSearchService>.Instance);
+            new GroqCompoundSearchService(factory, settingsService, searxng, NullLogger<GroqCompoundSearchService>.Instance);
         ICandidateVerificationService verificationService =
             new HttpCandidateVerificationService(factory, NullLogger<HttpCandidateVerificationService>.Instance);
 
@@ -154,9 +154,9 @@ public sealed class PipelineIntegrationTests
         Assert.True(extraction.UsedFallback);
         Assert.Equal("110", extraction.ChapterNumber); // extracted from the URL path per the fallback contract.
 
-        // Search: no API key -> DuckDuckGo-only candidate source (no rerank call), filtered by
-        // SearchCandidateFilter to drop the dead host.
-        var duckDuckGo = new StubDuckDuckGoSearchService(new[]
+        // Search: no API key -> the primary stage is skipped and SearXNG supplies raw candidates,
+        // filtered by SearchCandidateFilter to drop the dead host and noise host.
+        var searxng = new StubSearxngSearchService(new[]
         {
             NewCandidateUrl,
             $"https://{DeadHost}/solo-leveling/chapter-110", // must be filtered out
@@ -164,7 +164,7 @@ public sealed class PipelineIntegrationTests
         });
 
         IAlternativeUrlSearchService searchService =
-            new GroqCompoundSearchService(factory, settingsService, duckDuckGo, NullLogger<GroqCompoundSearchService>.Instance);
+            new GroqCompoundSearchService(factory, settingsService, searxng, NullLogger<GroqCompoundSearchService>.Instance);
 
         var candidates = await searchService.SearchAsync(extraction, DeadHost, CancellationToken.None);
 
@@ -183,18 +183,23 @@ public sealed class PipelineIntegrationTests
 
 
 
-    private sealed class StubDuckDuckGoSearchService : IDuckDuckGoSearchService
+    private sealed class StubSearxngSearchService : ISearxngSearchService
     {
-        private readonly IReadOnlyList<string> _candidates;
-        public StubDuckDuckGoSearchService(IReadOnlyList<string> candidates) => _candidates = candidates;
+        private readonly IReadOnlyList<SearchCandidate> _candidates;
+        public StubSearxngSearchService(IReadOnlyList<string> urls)
+            => _candidates = urls.Select(url => new SearchCandidate(url, null, null)).ToArray();
 
-        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
-            => Task.FromResult(new SearchOutcome<string>(_candidates, [new("HTML search", _candidates.Count, null)]));
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+            SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+            string? preferredHost = null, bool restrictToPreferredHost = false)
+            => Task.FromResult(new SearchOutcome<SearchCandidate>(_candidates, [new("SearXNG", _candidates.Count, null)]));
     }
 
-    private sealed class NotCalledDuckDuckGoSearchService : IDuckDuckGoSearchService
+    private sealed class NotCalledSearxngSearchService : ISearxngSearchService
     {
-        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
-            => throw new InvalidOperationException("DuckDuckGo fallback should not be used when Groq compound search succeeds.");
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+            SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+            string? preferredHost = null, bool restrictToPreferredHost = false)
+            => throw new InvalidOperationException("SearXNG fallback should not be used when Groq compound search succeeds.");
     }
 }

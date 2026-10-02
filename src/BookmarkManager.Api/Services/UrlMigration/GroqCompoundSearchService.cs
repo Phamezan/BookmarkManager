@@ -14,17 +14,18 @@ using Microsoft.Extensions.Logging;
 namespace BookmarkManager.Api.Services.UrlMigration;
 
 /// <summary>
-/// Search + rerank stage of URL Migrator v2 (plan §6.3). Primary path is a single Groq
-/// "compound" model call per bookmark (live web search + answer with sources, collapsing
-/// search and rerank into one round trip). Falls back to DuckDuckGo HTML search as a raw
-/// candidate source plus a plain Groq chat rerank call when the compound model errors or is
-/// unavailable (e.g. missing API key).
+/// Search stage of URL Migrator v2 (plan §6.3). Primary path is Gemini Google Search grounding
+/// by default, or a single Groq "compound" model call (live web search + answer with sources)
+/// when the provider is set to Groq. When the primary stage fails or returns no usable
+/// candidates, the chain falls back to the self-hosted <see cref="ISearxngSearchService"/>.
+/// DuckDuckGo/Yahoo HTML scraping was removed from the migration chain (it is challenged/500s
+/// in production); <c>DuckDuckGoSearchService</c> is retained only for its own direct callers.
 /// </summary>
 public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly AiTaggingSettingsService _settings;
-    private readonly IDuckDuckGoSearchService _duckDuckGo;
+    private readonly ISearxngSearchService _searxng;
     private readonly AiRequestThrottle _throttle;
     private readonly ILogger<GroqCompoundSearchService> _logger;
     private readonly GeminiGroundedSearchService? _gemini;
@@ -37,14 +38,14 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
     public GroqCompoundSearchService(
         IHttpClientFactory httpClientFactory,
         AiTaggingSettingsService settings,
-        IDuckDuckGoSearchService duckDuckGo,
+        ISearxngSearchService searxng,
         ILogger<GroqCompoundSearchService> logger,
         AiRequestThrottle? throttle = null,
         GeminiGroundedSearchService? gemini = null)
     {
         _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _duckDuckGo = duckDuckGo ?? throw new ArgumentNullException(nameof(duckDuckGo));
+        _searxng = searxng ?? throw new ArgumentNullException(nameof(searxng));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _throttle = throttle ?? new AiRequestThrottle();
         _gemini = gemini;
@@ -76,7 +77,7 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
 
         // Provider is chosen at search time from settings; "Gemini" (Google Search grounding) is the
         // default because Groq's compound models were decommissioned. Either primary failure falls
-        // through to the same DDG/Yahoo HTML chain below.
+        // through to the self-hosted SearXNG fallback below.
         var provider = string.IsNullOrWhiteSpace(settings.MigrationSearchProvider) ? "Gemini" : settings.MigrationSearchProvider;
         var useGemini = string.Equals(provider, "Gemini", StringComparison.OrdinalIgnoreCase) && _gemini is not null;
         if (useGemini)
@@ -108,24 +109,9 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
             }
         }
 
-        var query = BuildDuckDuckGoQuery(extraction);
-        if (restrictToPreferredHost) query += $" site:{preferredHost}";
-        var html = await _duckDuckGo.SearchWithDiagnosticsAsync(query, deadHost, run, ct);
-        stages.AddRange(html.Stages);
-        var raw = Shape(html.Candidates.Select(url => new SearchCandidate(url, null, null)).ToArray());
-        if (raw.Count == 0 || string.IsNullOrWhiteSpace(settings.GroqApiKey)) return new(raw, stages);
-
-        var ranked = await run.ExecuteAsync("Groq rerank", TimeSpan.FromSeconds(8), async token =>
-        {
-            var rerankModel = string.IsNullOrWhiteSpace(settings.GroqModel) ? "openai/gpt-oss-120b" : settings.GroqModel;
-            var prompt = BuildRerankPrompt(extraction, deadHost, preferredHost, restrictToPreferredHost, raw.Select(c => c.Url).ToArray());
-            var content = await CallGroqChatAsync(rerankModel, SystemPromptForRerank, prompt, settings, token);
-            // A reranker may only choose supplied URLs. Preserve usable raw results if its output is unusable.
-            var allowed = raw.Select(c => UrlComparisonNormalizer.Normalize(c.Url)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return Shape(ParseSearchResponse(content).Where(c => allowed.Contains(UrlComparisonNormalizer.Normalize(c.Url))).ToArray());
-        }, _logger, ct);
-        stages.AddRange(ranked.Stages);
-        return new(ranked.Candidates.Count > 0 ? ranked.Candidates : raw, stages);
+        var searxng = await _searxng.SearchWithDiagnosticsAsync(extraction, deadHost, run, ct, preferredHost, restrictToPreferredHost);
+        stages.AddRange(searxng.Stages);
+        return new(Shape(searxng.Candidates), stages);
     }
 
     /// <summary>
@@ -379,38 +365,10 @@ public sealed class GroqCompoundSearchService : IAlternativeUrlSearchService
               "migrated there, and manga/anime aggregator sites that host one series usually host most others too.\n";
     }
 
-    private static string BuildDuckDuckGoQuery(SeriesExtraction extraction)
-    {
-        var chapterText = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? string.Empty : $" chapter {extraction.ChapterNumber}";
-        return $"{extraction.SeriesName} {extraction.MediaType}{chapterText}".Trim();
-    }
-
-    private static string BuildRerankPrompt(
-        SeriesExtraction extraction, string deadHost, string? preferredHost, bool restrictToPreferredHost, IReadOnlyList<string> searchResults)
-    {
-        var chapterText = string.IsNullOrWhiteSpace(extraction.ChapterNumber) ? "an unspecified chapter" : extraction.ChapterNumber;
-        var resultsList = string.Join("\n", searchResults.Select(url => $"- {url}"));
-        var preferredHostLine = BuildPreferredHostLine(preferredHost, restrictToPreferredHost);
-        return
-            $"Find working links to read {extraction.SeriesName} ({extraction.MediaType}) at chapter {chapterText}.\n" +
-            $"The site {deadHost} is permanently offline - never return links on it.\n" +
-            "Here are raw web search results to choose from:\n" +
-            $"{resultsList}\n" +
-            preferredHostLine +
-            "Prefer direct reader pages (the chapter itself), then the series overview page.\n" +
-            "Avoid wikis, forums, Reddit, YouTube, social media, news, and store pages.\n" +
-            "Return JSON: {\"candidates\": [{\"url\": \"...\", \"why\": \"...\"}]} with at most 5 candidates,\n" +
-            "best first, chosen only from the results above.";
-    }
-
     private const string SystemPromptForCompound =
         "You are a research assistant that finds working alternative reading pages for manga/manhwa/manhua, " +
         "light novel, webnovel and anime bookmarks whose original site went offline. Always respond with the exact " +
         "JSON contract requested by the user, nothing else.";
-
-    private const string SystemPromptForRerank =
-        "You rerank a list of raw web search results to find the best alternative reading page for a manga/manhwa/manhua, " +
-        "light novel, webnovel or anime series. Always respond with the exact JSON contract requested by the user, nothing else.";
 
     private sealed record GroqChatRequest(
         [property: JsonPropertyName("model")] string Model,

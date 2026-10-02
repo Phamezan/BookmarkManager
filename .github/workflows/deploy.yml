@@ -19,6 +19,11 @@ jobs:
           cd /home/phamezan/BookmarkManager
           git fetch origin main
           git reset --hard origin/main
+          # Ensure the SearXNG service has a persistent secret. .env is untracked, so
+          # `git reset` above does not touch it; generate the secret once on first deploy.
+          if ! grep -qE '^SEARXNG_SECRET=.+' .env 2>/dev/null; then
+            printf '\nSEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
+          fi
           # Include the TLS overlay (https :8443 for the in-tab palette) only
           # when the Tailscale cert pair is present on the server.
           COMPOSE_FILES="-f docker-compose.yml"

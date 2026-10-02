@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -76,96 +77,72 @@ public class GroqCompoundSearchServiceTests
     }
 
     [Fact]
-    public async Task SearchAsync_FallsBackToDuckDuckGoAndRerank_WhenCompoundCallFails()
+    public async Task SearchAsync_FallsBackToSearxng_WhenCompoundCallFails()
     {
         var compoundCallCount = 0;
-        var rerankCallCount = 0;
 
-        var handler = new StubHttpMessageHandler(req =>
+        var handler = new StubHttpMessageHandler(_ =>
         {
-            var body = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? string.Empty;
-            if (body.Contains("groq/compound-mini"))
+            compoundCallCount++;
+            return new HttpResponseMessage(HttpStatusCode.InternalServerError)
             {
-                compoundCallCount++;
-                return new HttpResponseMessage(HttpStatusCode.InternalServerError)
-                {
-                    Content = new StringContent("compound model unavailable", Encoding.UTF8, "text/plain")
-                };
-            }
-
-            // Plain chat rerank call using GroqModel.
-            rerankCallCount++;
-            var json = "{\"choices\": [{\"message\": {\"content\": \"{\\\"candidates\\\": [{\\\"url\\\": \\\"https://asuracomic.net/series/solo-leveling/chapter-112\\\", \\\"why\\\": \\\"best match\\\"}]}\"}}]}";
-            return new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                Content = new StringContent(json, Encoding.UTF8, "application/json")
+                Content = new StringContent("compound model unavailable", Encoding.UTF8, "text/plain")
             };
         });
 
-        var httpClient = new HttpClient(handler);
-        var httpFactory = new StubHttpClientFactory(httpClient);
-        var settingsService = new StubAiTaggingSettingsService();
-        var duckDuckGo = new StubDuckDuckGoSearchService(new[]
+        var searxng = new StubSearxngSearchService(new[]
         {
             "https://asuracomic.net/series/solo-leveling/chapter-112",
             "https://www.reddit.com/r/manga/thread",
         });
 
-        var service = new GroqCompoundSearchService(httpFactory, settingsService, duckDuckGo, NullLogger<GroqCompoundSearchService>.Instance);
+        var service = new GroqCompoundSearchService(
+            new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), searxng, NullLogger<GroqCompoundSearchService>.Instance);
 
         var result = await service.SearchAsync(Extraction, "flamecomics.xyz", CancellationToken.None);
 
         Assert.Equal(1, compoundCallCount);
-        Assert.Equal(1, rerankCallCount);
-        Assert.True(duckDuckGo.WasCalled);
+        Assert.True(searxng.WasCalled);
         var candidate = Assert.Single(result);
         Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", candidate.Url);
     }
 
     [Fact]
-    public async Task SearchAsync_ReturnsUnrankedDuckDuckGoCandidates_WhenRerankAlsoFails()
-    {
-        var handler = new StubHttpMessageHandler(_ =>
-            new HttpResponseMessage(HttpStatusCode.InternalServerError)
-            {
-                Content = new StringContent("down", Encoding.UTF8, "text/plain")
-            });
-
-        var httpClient = new HttpClient(handler);
-        var httpFactory = new StubHttpClientFactory(httpClient);
-        var settingsService = new StubAiTaggingSettingsService();
-        var duckDuckGo = new StubDuckDuckGoSearchService(new[]
-        {
-            "https://asuracomic.net/series/solo-leveling/chapter-112",
-        });
-
-        var service = new GroqCompoundSearchService(httpFactory, settingsService, duckDuckGo, NullLogger<GroqCompoundSearchService>.Instance);
-
-        var result = await service.SearchAsync(Extraction, "flamecomics.xyz", CancellationToken.None);
-
-        var candidate = Assert.Single(result);
-        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", candidate.Url);
-    }
-
-    [Fact]
-    public async Task FilteredCompoundResults_FallBack_AndUnusableRerankPreservesRawCandidates()
+    public async Task SearchAsync_WhenCompoundSucceeds_SearxngIsNotCalled()
     {
         var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(new
-            {
-                choices = new[] { new { message = new { content = "{\"candidates\":[{\"url\":\"https://reddit.com/r/manga\"}]}" } } }
-            }))
+            Content = new StringContent(CompoundJson("https://asuracomic.net/series/solo-leveling/chapter-112"), Encoding.UTF8, "application/json")
         });
-        var ddg = new StubDuckDuckGoSearchService(["https://asuracomic.net/series/academy/chapter-51"]);
-        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), ddg, NullLogger<GroqCompoundSearchService>.Instance);
+        var searxng = new StubSearxngSearchService(new[] { "https://mangadex.org/title/abc" });
+        var service = new GroqCompoundSearchService(
+            new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), searxng, NullLogger<GroqCompoundSearchService>.Instance);
+
+        var result = await service.SearchAsync(Extraction, "flamecomics.xyz", CancellationToken.None);
+
+        Assert.False(searxng.WasCalled);
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result).Url);
+    }
+
+    [Fact]
+    public async Task FilteredCompoundResults_FallBackToSearxng()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(CompoundJson("https://reddit.com/r/manga"), Encoding.UTF8, "application/json")
+        });
+        var searxng = new StubSearxngSearchService(["https://asuracomic.net/series/academy/chapter-51"]);
+        var service = new GroqCompoundSearchService(
+            new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), searxng, NullLogger<GroqCompoundSearchService>.Instance);
+
         var result = await service.SearchAsync(Extraction, "www.webtoon.xyz", default);
-        Assert.True(ddg.WasCalled);
+
+        Assert.True(searxng.WasCalled);
         Assert.Equal("https://asuracomic.net/series/academy/chapter-51", Assert.Single(result).Url);
     }
 
     [Fact]
-    public async Task RetiredPublicCompoundModel_IsSkippedWithoutHttpCall()
+    public async Task RetiredPublicCompoundModel_IsSkippedWithoutHttpCall_ThenFallsBackToSearxng()
     {
         var calls = 0;
         var handler = new StubHttpMessageHandler(_ => { calls++; throw new InvalidOperationException("Should not call retired model"); });
@@ -173,12 +150,15 @@ public class GroqCompoundSearchServiceTests
         {
             GroqApiKey = "test", GroqBaseUrl = "https://api.groq.com/openai/v1", MigrationSearchModel = "groq/compound-mini"
         });
-        var ddg = new StubDuckDuckGoSearchService([]);
-        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), settings, ddg, NullLogger<GroqCompoundSearchService>.Instance);
+        var searxng = new StubSearxngSearchService(["https://asuracomic.net/series/solo-leveling/chapter-112"]);
+        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), settings, searxng, NullLogger<GroqCompoundSearchService>.Instance);
+
         var result = await service.SearchWithDiagnosticsAsync(Extraction, "www.webtoon.xyz", new(), default);
+
         Assert.Equal(0, calls);
-        Assert.True(ddg.WasCalled);
+        Assert.True(searxng.WasCalled);
         Assert.Contains("model decommissioned", result.Detail);
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result.Candidates).Url);
     }
 
     [Fact]
@@ -191,8 +171,11 @@ public class GroqCompoundSearchServiceTests
             response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromMinutes(1));
             return response;
         });
-        var service = new GroqCompoundSearchService(new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), new StubDuckDuckGoSearchService([]), NullLogger<GroqCompoundSearchService>.Instance, throttle);
+        var service = new GroqCompoundSearchService(
+            new StubHttpClientFactory(new HttpClient(handler)), new StubAiTaggingSettingsService(), new StubSearxngSearchService([]), NullLogger<GroqCompoundSearchService>.Instance, throttle);
+
         var result = await service.SearchWithDiagnosticsAsync(Extraction, "www.webtoon.xyz", new(), default);
+
         Assert.Contains("Groq compound: rate limited (HTTP 429)", result.Detail);
         // The recorded Retry-After must keep the next caller waiting; an already-cancelled token
         // proves the wait is cancellable without depending on a wall-clock sleep.
@@ -200,6 +183,28 @@ public class GroqCompoundSearchServiceTests
         timeout.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => throttle.AwaitThrottleAsync(1000, timeout.Token));
     }
+
+    [Fact]
+    public async Task MigrationSearch_NeverCallsDuckDuckGoOrYahoo()
+    {
+        // The DDG/Yahoo HTML scrapers are removed from the migration chain (production evidence:
+        // bot challenge + HTTP 500). This guards against silently reintroducing them: any call
+        // through the named DuckDuckGoTriage/YahooTriage clients would be recorded here.
+        var factory = new TrackingHttpClientFactory(name => name == nameof(GroqCompoundSearchService)
+            ? new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            : throw new InvalidOperationException($"Unexpected HTTP client '{name}'"));
+        var searxng = new StubSearxngSearchService(["https://asuracomic.net/series/solo-leveling/chapter-112"]);
+        var service = new GroqCompoundSearchService(factory, new StubAiTaggingSettingsService(), searxng, NullLogger<GroqCompoundSearchService>.Instance);
+
+        var result = await service.SearchAsync(Extraction, "webtoon.xyz", CancellationToken.None);
+
+        Assert.Equal("https://asuracomic.net/series/solo-leveling/chapter-112", Assert.Single(result).Url);
+        Assert.DoesNotContain("DuckDuckGoTriage", factory.CreatedClientNames);
+        Assert.DoesNotContain("YahooTriage", factory.CreatedClientNames);
+    }
+
+    private static string CompoundJson(string url) =>
+        System.Text.Json.JsonSerializer.Serialize(new { choices = new[] { new { message = new { content = $"{{\"candidates\":[{{\"url\":\"{url}\",\"why\":\"match\"}}]}}" } } } });
 
     private sealed class StubAiTaggingSettingsService : AiTaggingSettingsService
     {
@@ -218,17 +223,20 @@ public class GroqCompoundSearchServiceTests
             });
     }
 
-    private sealed class StubDuckDuckGoSearchService : IDuckDuckGoSearchService
+    private sealed class StubSearxngSearchService : ISearxngSearchService
     {
-        private readonly IReadOnlyList<string> _candidates;
+        private readonly IReadOnlyList<SearchCandidate> _candidates;
         public bool WasCalled { get; private set; }
 
-        public StubDuckDuckGoSearchService(IReadOnlyList<string> candidates) => _candidates = candidates;
+        public StubSearxngSearchService(IReadOnlyList<string> urls)
+            => _candidates = urls.Select(url => new SearchCandidate(url, null, null)).ToArray();
 
-        public Task<SearchOutcome<string>> SearchWithDiagnosticsAsync(string query, string deadDomain, SearchRunContext run, CancellationToken ct)
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+            SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+            string? preferredHost = null, bool restrictToPreferredHost = false)
         {
             WasCalled = true;
-            return Task.FromResult(new SearchOutcome<string>(_candidates, [new("HTML search", _candidates.Count, null)]));
+            return Task.FromResult(new SearchOutcome<SearchCandidate>(_candidates, [new("SearXNG", _candidates.Count, null)]));
         }
     }
 
@@ -237,6 +245,20 @@ public class GroqCompoundSearchServiceTests
         private readonly HttpClient _client;
         public StubHttpClientFactory(HttpClient client) => _client = client;
         public HttpClient CreateClient(string name) => _client;
+    }
+
+    private sealed class TrackingHttpClientFactory : IHttpClientFactory
+    {
+        private readonly Func<string, HttpResponseMessage> _responder;
+        public List<string> CreatedClientNames { get; } = [];
+
+        public TrackingHttpClientFactory(Func<string, HttpResponseMessage> responder) => _responder = responder;
+
+        public HttpClient CreateClient(string name)
+        {
+            CreatedClientNames.Add(name);
+            return new HttpClient(new StubHttpMessageHandler(_ => _responder(name)));
+        }
     }
 
     private sealed class StubHttpMessageHandler : HttpMessageHandler
