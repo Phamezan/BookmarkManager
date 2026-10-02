@@ -377,6 +377,141 @@ public class HttpCandidateVerificationServiceTests
         Assert.Contains("Cloudflare", result.Detail);
     }
 
+    [Fact]
+    public async Task VerifyAsync_PageSegment_IsNeverTreatedAsChapter()
+    {
+        var html = "<html><head><title>Nano Machine - Chapter 93 - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/nano-machine/chapter-93/page-127"),
+            Extraction("Nano Machine", "127"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.True(result.SeriesMatched);
+        Assert.False(result.ChapterMatched);
+        Assert.Contains("chapter mismatch", result.Detail);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ChapterSegment_MatchesItsOwnNumber()
+    {
+        var html = "<html><head><title>Nano Machine - Chapter 93 - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/nano-machine/chapter-93/page-127"),
+            Extraction("Nano Machine", "93"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.True(result.SeriesMatched);
+        Assert.True(result.ChapterMatched);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_ChapterZeroWithPageSegment_DoesNotMatchPageNumber()
+    {
+        var html = "<html><head><title>The Dark Magician Transmigrates After 66666 Years - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/the-dark-magician/chapter-0/page-94"),
+            Extraction("The Dark Magician Transmigrates After 66666 Years", "94"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.False(result.ChapterMatched);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_TitleChapterMarker_MatchesExpectedChapter()
+    {
+        var html = "<html><head><title>Nano Machine - Chapter 330 - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/nano-machine"),
+            Extraction("Nano Machine", "330"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.True(result.SeriesMatched);
+        Assert.True(result.ChapterMatched);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_TitleNumberWithoutChapterMarker_DoesNotMatch()
+    {
+        var html = "<html><head><title>Nano Machine - 330 views - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/nano-machine"),
+            Extraction("Nano Machine", "330"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.True(result.SeriesMatched);
+        Assert.False(result.ChapterMatched);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_PageOnlySegment_IsNotAChapter()
+    {
+        var html = "<html><head><title>Nano Machine - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/nano-machine/page/127"),
+            Extraction("Nano Machine", "127"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.True(result.SeriesMatched);
+        Assert.False(result.ChapterMatched);
+    }
+
+    [Fact]
+    public async Task VerifyAsync_DifferentSeriesWithChapterTitle_SeriesNotMatched()
+    {
+        // Regression for the "spooky-in-love accepted as High for The Former Supreme" bug:
+        // the URL names chapter 16 and the title carries "Chapter 16", but the series is wrong.
+        var html = "<html><head><title>Spooky in Love - Chapter 16 - Comizy</title></head><body></body></html>";
+        var service = CreateService(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(html, Encoding.UTF8, "text/html")
+        });
+
+        var result = await service.VerifyAsync(
+            Candidate("https://comizy.io/spooky-in-love/chapter-16"),
+            Extraction("The Former Supreme", "16"),
+            CancellationToken.None);
+
+        Assert.True(result.Reachable);
+        Assert.False(result.SeriesMatched);
+        Assert.Contains("series mismatch", result.Detail);
+    }
+
     private sealed class MockHttpClientFactory : IHttpClientFactory
     {
         private readonly HttpClient _client;

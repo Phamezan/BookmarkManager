@@ -73,6 +73,82 @@ public static partial class SeriesExtractionFallback
         return ExtractChapter(Uri.UnescapeDataString(uri.AbsolutePath));
     }
 
+    // Path segments that are structural markers, never the series slug itself.
+    private static readonly HashSet<string> PathMarkerSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "read", "manga", "manhwa", "manhua", "series", "book", "novel", "comic", "comics",
+        "watch", "anime", "view", "chapter", "ch", "episode", "ep", "page"
+    };
+
+    /// <summary>
+    /// Splits a bookmark's old URL path into the series slug and chapter number, for the direct
+    /// target-host rewrite. Handles the common reader shapes
+    /// <c>/read/{slug}/chapter-{n}/</c>, <c>/manga/{slug}/chapter-{n}/</c>, <c>/{slug}/chapter-{n}</c>,
+    /// a split <c>/{slug}/chapter/{n}</c>, trailing slashes and decimal chapters ("12.5"). Returns
+    /// false when the URL yields neither a slug nor a chapter. Pure and HTTP-free.
+    /// </summary>
+    public static bool TryParseSeriesSlugAndChapter(string? url, out string? slug, out string? chapter)
+    {
+        slug = null;
+        chapter = null;
+
+        if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        var segments = uri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return false;
+
+        var chapterIndex = -1;
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = Uri.UnescapeDataString(segments[i]);
+            var match = ChapterSegmentRegex().Match(segment);
+            if (match.Success)
+            {
+                chapter = match.Groups[1].Value;
+                chapterIndex = i;
+                break;
+            }
+
+            // Split form: "/chapter/12" (marker and number are separate segments).
+            if (i + 1 < segments.Length && IsChapterMarkerSegment(segment) && NumericSegmentRegex().IsMatch(segments[i + 1]))
+            {
+                chapter = segments[i + 1];
+                chapterIndex = i;
+                break;
+            }
+        }
+
+        // Slug is the nearest preceding non-marker, non-numeric segment (chapterIndex is the
+        // segment right after the slug in every common layout).
+        var slugSearchEnd = chapterIndex >= 0 ? chapterIndex : segments.Length;
+        for (var i = slugSearchEnd - 1; i >= 0; i--)
+        {
+            var segment = Uri.UnescapeDataString(segments[i]).Trim();
+            if (string.IsNullOrEmpty(segment) || PathMarkerSegments.Contains(segment) || NumericSegmentRegex().IsMatch(segment))
+                continue;
+
+            slug = segment;
+            break;
+        }
+
+        return slug != null || chapter != null;
+    }
+
+    private static bool IsChapterMarkerSegment(string segment) =>
+        segment.Equals("chapter", StringComparison.OrdinalIgnoreCase) ||
+        segment.Equals("ch", StringComparison.OrdinalIgnoreCase) ||
+        segment.Equals("episode", StringComparison.OrdinalIgnoreCase) ||
+        segment.Equals("ep", StringComparison.OrdinalIgnoreCase);
+
+    // "chapter-12", "ch_12.5", "c012", "ep-3" — the number is captured alone.
+    [GeneratedRegex(@"^(?:chapter|ch|episode|ep|c)[-_.]?0*(\d+(?:\.\d+)?)$", RegexOptions.IgnoreCase)]
+    private static partial Regex ChapterSegmentRegex();
+
+    [GeneratedRegex(@"^\d+(?:\.\d+)?$")]
+    private static partial Regex NumericSegmentRegex();
+
     private static string? ExtractChapter(string? source)
     {
         if (string.IsNullOrWhiteSpace(source))

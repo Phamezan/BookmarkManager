@@ -135,4 +135,44 @@ public sealed class SeriesExtractionFallbackTests
 
         Assert.Equal("SSS Class Suicide Hunter III", result.SeriesName);
     }
+
+    [Theory]
+    [InlineData("https://www.webtoon.xyz/read/nano-machine/chapter-330/", "nano-machine", "330")]
+    [InlineData("https://www.webtoon.xyz/manga/murim-psychopath/chapter-44/", "murim-psychopath", "44")]
+    [InlineData("https://comizy.io/nano-machine/chapter-330", "nano-machine", "330")]
+    [InlineData("https://www.webtoon.xyz/read/how-to-live-as-a-villain/chapter-37", "how-to-live-as-a-villain", "37")]
+    [InlineData("https://www.webtoon.xyz/read/omniscient-reader/chapter-112.5/", "omniscient-reader", "112.5")]
+    [InlineData("https://site.example/read/return-of-the-mount-hua-sect/chapter-180/page-2", "return-of-the-mount-hua-sect", "180")]
+    [InlineData("https://site.example/series/the-former-supreme/chapter/16", "the-former-supreme", "16")]
+    [InlineData("https://site.example/read/mob-psycho-100/chapter-5/", "mob-psycho-100", "5")]
+    public void TryParseSeriesSlugAndChapter_CommonShapes_ReturnsSlugAndChapter(
+        string url, string expectedSlug, string expectedChapter)
+    {
+        var parsed = SeriesExtractionFallback.TryParseSeriesSlugAndChapter(url, out var slug, out var chapter);
+
+        Assert.True(parsed);
+        Assert.Equal(expectedSlug, slug);
+        Assert.Equal(expectedChapter, chapter);
+    }
+
+    [Fact]
+    public void TryParseSeriesSlugAndChapter_SeriesPageOnly_ReturnsSlugWithoutChapter()
+    {
+        var parsed = SeriesExtractionFallback.TryParseSeriesSlugAndChapter(
+            "https://comizy.io/nano-machine", out var slug, out var chapter);
+
+        Assert.True(parsed);
+        Assert.Equal("nano-machine", slug);
+        Assert.Null(chapter);
+    }
+
+    [Fact]
+    public void TryParseSeriesSlugAndChapter_InvalidUrl_ReturnsFalse()
+    {
+        var parsed = SeriesExtractionFallback.TryParseSeriesSlugAndChapter("not a url", out var slug, out var chapter);
+
+        Assert.False(parsed);
+        Assert.Null(slug);
+        Assert.Null(chapter);
+    }
 }
