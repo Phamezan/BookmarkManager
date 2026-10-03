@@ -226,8 +226,17 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null, CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost, force, suggestedHost, pattern)));
 
-    public async Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, CancellationToken cancellationToken = default)
-        => await _apiClient.SendAsync<TargetHostDiscoveryResultDto>(HttpMethod.Post, "api/bookmarks/url-migration/discover-target", new DiscoverTargetHostRequest(deadHost, sampleSize), cancellationToken);
+    public async Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, List<string>? candidateHosts = null, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<TargetHostDiscoveryResultDto>(HttpMethod.Post, "api/bookmarks/url-migration/discover-target", new DiscoverTargetHostRequest(deadHost, sampleSize, candidateHosts), cancellationToken);
+
+    public async Task<List<string>> GetRejectedTargetHostsAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<List<string>>("api/bookmarks/url-migration/rejected-hosts", cancellationToken) ?? [];
+
+    public async Task<List<string>> RejectTargetHostAsync(string host, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<List<string>>(HttpMethod.Post, "api/bookmarks/url-migration/rejected-hosts", new RejectedTargetHostRequest(host), cancellationToken) ?? [];
+
+    public async Task<List<string>> UnrejectTargetHostAsync(string host, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<List<string>>(HttpMethod.Delete, $"api/bookmarks/url-migration/rejected-hosts/{Uri.EscapeDataString(host)}", null, cancellationToken) ?? [];
 
     public async Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/cancel", cancellationToken));

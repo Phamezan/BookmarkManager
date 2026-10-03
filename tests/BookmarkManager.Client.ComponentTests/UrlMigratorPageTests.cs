@@ -341,7 +341,7 @@ public sealed class UrlMigratorPageTests
         Assert.Contains("asuracomic.net", page.Markup);
         Assert.Contains("18/20 series", page.Markup);
 
-        page.Find(".migrator-use-suggestion-btn").Click();
+        page.Find(".migrator-accept-suggestion-btn").Click();
 
         page.WaitForAssertion(() =>
         {
@@ -349,6 +349,151 @@ public sealed class UrlMigratorPageTests
             Assert.Equal("asuracomic.net", targetInput.GetAttribute("value"));
         });
         Assert.Contains("Learned pattern", page.Markup);
+    }
+
+    [Fact]
+    public async Task SuggestionReject_RemovesRow_AndCallsReject()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto { IsRunning = false, RunId = null },
+            Bookmarks = [new BookmarkNodeDto { Id = Guid.NewGuid(), Title = "Dead", Url = "https://flamecomics.xyz/read/x/chapter-1/" }],
+            TargetHostDiscovery = new TargetHostDiscoveryResultDto
+            {
+                DeadHost = "flamecomics.xyz",
+                SampleSize = 20,
+                Suggestions =
+                [
+                    new TargetHostSuggestionDto { Host = "asuracomic.net", SeriesFound = 18, ChaptersFound = 16, SampleSize = 20 },
+                    new TargetHostSuggestionDto { Host = "kaiscans.com", SeriesFound = 12, ChaptersFound = 10, SampleSize = 20 }
+                ]
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+        TriggerDiscover(page);
+
+        page.WaitForAssertion(() => Assert.Equal(2, page.FindAll(".migrator-suggestion-row").Count));
+        var row = page.FindAll(".migrator-suggestion-row").First(r => r.GetAttribute("data-host") == "asuracomic.net");
+        row.QuerySelector(".migrator-reject-suggestion-btn")!.Click();
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Contains("asuracomic.net", fake.RejectedAdds);
+            Assert.Single(page.FindAll(".migrator-suggestion-row"));
+        });
+    }
+
+    [Fact]
+    public async Task RejectedHostChips_Render_AndUnrejectCallsDelete()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto { IsRunning = false, RunId = null },
+            RejectedHosts = ["bad.example"]
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-rejected-chip")));
+        Assert.Contains("bad.example", page.Markup);
+
+        page.Find(".migrator-rejected-chip .mud-chip-close-button, .migrator-rejected-chip .mud-icon-root").Click();
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Contains("bad.example", fake.RejectedRemoves);
+            Assert.Empty(page.FindAll(".migrator-rejected-chip"));
+        });
+    }
+
+    [Fact]
+    public async Task ZeroChapterSuggestion_ShowsSeriesOnlyLabel()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto { IsRunning = false, RunId = null },
+            Bookmarks = [new BookmarkNodeDto { Id = Guid.NewGuid(), Title = "Dead", Url = "https://flamecomics.xyz/read/x/chapter-1/" }],
+            TargetHostDiscovery = new TargetHostDiscoveryResultDto
+            {
+                DeadHost = "flamecomics.xyz",
+                SampleSize = 20,
+                Suggestions = [new TargetHostSuggestionDto { Host = "roliascan.com", SeriesFound = 9, ChaptersFound = 0, SampleSize = 20 }]
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+        TriggerDiscover(page);
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.NotEmpty(page.FindAll(".migrator-suggestion-row"));
+            Assert.Contains("series pages only", page.Markup);
+        });
+    }
+
+    [Fact]
+    public async Task TestAHost_SendsCandidateHost()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto { IsRunning = false, RunId = null },
+            Bookmarks = [new BookmarkNodeDto { Id = Guid.NewGuid(), Title = "Dead", Url = "https://flamecomics.xyz/read/x/chapter-1/" }],
+            TargetHostDiscovery = new TargetHostDiscoveryResultDto
+            {
+                DeadHost = "flamecomics.xyz",
+                SampleSize = 20,
+                Suggestions = [new TargetHostSuggestionDto { Host = "comizy.io", SeriesFound = 18, ChaptersFound = 18, SampleSize = 20 }]
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+        SelectManualHost(page);
+
+        page.Find(".migrator-test-host-field input").Input("comizy.io");
+        page.WaitForAssertion(() => Assert.False(page.Find(".migrator-test-host-btn").HasAttribute("disabled")));
+        page.Find(".migrator-test-host-btn").Click();
+
+        page.WaitForAssertion(() =>
+        {
+            Assert.Equal(["comizy.io"], fake.LastCandidateHosts);
+            Assert.NotEmpty(page.FindAll(".migrator-suggestion-row"));
+        });
+    }
+
+    private static void TriggerDiscover(IRenderedComponent<Bunit.Rendering.ContainerFragment> page)
+    {
+        SelectManualHost(page);
+        page.WaitForAssertion(() => Assert.False(page.Find(".migrator-suggest-target-btn").HasAttribute("disabled")));
+        page.Find(".migrator-suggest-target-btn").Click();
+    }
+
+    private static void SelectManualHost(IRenderedComponent<Bunit.Rendering.ContainerFragment> page)
+    {
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-manual-host-field input")));
+        page.Find(".migrator-manual-host-field input").Input("flamecomics.xyz");
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".mud-list-item")));
+        page.FindAll(".mud-list-item").First().Click();
     }
 
     private static UrlMigrationProposalDto MakeProposal(string title, string? proposedHost, string confidence) => new()
@@ -372,6 +517,8 @@ public sealed class UrlMigratorPageTests
         public List<Guid>? LastApprovedIds { get; private set; }
         public List<Guid> RejectedIds { get; } = [];
         public List<Guid> CancelledIds { get; } = [];
+        public List<string>? LastCandidateHosts { get; private set; }
+        public string? LastDiscoveryDeadHost { get; private set; }
         public bool UpdateBookmarkCalled { get; private set; }
         public (Guid Id, string Url)? ManualUrlSet { get; private set; }
         public int StatusCallCount { get; private set; }
@@ -382,6 +529,14 @@ public sealed class UrlMigratorPageTests
         {
             ResetCallCount++;
             return Task.FromResult(true);
+        }
+
+        public override Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(
+            string deadHost, int? sampleSize = null, List<string>? candidateHosts = null, CancellationToken cancellationToken = default)
+        {
+            LastDiscoveryDeadHost = deadHost;
+            LastCandidateHosts = candidateHosts;
+            return Task.FromResult(TargetHostDiscovery);
         }
 
         public override Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(new List<DeadDomainCandidateDto>());

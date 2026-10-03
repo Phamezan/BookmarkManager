@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text.RegularExpressions;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Infrastructure;
 using BookmarkManager.Api.Services.BookmarkTagging;
@@ -37,6 +38,11 @@ public sealed class TargetHostDiscoveryService
     public const int MaxSearchConcurrency = 3;
 
     public const int EarlyStopFailures = 8;
+
+    /// <summary>Most chapter links from a series page that will be verified when learning a
+    /// site's chapter URL shape. The series-page fetch itself is capped at one per series; this
+    /// only bounds the follow-up probes so a link-heavy page cannot blow the run's budget.</summary>
+    public const int MaxLearnedLinkProbes = 3;
 
     /// <summary>Overall wall-clock budget for one discovery. Discovery runs synchronously inside a
     /// request; the Blazor HttpClient gives up at 5 minutes, so this stops short of that and returns
@@ -75,6 +81,7 @@ public sealed class TargetHostDiscoveryService
     private readonly ITavilySearchService _tavily;
     private readonly AiTaggingSettingsService _settings;
     private readonly ICandidateVerificationService _verification;
+    private readonly RejectedTargetHostStore _rejectedHosts;
     private readonly ILogger<TargetHostDiscoveryService> _logger;
     private readonly int _configuredSampleSize;
     private readonly TimeSpan _discoveryBudget;
@@ -86,6 +93,7 @@ public sealed class TargetHostDiscoveryService
         ITavilySearchService tavily,
         AiTaggingSettingsService settings,
         ICandidateVerificationService verification,
+        RejectedTargetHostStore rejectedHosts,
         ILogger<TargetHostDiscoveryService> logger,
         IConfiguration? configuration = null,
         TimeSpan? discoveryBudget = null)
@@ -96,6 +104,7 @@ public sealed class TargetHostDiscoveryService
         _tavily = tavily ?? throw new ArgumentNullException(nameof(tavily));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _verification = verification ?? throw new ArgumentNullException(nameof(verification));
+        _rejectedHosts = rejectedHosts ?? throw new ArgumentNullException(nameof(rejectedHosts));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _discoveryBudget = discoveryBudget is { } custom && custom > TimeSpan.Zero ? custom : DiscoveryBudget;
 
@@ -106,7 +115,17 @@ public sealed class TargetHostDiscoveryService
         }
     }
 
-    public async Task<TargetHostDiscoveryResultDto> DiscoverAsync(string deadHost, int? sampleSize, CancellationToken ct)
+    public Task<TargetHostDiscoveryResultDto> DiscoverAsync(string deadHost, int? sampleSize, CancellationToken ct)
+        => DiscoverAsync(deadHost, sampleSize, candidateHosts: null, ct);
+
+    /// <summary>
+    /// Runs discovery for <paramref name="deadHost"/>. When <paramref name="candidateHosts"/> is
+    /// non-empty the search stage is skipped entirely (zero search credits) and only those hosts
+    /// are probed; rejected hosts are allowed here because typing one is an explicit "retest this"
+    /// instruction, and the row detail says so.
+    /// </summary>
+    public async Task<TargetHostDiscoveryResultDto> DiscoverAsync(
+        string deadHost, int? sampleSize, IReadOnlyList<string>? candidateHosts, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(deadHost);
         var resolvedSampleSize = Math.Clamp(sampleSize ?? _configuredSampleSize, MinSampleSize, MaxSampleSize);
@@ -139,7 +158,12 @@ public sealed class TargetHostDiscoveryService
             return new TargetHostDiscoveryResultDto { DeadHost = deadHost, Detail = PartialDetail };
         }
 
-        var discovery = await DiscoverHostsAsync(deadHost, sample, workCt, ct).ConfigureAwait(false);
+        var explicitHosts = NormalizeCandidateHosts(candidateHosts);
+        var rejected = await LoadRejectedHostsAsync(ct).ConfigureAwait(false);
+
+        var discovery = explicitHosts.Count > 0
+            ? BuildExplicitHostDiscovery(explicitHosts, sample)
+            : await DiscoverHostsAsync(deadHost, sample, rejected, workCt, ct).ConfigureAwait(false);
 
         var suggestions = new List<TargetHostSuggestionDto>();
         if (discovery.Tallies.Count > 0)
@@ -150,7 +174,9 @@ public sealed class TargetHostDiscoveryService
                 .Take(MaxHosts)
                 .ToList();
 
-            var probe = await ProbeHostsAsync(deadHost, topHosts, sample, discovery.SearchUrls, workCt, ct).ConfigureAwait(false);
+            var probe = await ProbeHostsAsync(
+                deadHost, topHosts, sample, discovery.SearchUrls, rejected, explicitHosts.Count > 0, workCt, ct)
+                .ConfigureAwait(false);
             suggestions = probe.Suggestions;
             discovery = discovery with { BudgetReached = discovery.BudgetReached || probe.BudgetReached };
         }
@@ -186,6 +212,64 @@ public sealed class TargetHostDiscoveryService
             Suggestions = suggestions,
             Detail = detail
         };
+    }
+
+    /// <summary>Normalizes a caller-supplied candidate host list to distinct bare hosts, in order.</summary>
+    internal static IReadOnlyList<string> NormalizeCandidateHosts(IReadOnlyList<string>? candidateHosts)
+    {
+        if (candidateHosts is null || candidateHosts.Count == 0)
+            return [];
+
+        var result = new List<string>(candidateHosts.Count);
+        foreach (var raw in candidateHosts)
+        {
+            var normalized = RejectedTargetHostStore.Normalize(raw);
+            if (string.IsNullOrEmpty(normalized))
+                continue;
+            if (!result.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+                result.Add(normalized);
+        }
+
+        return result;
+    }
+
+    private static HostDiscovery BuildExplicitHostDiscovery(
+        IReadOnlyList<string> hosts, IReadOnlyList<SampledSeries> sample)
+    {
+        // No search stage: every explicitly named host is tallied against every sampled series so
+        // it survives the top-5 selection and gets probed (explicit hosts numbered >5 are dropped
+        // by the same Take(MaxHosts) the search path uses).
+        var tallies = new Dictionary<string, HostTally>(StringComparer.OrdinalIgnoreCase);
+        foreach (var host in hosts)
+        {
+            var tally = new HostTally(host);
+            foreach (var series in sample)
+            {
+                tally.SeriesSeen.Add(series.Slug);
+            }
+
+            tallies[host] = tally;
+        }
+
+        return new HostDiscovery(tallies, new Dictionary<(string Host, string Slug), List<string>>(), 0, BudgetReached: false);
+    }
+
+    private async Task<IReadOnlySet<string>> LoadRejectedHostsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var hosts = await _rejectedHosts.GetHostsAsync(ct).ConfigureAwait(false);
+            return new HashSet<string>(hosts, StringComparer.OrdinalIgnoreCase);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load rejected target hosts; continuing without them.");
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
     }
 
     private static TargetHostDiscoveryResultDto Empty(string deadHost, string detail) => new()
@@ -278,7 +362,8 @@ public sealed class TargetHostDiscoveryService
     }
 
     private async Task<HostDiscovery> DiscoverHostsAsync(
-        string deadHost, IReadOnlyList<SampledSeries> sample, CancellationToken workCt, CancellationToken callerCt)
+        string deadHost, IReadOnlyList<SampledSeries> sample, IReadOnlySet<string> rejectedHosts,
+        CancellationToken workCt, CancellationToken callerCt)
     {
         var tallies = new ConcurrentDictionary<string, HostTally>(StringComparer.OrdinalIgnoreCase);
         var searchUrls = new ConcurrentDictionary<(string Host, string Slug), List<string>>();
@@ -304,7 +389,7 @@ public sealed class TargetHostDiscoveryService
                     // Free provider first. Tavily is paid (1 credit/call), so it is only consulted
                     // when SearXNG yielded no usable reader host for this series.
                     var searxng = await _searxng.SearchWithDiagnosticsAsync(extraction, deadHost, run, token, queryOverride: query).ConfigureAwait(false);
-                    var hosts = ExtractUsableHosts(searxng.Candidates, deadHost);
+                    var hosts = ExtractUsableHosts(searxng.Candidates, deadHost, rejectedHosts);
                     var viaTavily = false;
 
                     if (hosts.Count == 0 && tavilyConfigured)
@@ -317,7 +402,7 @@ public sealed class TargetHostDiscoveryService
                             Interlocked.Increment(ref tavilyCalls);
                         }
 
-                        hosts = ExtractUsableHosts(tavily.Candidates, deadHost);
+                        hosts = ExtractUsableHosts(tavily.Candidates, deadHost, rejectedHosts);
                     }
 
                     foreach (var (host, urls) in hosts)
@@ -371,13 +456,20 @@ public sealed class TargetHostDiscoveryService
     /// real providers already did, which keeps fakes/tests honest and defense-in-depth.
     /// </summary>
     private static Dictionary<string, List<string>> ExtractUsableHosts(
-        IReadOnlyList<SearchCandidate> candidates, string deadHost)
+        IReadOnlyList<SearchCandidate> candidates, string deadHost, IReadOnlySet<string> rejectedHosts)
     {
         var filtered = SearchCandidateFilter.Filter(candidates, deadHost, maxResults: int.MaxValue);
         var hosts = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var candidate in filtered)
         {
             if (!Uri.TryCreate(candidate.Url, UriKind.Absolute, out var uri))
+            {
+                continue;
+            }
+
+            // A rejected host never enters the tally, so it is never probed and the next host
+            // fills the freed top-5 slot.
+            if (rejectedHosts.Contains(RejectedTargetHostStore.Normalize(uri.Host)))
             {
                 continue;
             }
@@ -399,6 +491,8 @@ public sealed class TargetHostDiscoveryService
         IReadOnlyList<HostTally> hosts,
         IReadOnlyList<SampledSeries> sample,
         Dictionary<(string Host, string Slug), List<string>> searchUrls,
+        IReadOnlySet<string> rejectedHosts,
+        bool explicitHosts,
         CancellationToken workCt,
         CancellationToken callerCt)
     {
@@ -468,6 +562,8 @@ public sealed class TargetHostDiscoveryService
             }
 
             var source = hosts.First(h => string.Equals(h.Host, tally.Host, StringComparison.OrdinalIgnoreCase));
+            var retestedRejection = explicitHosts &&
+                rejectedHosts.Contains(RejectedTargetHostStore.Normalize(tally.Host));
             suggestions.Add(new TargetHostSuggestionDto
             {
                 Host = tally.Host,
@@ -476,7 +572,7 @@ public sealed class TargetHostDiscoveryService
                 SampleSize = sample.Count,
                 BestPattern = BestPattern(tally.PatternHits),
                 SearchCreditsUsed = source.SeriesViaTavily.Count,
-                Detail = BuildDetail(tally)
+                Detail = BuildDetail(tally, retestedRejection)
             });
         }
 
@@ -486,7 +582,7 @@ public sealed class TargetHostDiscoveryService
     private async Task<ProbeOutcome> ProbeSeriesAsync(
         string host, SampledSeries series, string deadHost, IReadOnlyList<string> searchUrls, CancellationToken ct)
     {
-        var seriesOnlyEvidence = false;
+        string? seriesOnlyUrl = null;
 
         // URLs the search actually returned for this host+series are the strongest evidence.
         foreach (var url in searchUrls)
@@ -504,7 +600,7 @@ public sealed class TargetHostDiscoveryService
 
             if (result is { Reachable: true, SeriesMatched: true })
             {
-                seriesOnlyEvidence = true;
+                seriesOnlyUrl ??= url;
             }
         }
 
@@ -524,26 +620,171 @@ public sealed class TargetHostDiscoveryService
 
             if (result is { Reachable: true, SeriesMatched: true })
             {
-                seriesOnlyEvidence = true;
+                seriesOnlyUrl ??= url;
             }
         }
 
-        if (seriesOnlyEvidence)
+        if (seriesOnlyUrl is null)
         {
-            return new ProbeOutcome(true, false, null);
-        }
-
-        foreach (var pattern in SeriesPatterns)
-        {
-            var url = BuildProbeUrl(host, pattern, series);
-            var result = await VerifyProbeAsync(url, series, deadHost, ct).ConfigureAwait(false);
-            if (result is { Reachable: true, SeriesMatched: true })
+            foreach (var pattern in SeriesPatterns)
             {
-                return new ProbeOutcome(true, false, null);
+                var url = BuildProbeUrl(host, pattern, series);
+                var result = await VerifyProbeAsync(url, series, deadHost, ct).ConfigureAwait(false);
+                if (result is { Reachable: true, SeriesMatched: true })
+                {
+                    seriesOnlyUrl = url;
+                    break;
+                }
             }
         }
 
-        return new ProbeOutcome(false, false, null);
+        if (seriesOnlyUrl is null)
+        {
+            return new ProbeOutcome(false, false, null);
+        }
+
+        // The series page verified but no guessed chapter shape did. Read that one page and pick a
+        // same-host link whose path names the sampled chapter, so a site with a non-obvious scheme
+        // still counts as a chapter match (and yields a usable pattern).
+        var learned = await TryLearnChapterFromSeriesPageAsync(host, series, deadHost, seriesOnlyUrl, ct)
+            .ConfigureAwait(false);
+        return learned ?? new ProbeOutcome(true, false, null);
+    }
+
+    /// <summary>
+    /// Fetches a verified series page once (through the verification service's capped HTTP client),
+    /// keeps same-host links whose path chapter equals the sampled chapter (reusing
+    /// <see cref="HttpCandidateVerificationService.IsChapterMatch"/> so a <c>/page/N</c> segment
+    /// never counts), and verifies the best candidate. Returns null when nothing verifies.
+    /// </summary>
+    private async Task<ProbeOutcome?> TryLearnChapterFromSeriesPageAsync(
+        string host, SampledSeries series, string deadHost, string seriesPageUrl, CancellationToken ct)
+    {
+        if (!Uri.TryCreate(seriesPageUrl, UriKind.Absolute, out var seriesUri))
+        {
+            return null;
+        }
+
+        IReadOnlyList<string> links;
+        try
+        {
+            links = await _verification.DiscoverPageLinksAsync(seriesPageUrl, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Series-page link discovery failed for {Url}", seriesPageUrl);
+            return null;
+        }
+
+        var candidates = new List<(string Link, string? Pattern)>();
+        foreach (var link in links)
+        {
+            if (!Uri.TryCreate(link, UriKind.Absolute, out var linkUri) ||
+                (linkUri.Scheme != Uri.UriSchemeHttp && linkUri.Scheme != Uri.UriSchemeHttps))
+            {
+                continue;
+            }
+
+            // Same host as the series page, and never a private/noise/dead address (the fake in
+            // tests returns raw links, so this is the only guard for the SSRF surface here).
+            if (!linkUri.Host.Equals(seriesUri.Host, StringComparison.OrdinalIgnoreCase) ||
+                SearchCandidateFilter.Filter([new SearchCandidate(link, null, null)], deadHost, maxResults: 1).Count == 0)
+            {
+                continue;
+            }
+
+            if (!HttpCandidateVerificationService.IsChapterMatch(series.Chapter, linkUri, null))
+            {
+                continue;
+            }
+
+            candidates.Add((link, DerivePatternFromUrl(link, series)));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        // Prefer a link that names the slug (so a reusable {slug}/{n} pattern falls out), then the
+        // shortest URL; a link with an opaque id still counts as a chapter but has no pattern.
+        var ordered = candidates
+            .OrderByDescending(c => c.Pattern is not null)
+            .ThenBy(c => c.Link.Length)
+            .Take(MaxLearnedLinkProbes)
+            .ToList();
+
+        foreach (var (link, pattern) in ordered)
+        {
+            ct.ThrowIfCancellationRequested();
+            var result = await VerifyProbeAsync(link, series, deadHost, ct).ConfigureAwait(false);
+            if (result is { Reachable: true, SeriesMatched: true, ChapterMatched: true })
+            {
+                return new ProbeOutcome(true, true, pattern);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>True when a series page URL is on the same host as the candidate (case-insensitive).</summary>
+    internal static bool SameHost(string a, string b)
+        => Uri.TryCreate(a, UriKind.Absolute, out var ua) &&
+           Uri.TryCreate(b, UriKind.Absolute, out var ub) &&
+           ua.Host.Equals(ub.Host, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Builds a <c>{slug}</c>/<c>{n}</c> template from a picked chapter link when both the series
+    /// slug and the chapter number appear literally in its path; otherwise null (the link has an
+    /// id/hash instead of the slug).
+    /// </summary>
+    internal static string? DerivePatternFromUrl(string url, SampledSeries series)
+    {
+        if (string.IsNullOrWhiteSpace(series.Slug) || string.IsNullOrWhiteSpace(series.Chapter) ||
+            !Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var path = uri.AbsolutePath;
+
+        // Replace only the numeric token of a chapter-marker segment that equals the sampled
+        // chapter, leaving the marker ("chapter-") in place.
+        var replaced = ChapterSegmentTokenRegex.Replace(path, match =>
+            ChapterValuesEqual(match.Groups["num"].Value, series.Chapter)
+                ? match.Groups["marker"].Value + "{n}"
+                : match.Value);
+
+        if (!replaced.Contains("{n}", StringComparison.Ordinal) ||
+            !replaced.Contains(series.Slug, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return replaced.Replace(series.Slug, "{slug}", StringComparison.Ordinal);
+    }
+
+    // Matches the numeric part of a chapter-marker path segment, bounded by path separators so it
+    // cannot bleed into the slug. Captures all leading zeros so the whole token is replaceable.
+    private static readonly Regex ChapterSegmentTokenRegex = new(
+        @"(?<=/|^)(?<marker>(?:chapter|ch|episode|ep|c)[-_.]?)(?<num>\d+(?:\.\d+)?)(?=/|$)",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static bool ChapterValuesEqual(string found, string expected)
+    {
+        if (decimal.TryParse(found, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var foundValue) &&
+            decimal.TryParse(expected, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.InvariantCulture, out var expectedValue))
+        {
+            return foundValue == expectedValue;
+        }
+
+        return string.Equals(found.Trim(), expected.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<VerificationResult?> VerifyProbeAsync(
@@ -596,14 +837,18 @@ public sealed class TargetHostDiscoveryService
             string.Equals(BuildProbePath(pattern, series), uri.AbsolutePath, StringComparison.Ordinal));
     }
 
-    /// <summary>Most-hit chapter template; ties resolve to the earliest template in preference order.</summary>
+    /// <summary>
+    /// Most-hit chapter template. Ties resolve to the earliest built-in template in preference
+    /// order, then alphabetically for learned (non-built-in) templates.
+    /// </summary>
     internal static string? BestPattern(IReadOnlyDictionary<string, int> patternHits)
     {
         string? best = null;
         var bestHits = 0;
-        foreach (var pattern in ChapterPatterns)
+        foreach (var (pattern, hits) in patternHits)
         {
-            if (patternHits.TryGetValue(pattern, out var hits) && hits > bestHits)
+            if (hits > bestHits ||
+                (hits == bestHits && best is not null && ComparePatternPreference(pattern, best) < 0))
             {
                 best = pattern;
                 bestHits = hits;
@@ -613,10 +858,38 @@ public sealed class TargetHostDiscoveryService
         return best;
     }
 
-    private static string BuildDetail(ProbeTally tally)
+    private static int ComparePatternPreference(string left, string right)
+    {
+        var leftRank = PatternPreference(left);
+        var rightRank = PatternPreference(right);
+        var byRank = leftRank.CompareTo(rightRank);
+        return byRank != 0 ? byRank : string.CompareOrdinal(left, right);
+    }
+
+    private static int PatternPreference(string pattern)
+    {
+        for (var i = 0; i < ChapterPatterns.Count; i++)
+        {
+            if (string.Equals(ChapterPatterns[i], pattern, StringComparison.Ordinal))
+            {
+                return i;
+            }
+        }
+
+        return ChapterPatterns.Count;
+    }
+
+    private static string BuildDetail(ProbeTally tally, bool retestedRejection)
     {
         var detail = $"Verified {tally.SeriesFound.Count} series, {tally.ChaptersFound.Count} chapters.";
-        return tally.EarlyStopped ? detail + " Stopped probing early (most sampled series failed here)." : detail;
+        if (tally.EarlyStopped)
+        {
+            detail += " Stopped probing early (most sampled series failed here).";
+        }
+
+        return retestedRejection
+            ? detail + " Previously rejected — retested because you named it explicitly."
+            : detail;
     }
 
     private static bool HostMatches(string url, string deadHost)

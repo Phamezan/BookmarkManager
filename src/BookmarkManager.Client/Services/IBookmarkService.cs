@@ -58,7 +58,10 @@ public interface IBookmarkService
     // ── URL Migrator ──────────────────────────────────────────────────────
     Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default);
     Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null, CancellationToken cancellationToken = default);
-    Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, CancellationToken cancellationToken = default);
+    Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, List<string>? candidateHosts = null, CancellationToken cancellationToken = default);
+    Task<List<string>> GetRejectedTargetHostsAsync(CancellationToken cancellationToken = default);
+    Task<List<string>> RejectTargetHostAsync(string host, CancellationToken cancellationToken = default);
+    Task<List<string>> UnrejectTargetHostAsync(string host, CancellationToken cancellationToken = default);
     Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     Task<bool> ResetUrlMigrationAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
     Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default);

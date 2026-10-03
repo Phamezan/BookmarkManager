@@ -111,6 +111,21 @@
                            Class="migrator-suggest-target-btn">
                     @(_discovering ? "Searching..." : "Suggest target")
                 </MudButton>
+                <MudTextField @bind-Value="_testHost"
+                              Label="Test a host"
+                              Placeholder="e.g. comizy.io"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              Disabled="@(IsRunning || _starting || _discovering)"
+                              Class="migrator-test-host-field" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Info"
+                           StartIcon="@Icons.Material.Filled.Science"
+                           OnClick="TestHostAsync"
+                           Disabled="@(IsRunning || _starting || _discovering || string.IsNullOrWhiteSpace(_manualHost) || string.IsNullOrWhiteSpace(_testHost))"
+                           Class="migrator-test-host-btn">
+                    Test a host
+                </MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            OnClick="StartMigrationFromFieldAsync"
@@ -140,6 +155,12 @@
             }
             else if (_suggestions.Count > 0)
             {
+                @if (_discoveryPartial)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true" Class="migrator-partial-warning">
+                        Partial results — the discovery time budget was reached before every sampled series could be probed.
+                    </MudAlert>
+                }
                 <MudSimpleTable Dense="true" Class="migrator-suggestions-table">
                     <thead>
                         <tr>
@@ -155,17 +176,30 @@
                         {
                             <tr class="migrator-suggestion-row" data-host="@suggestion.Host">
                                 <td class="migrator-host-cell">@suggestion.Host</td>
-                                <td>@suggestion.SeriesFound/@suggestion.SampleSize series, @suggestion.ChaptersFound chapters</td>
+                                <td>
+                                    @suggestion.SeriesFound/@suggestion.SampleSize series, @suggestion.ChaptersFound chapters
+                                    @if (suggestion.ChaptersFound == 0)
+                                    {
+                                        <span class="migrator-series-only-label" title="Series pages verified, but no chapter URL">series pages only</span>
+                                    }
+                                </td>
                                 <td>@(suggestion.BestPattern ?? "—")</td>
                                 <td>@suggestion.SearchCreditsUsed</td>
-                                <td>
-                                    <MudButton Variant="Variant.Text"
-                                               Color="Color.Primary"
-                                               Size="Size.Small"
-                                               Class="migrator-use-suggestion-btn"
-                                               OnClick="@(() => UseSuggestion(suggestion))">
-                                        Use this
-                                    </MudButton>
+                                <td class="migrator-suggestion-actions">
+                                    <MudTooltip Text="Use as target">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Check"
+                                                       Color="Color.Success"
+                                                       Size="Size.Small"
+                                                       Class="migrator-accept-suggestion-btn"
+                                                       OnClick="@(() => AcceptSuggestion(suggestion))" />
+                                    </MudTooltip>
+                                    <MudTooltip Text="Never suggest again">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       Class="migrator-reject-suggestion-btn"
+                                                       OnClick="@(() => RejectSuggestionAsync(suggestion))" />
+                                    </MudTooltip>
                                 </td>
                             </tr>
                         }
@@ -177,6 +211,26 @@
                 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="migrator-discovery-message">
                     @_discoveryMessage
                 </MudAlert>
+            }
+
+            @if (_rejectedHosts.Count > 0)
+            {
+                <div class="migrator-rejected-hosts">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Never suggest again:</MudText>
+                    <MudStack Row="true" Spacing="1" Class="migrator-rejected-chips">
+                        @foreach (var host in _rejectedHosts)
+                        {
+                            <MudChip T="string"
+                                     Size="Size.Small"
+                                     Variant="Variant.Outlined"
+                                     Color="Color.Default"
+                                     Class="migrator-rejected-chip"
+                                     OnClose="@(() => UnrejectHostAsync(host))">
+                                @host
+                            </MudChip>
+                        }
+                    </MudStack>
+                </div>
             }
         </MudStack>
     </MudPaper>

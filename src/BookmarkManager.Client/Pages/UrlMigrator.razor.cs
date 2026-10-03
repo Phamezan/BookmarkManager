@@ -18,6 +18,7 @@ public partial class UrlMigrator : IDisposable
     private const string StatusApproved = "Approved";
     private const string ConfidenceHigh = "High";
     private const string ConfidenceUnresolved = "Unresolved";
+    private const string DiscoveryPartialDetail = "partial: time budget reached";
 
     private List<DeadDomainCandidateDto> _deadDomains = [];
     private bool _loadingDeadDomains;
@@ -26,8 +27,11 @@ public partial class UrlMigrator : IDisposable
     private string _manualHost = string.Empty;
     private string _suggestedTargetHost = string.Empty;
     private string? _suggestedTargetPattern;
+    private string _testHost = string.Empty;
     private bool _discovering;
+    private bool _discoveryPartial;
     private List<TargetHostSuggestionDto> _suggestions = [];
+    private List<string> _rejectedHosts = [];
     private string? _discoveryMessage;
     private bool _starting;
     private bool _canceling;
@@ -42,6 +46,7 @@ public partial class UrlMigrator : IDisposable
     protected override async Task OnInitializedAsync()
     {
         await LoadDeadDomainsAsync();
+        await LoadRejectedHostsAsync();
         await RefreshStatusAsync();
 
         if (IsRunning)
@@ -104,6 +109,7 @@ public partial class UrlMigrator : IDisposable
 
         _discovering = true;
         _discoveryMessage = null;
+        _discoveryPartial = false;
         _suggestions = [];
         try
         {
@@ -114,11 +120,7 @@ public partial class UrlMigrator : IDisposable
                 return;
             }
 
-            _suggestions = result.Suggestions;
-            if (_suggestions.Count == 0)
-            {
-                _discoveryMessage = result.Detail ?? "No replacement host verified enough sampled series.";
-            }
+            ApplyDiscoveryResult(result);
         }
         catch (Exception ex)
         {
@@ -130,11 +132,104 @@ public partial class UrlMigrator : IDisposable
         }
     }
 
-    private void UseSuggestion(TargetHostSuggestionDto suggestion)
+    // "Test a host": skips search (0 credits) and probes only the named host against the sample,
+    // so the user can verify a specific candidate before starting a run.
+    private async Task TestHostAsync()
+    {
+        var host = NormalizeHost(_manualHost);
+        if (!IsValidHost(host))
+        {
+            Snackbar.Add("Enter the dead host first (e.g. flamecomics.xyz).", Severity.Warning);
+            return;
+        }
+
+        var candidate = NormalizeHost(_testHost);
+        if (!IsValidHost(candidate))
+        {
+            Snackbar.Add("Enter a valid host to test (e.g. comizy.io).", Severity.Warning);
+            return;
+        }
+
+        _discovering = true;
+        _discoveryMessage = null;
+        _discoveryPartial = false;
+        _suggestions = [];
+        try
+        {
+            var result = await BookmarkService.DiscoverTargetHostAsync(host, null, [candidate]);
+            if (result == null)
+            {
+                _discoveryMessage = "Target discovery returned no result.";
+                return;
+            }
+
+            ApplyDiscoveryResult(result);
+        }
+        catch (Exception ex)
+        {
+            _discoveryMessage = $"Testing {candidate} failed: {ex.Message}";
+        }
+        finally
+        {
+            _discovering = false;
+        }
+    }
+
+    private void ApplyDiscoveryResult(TargetHostDiscoveryResultDto result)
+    {
+        _suggestions = result.Suggestions;
+        _discoveryPartial = string.Equals(result.Detail, DiscoveryPartialDetail, StringComparison.Ordinal);
+        _discoveryMessage = _suggestions.Count == 0
+            ? result.Detail ?? "No replacement host verified enough sampled series."
+            : null;
+    }
+
+    private async Task LoadRejectedHostsAsync()
+    {
+        try
+        {
+            _rejectedHosts = await BookmarkService.GetRejectedTargetHostsAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load rejected hosts: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private void AcceptSuggestion(TargetHostSuggestionDto suggestion)
     {
         _suggestedTargetHost = suggestion.Host;
         _suggestedTargetPattern = suggestion.BestPattern;
         Snackbar.Add($"Target set to {suggestion.Host}.", Severity.Success);
+    }
+
+    private async Task RejectSuggestionAsync(TargetHostSuggestionDto suggestion)
+    {
+        try
+        {
+            _rejectedHosts = await BookmarkService.RejectTargetHostAsync(suggestion.Host);
+            _suggestions.RemoveAll(s => string.Equals(s.Host, suggestion.Host, StringComparison.OrdinalIgnoreCase));
+            Snackbar.Add($"{suggestion.Host} will never be suggested again.", Severity.Info);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to reject {suggestion.Host}: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task UnrejectHostAsync(string host)
+    {
+        try
+        {
+            _rejectedHosts = await BookmarkService.UnrejectTargetHostAsync(host);
+            Snackbar.Add($"{host} can be suggested again.", Severity.Info);
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to un-reject {host}: {ex.Message}", Severity.Error);
+        }
     }
 
     private async Task<IEnumerable<string>> SearchHostsAsync(string? value, CancellationToken cancellationToken)
