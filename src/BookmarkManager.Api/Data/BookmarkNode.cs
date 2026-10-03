@@ -13,6 +13,7 @@ public class BookmarkNode
     public bool IsProtected { get; set; }
     public SyncState SyncState { get; set; }
     public int Version { get; set; }
+    public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string? Category { get; set; }
     public string? Status { get; set; }

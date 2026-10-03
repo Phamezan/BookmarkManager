@@ -7,16 +7,34 @@
     };
 
     window.ensurePaletteInfiniteScroll = function (dotNetRef) {
+        if (dotNetRef) dotNetHelper = dotNetRef;
         const el = document.getElementById('paletteList');
-        if (!el || el.dataset.bmInfiniteScroll === '1') return;
-        el.dataset.bmInfiniteScroll = '1';
-        el.addEventListener('scroll', function () {
-            if (el.scrollTop + el.clientHeight < el.scrollHeight - 72) return;
-            if (dotNetRef) {
-                dotNetRef.invokeMethodAsync('LoadMoreFromScroll');
-            }
-        }, { passive: true });
+        if (!el) return;
+
+        if (el.dataset.bmInfiniteScroll !== '1') {
+            el.dataset.bmInfiniteScroll = '1';
+            el.addEventListener('scroll', function () {
+                maybeLoadMore(el);
+            }, { passive: true });
+        }
+
+        // Re-evaluate after every render: a first page that doesn't fill the list
+        // must still pull the next page, and a short list shouldn't require a scroll.
+        requestAnimationFrame(function () { maybeLoadMore(el); });
     };
+
+    function maybeLoadMore(el) {
+        if (!dotNetHelper) return;
+        // Small near-bottom threshold (just over the pre-existing 72px) so a 10-item
+        // page streams the next one in before the user hits the hard bottom, without
+        // auto-fetching page 2 the moment the first page renders.
+        const threshold = 80;
+        const nearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - threshold;
+        const notScrollable = el.scrollHeight <= el.clientHeight + 4;
+        if (nearBottom || notScrollable) {
+            dotNetHelper.invokeMethodAsync('LoadMoreFromScroll');
+        }
+    }
 
     // Ctrl+P / Cmd+P global trigger moved to keyboard-shortcuts.js: CommandPalette
     // registers it via KeyboardShortcutService (context "global") so there's one

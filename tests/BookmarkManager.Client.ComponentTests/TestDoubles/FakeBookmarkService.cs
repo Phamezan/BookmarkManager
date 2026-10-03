@@ -12,6 +12,8 @@ public class FakeBookmarkService : IBookmarkService
     public List<FolderTreeNodeDto> FolderTree { get; set; } = [];
     public AnimeCalendarScheduleResponse ScheduleResponse { get; set; } = new();
     public List<BookmarkNodeDto> Bookmarks { get; set; } = [];
+    public List<SearchRequest> SearchRequests { get; } = [];
+    public Func<SearchRequest, CancellationToken, Task<PagedResult<BookmarkNodeDto>>>? OnSearchBookmarks { get; set; }
     public List<BookmarkNodeDto> DeletedBookmarks { get; set; } = [];
     public List<BookmarkNodeDto> Favorites { get; set; } = [];
     public List<BookmarkNodeDto> Recommendations { get; set; } = [];
@@ -53,7 +55,14 @@ public class FakeBookmarkService : IBookmarkService
     public Guid? LastBookmarkFolderId { get; private set; }
     public Guid? LastTagsFolderId { get; private set; }
 
-    public Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default) => Task.FromResult(FolderTree);
+    public int GetFolderTreeCallCount { get; private set; }
+    public Func<CancellationToken, Task<List<FolderTreeNodeDto>>>? OnGetFolderTree { get; set; }
+
+    public Task<List<FolderTreeNodeDto>> GetFolderTreeAsync(CancellationToken cancellationToken = default)
+    {
+        GetFolderTreeCallCount++;
+        return OnGetFolderTree != null ? OnGetFolderTree(cancellationToken) : Task.FromResult(FolderTree);
+    }
 
     public Task<TagExplainResponse> GetTagExplainAsync(string title, string? url, string? domain, string? compareTo = null, int topN = 10, CancellationToken cancellationToken = default)
         => Task.FromResult(new TagExplainResponse(
@@ -81,7 +90,13 @@ public class FakeBookmarkService : IBookmarkService
         LastBookmarkFolderId = parentId;
         return Task.FromResult(Bookmarks);
     }
-    public Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default) => Task.FromResult(new PagedResult<BookmarkNodeDto> { Items = Bookmarks });
+    public Task<PagedResult<BookmarkNodeDto>> SearchBookmarksAsync(SearchRequest request, CancellationToken cancellationToken = default)
+    {
+        SearchRequests.Add(request);
+        return OnSearchBookmarks != null
+            ? OnSearchBookmarks(request, cancellationToken)
+            : Task.FromResult(new PagedResult<BookmarkNodeDto> { Items = Bookmarks });
+    }
     public Task<BookmarkNodeDto?> GetBookmarkAsync(Guid id, CancellationToken cancellationToken = default)
         => Task.FromResult(Bookmarks.FirstOrDefault(b => b.Id == id) ?? DeletedBookmarks.FirstOrDefault(b => b.Id == id));
     

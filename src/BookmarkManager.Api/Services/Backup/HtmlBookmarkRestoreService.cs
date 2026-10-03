@@ -180,6 +180,7 @@ public sealed class HtmlBookmarkRestoreService(AppDbContext db, IBackupService b
             Position = position,
             SyncState = SyncState.Pending,
             Version = 1,
+            CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             ParentBrowserNodeId = parentBrowserNodeId
         };

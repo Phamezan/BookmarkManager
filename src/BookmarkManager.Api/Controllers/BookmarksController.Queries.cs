@@ -166,6 +166,7 @@ public partial class BookmarksController
             Position = maxPosRoot + 1,
             SyncState = SyncState.Pending,
             Version = 1,
+            CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
         _db.BookmarkNodes.Add(archiveFolder);

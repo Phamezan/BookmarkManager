@@ -141,6 +141,7 @@ public sealed class BookmarkStatusProjectionService : IBookmarkStatusProjectionS
             Position = maxPos + 1,
             SyncState = SyncState.Pending,
             Version = 1,
+            CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
         _db.BookmarkNodes.Add(newFolder);

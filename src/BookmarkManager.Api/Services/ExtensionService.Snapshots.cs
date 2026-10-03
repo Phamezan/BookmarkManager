@@ -183,6 +183,7 @@ public sealed partial class ExtensionService
                     IsProtected = node.IsProtected,
                     SyncState = SyncState.Synced,
                     Version = node.Version,
+                    CreatedAt = DateTime.UtcNow,
                     UpdatedAt = effectiveTimestamp,
                     IsDeleted = node.IsDeleted,
                     DeletedAt = node.DeletedAt,
