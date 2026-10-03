@@ -157,36 +157,33 @@ public sealed class CommandPalettePerformanceTests
     }
 
     [Fact]
-    public async Task Search_UsesPageSize10_AndLoadMore_FetchesPage2WithSortByCreated()
+    public async Task Open_ShowsRecentlyAddedThenFolders_AndDoesNotPageTheOpenView()
     {
         await using var context = new BunitContext();
         var (palette, fake) = Configure(context);
 
+        fake.FolderTree = [new FolderTreeNodeDto { Id = Guid.NewGuid(), Title = "Novels" }];
         var page1 = Enumerable.Range(0, 10).Select(i => Bookmark($"b{i}", DateTime.UtcNow.AddMinutes(-i))).ToList();
-        var page2 = Enumerable.Range(10, 10).Select(i => Bookmark($"b{i}", DateTime.UtcNow.AddMinutes(-i))).ToList();
-        fake.OnSearchBookmarks = (request, _) => Task.FromResult(new PagedResult<BookmarkNodeDto>
+        fake.OnSearchBookmarks = (_, _) => Task.FromResult(new PagedResult<BookmarkNodeDto>
         {
-            Items = request.Page == 1 ? page1 : page2,
-            TotalCount = 25,
-            Page = request.Page,
-            PageSize = request.PageSize
+            Items = page1,
+            TotalCount = 25
         });
 
         var cut = context.Render<CommandPalette>();
         await cut.InvokeAsync(() => palette.Open());
 
-        cut.WaitForAssertion(() => Assert.Contains("10 matches", cut.Find(".palette-header-count").TextContent), TimeSpan.FromSeconds(3));
-        Assert.Equal(10, fake.SearchRequests[0].PageSize);
+        cut.WaitForAssertion(() =>
+        {
+            var sections = cut.FindAll(".palette-section-title").Select(e => e.TextContent.Trim()).ToList();
+            Assert.Equal(["Recently added", "Folders"], sections);
+            Assert.Contains(cut.FindAll(".palette-item"), e => e.TextContent.Contains("Novels"));
+        }, TimeSpan.FromSeconds(3));
 
+        // Paging the recent list would push the folders out of reach, so scrolling fetches nothing.
         await cut.InvokeAsync(() => cut.Instance.LoadMoreFromScroll());
-
-        cut.WaitForAssertion(() => Assert.Contains("20 matches", cut.Find(".palette-header-count").TextContent), TimeSpan.FromSeconds(3));
-
-        var pageTwoRequest = fake.SearchRequests[1];
-        Assert.Equal(2, pageTwoRequest.Page);
-        Assert.Equal(10, pageTwoRequest.PageSize);
-        Assert.Equal("Created", pageTwoRequest.SortBy);
-        Assert.Equal(string.Empty, pageTwoRequest.Query);
+        Assert.Single(fake.SearchRequests);
+        Assert.Empty(cut.FindAll(".palette-load-more"));
     }
 
     [Fact]

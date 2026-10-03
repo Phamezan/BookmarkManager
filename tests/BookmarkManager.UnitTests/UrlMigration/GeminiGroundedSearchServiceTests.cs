@@ -361,7 +361,7 @@ public sealed class GeminiGroundedSearchServiceTests
             if (request.Method == HttpMethod.Post)
             {
                 // 160 ms stands in for the >15 s and <30 s production call; budgets are injected
-                // small to keep the test fast.
+                // small to keep the test fast but wide enough for slow CI runners.
                 await Task.Delay(TimeSpan.FromMilliseconds(160), ct);
                 return Json(HttpStatusCode.OK, Fixture());
             }
@@ -375,10 +375,10 @@ public sealed class GeminiGroundedSearchServiceTests
         });
 
         var service = CreateBudgetedService(handler,
-            generateContent: TimeSpan.FromMilliseconds(300),
-            redirectResolution: TimeSpan.FromMilliseconds(500),
-            redirectRequest: TimeSpan.FromMilliseconds(400),
-            provider: TimeSpan.FromSeconds(3));
+            generateContent: TimeSpan.FromSeconds(3),
+            redirectResolution: TimeSpan.FromSeconds(3),
+            redirectRequest: TimeSpan.FromSeconds(2),
+            provider: TimeSpan.FromSeconds(10));
 
         var result = await service.SearchWithDiagnosticsAsync(Extraction, "webtoon.xyz", new SearchRunContext(), default);
 

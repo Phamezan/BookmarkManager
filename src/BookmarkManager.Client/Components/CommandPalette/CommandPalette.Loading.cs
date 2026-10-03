@@ -104,9 +104,9 @@ public partial class CommandPalette
     }
 
     /// <summary>
-    /// Empty-query view: a "Recently added" section header plus the first page of the
-    /// newest-created bookmarks. The folder browser is no longer shown here — it stays one
-    /// keystroke away behind "&gt;". Fetches the recent page and the folder tree in parallel.
+    /// Empty-query view: a "Recently added" section (newest-created bookmarks, one page) followed
+    /// by a "Folders" section (the folder browser). No paging here — a growing list would push
+    /// the folders out of reach. Fetches the recent page and the folder tree in parallel.
     /// </summary>
     private async Task LoadDefaultResultsAsync(CancellationTokenSource cts)
     {
@@ -142,8 +142,9 @@ public partial class CommandPalette
                 return;
             }
 
-            // Folder paths are only needed for subtitles; a tree failure must not hide recent bookmarks.
-            try { await treeTask; } catch (OperationCanceledException) { return; } catch { }
+            // A tree failure must not hide recent bookmarks; folders are just left out.
+            List<FolderTreeNodeDto>? folderTree;
+            try { folderTree = await treeTask; } catch (OperationCanceledException) { return; } catch { folderTree = null; }
 
             if (cancellationToken.IsCancellationRequested) return;
 
@@ -152,21 +153,25 @@ public partial class CommandPalette
             _filterTagNames = [];
 
             var items = pagedResult.Items ?? [];
-            if (items.Count == 0)
+            var folderMatches = new List<FolderSearchResult>();
+            FindFoldersRecursive(folderTree, query: string.Empty, string.Empty, folderMatches);
+
+            _results = [];
+            if (items.Count > 0)
             {
-                // No recent bookmarks: leave the list empty so the finished-empty state renders.
-                _results = [];
-            }
-            else
-            {
-                _results = [new PaletteItem { IsSectionHeader = true, SectionTitle = "Recently added" }];
+                _results.Add(new PaletteItem { IsSectionHeader = true, SectionTitle = "Recently added" });
                 _results.AddRange(items.Select(MapBookmarkToItem));
+            }
+            if (folderMatches.Count > 0)
+            {
+                _results.Add(new PaletteItem { IsSectionHeader = true, SectionTitle = "Folders" });
+                _results.AddRange(folderMatches.Select(MapFolderToItem));
             }
             AssignResultIndices();
             _selectedIndex = FirstSelectableIndex();
-            RememberLoadedPage(request, pagedResult.TotalCount);
+            RememberLoadedPage(request, totalCount: items.Count); // no load-more on the open view
             _loadedBookmarkCount = items.Count;
-            _listHeaderTitle = "Recently added";
+            _listHeaderTitle = items.Count > 0 ? "Recently added" : "Folders";
             StateHasChanged();
         }
         finally
