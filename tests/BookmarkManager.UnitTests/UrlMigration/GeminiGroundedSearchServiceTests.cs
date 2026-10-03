@@ -597,7 +597,7 @@ public sealed class GeminiGroundedSearchServiceTests
 
         public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
             SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
-            string? preferredHost = null, bool restrictToPreferredHost = false)
+            string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
         {
             WasCalled = true;
             return Task.FromResult(new SearchOutcome<SearchCandidate>(_candidates, [new("SearXNG", _candidates.Count, null)]));

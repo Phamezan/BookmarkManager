@@ -290,6 +290,67 @@ public sealed class UrlMigratorPageTests
         page.WaitForAssertion(() => Assert.Equal(1, fake.ResetCallCount));
     }
 
+    [Fact]
+    public async Task SuggestTarget_ShowsSuggestions_And_UseThisFillsTargetHostAndPattern()
+    {
+        await using var context = new BunitContext();
+        context.JSInterop.Mode = JSRuntimeMode.Loose;
+        context.Services.AddMudServices();
+
+        var fake = new FakeUrlMigratorBookmarkService
+        {
+            Status = new UrlMigrationStatusDto { IsRunning = false, RunId = null },
+            Bookmarks =
+            [
+                new BookmarkNodeDto { Id = Guid.NewGuid(), Title = "Dead host bookmark", Url = "https://flamecomics.xyz/read/x/chapter-1/" }
+            ],
+            TargetHostDiscovery = new TargetHostDiscoveryResultDto
+            {
+                DeadHost = "flamecomics.xyz",
+                SampleSize = 20,
+                Suggestions =
+                [
+                    new TargetHostSuggestionDto
+                    {
+                        Host = "asuracomic.net",
+                        SeriesFound = 18,
+                        ChaptersFound = 16,
+                        SampleSize = 20,
+                        BestPattern = "/{slug}/chapter-{n}",
+                        SearchCreditsUsed = 2
+                    }
+                ]
+            }
+        };
+        context.Services.AddSingleton<IBookmarkService>(fake);
+
+        var page = RenderPage(context);
+
+        // The host field is a MudAutocomplete with a search function, so the value commits on
+        // selecting a suggestion rather than on typing.
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-manual-host-field input")));
+        page.Find(".migrator-manual-host-field input").Input("flamecomics.xyz");
+
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".mud-list-item")));
+        page.FindAll(".mud-list-item").First().Click();
+
+        page.WaitForAssertion(() => Assert.False(page.Find(".migrator-suggest-target-btn").HasAttribute("disabled")));
+        page.Find(".migrator-suggest-target-btn").Click();
+
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-suggestion-row")));
+        Assert.Contains("asuracomic.net", page.Markup);
+        Assert.Contains("18/20 series", page.Markup);
+
+        page.Find(".migrator-use-suggestion-btn").Click();
+
+        page.WaitForAssertion(() =>
+        {
+            var targetInput = page.Find(".migrator-suggested-host-field input");
+            Assert.Equal("asuracomic.net", targetInput.GetAttribute("value"));
+        });
+        Assert.Contains("Learned pattern", page.Markup);
+    }
+
     private static UrlMigrationProposalDto MakeProposal(string title, string? proposedHost, string confidence) => new()
     {
         Id = Guid.NewGuid(),
@@ -327,12 +388,14 @@ public sealed class UrlMigratorPageTests
         public string? LastStartedHost { get; private set; }
         public bool? LastStartedForce { get; private set; }
         public string? LastSuggestedHost { get; private set; }
+        public string? LastPattern { get; private set; }
 
-        public override Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
+        public override Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null, CancellationToken cancellationToken = default)
         {
             LastStartedHost = deadHost;
             LastStartedForce = force;
             LastSuggestedHost = suggestedHost;
+            LastPattern = pattern;
             return Task.FromResult(true);
         }
 

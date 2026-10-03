@@ -18,7 +18,7 @@ public interface ISearxngSearchService
 {
     Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
         SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
-        string? preferredHost = null, bool restrictToPreferredHost = false);
+        string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null);
 }
 
 /// <summary>
@@ -84,7 +84,7 @@ public sealed class SearxngSearchService : ISearxngSearchService
 
     public async Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
         SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
-        string? preferredHost = null, bool restrictToPreferredHost = false)
+        string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
     {
         ArgumentNullException.ThrowIfNull(extraction);
         ArgumentException.ThrowIfNullOrWhiteSpace(deadHost);
@@ -102,18 +102,21 @@ public sealed class SearxngSearchService : ISearxngSearchService
 
         return await run.ExecuteAsync("SearXNG", ProviderBudget, async token =>
         {
-            var raw = await SearchAsync(extraction, preferredHost, restrictToPreferredHost, baseUrl, token).ConfigureAwait(false);
+            var raw = await SearchAsync(extraction, preferredHost, restrictToPreferredHost, baseUrl, token, queryOverride).ConfigureAwait(false);
             return SearchCandidateFilter.Filter(raw, deadHost);
         }, _logger, ct).ConfigureAwait(false);
     }
 
     private async Task<IReadOnlyList<SearchCandidate>> SearchAsync(
-        SeriesExtraction extraction, string? preferredHost, bool restrictToPreferredHost, string baseUrl, CancellationToken ct)
+        SeriesExtraction extraction, string? preferredHost, bool restrictToPreferredHost, string baseUrl, CancellationToken ct,
+        string? queryOverride = null)
     {
         // Pace calls to the shared upstream engines before spending the provider budget.
         await _throttle.AwaitThrottleAsync(MinRequestInterval, ct).ConfigureAwait(false);
 
-        var query = BuildQuery(extraction, preferredHost, restrictToPreferredHost);
+        var query = string.IsNullOrWhiteSpace(queryOverride)
+            ? BuildQuery(extraction, preferredHost, restrictToPreferredHost)
+            : queryOverride.Trim();
         var uri = new Uri($"{baseUrl}/search?q={Uri.EscapeDataString(query)}&format=json&categories=general&language=en");
 
         var http = _httpClientFactory.CreateClient(HttpClientName);

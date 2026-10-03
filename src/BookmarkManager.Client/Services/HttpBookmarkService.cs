@@ -223,8 +223,11 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default)
         => await _apiClient.GetAsync<List<DeadDomainCandidateDto>>("api/bookmarks/url-migration/dead-domains", cancellationToken) ?? [];
 
-    public async Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default)
-        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost, force, suggestedHost)));
+    public async Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null, CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/run", cancellationToken, new StartUrlMigrationRequest(deadHost, force, suggestedHost, pattern)));
+
+    public async Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<TargetHostDiscoveryResultDto>(HttpMethod.Post, "api/bookmarks/url-migration/discover-target", new DiscoverTargetHostRequest(deadHost, sampleSize), cancellationToken);
 
     public async Task<bool> CancelUrlMigrationAsync(CancellationToken cancellationToken = default)
         => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/bookmarks/url-migration/cancel", cancellationToken));

@@ -6,7 +6,34 @@ namespace BookmarkManager.Contracts;
 // SuggestedHost = optional target domain the user already picked as the replacement -
 // search is restricted to that host instead of the open web, and every bookmark in the run
 // tries it first regardless of what earlier bookmarks resolved to.
-public record StartUrlMigrationRequest(string DeadHost, bool Force = false, string? SuggestedHost = null);   // host only, e.g. "flamecomics.xyz"
+// Pattern = optional URL template learned from target-host discovery (e.g. "/{slug}/chapter-{n}").
+// When set, the direct target-host rewrite tries that shape before the built-in ones.
+public record StartUrlMigrationRequest(string DeadHost, bool Force = false, string? SuggestedHost = null, string? Pattern = null);   // host only, e.g. "flamecomics.xyz"
+
+// Target-host discovery: sample the dead host's bookmarks, find where those series live now
+// (SearXNG first, Tavily only as a paid fallback), probe candidates with plain HTTP, and rank
+// the hosts by coverage. SampleSize is clamped 5-50 (default 20).
+public record DiscoverTargetHostRequest(string DeadHost, int? SampleSize = null);
+
+public class TargetHostSuggestionDto
+{
+    public string Host { get; set; } = string.Empty;
+    public int SeriesFound { get; set; }
+    public int ChaptersFound { get; set; }
+    public int SampleSize { get; set; }
+    public string? BestPattern { get; set; }        // e.g. "/{slug}/chapter-{n}"
+    public int SearchCreditsUsed { get; set; }      // Tavily calls that surfaced this host
+    public string? Detail { get; set; }
+}
+
+public class TargetHostDiscoveryResultDto
+{
+    public string DeadHost { get; set; } = string.Empty;
+    public int SampleSize { get; set; }
+    public int SearchCreditsUsed { get; set; }
+    public List<TargetHostSuggestionDto> Suggestions { get; set; } = [];
+    public string? Detail { get; set; }             // set when nothing qualified
+}
 
 public class UrlMigrationStatusDto
 {

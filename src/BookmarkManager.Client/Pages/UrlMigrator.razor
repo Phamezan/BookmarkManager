@@ -103,6 +103,14 @@
                               Immediate="true"
                               Disabled="@(IsRunning || _starting)"
                               Class="migrator-suggested-host-field" />
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.TravelExplore"
+                           OnClick="SuggestTargetAsync"
+                           Disabled="@(IsRunning || _starting || _discovering || string.IsNullOrWhiteSpace(_manualHost))"
+                           Class="migrator-suggest-target-btn">
+                    @(_discovering ? "Searching..." : "Suggest target")
+                </MudButton>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            OnClick="StartMigrationFromFieldAsync"
@@ -116,6 +124,59 @@
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">
                     Search will be restricted to @_suggestedTargetHost instead of the open web.
                 </MudText>
+            }
+            @if (!string.IsNullOrWhiteSpace(_suggestedTargetPattern))
+            {
+                <MudText Typo="Typo.caption" Class="mud-text-secondary migrator-learned-pattern-note">
+                    Learned pattern "@_suggestedTargetPattern" will be tried first on the target host.
+                </MudText>
+            }
+            @if (_discovering)
+            {
+                <MudProgressLinear Indeterminate="true" Class="migrator-progress-bar migrator-discovery-progress" />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    Sampling bookmarks and probing candidate hosts — this can take a minute.
+                </MudText>
+            }
+            else if (_suggestions.Count > 0)
+            {
+                <MudSimpleTable Dense="true" Class="migrator-suggestions-table">
+                    <thead>
+                        <tr>
+                            <th>Host</th>
+                            <th>Coverage</th>
+                            <th>Pattern</th>
+                            <th>Credits</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var suggestion in _suggestions)
+                        {
+                            <tr class="migrator-suggestion-row" data-host="@suggestion.Host">
+                                <td class="migrator-host-cell">@suggestion.Host</td>
+                                <td>@suggestion.SeriesFound/@suggestion.SampleSize series, @suggestion.ChaptersFound chapters</td>
+                                <td>@(suggestion.BestPattern ?? "—")</td>
+                                <td>@suggestion.SearchCreditsUsed</td>
+                                <td>
+                                    <MudButton Variant="Variant.Text"
+                                               Color="Color.Primary"
+                                               Size="Size.Small"
+                                               Class="migrator-use-suggestion-btn"
+                                               OnClick="@(() => UseSuggestion(suggestion))">
+                                        Use this
+                                    </MudButton>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+            else if (!string.IsNullOrWhiteSpace(_discoveryMessage))
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Dense="true" Class="migrator-discovery-message">
+                    @_discoveryMessage
+                </MudAlert>
             }
         </MudStack>
     </MudPaper>

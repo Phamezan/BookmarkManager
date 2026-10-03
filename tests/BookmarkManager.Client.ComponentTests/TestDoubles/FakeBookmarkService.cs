@@ -21,6 +21,7 @@ public class FakeBookmarkService : IBookmarkService
     public List<DeadDomainCandidateDto> DeadDomainCandidates { get; set; } = [];
     public List<UrlMigrationProposalDto> UrlMigrationProposals { get; set; } = [];
     public UrlMigrationStatusDto? UrlMigrationStatus { get; set; } = null;
+    public TargetHostDiscoveryResultDto? TargetHostDiscovery { get; set; } = null;
     public TriageJobStatusDto TriageStatus { get; set; } = new();
 
     public Func<Guid, string, string?, Task<BookmarkNodeDto>>? OnCreateBookmark { get; set; }
@@ -210,8 +211,11 @@ public class FakeBookmarkService : IBookmarkService
 
     public virtual Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(DeadDomainCandidates);
     
-    public virtual Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, CancellationToken cancellationToken = default) 
+    public virtual Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null, CancellationToken cancellationToken = default)
         => OnStartUrlMigration != null ? OnStartUrlMigration(deadHost, force, suggestedHost) : Task.FromResult(false);
+
+    public virtual Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, CancellationToken cancellationToken = default)
+        => Task.FromResult(TargetHostDiscovery);
 
     public virtual Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(UrlMigrationStatus);
     

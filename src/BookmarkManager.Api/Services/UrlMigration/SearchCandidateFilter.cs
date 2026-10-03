@@ -28,6 +28,17 @@ public static class SearchCandidateFilter
         // Google's search/grounding domains are never reader pages, and an unresolved grounding
         // redirect must not reach verification.
         "google.com",
+        // Metadata/aggregator/store sites: useful for finding a series but never a replacement
+        // reading page, so they are excluded from both migration and target-host discovery
+        // (kept in one central list instead of a second copy in the discovery service).
+        "mangaupdates.com",
+        "anilist.co",
+        "myanimelist.net",
+        "novelupdates.com",
+        "animenewsnetwork.com",
+        "amazon.com",
+        "goodreads.com",
+        "crunchyroll.com",
     };
 
     public static IReadOnlyList<SearchCandidate> Filter(

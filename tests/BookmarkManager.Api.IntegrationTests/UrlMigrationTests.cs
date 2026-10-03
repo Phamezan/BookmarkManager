@@ -83,6 +83,69 @@ public sealed class UrlMigrationTests : IntegrationTestBase
         services.AddSingleton(instance);
     }
 
+    private sealed class FixedExtractionService : ISeriesExtractionService
+    {
+        public Task<SeriesExtraction> ExtractAsync(string title, string url, string? category, CancellationToken ct)
+            => Task.FromResult(SeriesExtractionFallback.Extract(title, url, category));
+    }
+
+    private sealed class DiscoverySearxngSearchService : ISearxngSearchService
+    {
+        public int Calls;
+
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+            SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+            string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
+        {
+            Interlocked.Increment(ref Calls);
+            IReadOnlyList<SearchCandidate> candidates = [new("https://reader.example/series/x", null, null)];
+            return Task.FromResult(new SearchOutcome<SearchCandidate>(candidates, [new("SearXNG", candidates.Count, null)]));
+        }
+    }
+
+    private sealed class DiscoveryTavilySearchService : ITavilySearchService
+    {
+        public int Calls;
+
+        public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
+            SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
+            string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
+        {
+            Interlocked.Increment(ref Calls);
+            return Task.FromResult(new SearchOutcome<SearchCandidate>([], [new("Tavily", 0, null)]));
+        }
+    }
+
+    private sealed class AllMatchingVerificationService : ICandidateVerificationService
+    {
+        public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct)
+            => Task.FromResult(new VerificationResult(
+                true,
+                true,
+                candidate.Url.Contains("chapter", StringComparison.OrdinalIgnoreCase),
+                "matched"));
+
+        public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<string>>([]);
+    }
+
+    private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateDiscoveryFactory(
+        IntegrationTestWebApplicationFactory baseFactory,
+        DiscoverySearxngSearchService searxng,
+        DiscoveryTavilySearchService tavily)
+    {
+        return baseFactory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                ReplaceSingleton<ISeriesExtractionService>(services, new FixedExtractionService());
+                ReplaceSingleton<ISearxngSearchService>(services, searxng);
+                ReplaceSingleton<ITavilySearchService>(services, tavily);
+                ReplaceSingleton<ICandidateVerificationService>(services, new AllMatchingVerificationService());
+            });
+        });
+    }
+
     private static async Task<BookmarkNode> SeedBookmarkAsync(
         Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> factory,
         string url,
@@ -539,5 +602,59 @@ public sealed class UrlMigrationTests : IntegrationTestBase
             new UpdateProposalUrlRequest("https://another.example/chapter-112"));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DiscoverTargetHost_ReturnsRankedSuggestions_WithoutSpendingTavily()
+    {
+        const string deadHost = "deaddomain.example";
+        var searxng = new DiscoverySearxngSearchService();
+        var tavily = new DiscoveryTavilySearchService();
+        using var factory = CreateDiscoveryFactory(Factory, searxng, tavily);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await SeedBookmarkAsync(factory, $"https://{deadHost}/read/series-{i}/chapter-5/");
+        }
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/discover-target",
+            new DiscoverTargetHostRequest(deadHost, 5));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<TargetHostDiscoveryResultDto>(JsonOptions);
+        Assert.NotNull(result);
+        Assert.Equal(5, result!.SampleSize);
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal("reader.example", suggestion.Host);
+        Assert.Equal(5, suggestion.SeriesFound);
+        Assert.Equal("/{slug}/chapter-{n}", suggestion.BestPattern);
+        Assert.Equal(5, searxng.Calls);
+        Assert.Equal(0, tavily.Calls);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("has/slash.example")]
+    public async Task DiscoverTargetHost_InvalidDeadHost_ReturnsBadRequest(string deadHost)
+    {
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/discover-target",
+            new DiscoverTargetHostRequest(deadHost, 5));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task StartUrlMigration_InvalidPattern_ReturnsBadRequest()
+    {
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/run",
+            new StartUrlMigrationRequest("flamecomics.xyz", Force: true, Pattern: "https://evil.example/{slug}"));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 }
