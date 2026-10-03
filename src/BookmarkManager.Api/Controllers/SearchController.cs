@@ -79,7 +79,17 @@ public class SearchController : ControllerBase
         var pageSize = Math.Max(1, Math.Min(request.PageSize, 100));
         var page = Math.Max(1, request.Page);
 
-        query = query.OrderByDescending(n => n.UpdatedAt);
+        // "Created" orders by when the bookmark was added server-side (newest first);
+        // anything else — including unknown/misspelled values — keeps the historical
+        // UpdatedAt-desc order. Id is the deterministic tie-break for equal timestamps.
+        if (string.Equals(request.SortBy?.Trim(), "Created", StringComparison.OrdinalIgnoreCase))
+        {
+            query = query.OrderByDescending(n => n.CreatedAt).ThenBy(n => n.Id);
+        }
+        else
+        {
+            query = query.OrderByDescending(n => n.UpdatedAt);
+        }
 
         var items = await query
             .Skip((page - 1) * pageSize)

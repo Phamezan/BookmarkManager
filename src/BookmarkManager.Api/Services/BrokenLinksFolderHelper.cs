@@ -65,6 +65,7 @@ public static class BrokenLinksFolderHelper
                 Position = maxPosRoot + 1,
                 SyncState = SyncState.Pending,
                 Version = 1,
+                CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
             db.BookmarkNodes.Add(brokenLinksFolder);

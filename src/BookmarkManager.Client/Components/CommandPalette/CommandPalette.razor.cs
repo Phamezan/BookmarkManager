@@ -47,8 +47,9 @@ public partial class CommandPalette : IDisposable
     /// <summary>URL of the tab the embedded palette overlays.</summary>
     [Parameter] public string? ContextUrl { get; set; }
 
-    private const int DefaultPageSize = 10;
-    private const int SearchPageSize = 20;
+    private const int PalettePageSize = 10;
+    private const int SkeletonRowCount = 6;
+    private const int LoadMoreSkeletonRowCount = 3;
     /// <summary>
     /// Fixed row stride for Virtualize + scrollPaletteToIndex.
     /// Must stay in sync with --palette-item-stride on #paletteList (height + margin-bottom).
@@ -71,25 +72,15 @@ public partial class CommandPalette : IDisposable
     private List<TagCountDto> _allTags = [];
     private IDisposable? _ctrlPRegistration;
 
-    // Load-more paging state: tracks the request shape of the currently-loaded page so
-    // "Load more" can fetch the next page with the same query/folder/tag filter and append.
-    private int _loadedPage = 1;
-    private int _loadedPageSize = DefaultPageSize;
-    private int _totalResultCount;
-    private string _loadedQuery = string.Empty;
-    private Guid? _loadedFolderId;
-    private List<string> _loadedTags = [];
-    private bool _isLoadingMore;
     /// <summary>Effective bookmark query used for title highlighting (empty for default results / folder autocomplete).</summary>
     private string _highlightQuery = string.Empty;
-    /// <summary>Bookmark rows loaded for the current page sequence (excludes section headers / recent section).</summary>
-    private int _loadedBookmarkCount;
     private int? _historyIndex;
     private IReadOnlyList<string> _searchHistory = [];
     private bool _hasSearchHistory;
     private string _listHeaderTitle = "Folders";
 
-    private bool HasMoreResults => !_isLoadingMore && _loadedBookmarkCount < _totalResultCount;
+    /// <summary>Header match count — section headers (e.g. "Recently added") are not results.</summary>
+    private int DisplayMatchCount => _results.Count(r => !r.IsSectionHeader);
 
     [Inject] private KeyboardShortcutService KeyboardShortcutService { get; set; } = default!;
 
@@ -142,14 +133,20 @@ public partial class CommandPalette : IDisposable
             _ = RefreshSearchHistoryAsync();
             _searchCts?.Cancel();
             _searchCts = new CancellationTokenSource();
-            _ = LoadDefaultResultsAsync(_searchCts.Token);
+            _folderTreeTask = null; // refetch once per open
+            _isLoading = false;
+            _ = LoadDefaultResultsAsync(_searchCts);
             _ = LoadTagsAsync(_searchCts.Token);
             _ = JSRuntime.InvokeVoidAsync("focusPaletteInput");
         }
-        else if (Embedded)
+        else
         {
-            // Tell the extension host frame to hide the overlay iframe.
-            _ = JSRuntime.InvokeVoidAsync("paletteEmbedded.close");
+            _searchCts?.Cancel();
+            if (Embedded)
+            {
+                // Tell the extension host frame to hide the overlay iframe.
+                _ = JSRuntime.InvokeVoidAsync("paletteEmbedded.close");
+            }
         }
         StateHasChanged();
     }
@@ -204,103 +201,6 @@ public partial class CommandPalette : IDisposable
         _tertiaryHint = "Go to Bookmark";
     }
 
-    private async Task LoadDefaultResultsAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var folderTree = await BookmarkService.GetFolderTreeAsync(cancellationToken);
-            if (cancellationToken.IsCancellationRequested) return;
-            RebuildFolderPathMap(folderTree);
-
-            // Empty open = folder browser (same list as typing ">" with no filter).
-            var folderMatches = new List<FolderSearchResult>();
-            FindFoldersRecursive(folderTree, query: string.Empty, string.Empty, folderMatches);
-
-            _highlightQuery = string.Empty;
-            _filterFolderId = null;
-            _results = folderMatches.Select(MapFolderToItem).ToList();
-            AssignResultIndices();
-            _selectedIndex = FirstSelectableIndex();
-            _totalResultCount = _results.Count;
-            _loadedBookmarkCount = _results.Count;
-            _loadedPage = 1;
-            _loadedPageSize = DefaultPageSize;
-            _loadedQuery = string.Empty;
-            _loadedFolderId = null;
-            _listHeaderTitle = "Folders";
-            StateHasChanged();
-        }
-        catch (OperationCanceledException)
-        {
-        }
-        catch
-        {
-            // Fail silently
-        }
-    }
-
-    /// <summary>Records the request shape + total count for a just-loaded first page so "Load more" can continue it.</summary>
-    private void RememberLoadedPage(SearchRequest request, int totalCount)
-    {
-        _loadedPage = request.Page;
-        _loadedPageSize = request.PageSize;
-        _loadedQuery = request.Query;
-        _loadedFolderId = request.FolderId;
-        _loadedTags = request.Tags;
-        _totalResultCount = totalCount;
-    }
-
-    /// <summary>
-    /// Fetches the next page (same query/folder/tag filter as the currently-loaded results) and
-    /// appends it. Triggered by the Load more button and by scrolling near the list bottom.
-    /// </summary>
-    private async Task LoadMoreResultsAsync()
-    {
-        if (_isLoadingMore || _loadedBookmarkCount >= _totalResultCount) return;
-
-        _isLoadingMore = true;
-        StateHasChanged();
-
-        try
-        {
-            var request = new SearchRequest
-            {
-                Query = _loadedQuery,
-                Page = _loadedPage + 1,
-                PageSize = _loadedPageSize,
-                FolderId = _loadedFolderId,
-                Tags = _loadedTags
-            };
-            var pagedResult = await BookmarkService.SearchBookmarksAsync(request);
-            // Prefer ids already present so load-more doesn't duplicate recent or prior pages.
-            var existingIds = _results.Where(r => !r.IsSectionHeader).Select(r => r.Id).ToHashSet();
-
-            var newItems = pagedResult.Items?
-                .Where(b => !existingIds.Contains(b.Id))
-                .Select(MapBookmarkToItem)
-                .ToList() ?? [];
-            _results.AddRange(newItems);
-            AssignResultIndices();
-            _loadedPage = request.Page;
-            _loadedBookmarkCount += pagedResult.Items?.Count ?? 0;
-            _totalResultCount = pagedResult.TotalCount;
-            StateHasChanged();
-        }
-        catch
-        {
-            // Fail silently — scroll/button can retry.
-        }
-        finally
-        {
-            _isLoadingMore = false;
-            StateHasChanged();
-        }
-    }
-
-    /// <summary>Called from command-palette.js when the list is scrolled near the bottom.</summary>
-    [JSInvokable]
-    public Task LoadMoreFromScroll() => LoadMoreResultsAsync();
-
     /// <summary>Loads the full tag+count list once per palette session for client-side "#" autocomplete.</summary>
     private async Task LoadTagsAsync(CancellationToken cancellationToken = default)
     {
@@ -331,18 +231,33 @@ public partial class CommandPalette : IDisposable
 
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
-        var token = _searchCts.Token;
+        var cts = _searchCts;
+        var token = cts.Token;
 
         if (string.IsNullOrEmpty(_searchQuery))
         {
             _filterFolderId = null;
             _filterTagNames = [];
-            await LoadDefaultResultsAsync(token);
+            await LoadDefaultResultsAsync(cts);
             return;
         }
 
-        var folderTree = await BookmarkService.GetFolderTreeAsync(token);
-        RebuildFolderPathMap(folderTree);
+        // Tree is session-cached; keystrokes before it arrives share the same in-flight fetch.
+        List<FolderTreeNodeDto>? folderTree;
+        try
+        {
+            folderTree = await GetFolderTreeCachedAsync(token);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            folderTree = null;
+        }
+
+        if (token.IsCancellationRequested) return;
 
         // Peel off leading ">Folder" / "#Tag" filter tokens, in any order and any combination
         // (e.g. ">Novels #action", "#action #comedy >Novels query"). Each resolved token narrows
@@ -397,11 +312,15 @@ public partial class CommandPalette : IDisposable
             if (debounce)
                 await Task.Delay(200, token); // Debounce
 
+            if (token.IsCancellationRequested) return;
+
+            BeginLoading(cts);
+
             var request = new SearchRequest
             {
                 Query = bookmarkQuery.Trim(),
                 Page = 1,
-                PageSize = SearchPageSize,
+                PageSize = PalettePageSize,
                 FolderId = activeFolderId,
                 Tags = activeTags
             };
@@ -426,6 +345,10 @@ public partial class CommandPalette : IDisposable
         {
             _results.Clear();
             StateHasChanged();
+        }
+        finally
+        {
+            EndLoading(cts);
         }
     }
 
@@ -491,7 +414,11 @@ public partial class CommandPalette : IDisposable
         AssignResultIndices();
         _totalResultCount = _results.Count;
         _loadedBookmarkCount = _results.Count;
+        _loadedSortBy = null;
+        _loadedQuery = string.Empty;
         _listHeaderTitle = "Folders";
+        _isLoading = false;
+        _loadingCts = null;
         StateHasChanged();
     }
 
@@ -512,7 +439,11 @@ public partial class CommandPalette : IDisposable
         _selectedIndex = FirstSelectableIndex();
         _totalResultCount = _results.Count;
         _loadedBookmarkCount = _results.Count;
+        _loadedSortBy = null;
+        _loadedQuery = string.Empty;
         _listHeaderTitle = "Tags";
+        _isLoading = false;
+        _loadingCts = null;
         StateHasChanged();
     }
 

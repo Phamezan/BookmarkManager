@@ -59,16 +59,35 @@
         <div class="palette-content">
             <div class="palette-header">
                 <span class="palette-header-title">@_listHeaderTitle</span>
-                <span class="palette-header-count">@_results.Count matches</span>
+                @if (string.IsNullOrEmpty(_searchQuery))
+                {
+                    <span class="palette-header-hint">type &gt; for folders, # for tags</span>
+                }
+                <span class="palette-header-count">@DisplayMatchCount matches</span>
             </div>
 
             <div class="palette-list" id="paletteList" style="--palette-item-stride: @(ItemSizePx)px">
-                @if (_results.Count == 0)
+                @if (_isLoading && _results.Count == 0)
+                {
+                    @for (var i = 0; i < SkeletonRowCount; i++)
+                    {
+                        <div class="palette-item palette-skeleton" aria-hidden="true">
+                            <div class="palette-item-left">
+                                <div class="palette-skeleton-block palette-skeleton-icon"></div>
+                                <div class="palette-item-info">
+                                    <div class="palette-skeleton-block palette-skeleton-title"></div>
+                                    <div class="palette-skeleton-block palette-skeleton-subtitle"></div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                }
+                else if (_results.Count == 0)
                 {
                     <div class="palette-no-results">
                         @if (string.IsNullOrWhiteSpace(_searchQuery))
                         {
-                            <span>No folders found</span>
+                            <span>No bookmarks found</span>
                         }
                         else if (_searchQuery.StartsWith("#"))
                         {
@@ -86,6 +105,10 @@
                 }
                 else
                 {
+                    @if (_isLoading)
+                    {
+                        <div class="palette-loading-bar" role="progressbar" aria-label="Loading"></div>
+                    }
                     <Virtualize Items="_results" ItemSize="ItemSizePx" Context="item">
                         @if (item.IsSectionHeader)
                         {
@@ -143,10 +166,25 @@
                             </div>
                         }
                     </Virtualize>
-                    @if (HasMoreResults)
+                    @if (_isLoadingMore)
                     {
-                        <button type="button" class="palette-load-more" @onclick="LoadMoreResultsAsync" disabled="@_isLoadingMore">
-                            @(_isLoadingMore ? "Loading..." : $"Load more ({_totalResultCount - _loadedBookmarkCount} remaining)")
+                        @for (var i = 0; i < LoadMoreSkeletonRowCount; i++)
+                        {
+                            <div class="palette-item palette-skeleton" aria-hidden="true">
+                                <div class="palette-item-left">
+                                    <div class="palette-skeleton-block palette-skeleton-icon"></div>
+                                    <div class="palette-item-info">
+                                        <div class="palette-skeleton-block palette-skeleton-title"></div>
+                                        <div class="palette-skeleton-block palette-skeleton-subtitle"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    }
+                    else if (HasMoreResults)
+                    {
+                        <button type="button" class="palette-load-more" @onclick="LoadMoreResultsAsync">
+                            Load more (@(_totalResultCount - _loadedBookmarkCount) remaining)
                         </button>
                     }
                 }
@@ -278,6 +316,11 @@
     }
     .palette-header-count {
         color: rgba(203, 195, 215, 0.4);
+    }
+    .palette-header-hint {
+        color: rgba(203, 195, 215, 0.35);
+        text-transform: none;
+        letter-spacing: 0;
     }
     .palette-list {
         display: block;
@@ -493,6 +536,68 @@
         font-size: 14px;
         color: rgba(203, 195, 215, 0.4);
         width: 100%;
+    }
+
+    /* Loading skeleton: shimmer rows matching the palette-item layout. */
+    .palette-skeleton {
+        cursor: default;
+        pointer-events: none;
+    }
+    .palette-skeleton-block {
+        border-radius: 6px;
+        background: linear-gradient(
+            90deg,
+            rgba(255, 255, 255, 0.05) 25%,
+            rgba(255, 255, 255, 0.12) 37%,
+            rgba(255, 255, 255, 0.05) 63%);
+        background-size: 400% 100%;
+        animation: paletteShimmer 1.4s ease infinite;
+    }
+    .palette-skeleton-icon {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        flex-shrink: 0;
+    }
+    .palette-skeleton-title {
+        height: 12px;
+        width: 46%;
+        max-width: 320px;
+    }
+    .palette-skeleton-subtitle {
+        height: 9px;
+        width: 30%;
+        max-width: 200px;
+        margin-top: 7px;
+    }
+    @@keyframes paletteShimmer {
+        0% { background-position: 100% 0; }
+        100% { background-position: 0 0; }
+    }
+
+    /* Thin indeterminate bar shown over stale results while a newer page loads. */
+    .palette-loading-bar {
+        height: 2px;
+        margin: 0 4px 6px;
+        border-radius: 9999px;
+        background: linear-gradient(90deg, transparent, #d0bcff, transparent);
+        background-size: 200% 100%;
+        animation: paletteLoadingBar 1.1s linear infinite;
+    }
+    @@keyframes paletteLoadingBar {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    @@media (prefers-reduced-motion: reduce) {
+        .palette-skeleton-block {
+            animation: none;
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .palette-loading-bar {
+            animation: none;
+            background: rgba(208, 188, 255, 0.6);
+        }
     }
 
     .palette-load-more {

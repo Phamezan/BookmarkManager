@@ -11,6 +11,7 @@ public class BookmarkNodeDto
     public bool IsProtected { get; set; }
     public SyncState SyncState { get; set; }
     public int Version { get; set; }
+    public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public BookmarkMetadataDto? Metadata { get; set; }
     public bool IsDeleted { get; set; }

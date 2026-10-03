@@ -271,6 +271,7 @@ public sealed partial class ExtensionService
                     Position = position,
                     IsProtected = isProtected,
                     SyncState = SyncState.Synced,
+                    CreatedAt = now,
                     UpdatedAt = now,
                     BrowserNodeId = evt.BrowserNodeId,
                     ParentBrowserNodeId = parentBrowserNodeId

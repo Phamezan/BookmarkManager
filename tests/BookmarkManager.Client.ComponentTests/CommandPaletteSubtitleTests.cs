@@ -35,7 +35,7 @@ public sealed class CommandPaletteSubtitleTests
     }
 
     [Fact]
-    public async Task OpenPalette_ShowsFoldersByDefault()
+    public async Task TypingFolderToken_ListsAllFolders()
     {
         await using var context = new BunitContext();
         context.JSInterop.Mode = JSRuntimeMode.Loose;
@@ -69,6 +69,9 @@ public sealed class CommandPaletteSubtitleTests
 
         var cut = context.Render<CommandPalette>();
         await cut.InvokeAsync(() => paletteService.Open());
+        cut.WaitForAssertion(() => cut.Find("#paletteSearchInput"), TimeSpan.FromSeconds(3));
+
+        cut.Find("#paletteSearchInput").Input(">");
         cut.WaitForAssertion(() =>
         {
             Assert.Contains("Folders", cut.Find(".palette-header-title").TextContent);

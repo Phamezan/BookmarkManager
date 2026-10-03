@@ -10,4 +10,11 @@ public class SearchRequest
     public bool? IsFavorite { get; set; }
     public List<string> Tags { get; set; } = [];
     public Guid? FolderId { get; set; }
+
+    /// <summary>
+    /// Result ordering. "Updated" (default) keeps the historical UpdatedAt-desc order;
+    /// "Created" orders by CreatedAt-desc (tie-break Id) so the palette can surface
+    /// most-recently-added bookmarks. Unknown values fall back to "Updated".
+    /// </summary>
+    public string? SortBy { get; set; }
 }
