@@ -36,6 +36,26 @@ public partial class BookmarksController
         return Ok(grouped);
     }
 
+    [HttpPost("url-migration/discover-target")]
+    public async Task<ActionResult<TargetHostDiscoveryResultDto>> DiscoverTargetHostAsync(
+        [FromBody] DiscoverTargetHostRequest request,
+        [FromServices] TargetHostDiscoveryService discovery,
+        CancellationToken ct)
+    {
+        var host = request?.DeadHost?.Trim();
+        if (!IsValidHost(host))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "DeadHost must be a valid hostname (no scheme, path, or whitespace).",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var result = await discovery.DiscoverAsync(host!, request!.SampleSize, ct);
+        return Ok(result);
+    }
+
     [HttpPost("url-migration/run")]
     public ActionResult<UrlMigrationStatusDto> StartUrlMigration(
         [FromBody] StartUrlMigrationRequest request,
@@ -61,7 +81,19 @@ public partial class BookmarksController
             });
         }
 
-        var enqueued = job.Enqueue(host!, request.Force, string.IsNullOrEmpty(suggestedHost) ? null : suggestedHost);
+        var pattern = request.Pattern?.Trim();
+        if (!string.IsNullOrEmpty(pattern) &&
+            (!pattern.StartsWith('/') || pattern.Contains("://") || pattern.Any(char.IsWhiteSpace)))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Pattern must be a URL path template beginning with '/' (e.g. \"/{slug}/chapter-{n}\").",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var enqueued = job.Enqueue(host!, request.Force, string.IsNullOrEmpty(suggestedHost) ? null : suggestedHost,
+            string.IsNullOrEmpty(pattern) ? null : pattern);
         if (!enqueued)
         {
             return Conflict(new ProblemDetails

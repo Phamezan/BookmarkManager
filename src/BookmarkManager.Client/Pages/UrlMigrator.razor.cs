@@ -25,6 +25,10 @@ public partial class UrlMigrator : IDisposable
     private const int DeadDomainsCollapsedCount = 10;
     private string _manualHost = string.Empty;
     private string _suggestedTargetHost = string.Empty;
+    private string? _suggestedTargetPattern;
+    private bool _discovering;
+    private List<TargetHostSuggestionDto> _suggestions = [];
+    private string? _discoveryMessage;
     private bool _starting;
     private bool _canceling;
     private UrlMigrationStatusDto? _status;
@@ -84,8 +88,54 @@ public partial class UrlMigrator : IDisposable
     private Task StartMigrationFromListAsync(string host) => StartMigrationAsync(host, force: false, suggestedHost: null);
 
     // Force = true: a manually-typed host is the user asserting the domain is dead, so skip the
-    // "domain still appears alive" liveness guard that protects the auto-detected list.
-    private Task StartMigrationFromFieldAsync() => StartMigrationAsync(_manualHost, force: true, suggestedHost: _suggestedTargetHost);
+    // "domain still appears alive" liveness guard that protects the auto-detected list. The learned
+    // pattern (from "Suggest target") is forwarded so the direct rewrite tries it first.
+    private Task StartMigrationFromFieldAsync() =>
+        StartMigrationAsync(_manualHost, force: true, suggestedHost: _suggestedTargetHost, pattern: _suggestedTargetPattern);
+
+    private async Task SuggestTargetAsync()
+    {
+        var host = NormalizeHost(_manualHost);
+        if (!IsValidHost(host))
+        {
+            Snackbar.Add("Enter the dead host first (e.g. flamecomics.xyz).", Severity.Warning);
+            return;
+        }
+
+        _discovering = true;
+        _discoveryMessage = null;
+        _suggestions = [];
+        try
+        {
+            var result = await BookmarkService.DiscoverTargetHostAsync(host);
+            if (result == null)
+            {
+                _discoveryMessage = "Target discovery returned no result.";
+                return;
+            }
+
+            _suggestions = result.Suggestions;
+            if (_suggestions.Count == 0)
+            {
+                _discoveryMessage = result.Detail ?? "No replacement host verified enough sampled series.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _discoveryMessage = $"Target discovery failed: {ex.Message}";
+        }
+        finally
+        {
+            _discovering = false;
+        }
+    }
+
+    private void UseSuggestion(TargetHostSuggestionDto suggestion)
+    {
+        _suggestedTargetHost = suggestion.Host;
+        _suggestedTargetPattern = suggestion.BestPattern;
+        Snackbar.Add($"Target set to {suggestion.Host}.", Severity.Success);
+    }
 
     private async Task<IEnumerable<string>> SearchHostsAsync(string? value, CancellationToken cancellationToken)
     {
@@ -103,7 +153,7 @@ public partial class UrlMigrator : IDisposable
             .Take(8)!;
     }
 
-    private async Task StartMigrationAsync(string? host, bool force, string? suggestedHost)
+    private async Task StartMigrationAsync(string? host, bool force, string? suggestedHost, string? pattern = null)
     {
         host = NormalizeHost(host);
         if (!IsValidHost(host))
@@ -122,7 +172,9 @@ public partial class UrlMigrator : IDisposable
         _starting = true;
         try
         {
-            var started = await BookmarkService.StartUrlMigrationAsync(host, force, string.IsNullOrEmpty(suggestedHost) ? null : suggestedHost);
+            var started = await BookmarkService.StartUrlMigrationAsync(host, force,
+                string.IsNullOrEmpty(suggestedHost) ? null : suggestedHost,
+                string.IsNullOrEmpty(pattern) ? null : pattern);
             if (!started)
             {
                 Snackbar.Add("Could not start migration - a run may already be in progress.", Severity.Error);
@@ -132,6 +184,9 @@ public partial class UrlMigrator : IDisposable
             Snackbar.Add($"Migration started for {host}.", Severity.Info);
             _manualHost = string.Empty;
             _suggestedTargetHost = string.Empty;
+            _suggestedTargetPattern = null;
+            _suggestions = [];
+            _discoveryMessage = null;
             await RefreshStatusAsync();
             StartPolling();
         }

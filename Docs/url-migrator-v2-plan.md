@@ -69,6 +69,31 @@ This section supersedes the historical provider, sequential-processing, and reru
   `topFailureReason` reports the most frequent unresolved reason (ties sorted by text), displayed
   beside the unresolved count. Status is in-memory; persisted proposal details survive restart.
 
+## Target-host discovery (2026-10-03)
+
+When a domain is dead the user previously had to know the replacement host. `POST api/bookmarks/url-migration/discover-target`
+(`{ deadHost, sampleSize? }`) now suggests targets: it samples up to `UrlMigration:DiscoverySampleSize`
+(default 20, clamped 5–50) distinct series from the dead host's bookmarks — spread evenly across the
+collection, skipping unparseable URLs — and runs one series-level search per sample. SearXNG runs
+first because it is free; Tavily is consulted only for a series where SearXNG returned no usable
+reader host, so a 20-series discovery spends at most one credit per otherwise-uncovered series (and
+usually zero). Candidate hosts are filtered through `SearchCandidateFilter` (dead host, private
+addresses, and an extended non-reader noise list: MangaUpdates, AniList, MyAnimeList, NovelUpdates,
+Anime News Network, Amazon, Goodreads, Crunchyroll, plus the existing wikis/Reddit/Fandom/YouTube).
+The top five hosts are then probed with plain HTTP (no search credits): the URLs search actually
+returned for that host, then `/{slug}/chapter-{n}`, `/manga/{slug}/chapter-{n}/`,
+`/series/{slug}/chapter-{n}/`, `/read/{slug}/chapter-{n}/`, then `/{slug}`, `/manga/{slug}/`,
+`/series/{slug}`, verified by `ICandidateVerificationService`. Each host reports `SeriesFound`,
+`ChaptersFound`, `SampleSize`, the chapter template that verified most often (`BestPattern`, e.g.
+`/{slug}/chapter-{n}`), and the Tavily credits that surfaced it; results are ranked by chapters then
+series. Probing is bounded (six concurrent hosts), each probe has an 8-second budget, and a host is
+abandoned after eight consecutive sampled series fail there. Discovery runs synchronously in the
+request (it is read-only, has no DB writes or long-lived status, and the client passes its
+`CancellationToken` so navigating away cancels it) rather than as another background job. The
+"Suggest target" button on the URL Migrator page shows the ranked table and "Use this" fills the
+target host and remembers the pattern; `StartUrlMigrationRequest.Pattern` forwards it so
+`TryDirectHostRewriteAsync` tries that shape before the built-in ones (unchanged when omitted).
+
 ## 1. Problem & Goals
 
 ### Problem

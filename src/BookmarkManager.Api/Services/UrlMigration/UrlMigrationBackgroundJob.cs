@@ -67,7 +67,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     }
 
     /// <summary>Single-flight enqueue: returns false when a run is already active.</summary>
-    public bool Enqueue(string deadHost, bool force = false, string? suggestedHost = null)
+    public bool Enqueue(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null)
     {
         Guid runId;
         lock (_statusLock)
@@ -91,7 +91,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
             _activeRunCancellation = new CancellationTokenSource();
         }
 
-        var queued = _requestChannel.Writer.TryWrite(new UrlMigrationRunRequest(runId, deadHost, force, suggestedHost));
+        var queued = _requestChannel.Writer.TryWrite(new UrlMigrationRunRequest(runId, deadHost, force, suggestedHost, pattern));
         if (!queued)
         {
             lock (_statusLock)
@@ -401,7 +401,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
                 services.GetRequiredService<ICandidateVerificationService>(),
                 services.GetRequiredService<IAnilistScheduleProvider>(),
                 services.GetRequiredService<IWaybackEpisodeIdResolver>(),
-                excludedUrls, workerPreferredHost, restrictToPreferredHost, workerDb, searchRun, token).ConfigureAwait(false);
+                excludedUrls, workerPreferredHost, restrictToPreferredHost, request.Pattern, workerDb, searchRun, token).ConfigureAwait(false);
 
             // SQLite writes and auto-approval transactions remain serialized; HTTP work overlaps.
             await saveGate.WaitAsync(token).ConfigureAwait(false);
@@ -493,6 +493,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         IReadOnlySet<string> excludedUrls,
         string? preferredHost,
         bool restrictToPreferredHost,
+        string? learnedPattern,
         AppDbContext db,
         SearchRunContext searchRun,
         CancellationToken ct)
@@ -555,7 +556,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         if (restrictToPreferredHost && preferredHost != null && !AniListIdKeyedHosts.Contains(preferredHost))
         {
             var rewritten = await TryDirectHostRewriteAsync(proposal, deadHost, preferredHost, bookmark.Id,
-                extraction, verificationService, attempts, diagnosticStages, ct).ConfigureAwait(false);
+                extraction, verificationService, attempts, diagnosticStages, learnedPattern, ct).ConfigureAwait(false);
             if (rewritten != null)
             {
                 return rewritten;
@@ -749,10 +750,12 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
     /// <summary>
     /// Direct rewrite against a user-chosen target host: derive the series slug and chapter from the
     /// old URL and try <c>https://{target}/{slug}/chapter-{n}</c> then the series page, verifying
-    /// with the normal HTTP verifier before any search. Returns a High proposal when the chapter
-    /// URL verifies (series+chapter), a Medium one when only the series page verifies, and null to
-    /// fall through to the catalog/search flow when neither does. Attempts are recorded for the
-    /// per-candidate diagnostics.
+    /// with the normal HTTP verifier before any search. When the run carries a pattern learned by
+    /// target-host discovery (<paramref name="learnedPattern"/>, e.g. <c>/{slug}/chapter-{n}</c>),
+    /// that shape is tried first. Returns a High proposal when the chapter URL verifies
+    /// (series+chapter), a Medium one when only the series page verifies, and null to fall through
+    /// to the catalog/search flow when neither does. Attempts are recorded for the per-candidate
+    /// diagnostics.
     /// </summary>
     private async Task<UrlMigrationProposal?> TryDirectHostRewriteAsync(
         UrlMigrationProposal proposal,
@@ -763,6 +766,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         ICandidateVerificationService verificationService,
         List<CandidateAttempt> attempts,
         List<SearchStage> diagnosticStages,
+        string? learnedPattern,
         CancellationToken ct)
     {
         if (!SeriesExtractionFallback.TryParseSeriesSlugAndChapter(proposal.OldUrl, out var slug, out var chapter) ||
@@ -773,6 +777,14 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 
         var chapterNumber = !string.IsNullOrWhiteSpace(chapter) ? chapter : extraction.ChapterNumber;
         var candidates = new List<SearchCandidate>();
+
+        // The discovery-learned template is the strongest guess: it was observed verifying the most
+        // sampled series on this exact host, so try it before the built-in shapes.
+        if (TryBuildLearnedPatternUrl(preferredHost, learnedPattern, slug, chapterNumber, out var learnedUrl))
+        {
+            candidates.Add(new SearchCandidate(learnedUrl, null, "Learned pattern"));
+        }
+
         if (!string.IsNullOrWhiteSpace(chapterNumber))
         {
             candidates.Add(new SearchCandidate($"https://{preferredHost}/{slug}/chapter-{chapterNumber}", null, "Direct rewrite"));
@@ -834,6 +846,41 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Expands a discovery-learned URL path template (<c>{slug}</c>/<c>{n}</c>) into an absolute
+    /// https URL for the target host. Rejects templates that still carry an unknown token or need a
+    /// chapter number the old URL did not provide, so a malformed hint simply falls through to the
+    /// built-in shapes.
+    /// </summary>
+    private static bool TryBuildLearnedPatternUrl(
+        string preferredHost, string? pattern, string slug, string? chapterNumber, out string url)
+    {
+        url = string.Empty;
+        if (string.IsNullOrWhiteSpace(pattern) || !pattern.StartsWith('/'))
+        {
+            return false;
+        }
+
+        var path = pattern.Replace("{slug}", slug);
+        if (path.Contains("{n}", StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(chapterNumber))
+            {
+                return false;
+            }
+
+            path = path.Replace("{n}", chapterNumber);
+        }
+
+        if (path.Contains('{') || path.Contains('}') || path.Contains("://", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        url = $"https://{preferredHost}{path}";
+        return true;
     }
 
     /// <summary>
@@ -1246,7 +1293,7 @@ public sealed partial class UrlMigrationBackgroundJob : BackgroundService
 
     private static string? TryGetHost(string? url) => Infrastructure.UrlHelpers.TryGetHost(url);
 
-    private sealed record UrlMigrationRunRequest(Guid RunId, string DeadHost, bool Force = false, string? SuggestedHost = null);
+    private sealed record UrlMigrationRunRequest(Guid RunId, string DeadHost, bool Force = false, string? SuggestedHost = null, string? Pattern = null);
 
     /// <summary>One verified candidate and why it did not become a proposal, for Unresolved diagnostics.</summary>
     private sealed record CandidateAttempt(string Url, string Reason);

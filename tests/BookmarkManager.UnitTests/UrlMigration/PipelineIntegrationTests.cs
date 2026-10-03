@@ -191,7 +191,7 @@ public sealed class PipelineIntegrationTests
 
         public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
             SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
-            string? preferredHost = null, bool restrictToPreferredHost = false)
+            string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
             => Task.FromResult(new SearchOutcome<SearchCandidate>(_candidates, [new("SearXNG", _candidates.Count, null)]));
     }
 
@@ -199,7 +199,7 @@ public sealed class PipelineIntegrationTests
     {
         public Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
             SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
-            string? preferredHost = null, bool restrictToPreferredHost = false)
+            string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
             => throw new InvalidOperationException("SearXNG fallback should not be used when Groq compound search succeeds.");
     }
 }

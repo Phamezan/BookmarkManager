@@ -91,6 +91,10 @@ builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.GeminiGroun
 builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.TavilySearchService.HttpClientName)
     .ConfigureHttpClient(c => c.Timeout = BookmarkManager.Api.Services.UrlMigration.TavilySearchService.ProviderTimeout + TimeSpan.FromSeconds(5));
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.TavilySearchService>();
+// Discovery needs to fake/count Tavily calls in tests, so the concrete provider is also exposed
+// through ITavilySearchService (same scoped instance).
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ITavilySearchService>(provider =>
+    provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.TavilySearchService>());
 builder.Services.Configure<BookmarkManager.Api.Services.UrlMigration.UrlMigrationOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.UrlMigration.UrlMigrationOptions.SectionName));
 // SearXNG runs on the Compose network (http://searxng:8080), never published to the host.
@@ -103,6 +107,7 @@ builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.HttpCandida
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ICandidateVerificationService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>());
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IDomainLivenessGuard>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>());
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.UrlMigrationApprovalService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.TargetHostDiscoveryService>();
 builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService.HttpClientName)
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.WaybackEpisodeIdResolver.HttpClientName)

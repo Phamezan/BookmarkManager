@@ -1,4 +1,5 @@
 using System.Data.Common;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services;
@@ -410,6 +411,36 @@ public sealed class UrlMigrationBackgroundJobTests
         var proposal = Assert.Single(await harness.Proposals());
         Assert.Equal("High", proposal.Confidence);
         Assert.Equal("https://comizy.io/omniscient-reader/chapter-112.5", proposal.ProposedUrl);
+        Assert.Equal(0, search.Calls);
+    }
+
+    [Fact]
+    public async Task DirectRewrite_LearnedPattern_IsTriedBeforeDefaultShapes()
+    {
+        const string learnedUrl = "https://comizy.io/series/academy-0/chapter-51/";
+        const string defaultUrl = "https://comizy.io/academy-0/chapter-51";
+        var verified = new ConcurrentQueue<string>();
+        var search = new RecordingSearch([]);
+        var verification = new ScriptedVerification(c =>
+        {
+            verified.Enqueue(c.Url);
+            return c.Url is learnedUrl or defaultUrl
+                ? new VerificationResult(true, true, true, "Series and chapter matched")
+                : new VerificationResult(false, false, false, "HTTP 404 NotFound");
+        });
+        await using var harness = await Harness.CreateWithSearch(search, verificationService: verification);
+        await harness.Seed(1);
+
+        harness.Job.Enqueue("www.webtoon.xyz", force: true, suggestedHost: "comizy.io", pattern: "/series/{slug}/chapter-{n}/");
+        var status = await harness.WaitStopped();
+
+        Assert.Null(status.ErrorMessage);
+        Assert.Equal(1, status.Resolved);
+        var proposal = Assert.Single(await harness.Proposals());
+        Assert.Equal("High", proposal.Confidence);
+        // Both shapes verify; the learned pattern must win because it is tried first.
+        Assert.Equal(learnedUrl, proposal.ProposedUrl);
+        Assert.Equal(learnedUrl, verified.First());
         Assert.Equal(0, search.Calls);
     }
 

@@ -36,7 +36,7 @@ namespace BookmarkManager.Api.Services.UrlMigration;
 /// 433 pay-as-you-go limit.</item>
 /// </list>
 /// </remarks>
-public sealed class TavilySearchService
+public sealed class TavilySearchService : ITavilySearchService
 {
     public const string HttpClientName = nameof(TavilySearchService);
 
@@ -73,7 +73,7 @@ public sealed class TavilySearchService
 
     public async Task<SearchOutcome<SearchCandidate>> SearchWithDiagnosticsAsync(
         SeriesExtraction extraction, string deadHost, SearchRunContext run, CancellationToken ct,
-        string? preferredHost = null, bool restrictToPreferredHost = false)
+        string? preferredHost = null, bool restrictToPreferredHost = false, string? queryOverride = null)
     {
         ArgumentNullException.ThrowIfNull(extraction);
         ArgumentException.ThrowIfNullOrWhiteSpace(deadHost);
@@ -82,7 +82,7 @@ public sealed class TavilySearchService
         var settings = await _settings.GetAsync(ct).ConfigureAwait(false);
         return await run.ExecuteAsync("Tavily", ProviderTimeout, async token =>
         {
-            var raw = await SearchAsync(extraction, preferredHost, restrictToPreferredHost, settings, token).ConfigureAwait(false);
+            var raw = await SearchAsync(extraction, preferredHost, restrictToPreferredHost, settings, token, queryOverride).ConfigureAwait(false);
             return SearchCandidateFilter.Filter(raw, deadHost);
         }, _logger, ct).ConfigureAwait(false);
     }
@@ -92,7 +92,8 @@ public sealed class TavilySearchService
         string? preferredHost,
         bool restrictToPreferredHost,
         AiTaggingSettingsDto settings,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? queryOverride = null)
     {
         if (string.IsNullOrWhiteSpace(settings.TavilyApiKey))
         {
@@ -101,7 +102,7 @@ public sealed class TavilySearchService
 
         var restrict = restrictToPreferredHost && !string.IsNullOrWhiteSpace(preferredHost);
         var requestBody = new TavilySearchRequest(
-            Query: BuildQuery(extraction),
+            Query: string.IsNullOrWhiteSpace(queryOverride) ? BuildQuery(extraction) : queryOverride.Trim(),
             SearchDepth: "basic",
             MaxResults: MaxResults,
             IncludeDomains: restrict ? new[] { preferredHost! } : null);
