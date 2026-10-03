@@ -90,9 +90,33 @@ series. Probing is bounded (six concurrent hosts), each probe has an 8-second bu
 abandoned after eight consecutive sampled series fail there. Discovery runs synchronously in the
 request (it is read-only, has no DB writes or long-lived status, and the client passes its
 `CancellationToken` so navigating away cancels it) rather than as another background job. The
-"Suggest target" button on the URL Migrator page shows the ranked table and "Use this" fills the
-target host and remembers the pattern; `StartUrlMigrationRequest.Pattern` forwards it so
-`TryDirectHostRewriteAsync` tries that shape before the built-in ones (unchanged when omitted).
+"Suggest target" button on the URL Migrator page shows the ranked table; per row, ✓ fills the
+target host and remembers the pattern ("Use as target") and ✗ persists the host to a global reject
+list ("Never suggest again"). Rejected hosts are stored normalized (lowercase, no `www.`) in a tiny
+`data/rejected-target-hosts.json` store served by `GET/POST/DELETE api/bookmarks/url-migration/rejected-hosts`,
+excluded from discovery before probing (no request is ever sent to them) and from the tally so the
+next host fills the top-five slot; the page shows them as chips whose close icon un-rejects.
+`StartUrlMigrationRequest.Pattern` forwards the learned pattern so `TryDirectHostRewriteAsync` tries
+that shape before the built-in ones (unchanged when omitted).
+
+Two additions keep results honest and user-steerable:
+
+- **Chapter links learned from the series page.** When a series page verifies but no guessed chapter
+  template does, discovery fetches that one page through the verifier's capped HTTP client, keeps
+  same-host links whose path chapter equals the sampled chapter (reusing the verifier's
+  chapter-number parsing, so a `/page/N` segment never counts), and verifies the best link. A link
+  that verifies counts as a chapter; a `{slug}`/`{n}` template is derived only when both the slug and
+  chapter number appear literally (an id/hash-keyed link is counted with no pattern). At most one
+  extra page fetch per series.
+- **"Test a host".** `POST api/bookmarks/url-migration/discover-target` also accepts optional
+  `candidateHosts` (max five, validated through the same filter, so private/IP literals, the dead
+  host, and non-reader noise hosts are rejected with 400). When supplied, search is skipped entirely
+  (zero credits) and only those hosts are probed against the sample. Rejected hosts typed here are
+  allowed — explicit user intent — and the row detail says so.
+
+Rows whose `ChaptersFound` is 0 render a muted "series pages only" label instead of looking like a
+full match, the table still sorts by chapters then series, and a partial run (time budget reached)
+shows a warning above the table rather than only in the empty-state message.
 
 ## 1. Problem & Goals
 

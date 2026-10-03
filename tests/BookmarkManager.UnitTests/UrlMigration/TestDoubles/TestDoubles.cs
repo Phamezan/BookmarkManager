@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using BookmarkManager.Api.Services;
+using BookmarkManager.Api.Services.UrlMigration;
 using BookmarkManager.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -22,6 +23,36 @@ public sealed class InMemoryAiTaggingSettingsService : AiTaggingSettingsService
 
     public override Task<AiTaggingSettingsDto> GetAsync(CancellationToken cancellationToken)
         => Task.FromResult(_settings);
+}
+
+/// <summary>File-free rejected-host store so discovery tests do not touch disk.</summary>
+public sealed class InMemoryRejectedTargetHostStore : RejectedTargetHostStore
+{
+    private readonly List<string> _hosts;
+
+    public InMemoryRejectedTargetHostStore(IEnumerable<string>? hosts = null)
+        : base(NullLogger<RejectedTargetHostStore>.Instance, "unused-rejected.json")
+    {
+        _hosts = (hosts ?? []).Select(Normalize).Where(h => !string.IsNullOrEmpty(h)).ToList();
+    }
+
+    public override Task<IReadOnlyList<string>> GetHostsAsync(CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<string>>(_hosts.ToList());
+
+    public override Task<bool> AddAsync(string host, CancellationToken cancellationToken)
+    {
+        var normalized = Normalize(host);
+        if (string.IsNullOrEmpty(normalized) || _hosts.Contains(normalized, StringComparer.Ordinal))
+            return Task.FromResult(false);
+        _hosts.Add(normalized);
+        return Task.FromResult(true);
+    }
+
+    public override Task<bool> RemoveAsync(string host, CancellationToken cancellationToken)
+    {
+        var removed = _hosts.RemoveAll(h => string.Equals(h, Normalize(host), StringComparison.Ordinal)) > 0;
+        return Task.FromResult(removed);
+    }
 }
 
 public sealed class SingleClientFactory : IHttpClientFactory

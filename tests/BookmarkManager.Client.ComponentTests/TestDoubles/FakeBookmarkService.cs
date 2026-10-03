@@ -225,11 +225,35 @@ public class FakeBookmarkService : IBookmarkService
         => Task.FromResult(MangaScheduleResponse);
 
     public virtual Task<List<DeadDomainCandidateDto>> GetDeadDomainCandidatesAsync(CancellationToken cancellationToken = default) => Task.FromResult(DeadDomainCandidates);
+
+    public List<string> RejectedHosts { get; set; } = [];
+    public List<string> RejectedAdds { get; } = [];
+    public List<string> RejectedRemoves { get; } = [];
+
+    public virtual Task<List<string>> GetRejectedTargetHostsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(RejectedHosts);
+
+    public virtual Task<List<string>> RejectTargetHostAsync(string host, CancellationToken cancellationToken = default)
+    {
+        RejectedAdds.Add(host);
+        if (!RejectedHosts.Contains(host, StringComparer.OrdinalIgnoreCase))
+        {
+            RejectedHosts.Add(host);
+        }
+        return Task.FromResult(new List<string>(RejectedHosts));
+    }
+
+    public virtual Task<List<string>> UnrejectTargetHostAsync(string host, CancellationToken cancellationToken = default)
+    {
+        RejectedRemoves.Add(host);
+        RejectedHosts.RemoveAll(h => string.Equals(h, host, StringComparison.OrdinalIgnoreCase));
+        return Task.FromResult(new List<string>(RejectedHosts));
+    }
     
     public virtual Task<bool> StartUrlMigrationAsync(string deadHost, bool force = false, string? suggestedHost = null, string? pattern = null, CancellationToken cancellationToken = default)
         => OnStartUrlMigration != null ? OnStartUrlMigration(deadHost, force, suggestedHost) : Task.FromResult(false);
 
-    public virtual Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, CancellationToken cancellationToken = default)
+    public virtual Task<TargetHostDiscoveryResultDto?> DiscoverTargetHostAsync(string deadHost, int? sampleSize = null, List<string>? candidateHosts = null, CancellationToken cancellationToken = default)
         => Task.FromResult(TargetHostDiscovery);
 
     public virtual Task<UrlMigrationStatusDto?> GetUrlMigrationStatusAsync(CancellationToken cancellationToken = default) => Task.FromResult(UrlMigrationStatus);

@@ -52,8 +52,104 @@ public partial class BookmarksController
             });
         }
 
-        var result = await discovery.DiscoverAsync(host!, request!.SampleSize, ct);
+        if (request!.CandidateHosts is { Count: > 0 } candidateHosts)
+        {
+            var candidateError = ValidateCandidateHosts(candidateHosts, host!);
+            if (candidateError is not null)
+            {
+                return BadRequest(candidateError);
+            }
+        }
+
+        var result = await discovery.DiscoverAsync(host!, request.SampleSize, request.CandidateHosts, ct);
         return Ok(result);
+    }
+
+    [HttpGet("url-migration/rejected-hosts")]
+    public async Task<ActionResult<List<string>>> GetRejectedTargetHostsAsync(
+        [FromServices] RejectedTargetHostStore store,
+        CancellationToken ct)
+    {
+        var hosts = await store.GetHostsAsync(ct);
+        return Ok(hosts.ToList());
+    }
+
+    [HttpPost("url-migration/rejected-hosts")]
+    public async Task<ActionResult<List<string>>> RejectTargetHostAsync(
+        [FromBody] RejectedTargetHostRequest request,
+        [FromServices] RejectedTargetHostStore store,
+        CancellationToken ct)
+    {
+        var normalized = RejectedTargetHostStore.Normalize(request?.Host);
+        if (!RejectedTargetHostStore.IsValidHost(normalized))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Host must be a valid hostname (no scheme, path, IP literal, or whitespace).",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        await store.AddAsync(normalized, ct);
+        var hosts = await store.GetHostsAsync(ct);
+        return Ok(hosts.ToList());
+    }
+
+    [HttpDelete("url-migration/rejected-hosts/{host}")]
+    public async Task<ActionResult<List<string>>> UnrejectTargetHostAsync(
+        string host,
+        [FromServices] RejectedTargetHostStore store,
+        CancellationToken ct)
+    {
+        var normalized = RejectedTargetHostStore.Normalize(host);
+        if (!RejectedTargetHostStore.IsValidHost(normalized))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Host must be a valid hostname (no scheme, path, IP literal, or whitespace).",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        await store.RemoveAsync(normalized, ct);
+        var hosts = await store.GetHostsAsync(ct);
+        return Ok(hosts.ToList());
+    }
+
+    private const int MaxCandidateHosts = 5;
+
+    /// <summary>
+    /// Validates explicit discovery hosts with the same filter the search path applies, so a
+    /// private/IP literal, the dead host, or a known non-reader noise host can never be probed
+    /// even when typed by hand. Returns null when every host is acceptable.
+    /// </summary>
+    private static ProblemDetails? ValidateCandidateHosts(List<string> candidateHosts, string deadHost)
+    {
+        if (candidateHosts.Count > MaxCandidateHosts)
+        {
+            return new ProblemDetails
+            {
+                Title = $"CandidateHosts cannot exceed {MaxCandidateHosts} hosts per request.",
+                Status = StatusCodes.Status400BadRequest
+            };
+        }
+
+        foreach (var raw in candidateHosts)
+        {
+            var normalized = RejectedTargetHostStore.Normalize(raw);
+            var filtered = SearchCandidateFilter.Filter(
+                [new SearchCandidate($"https://{normalized}/", null, null)], deadHost, maxResults: 1);
+            if (!RejectedTargetHostStore.IsValidHost(normalized) || filtered.Count == 0)
+            {
+                return new ProblemDetails
+                {
+                    Title = $"Candidate host \"{raw}\" is not a valid public hostname.",
+                    Status = StatusCodes.Status400BadRequest
+                };
+            }
+        }
+
+        return null;
     }
 
     [HttpPost("url-migration/run")]

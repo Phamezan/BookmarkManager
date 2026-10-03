@@ -331,6 +331,226 @@ public sealed class TargetHostDiscoveryServiceTests
         Assert.Equal(9, suggestion.SearchCreditsUsed);
     }
 
+    // ---------------------------------------------------------------- reject list / candidates / learning
+
+    [Fact]
+    public async Task Discover_RejectedHostIsNeverProbed_AndAnotherHostTakesItsSlot()
+    {
+        var probedHosts = new ConcurrentDictionary<string, byte>();
+
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 6).Select(i => $"Series {i}").ToList(),
+            searxng: extraction =>
+            {
+                var index = extraction.SeriesName["Series ".Length..];
+                return
+                [
+                    new("https://bad.example/series/x", null, null),
+                    new($"https://host-{index}.example/series/x", null, null)
+                ];
+            },
+            tavily: _ => [],
+            verification: candidate =>
+            {
+                probedHosts.TryAdd(new Uri(candidate.Url).Host, 0);
+                return new VerificationResult(true, true, true, "matched");
+            },
+            tavilyApiKey: null,
+            rejectedHosts: ["bad.example"]);
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 50, default);
+
+        Assert.DoesNotContain("bad.example", probedHosts.Keys);
+        Assert.DoesNotContain(result.Suggestions, s => s.Host == "bad.example");
+        // bad.example would have topped the tally (seen by every series); with it excluded the
+        // next five hosts fill the slots instead.
+        Assert.Equal(TargetHostDiscoveryService.MaxHosts, result.Suggestions.Count);
+        Assert.Contains("host-0.example", probedHosts.Keys);
+        Assert.Contains("host-4.example", probedHosts.Keys);
+        Assert.DoesNotContain("host-5.example", probedHosts.Keys);
+    }
+
+    [Fact]
+    public async Task Discover_LearnsChapterPatternFromSeriesPage()
+    {
+        var pageFetches = 0;
+        var verifiedLinks = new ConcurrentBag<string>();
+
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 5).Select(i => $"Series {i}").ToList(),
+            searxng: extraction =>
+            {
+                var index = extraction.SeriesName["Series ".Length..];
+                return [new($"https://reader.example/series-{index}", null, null)];
+            },
+            tavily: _ => [],
+            verification: candidate =>
+            {
+                // Only the exact chapter deep-link found on the series page is a chapter match;
+                // every guessed shape is series-only, forcing the learning path.
+                var isLearned = System.Text.RegularExpressions.Regex.IsMatch(
+                    candidate.Url, @"^https://reader\.example/manga/series-\d+/chapter-51$");
+                if (isLearned)
+                {
+                    verifiedLinks.Add(candidate.Url);
+                }
+
+                return isLearned
+                    ? new VerificationResult(true, true, true, "matched")
+                    : new VerificationResult(true, true, false, "series only");
+            },
+            tavilyApiKey: null,
+            pageLinks: seriesPageUrl =>
+            {
+                Interlocked.Increment(ref pageFetches);
+                var index = seriesPageUrl.Split('-').Last();
+                return
+                [
+                    $"https://reader.example/x/chapter-51/page-3",
+                    $"https://reader.example/manga/series-{index}/chapter-51",
+                    $"https://other.example/manga/series-{index}/chapter-51",
+                    $"http://127.0.0.1/manga/series-{index}/chapter-51"
+                ];
+            });
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 5, default);
+
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal("reader.example", suggestion.Host);
+        Assert.Equal(5, suggestion.ChaptersFound);
+        Assert.Equal("/manga/{slug}/chapter-{n}", suggestion.BestPattern);
+        // One extra series-page fetch per series, and the private-IP host was never verified.
+        Assert.Equal(5, pageFetches);
+        Assert.All(verifiedLinks, link => Assert.StartsWith("https://reader.example/manga/series-", link));
+        Assert.DoesNotContain(verifiedLinks, link => link.Contains("127.0.0.1"));
+    }
+
+    [Fact]
+    public async Task Discover_LearnedIdKeyedChapterLink_CountsChapterButHasNoPattern()
+    {
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 5).Select(i => $"Series {i}").ToList(),
+            searxng: extraction =>
+            {
+                var index = extraction.SeriesName["Series ".Length..];
+                return [new($"https://reader.example/series-{index}", null, null)];
+            },
+            tavily: _ => [],
+            verification: candidate =>
+            {
+                var isLearned = candidate.Url == "https://reader.example/read/9f8e7d/chapter-51";
+                return isLearned
+                    ? new VerificationResult(true, true, true, "matched")
+                    : new VerificationResult(true, true, false, "series only");
+            },
+            tavilyApiKey: null,
+            pageLinks: _ => ["https://reader.example/read/9f8e7d/chapter-51"]);
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 5, default);
+
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal(5, suggestion.ChaptersFound);
+        Assert.Null(suggestion.BestPattern);
+    }
+
+    [Fact]
+    public async Task Discover_SeriesPageWithNoChapterLink_CountsSeriesOnly()
+    {
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 5).Select(i => $"Series {i}").ToList(),
+            searxng: extraction =>
+            {
+                var index = extraction.SeriesName["Series ".Length..];
+                return [new($"https://reader.example/series-{index}", null, null)];
+            },
+            tavily: _ => [],
+            verification: _ => new VerificationResult(true, true, false, "series only"),
+            tavilyApiKey: null,
+            pageLinks: _ => ["https://reader.example/page-51", "https://reader.example/about"]);
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 5, default);
+
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal(5, suggestion.SeriesFound);
+        Assert.Equal(0, suggestion.ChaptersFound);
+        Assert.Null(suggestion.BestPattern);
+    }
+
+    [Fact]
+    public async Task Discover_CandidateHosts_SkipsSearch_AndProbesOnlyGivenHosts()
+    {
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 5).Select(i => $"Series {i}").ToList(),
+            searxng: _ => [new("https://searched.example/series/x", null, null)],
+            tavily: _ => [new("https://tavily.example/series/x", null, null)],
+            verification: candidate => new VerificationResult(
+                true, true,
+                new Uri(candidate.Url).Host == "only.example" &&
+                candidate.Url.Contains("chapter", StringComparison.OrdinalIgnoreCase),
+                "matched"),
+            tavilyApiKey: "test-key");
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 5, ["only.example"], default);
+
+        Assert.Equal(0, harness.Searxng.Calls);
+        Assert.Equal(0, harness.Tavily.Calls);
+        Assert.Equal(0, result.SearchCreditsUsed);
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal("only.example", suggestion.Host);
+        Assert.Equal(5, suggestion.SeriesFound);
+        Assert.Equal(5, suggestion.ChaptersFound);
+    }
+
+    [Fact]
+    public async Task Discover_CandidateHostThatWasRejected_IsStillProbed_AndDetailSaysSo()
+    {
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 5).Select(i => $"Series {i}").ToList(),
+            searxng: _ => [new("https://searched.example/series/x", null, null)],
+            tavily: _ => [],
+            verification: candidate => new VerificationResult(
+                true, true,
+                new Uri(candidate.Url).Host == "retry.example" &&
+                candidate.Url.Contains("chapter", StringComparison.OrdinalIgnoreCase),
+                "matched"),
+            tavilyApiKey: null,
+            rejectedHosts: ["retry.example"]);
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 5, ["retry.example"], default);
+
+        Assert.Equal(0, harness.Searxng.Calls);
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal("retry.example", suggestion.Host);
+        Assert.Contains("Previously rejected", suggestion.Detail);
+    }
+
+    [Fact]
+    public async Task Discover_LearnedPageSegment_IsNotTreatedAsAChapter()
+    {
+        // A page-N link contains the chapter digits but is pagination, not a chapter. Only a
+        // permissive fake that treats the page link as a chapter would let the mutation pass.
+        using var harness = await Harness.CreateAsync(
+            titles: Enumerable.Range(0, 5).Select(i => $"Series {i}").ToList(),
+            searxng: extraction =>
+            {
+                var index = extraction.SeriesName["Series ".Length..];
+                return [new($"https://reader.example/series-{index}", null, null)];
+            },
+            tavily: _ => [],
+            verification: candidate => candidate.Url.Contains("/page-", StringComparison.OrdinalIgnoreCase)
+                ? new VerificationResult(true, true, true, "matched")
+                : new VerificationResult(true, true, false, "series only"),
+            tavilyApiKey: null,
+            pageLinks: _ => ["https://reader.example/x/page-51"]);
+
+        var result = await harness.Service.DiscoverAsync(DeadHost, 5, default);
+
+        var suggestion = Assert.Single(result.Suggestions);
+        Assert.Equal(5, suggestion.SeriesFound);
+        Assert.Equal(0, suggestion.ChaptersFound);
+        Assert.Null(suggestion.BestPattern);
+    }
+
     // ---------------------------------------------------------------- harness
 
     private sealed class Harness : IDisposable
@@ -348,7 +568,9 @@ public sealed class TargetHostDiscoveryServiceTests
             Func<SearchCandidate, VerificationResult>? verification,
             string? tavilyApiKey,
             TimeSpan? discoveryBudget = null,
-            Func<SearchCandidate, CancellationToken, Task<VerificationResult>>? asyncVerification = null)
+            Func<SearchCandidate, CancellationToken, Task<VerificationResult>>? asyncVerification = null,
+            IEnumerable<string>? rejectedHosts = null,
+            Func<string, IReadOnlyList<string>>? pageLinks = null)
         {
             var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"host-discovery-{Guid.NewGuid():N}.db");
             var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -367,9 +589,11 @@ public sealed class TargetHostDiscoveryServiceTests
             var searxngFake = new FakeSearxng(searxng);
             var tavilyFake = new FakeTavily(tavily);
             var settings = new InMemoryAiTaggingSettingsService(new AiTaggingSettingsDto { TavilyApiKey = tavilyApiKey });
+            var rejectedStore = new InMemoryRejectedTargetHostStore(rejectedHosts);
+            var links = pageLinks ?? (_ => []);
             ICandidateVerificationService verificationDouble = asyncVerification is not null
-                ? new AsyncStubVerification(asyncVerification)
-                : new StubVerification(verification ?? (_ => new VerificationResult(false, false, false, "n/a")));
+                ? new AsyncStubVerification(asyncVerification, links)
+                : new StubVerification(verification ?? (_ => new VerificationResult(false, false, false, "n/a")), links);
 
             var service = new TargetHostDiscoveryService(
                 db,
@@ -378,6 +602,7 @@ public sealed class TargetHostDiscoveryServiceTests
                 tavilyFake,
                 settings,
                 verificationDouble,
+                rejectedStore,
                 NullLogger<TargetHostDiscoveryService>.Instance,
                 configuration: null,
                 discoveryBudget: discoveryBudget);
@@ -401,22 +626,26 @@ public sealed class TargetHostDiscoveryServiceTests
             => Task.FromResult(new SeriesExtraction(title, "51", "manga", true));
     }
 
-    private sealed class StubVerification(Func<SearchCandidate, VerificationResult> verify) : ICandidateVerificationService
+    private sealed class StubVerification(
+        Func<SearchCandidate, VerificationResult> verify,
+        Func<string, IReadOnlyList<string>> pageLinks) : ICandidateVerificationService
     {
         public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct)
             => Task.FromResult(verify(candidate));
 
         public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<string>>([]);
+            => Task.FromResult(pageLinks(seriesPageUrl));
     }
 
-    private sealed class AsyncStubVerification(Func<SearchCandidate, CancellationToken, Task<VerificationResult>> verify) : ICandidateVerificationService
+    private sealed class AsyncStubVerification(
+        Func<SearchCandidate, CancellationToken, Task<VerificationResult>> verify,
+        Func<string, IReadOnlyList<string>> pageLinks) : ICandidateVerificationService
     {
         public Task<VerificationResult> VerifyAsync(SearchCandidate candidate, SeriesExtraction extraction, CancellationToken ct)
             => verify(candidate, ct);
 
         public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<string>>([]);
+            => Task.FromResult(pageLinks(seriesPageUrl));
     }
 
     private sealed class FakeSearxng(Func<SeriesExtraction, IReadOnlyList<SearchCandidate>> responder) : ISearxngSearchService

@@ -648,6 +648,131 @@ public sealed class UrlMigrationTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task DiscoverTargetHost_CandidateHosts_SkipSearchAndProbeOnlyGivenHost()
+    {
+        const string deadHost = "deaddomain.example";
+        var searxng = new DiscoverySearxngSearchService();
+        var tavily = new DiscoveryTavilySearchService();
+        using var factory = CreateDiscoveryFactory(Factory, searxng, tavily);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await SeedBookmarkAsync(factory, $"https://{deadHost}/read/series-{i}/chapter-5/");
+        }
+
+        using var client = factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/discover-target",
+            new DiscoverTargetHostRequest(deadHost, 5, ["reader.example"]));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<TargetHostDiscoveryResultDto>(JsonOptions);
+        Assert.NotNull(result);
+        var suggestion = Assert.Single(result!.Suggestions);
+        Assert.Equal("reader.example", suggestion.Host);
+        Assert.Equal(5, suggestion.SeriesFound);
+        Assert.Equal(0, result.SearchCreditsUsed);
+        Assert.Equal(0, searxng.Calls);
+        Assert.Equal(0, tavily.Calls);
+    }
+
+    [Theory]
+    [InlineData("192.168.1.100")]
+    [InlineData("127.0.0.1")]
+    [InlineData("has/slash.example")]
+    [InlineData("")]
+    public async Task DiscoverTargetHost_InvalidCandidateHost_ReturnsBadRequest(string candidate)
+    {
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/discover-target",
+            new DiscoverTargetHostRequest("deaddomain.example", 5, [candidate]));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DiscoverTargetHost_TooManyCandidateHosts_ReturnsBadRequest()
+    {
+        var candidates = Enumerable.Range(0, 6).Select(i => $"reader-{i}.example").ToList();
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/discover-target",
+            new DiscoverTargetHostRequest("deaddomain.example", 5, candidates));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RejectedHosts_AddListDelete_AndNormalize()
+    {
+        using var client = Factory.CreateClient();
+
+        // Start from a clean slate (the store is a file shared across the process).
+        var initial = await client.GetFromJsonAsync<List<string>>("/api/bookmarks/url-migration/rejected-hosts", JsonOptions);
+        foreach (var host in initial ?? [])
+        {
+            await client.DeleteAsync($"/api/bookmarks/url-migration/rejected-hosts/{Uri.EscapeDataString(host)}");
+        }
+
+        var addResponse = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/rejected-hosts", new RejectedTargetHostRequest("WWW.Comizy.io"));
+        Assert.Equal(HttpStatusCode.OK, addResponse.StatusCode);
+        var afterAdd = await addResponse.Content.ReadFromJsonAsync<List<string>>(JsonOptions);
+        Assert.Equal(["comizy.io"], afterAdd!);
+
+        var listed = await client.GetFromJsonAsync<List<string>>("/api/bookmarks/url-migration/rejected-hosts", JsonOptions);
+        Assert.Contains("comizy.io", listed!);
+
+        var deleteResponse = await client.DeleteAsync("/api/bookmarks/url-migration/rejected-hosts/comizy.io");
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        var afterDelete = await deleteResponse.Content.ReadFromJsonAsync<List<string>>(JsonOptions);
+        Assert.DoesNotContain("comizy.io", afterDelete!);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("has/slash.example")]
+    [InlineData("192.168.1.100")]
+    public async Task RejectedHosts_InvalidHost_ReturnsBadRequest(string host)
+    {
+        using var client = Factory.CreateClient();
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/rejected-hosts", new RejectedTargetHostRequest(host));
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RejectedHosts_ExcludedFromDiscovery()
+    {
+        const string deadHost = "deaddomain.example";
+        var searxng = new DiscoverySearxngSearchService();
+        var tavily = new DiscoveryTavilySearchService();
+        using var factory = CreateDiscoveryFactory(Factory, searxng, tavily);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await SeedBookmarkAsync(factory, $"https://{deadHost}/read/series-{i}/chapter-5/");
+        }
+
+        using var client = factory.CreateClient();
+        await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/rejected-hosts", new RejectedTargetHostRequest("reader.example"));
+
+        var response = await client.PostAsJsonAsync(
+            "/api/bookmarks/url-migration/discover-target",
+            new DiscoverTargetHostRequest(deadHost, 5));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<TargetHostDiscoveryResultDto>(JsonOptions);
+        Assert.NotNull(result);
+        Assert.DoesNotContain(result!.Suggestions, s => s.Host == "reader.example");
+
+        // Clean up so the shared store does not leak into other tests.
+        await client.DeleteAsync("/api/bookmarks/url-migration/rejected-hosts/reader.example");
+    }
+
+    [Fact]
     public async Task StartUrlMigration_InvalidPattern_ReturnsBadRequest()
     {
         using var client = Factory.CreateClient();

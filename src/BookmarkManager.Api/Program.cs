@@ -107,6 +107,7 @@ builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.HttpCandida
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.ICandidateVerificationService>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>());
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IDomainLivenessGuard>(provider => provider.GetRequiredService<BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService>());
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.UrlMigrationApprovalService>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.UrlMigration.RejectedTargetHostStore>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.TargetHostDiscoveryService>();
 builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.HttpCandidateVerificationService.HttpClientName)
     .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(10));

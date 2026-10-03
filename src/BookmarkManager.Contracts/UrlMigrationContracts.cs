@@ -12,8 +12,12 @@ public record StartUrlMigrationRequest(string DeadHost, bool Force = false, stri
 
 // Target-host discovery: sample the dead host's bookmarks, find where those series live now
 // (SearXNG first, Tavily only as a paid fallback), probe candidates with plain HTTP, and rank
-// the hosts by coverage. SampleSize is clamped 5-50 (default 20).
-public record DiscoverTargetHostRequest(string DeadHost, int? SampleSize = null);
+// the hosts by coverage. SampleSize is clamped 5-50 (default 20). CandidateHosts, when supplied,
+// skips search entirely (0 credits) and probes only the named hosts (max 5, validated).
+public record DiscoverTargetHostRequest(string DeadHost, int? SampleSize = null, List<string>? CandidateHosts = null);
+
+// Host to add to (or remove from) the persisted reject list. Normalized server-side.
+public record RejectedTargetHostRequest(string Host);
 
 public class TargetHostSuggestionDto
 {
