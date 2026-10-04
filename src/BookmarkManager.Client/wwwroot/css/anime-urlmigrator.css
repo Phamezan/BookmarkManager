@@ -342,10 +342,42 @@
     color: var(--um-dim) !important;
 }
 
-[data-theme="anime"] .url-migrator-page .migrator-manual-row + .mud-typography-caption {
-    font-size: 0.6rem;
+[data-theme="anime"] .url-migrator-page .migrator-manual-arrow {
+    color: var(--um-dim);
+}
+
+/* Test / Suggest — same mono outline as the fields, green edge on hover. */
+[data-theme="anime"] .url-migrator-page .migrator-manual-btn.mud-button-root {
+    border: 1px solid #526b9f;
+    border-radius: 0;
+    background: rgba(5, 10, 22, 0.96);
+    color: var(--um-bone);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: border-color 0.18s, box-shadow 0.18s, color 0.18s;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-btn.mud-button-root:hover:not(:disabled),
+[data-theme="anime"] .url-migrator-page .migrator-manual-btn.mud-button-root:focus-visible {
+    border-color: var(--um-slash);
+    color: var(--um-slash);
+    box-shadow: 0 0 14px rgba(141, 252, 95, 0.22);
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-btn.mud-button-root:disabled {
+    border-color: #405477;
+    background: rgba(9, 15, 30, 0.94);
+    color: #8998bb;
+    opacity: 1;
+}
+
+[data-theme="anime"] .url-migrator-page .migrator-manual-hint {
+    font-size: 0.66rem;
     letter-spacing: 0.06em;
-    color: #4c5a80 !important;
+    color: #8998bb !important;
 }
 
 [data-theme="anime"] .url-migrator-page .migrator-start-btn.mud-button-root {

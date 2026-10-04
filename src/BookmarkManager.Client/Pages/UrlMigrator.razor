@@ -87,7 +87,7 @@
                 <MudAutocomplete T="string"
                                  @bind-Value="_manualHost"
                                  SearchFunc="SearchHostsAsync"
-                                 Label="Host"
+                                 Label="Old host"
                                  Placeholder="e.g. flamecomics.xyz"
                                  Variant="Variant.Outlined"
                                  Immediate="true"
@@ -96,36 +96,37 @@
                                  ShowProgressIndicator="true"
                                  Disabled="@(IsRunning || _starting)"
                                  Class="migrator-manual-host-field" />
+                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Class="migrator-manual-arrow" />
                 <MudTextField @bind-Value="_suggestedTargetHost"
-                              Label="Migrate to (optional)"
-                              Placeholder="e.g. weebcentral.com"
+                              Label="New host (optional)"
+                              Placeholder="e.g. comizy.io"
                               Variant="Variant.Outlined"
                               Immediate="true"
                               Disabled="@(IsRunning || _starting)"
                               Class="migrator-suggested-host-field" />
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Secondary"
-                           StartIcon="@Icons.Material.Filled.TravelExplore"
-                           OnClick="SuggestTargetAsync"
-                           Disabled="@(IsRunning || _starting || _discovering || string.IsNullOrWhiteSpace(_manualHost))"
-                           Class="migrator-suggest-target-btn">
-                    @(_discovering ? "Searching..." : "Suggest target")
-                </MudButton>
-                <MudTextField @bind-Value="_testHost"
-                              Label="Test a host"
-                              Placeholder="e.g. comizy.io"
-                              Variant="Variant.Outlined"
-                              Immediate="true"
-                              Disabled="@(IsRunning || _starting || _discovering)"
-                              Class="migrator-test-host-field" />
-                <MudButton Variant="Variant.Outlined"
-                           Color="Color.Info"
-                           StartIcon="@Icons.Material.Filled.Science"
-                           OnClick="TestHostAsync"
-                           Disabled="@(IsRunning || _starting || _discovering || string.IsNullOrWhiteSpace(_manualHost) || string.IsNullOrWhiteSpace(_testHost))"
-                           Class="migrator-test-host-btn">
-                    Test a host
-                </MudButton>
+                <MudTooltip Text="Check this new host against 20 of the old host's bookmarks (no search credits)">
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.Science"
+                               OnClick="TestHostAsync"
+                               Disabled="@(IsRunning || _starting || _discovering || string.IsNullOrWhiteSpace(_manualHost) || string.IsNullOrWhiteSpace(_suggestedTargetHost))"
+                               Class="migrator-manual-btn migrator-test-host-btn">
+                        Test
+                    </MudButton>
+                </MudTooltip>
+                <MudTooltip Text="Search the web for sites that host the old host's series">
+                    <MudButton Variant="Variant.Outlined"
+                               StartIcon="@Icons.Material.Filled.TravelExplore"
+                               OnClick="SuggestTargetAsync"
+                               Disabled="@(IsRunning || _starting || _discovering || string.IsNullOrWhiteSpace(_manualHost))"
+                               Class="migrator-manual-btn migrator-suggest-target-btn">
+                        @(_discovering ? "Searching..." : "Suggest")
+                    </MudButton>
+                </MudTooltip>
+            </MudStack>
+            <div class="migrator-manual-footer">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary migrator-manual-hint">
+                    @ManualRowHint
+                </MudText>
                 <MudButton Variant="Variant.Filled"
                            Color="Color.Primary"
                            OnClick="StartMigrationFromFieldAsync"
@@ -133,13 +134,7 @@
                            Class="migrator-start-btn">
                     @(_starting ? "Starting..." : "Start Migration")
                 </MudButton>
-            </MudStack>
-            @if (!string.IsNullOrWhiteSpace(_suggestedTargetHost))
-            {
-                <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                    Search will be restricted to @_suggestedTargetHost instead of the open web.
-                </MudText>
-            }
+            </div>
             @if (!string.IsNullOrWhiteSpace(_suggestedTargetPattern))
             {
                 <MudText Typo="Typo.caption" Class="mud-text-secondary migrator-learned-pattern-note">

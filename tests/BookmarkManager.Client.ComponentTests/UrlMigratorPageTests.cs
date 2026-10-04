@@ -468,9 +468,14 @@ public sealed class UrlMigratorPageTests
         context.Services.AddSingleton<IBookmarkService>(fake);
 
         var page = RenderPage(context);
-        SelectManualHost(page);
+        page.WaitForAssertion(() => Assert.NotEmpty(page.FindAll(".migrator-suggested-host-field input")));
+        page.Find(".migrator-suggested-host-field input").Input("comizy.io");
 
-        page.Find(".migrator-test-host-field input").Input("comizy.io");
+        // Testing samples the old host's bookmarks: disabled, and the hint says why, until it's picked.
+        Assert.True(page.Find(".migrator-test-host-btn").HasAttribute("disabled"));
+        Assert.Contains("Pick the old host first", page.Find(".migrator-manual-hint").TextContent);
+
+        SelectManualHost(page);
         page.WaitForAssertion(() => Assert.False(page.Find(".migrator-test-host-btn").HasAttribute("disabled")));
         page.Find(".migrator-test-host-btn").Click();
 
