@@ -114,24 +114,52 @@
 }
 
 /* ── Manual Row ─────────────────────────────────────────────────────────── */
+/* Old host -> New host [Test] [Suggest]; every control shares one height. */
 .url-migrator-page .migrator-manual-row {
     flex-wrap: wrap;
     gap: 12px;
+    --migrator-control-height: 40px;
 }
 
-.url-migrator-page .migrator-manual-host-field {
-    flex: 2 1 240px;
-    min-width: 200px;
-}
-
+.url-migrator-page .migrator-manual-host-field,
 .url-migrator-page .migrator-suggested-host-field {
-    flex: 2 1 240px;
+    flex: 1 1 220px;
     min-width: 200px;
+}
+
+.url-migrator-page .migrator-manual-arrow {
+    flex: 0 0 auto;
+    opacity: 0.6;
+}
+
+@media (max-width: 600px) {
+    .url-migrator-page .migrator-manual-arrow {
+        display: none;
+    }
+}
+
+.url-migrator-page .migrator-manual-row .mud-input-outlined {
+    height: var(--migrator-control-height);
+}
+
+.url-migrator-page .migrator-manual-btn.mud-button-root {
+    height: var(--migrator-control-height);
+    min-width: 96px;
+}
+
+.url-migrator-page .migrator-manual-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
 }
 
 .url-migrator-page .migrator-start-btn {
     flex: 0 0 auto;
     height: 44px;
+    margin-left: auto;
     font-weight: 600;
 }
 

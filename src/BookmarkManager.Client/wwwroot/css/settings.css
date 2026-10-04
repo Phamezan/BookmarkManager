@@ -311,7 +311,7 @@
 
 /* Manual entry row */
 .migrator-manual-row {
-    align-items: flex-end !important;
+    align-items: center !important;
 }
 
 .migrator-manual-host-field,

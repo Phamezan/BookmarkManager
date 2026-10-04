@@ -27,7 +27,6 @@ public partial class UrlMigrator : IDisposable
     private string _manualHost = string.Empty;
     private string _suggestedTargetHost = string.Empty;
     private string? _suggestedTargetPattern;
-    private string _testHost = string.Empty;
     private bool _discovering;
     private bool _discoveryPartial;
     private List<TargetHostSuggestionDto> _suggestions = [];
@@ -42,6 +41,12 @@ public partial class UrlMigrator : IDisposable
     private List<UrlMigrationProposalDto> _allProposals = [];
 
     private bool IsRunning => _status?.IsRunning == true;
+
+    // Test and Suggest sample the old host's bookmarks, so they stay disabled until it's picked.
+    private string ManualRowHint =>
+        string.IsNullOrWhiteSpace(_manualHost) ? "Pick the old host first. Test and Suggest check its bookmarks."
+        : !string.IsNullOrWhiteSpace(_suggestedTargetHost) ? $"Search will be restricted to {_suggestedTargetHost} instead of the open web."
+        : "Leave New host empty to search the open web, or press Suggest to find one.";
 
     protected override async Task OnInitializedAsync()
     {
@@ -94,7 +99,7 @@ public partial class UrlMigrator : IDisposable
 
     // Force = true: a manually-typed host is the user asserting the domain is dead, so skip the
     // "domain still appears alive" liveness guard that protects the auto-detected list. The learned
-    // pattern (from "Suggest target") is forwarded so the direct rewrite tries it first.
+    // pattern (from "Suggest") is forwarded so the direct rewrite tries it first.
     private Task StartMigrationFromFieldAsync() =>
         StartMigrationAsync(_manualHost, force: true, suggestedHost: _suggestedTargetHost, pattern: _suggestedTargetPattern);
 
@@ -132,7 +137,7 @@ public partial class UrlMigrator : IDisposable
         }
     }
 
-    // "Test a host": skips search (0 credits) and probes only the named host against the sample,
+    // "Test": skips search (0 credits) and probes only the New host field's host against the sample,
     // so the user can verify a specific candidate before starting a run.
     private async Task TestHostAsync()
     {
@@ -143,7 +148,7 @@ public partial class UrlMigrator : IDisposable
             return;
         }
 
-        var candidate = NormalizeHost(_testHost);
+        var candidate = NormalizeHost(_suggestedTargetHost);
         if (!IsValidHost(candidate))
         {
             Snackbar.Add("Enter a valid host to test (e.g. comizy.io).", Severity.Warning);
