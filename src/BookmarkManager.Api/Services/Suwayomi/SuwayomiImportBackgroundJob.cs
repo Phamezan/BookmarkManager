@@ -391,7 +391,15 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
             return proposal;
         }
 
-        SuwayomiCandidate? best = null;
+        // An exact title match is only final when that source actually covers the bookmark
+        // (has the bookmarked chapter, without big gaps): MangaDex in particular often lists a few
+        // scattered chapters of licensed series. Otherwise keep searching later sources and fall
+        // back to the first exact match as a reviewable Medium.
+        SuwayomiCandidate? covering = null;
+        SuwayomiCandidate? fallbackExact = null;
+        SuwayomiCandidate? bestFuzzy = null;
+        SuwayomiMangaAndChapters? fallbackDetails = null;
+        SuwayomiMangaAndChapters? coveringDetails = null;
         var lastError = false;
         foreach (var sourceName in _options.Value.SourceOrder)
         {
@@ -426,27 +434,43 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
                 continue;
             }
 
+            SuwayomiCandidate? exactHere = null;
             foreach (var manga in results)
             {
-                var exact = SuwayomiMatchScorer.IsExact(reference.SeriesName, manga.Title);
-                var score = exact ? 1.0 : SuwayomiMatchScorer.Score(reference.SeriesName, manga.Title);
-                if (best is null || score > best.Score)
+                if (SuwayomiMatchScorer.IsExact(reference.SeriesName, manga.Title))
                 {
-                    best = new SuwayomiCandidate(sourceName, manga.Id, manga.Title, score, exact);
+                    exactHere = new SuwayomiCandidate(sourceName, manga.Id, manga.Title, 1.0, true);
+                    break;
                 }
 
-                if (exact)
+                var score = SuwayomiMatchScorer.Score(reference.SeriesName, manga.Title);
+                if (bestFuzzy is null || score > bestFuzzy.Score)
                 {
-                    break;
+                    bestFuzzy = new SuwayomiCandidate(sourceName, manga.Id, manga.Title, score, false);
                 }
             }
 
-            if (best is { Exact: true })
+            if (exactHere is null)
             {
+                continue;
+            }
+
+            var details = await TryGetDetailsAsync(client, exactHere.MangaId, ct).ConfigureAwait(false);
+            if (details is not null && SuwayomiMatchScorer.Covers(details.Chapters, reference.ChapterNumber))
+            {
+                covering = exactHere;
+                coveringDetails = details;
                 break;
+            }
+
+            if (fallbackExact is null)
+            {
+                fallbackExact = exactHere;
+                fallbackDetails = details;
             }
         }
 
+        var best = covering ?? fallbackExact ?? bestFuzzy;
         if (best is null)
         {
             proposal.Confidence = "Unresolved";
@@ -454,27 +478,12 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
             return proposal;
         }
 
-        int chapterCount = 0;
-        string? latest = null;
-        double? latestValue = null;
-        try
-        {
-            var details = await client.GetMangaAndChaptersAsync(best.MangaId, ct).ConfigureAwait(false);
-            chapterCount = details.Chapters.Count;
-            if (chapterCount > 0)
-            {
-                latestValue = details.Chapters.Max(c => c.ChapterNumber);
-                latest = FormatChapter(latestValue.Value);
-            }
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Suwayomi chapter fetch failed for manga {MangaId}", best.MangaId);
-        }
+        var chosenDetails = covering is not null ? coveringDetails
+            : fallbackExact is not null ? fallbackDetails
+            : await TryGetDetailsAsync(client, best.MangaId, ct).ConfigureAwait(false);
+        var chapterCount = chosenDetails?.Chapters.Count ?? 0;
+        double? latestValue = chapterCount > 0 ? chosenDetails!.Chapters.Max(c => c.ChapterNumber) : null;
+        var latest = latestValue is { } lv ? FormatChapter(lv) : null;
 
         proposal.SuwayomiMangaId = best.MangaId;
         proposal.SourceName = best.SourceName;
@@ -482,9 +491,34 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
         proposal.SourceLatestChapter = latest;
         proposal.ProposedUrl = $"{_options.Value.PublicBaseUrl.TrimEnd('/')}/manga/{best.MangaId}";
         proposal.ProposedHost = Infrastructure.UrlHelpers.TryGetHost(proposal.ProposedUrl);
-        proposal.Confidence = SuwayomiMatchScorer.Classify(best.Score, best.Exact);
+        proposal.Confidence = covering is not null ? "High"
+            : fallbackExact is not null ? "Medium"
+            : SuwayomiMatchScorer.Classify(best.Score, exact: false);
         proposal.Detail = BuildDetail(best.SourceName, reference.ChapterNumber, latest, latestValue, chapterCount);
+        if (covering is null && fallbackExact is not null && chapterCount > 0 && latestValue is > 0 &&
+            chapterCount < latestValue.Value * SuwayomiMatchScorer.MinChapterCoverage)
+        {
+            proposal.Detail += $" · only {chapterCount} chapters listed, likely missing chapters";
+        }
+
         return proposal;
+    }
+
+    private async Task<SuwayomiMangaAndChapters?> TryGetDetailsAsync(ISuwayomiClient client, int mangaId, CancellationToken ct)
+    {
+        try
+        {
+            return await client.GetMangaAndChaptersAsync(mangaId, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Suwayomi chapter fetch failed for manga {MangaId}", mangaId);
+            return null;
+        }
     }
 
     private static string BuildDetail(

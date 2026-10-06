@@ -94,4 +94,23 @@ public sealed class SuwayomiMatchScorerTests
 
         Assert.Empty(SuwayomiMatchScorer.SelectChaptersToMark(chapters, null));
     }
+
+    private static List<SuwayomiChapter> Chapters(params double[] numbers)
+        => numbers.Select((n, i) => new SuwayomiChapter(i + 1, n, false)).ToList();
+
+    [Fact]
+    public void Covers_FullSourceWithBookmarkedChapter_IsTrue()
+        => Assert.True(SuwayomiMatchScorer.Covers(Chapters(Enumerable.Range(1, 50).Select(n => (double)n).ToArray()), "30"));
+
+    [Fact]
+    public void Covers_SourceEndingBeforeBookmark_IsFalse()
+        => Assert.False(SuwayomiMatchScorer.Covers(Chapters(Enumerable.Range(0, 10).Select(n => (double)n).ToArray()), "50"));
+
+    [Fact]
+    public void Covers_SparseMangaDexStyleListing_IsFalse()
+        => Assert.False(SuwayomiMatchScorer.Covers(Chapters(1, 2, 38, 39), "13"));
+
+    [Fact]
+    public void Covers_UnknownChapterOnCompleteSource_IsTrue()
+        => Assert.True(SuwayomiMatchScorer.Covers(Chapters(1, 2, 3), null));
 }
