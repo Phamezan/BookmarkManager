@@ -35,6 +35,31 @@ public static partial class SuwayomiMatchScorer
             : score >= MediumSimilarity ? "Medium"
             : "Low";
 
+    /// <summary>Share of chapter numbers 1..highest a source must actually list to count as complete.</summary>
+    public const double MinChapterCoverage = 0.8;
+
+    /// <summary>
+    /// True when a source can carry the bookmark: it lists chapters, has the bookmarked chapter
+    /// (unknown chapter = no constraint), and is not riddled with gaps — MangaDex often lists a
+    /// handful of scattered chapters (e.g. 4 of 39) for licensed series. Tiny series (highest &lt; 5)
+    /// skip the gap check.
+    /// </summary>
+    public static bool Covers(IReadOnlyCollection<SuwayomiChapter> chapters, string? chapterNumber)
+    {
+        if (chapters.Count == 0)
+        {
+            return false;
+        }
+
+        var highest = chapters.Max(c => c.ChapterNumber);
+        if (highest >= 5 && chapters.Count < highest * MinChapterCoverage)
+        {
+            return false;
+        }
+
+        return ParseChapterNumber(chapterNumber) is not { } target || target <= highest + 1e-9;
+    }
+
     /// <summary>Parses the first numeric token from a chapter string ("112", "112.5", "vol 3 ch 12").</summary>
     public static double? ParseChapterNumber(string? chapterNumber)
     {
