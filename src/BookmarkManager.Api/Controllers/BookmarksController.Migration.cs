@@ -155,7 +155,8 @@ public partial class BookmarksController
     [HttpPost("url-migration/run")]
     public ActionResult<UrlMigrationStatusDto> StartUrlMigration(
         [FromBody] StartUrlMigrationRequest request,
-        [FromServices] UrlMigrationBackgroundJob job)
+        [FromServices] UrlMigrationBackgroundJob job,
+        [FromServices] BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob suwayomiJob)
     {
         var host = request?.DeadHost?.Trim();
         if (!IsValidHost(host))
@@ -185,6 +186,15 @@ public partial class BookmarksController
             {
                 Title = "Pattern must be a URL path template beginning with '/' (e.g. \"/{slug}/chapter-{n}\").",
                 Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        if (suwayomiJob.IsRunning)
+        {
+            return Conflict(new ProblemDetails
+            {
+                Title = "A Suwayomi import run is in progress.",
+                Status = StatusCodes.Status409Conflict
             });
         }
 
@@ -270,7 +280,12 @@ public partial class BookmarksController
             Confidence = p.Confidence,
             Detail = p.Detail,
             Status = p.Status,
-            CreatedAt = p.CreatedAt
+            CreatedAt = p.CreatedAt,
+            IsSuwayomi = p.IsSuwayomi,
+            SuwayomiMangaId = p.SuwayomiMangaId,
+            SourceName = p.SourceName,
+            MatchedTitle = p.MatchedTitle,
+            SourceLatestChapter = p.SourceLatestChapter
         }).ToList();
 
         return Ok(dtos);
@@ -395,6 +410,31 @@ public partial class BookmarksController
         }
 
         return Ok();
+    }
+
+    /// <summary>
+    /// Re-points a Pending proposal at a manga the user picked on Suwayomi, then approves it
+    /// through the normal approval path (which adds it to the Suwayomi library and marks chapters).
+    /// </summary>
+    [HttpPost("url-migration/proposals/{id:guid}/suwayomi-match")]
+    public async Task<ActionResult<DecideProposalsResponse>> MatchSuwayomiProposalAsync(
+        Guid id,
+        [FromBody] SuwayomiMatchRequest request,
+        [FromServices] UrlMigrationApprovalService approvalService,
+        CancellationToken ct)
+    {
+        if (request is null || request.MangaId <= 0 || string.IsNullOrWhiteSpace(request.SourceName))
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "mangaId and sourceName are required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var result = await approvalService.MatchSuwayomiAndApproveAsync(
+            id, request.MangaId, request.SourceName, request.Title, ct);
+        return Ok(result);
     }
 
     private static ProblemDetails? ValidateProposalIds(List<Guid>? proposalIds)

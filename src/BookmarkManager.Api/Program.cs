@@ -9,6 +9,7 @@ using BookmarkManager.Api.Services.Library;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -120,6 +121,25 @@ builder.Services.AddHttpClient(BookmarkManager.Api.Services.UrlMigration.Wayback
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
     });
 builder.Services.AddScoped<BookmarkManager.Api.Services.UrlMigration.IWaybackEpisodeIdResolver, BookmarkManager.Api.Services.UrlMigration.WaybackEpisodeIdResolver>();
+// Suwayomi import (phase 1): LAN manga server reached over the shared Compose network. Timeout is
+// generous because Cloudflare-bypassed sources can take seconds to answer.
+builder.Services.Configure<BookmarkManager.Api.Services.Suwayomi.SuwayomiOptions>(
+    builder.Configuration.GetSection(BookmarkManager.Api.Services.Suwayomi.SuwayomiOptions.SectionName));
+builder.Services.AddHttpClient<
+    BookmarkManager.Api.Services.Suwayomi.ISuwayomiClient,
+    BookmarkManager.Api.Services.Suwayomi.SuwayomiGraphQlClient>(
+    BookmarkManager.Api.Services.Suwayomi.SuwayomiGraphQlClient.HttpClientName,
+    (sp, client) =>
+    {
+        var options = sp.GetRequiredService<IOptions<BookmarkManager.Api.Services.Suwayomi.SuwayomiOptions>>().Value;
+        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(120);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36");
+    });
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob>(provider =>
+    provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob>());
 builder.Services.AddMemoryCache();
 builder.Services.Configure<BookmarkManager.Api.Services.Library.LibraryProviderOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Library.LibraryProviderOptions.SectionName));

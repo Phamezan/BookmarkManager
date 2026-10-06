@@ -274,6 +274,37 @@ public sealed class HttpBookmarkService : IBookmarkService
     public async Task<UrlMigrationProposalDto?> UpdateProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
         => await _apiClient.SendAsync<UrlMigrationProposalDto>(HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/update-url", new UpdateProposalUrlRequest(url), cancellationToken);
 
+    public async Task<SuwayomiStatusDto?> GetSuwayomiStatusAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<SuwayomiStatusDto>("api/suwayomi/status", cancellationToken);
+
+    public async Task<SuwayomiImportPreviewDto?> GetSuwayomiImportPreviewAsync(Guid folderId, CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<SuwayomiImportPreviewDto>($"api/suwayomi/import/preview?folderId={folderId}", cancellationToken);
+
+    public async Task<SuwayomiImportStatusDto?> GetSuwayomiImportStatusAsync(CancellationToken cancellationToken = default)
+        => await _apiClient.GetAsync<SuwayomiImportStatusDto>("api/suwayomi/import/status", cancellationToken);
+
+    public async Task<bool> StartSuwayomiImportAsync(Guid folderId, CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/suwayomi/import/run", cancellationToken, new StartSuwayomiImportRequest(folderId)));
+
+    public async Task<bool> CancelSuwayomiImportAsync(CancellationToken cancellationToken = default)
+        => await InvokeBoolAsync(() => SendAndConfirmAsync(HttpMethod.Post, "api/suwayomi/import/cancel", cancellationToken));
+
+    public async Task<List<SuwayomiSearchResultDto>> SearchSuwayomiAsync(string query, string? source, CancellationToken cancellationToken = default)
+    {
+        var uri = $"api/suwayomi/search?q={Uri.EscapeDataString(query)}";
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            uri += $"&source={Uri.EscapeDataString(source)}";
+        }
+
+        return await _apiClient.GetAsync<List<SuwayomiSearchResultDto>>(uri, cancellationToken) ?? [];
+    }
+
+    public async Task<DecideProposalsResponse?> SuwayomiMatchProposalAsync(Guid id, int mangaId, string sourceName, string title, CancellationToken cancellationToken = default)
+        => await _apiClient.SendAsync<DecideProposalsResponse>(
+            HttpMethod.Post, $"api/bookmarks/url-migration/proposals/{id}/suwayomi-match",
+            new SuwayomiMatchRequest(mangaId, sourceName, title), cancellationToken);
+
 
 
     public async Task<BookmarkNodeDto?> UpdateBookmarkStatusAsync(Guid id, string status, CancellationToken cancellationToken = default)

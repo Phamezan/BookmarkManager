@@ -278,6 +278,59 @@ public class FakeBookmarkService : IBookmarkService
     public virtual Task<bool> ResetUrlMigrationAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(true);
 
+    // ── Suwayomi import ────────────────────────────────────────────────────
+    public SuwayomiStatusDto? SuwayomiStatus { get; set; }
+    public SuwayomiImportPreviewDto? SuwayomiImportPreview { get; set; }
+    public SuwayomiImportStatusDto? SuwayomiImportStatus { get; set; }
+    public List<SuwayomiSearchResultDto> SuwayomiSearchResults { get; set; } = [];
+    public List<Guid> SuwayomiImportStarts { get; } = [];
+    public int SuwayomiCancelCount { get; private set; }
+    public (Guid Id, int MangaId, string SourceName, string Title)? SuwayomiMatch { get; private set; }
+    public string? LastSuwayomiSearchQuery { get; private set; }
+    public string? LastSuwayomiSearchSource { get; private set; }
+
+    public virtual Task<SuwayomiStatusDto?> GetSuwayomiStatusAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(SuwayomiStatus);
+
+    public virtual Task<SuwayomiImportPreviewDto?> GetSuwayomiImportPreviewAsync(Guid folderId, CancellationToken cancellationToken = default)
+        => Task.FromResult(SuwayomiImportPreview);
+
+    public virtual Task<SuwayomiImportStatusDto?> GetSuwayomiImportStatusAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(SuwayomiImportStatus);
+
+    public virtual Task<bool> StartSuwayomiImportAsync(Guid folderId, CancellationToken cancellationToken = default)
+    {
+        SuwayomiImportStarts.Add(folderId);
+        return Task.FromResult(true);
+    }
+
+    public virtual Task<bool> CancelSuwayomiImportAsync(CancellationToken cancellationToken = default)
+    {
+        SuwayomiCancelCount++;
+        return Task.FromResult(true);
+    }
+
+    public virtual Task<List<SuwayomiSearchResultDto>> SearchSuwayomiAsync(string query, string? source, CancellationToken cancellationToken = default)
+    {
+        LastSuwayomiSearchQuery = query;
+        LastSuwayomiSearchSource = source;
+        return Task.FromResult(SuwayomiSearchResults);
+    }
+
+    public virtual Task<DecideProposalsResponse?> SuwayomiMatchProposalAsync(Guid id, int mangaId, string sourceName, string title, CancellationToken cancellationToken = default)
+    {
+        SuwayomiMatch = (id, mangaId, sourceName, title);
+        var proposal = UrlMigrationProposals.FirstOrDefault(p => p.Id == id);
+        if (proposal != null)
+        {
+            proposal.Status = "Approved";
+            proposal.SuwayomiMangaId = mangaId;
+            proposal.SourceName = sourceName;
+            proposal.MatchedTitle = title;
+        }
+        return Task.FromResult<DecideProposalsResponse?>(new DecideProposalsResponse(1, 0, []));
+    }
+
     public virtual Task<UrlMigrationProposalDto?> UpdateProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default)
     {
         var proposal = UrlMigrationProposals.FirstOrDefault(p => p.Id == id);

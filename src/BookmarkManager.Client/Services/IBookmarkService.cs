@@ -72,6 +72,14 @@ public interface IBookmarkService
     Task<bool> RevertProposalAsync(Guid id, CancellationToken cancellationToken = default);
     Task<DecideProposalsResponse?> SetManualProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default);
     Task<UrlMigrationProposalDto?> UpdateProposalUrlAsync(Guid id, string url, CancellationToken cancellationToken = default);
+    // ── Suwayomi import ────────────────────────────────────────────────────
+    Task<SuwayomiStatusDto?> GetSuwayomiStatusAsync(CancellationToken cancellationToken = default);
+    Task<SuwayomiImportPreviewDto?> GetSuwayomiImportPreviewAsync(Guid folderId, CancellationToken cancellationToken = default);
+    Task<SuwayomiImportStatusDto?> GetSuwayomiImportStatusAsync(CancellationToken cancellationToken = default);
+    Task<bool> StartSuwayomiImportAsync(Guid folderId, CancellationToken cancellationToken = default);
+    Task<bool> CancelSuwayomiImportAsync(CancellationToken cancellationToken = default);
+    Task<List<SuwayomiSearchResultDto>> SearchSuwayomiAsync(string query, string? source, CancellationToken cancellationToken = default);
+    Task<DecideProposalsResponse?> SuwayomiMatchProposalAsync(Guid id, int mangaId, string sourceName, string title, CancellationToken cancellationToken = default);
     // ── Personal Status Projection ─────────────────────────────────────────
     Task<BookmarkNodeDto?> UpdateBookmarkStatusAsync(Guid id, string status, CancellationToken cancellationToken = default);
     Task<BulkUpdateBookmarkStatusResponse> BulkUpdateBookmarkStatusAsync(BulkUpdateBookmarkStatusRequest request, CancellationToken cancellationToken = default);

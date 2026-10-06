@@ -29,6 +29,11 @@ public class BookmarkNode
     // Manager-only metadata set on URL migration approval, alongside PreviousUrl - lets a
     // migration-cleaned title (old-site boilerplate stripped) be reverted along with the URL.
     public string? PreviousTitle { get; set; }
+    // Suwayomi import (phase 1) manager-only metadata: the linked Suwayomi manga id and the
+    // source's own page URL (realUrl). Never pushed to Brave - revert uses them to remove the
+    // series from the Suwayomi library and to clear the linkage.
+    public int? SuwayomiMangaId { get; set; }
+    public string? SourceUrl { get; set; }
     public string? CoverImageUrl { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }

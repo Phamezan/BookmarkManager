@@ -67,12 +67,22 @@ public class UrlMigrationProposalDto
     public string? Detail { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
+
+    // Suwayomi import (phase 1): set when the proposal points at a Suwayomi manga. Grouped by
+    // SourceName in the review list; SeriesName stays the title extracted from the bookmark.
+    public bool IsSuwayomi { get; set; }             // created by a Suwayomi import run (also when Unresolved)
+    public int? SuwayomiMangaId { get; set; }
+    public string? SourceName { get; set; }
+    public string? MatchedTitle { get; set; }        // the Suwayomi source's own title
+    public string? SourceLatestChapter { get; set; } // highest chapter number on that source
 }
 
 public record DecideProposalsRequest(List<Guid> ProposalIds);         // approve or reject
 public record SetManualProposalUrlRequest(string Url);                // manual URL entry for an Unresolved proposal
 public record UpdateProposalUrlRequest(string Url);                   // edit proposed URL before approval
-public record DecideProposalsResponse(int Succeeded, int Failed, List<string> Errors);
+// Messages carries human-readable per-approval outcomes (e.g. Suwayomi "330 chapters marked read")
+// so the client can show them in the approval snackbar. Optional so existing callers are unaffected.
+public record DecideProposalsResponse(int Succeeded, int Failed, List<string> Errors, List<string>? Messages = null);
 
 public class DeadDomainCandidateDto      // for the "detected dead domains" panel
 {

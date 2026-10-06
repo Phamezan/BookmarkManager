@@ -36,6 +36,7 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Notes).HasMaxLength(4000);
             entity.Property(e => e.CoverImageUrl).HasMaxLength(2048);
             entity.Property(e => e.PreviousUrl).HasMaxLength(2048);
+            entity.Property(e => e.SourceUrl).HasMaxLength(2048);
 
             entity.HasOne(e => e.Parent)
                   .WithMany(e => e.Children)
@@ -144,6 +145,9 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Confidence).HasMaxLength(32).IsRequired();
             entity.Property(e => e.Detail).HasMaxLength(2000);
             entity.Property(e => e.Status).HasMaxLength(32).IsRequired();
+            entity.Property(e => e.SourceName).HasMaxLength(200);
+            entity.Property(e => e.MatchedTitle).HasMaxLength(500);
+            entity.Property(e => e.SourceLatestChapter).HasMaxLength(64);
 
             entity.HasOne(e => e.Bookmark)
                   .WithMany()

@@ -11,6 +11,11 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://0.0.0.0:8080
       ConnectionStrings__Default: "Data Source=/data/bookmarks.db"
+      # Suwayomi runs on the home server and is joined to this Compose network
+      # (bookmarkmanager_default) from its own ~/suwayomi/docker-compose.yml. The API reaches it
+      # over that network; migrated bookmarks point at the browser-facing public URL instead.
+      Suwayomi__BaseUrl: "${SUWAYOMI_BASE_URL:-http://suwayomi:4567}"
+      Suwayomi__PublicBaseUrl: "${SUWAYOMI_PUBLIC_BASE_URL:-http://phamezan.capybara-pirarucu.ts.net:4567}"
     volumes:
       - ${BOOKMARK_MANAGER_DATA_DIR:-./data}:/data
     restart: unless-stopped

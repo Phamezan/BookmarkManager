@@ -30,6 +30,94 @@
         </div>
     </MudStack>
 
+    <!-- Section 0: Import to Suwayomi -->
+    <MudPaper Elevation="0" Class="ops-panel migrator-suwa-panel">
+        <MudStack Spacing="3">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="migrator-panel-header">
+                <MudIcon Icon="@Icons.Material.Filled.LibraryAdd" Color="Color.Primary" />
+                <MudText Typo="Typo.h6" Class="flex-grow-1">Import to Suwayomi</MudText>
+                <span class="migrator-stat-pill migrator-suwa-conn" data-state="@SuwayomiConnState">
+                    <span class="migrator-suwa-conn-dot" aria-hidden="true"></span>
+                    @SuwayomiConnText
+                </span>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Size="Size.Small"
+                               OnClick="RefreshSuwayomiAsync"
+                               Disabled="@_suwayomiStatusLoading"
+                               Class="migrator-refresh-btn"
+                               aria-label="Refresh Suwayomi status" />
+            </MudStack>
+
+            <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                Finds each bookmark's series on your Suwayomi sources, adds it to your Suwayomi library with chapters up to your bookmark marked read, and points the bookmark at Suwayomi. Exact title matches are applied automatically; the rest wait for review below.
+            </MudText>
+
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="migrator-suwa-controls">
+                <MudSelect T="Guid?"
+                           Value="_selectedFolderId"
+                           ValueChanged="@(async (Guid? value) => await OnFolderChangedAsync(value))"
+                           Label="Folder"
+                           Variant="Variant.Outlined"
+                           Dense="true"
+                           Disabled="@IsAnyRunning"
+                           Class="migrator-suwa-folder">
+                    @foreach (var folder in FolderOptions)
+                    {
+                        <MudSelectItem T="Guid?" Value="@((Guid?)folder.Id)">@folder.Path</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (_suwayomiPreviewLoading || _suwayomiStatusLoading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                }
+                else if (_suwayomiPreview != null)
+                {
+                    <MudText Typo="Typo.body2" Class="migrator-suwa-preview">
+                        <span class="migrator-suwa-count">@_suwayomiPreview.ToImport to import</span>
+                        @if (_suwayomiPreview.AlreadyLinked > 0)
+                        {
+                            <span class="mud-text-secondary"> · @_suwayomiPreview.AlreadyLinked already in Suwayomi</span>
+                        }
+                        @if (_suwayomiPreview.PendingReview > 0)
+                        {
+                            <span class="mud-text-secondary"> · @_suwayomiPreview.PendingReview waiting for review</span>
+                        }
+                    </MudText>
+                }
+
+                <div class="flex-grow-1"></div>
+
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.PlayArrow"
+                           OnClick="StartSuwayomiImportAsync"
+                           Disabled="@SuwayomiStartDisabled"
+                           Class="migrator-suwa-start-btn">
+                    @(_suwayomiStarting ? "Starting…" : SuwayomiStartText)
+                </MudButton>
+            </MudStack>
+
+            @if (SuwayomiSearchOrder.Count > 0)
+            {
+                <MudTooltip Text="Sources are tried in this order; the first exact title match wins.">
+                    <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="migrator-suwa-order">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Search order:</MudText>
+                        @for (var i = 0; i < SuwayomiSearchOrder.Count; i++)
+                        {
+                            var sourceName = SuwayomiSearchOrder[i];
+                            @if (i > 0)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.ArrowForward" Size="Size.Small" Class="migrator-suwa-order-arrow" />
+                            }
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="migrator-suwa-order-chip">@sourceName</MudChip>
+                        }
+                    </MudStack>
+                </MudTooltip>
+            }
+        </MudStack>
+    </MudPaper>
+
     <!-- Section 1: Start a migration -->
     <MudPaper Elevation="0" Class="ops-panel">
         <MudStack Spacing="3">
@@ -288,6 +376,52 @@
         </MudPaper>
     }
 
+    <!-- Section 2b: Suwayomi import progress -->
+    @if (_suwayomiImportStatus != null && (IsSuwayomiImportRunning || _suwayomiImportStatus.TotalFound > 0 || !string.IsNullOrEmpty(_suwayomiImportStatus.ErrorMessage)))
+    {
+        <MudPaper Elevation="0" Class="ops-panel migrator-progress-panel migrator-suwa-progress-panel">
+            <MudStack Spacing="3">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                    <MudText Typo="Typo.h6">
+                        @(IsSuwayomiImportRunning ? "Importing to Suwayomi: " : "Last import: ")<span class="migrator-progress-host">@_suwayomiImportStatus.FolderTitle</span>
+                    </MudText>
+                    @if (IsSuwayomiImportRunning)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Stop"
+                                   OnClick="CancelSuwayomiImportAsync"
+                                   Disabled="@_suwayomiCanceling"
+                                   Class="migrator-suwa-cancel-run-btn">
+                            @(_suwayomiCanceling ? "Stopping…" : "Stop import")
+                        </MudButton>
+                    }
+                </MudStack>
+                @if (IsSuwayomiImportRunning || _suwayomiImportStatus.TotalFound > 0)
+                {
+                    <MudProgressLinear Value="@SuwayomiProgressPercent()" Color="Color.Primary" Class="migrator-progress-bar" />
+                    <MudText Typo="Typo.body2">@_suwayomiImportStatus.Processed / @_suwayomiImportStatus.TotalFound processed</MudText>
+                }
+                @if (!string.IsNullOrEmpty(_suwayomiImportStatus.CurrentTitle))
+                {
+                    <MudText Typo="Typo.body2" Class="migrator-resolving-line">
+                        Searching "@_suwayomiImportStatus.CurrentTitle"@(string.IsNullOrEmpty(_suwayomiImportStatus.CurrentSource) ? "" : $" on {_suwayomiImportStatus.CurrentSource}")
+                    </MudText>
+                }
+                <div class="migrator-stat-row">
+                    <span class="migrator-stat-pill migrator-suwa-stat" data-kind="applied">Auto-applied <strong>@_suwayomiImportStatus.AutoApplied</strong></span>
+                    <span class="migrator-stat-pill migrator-suwa-stat" data-kind="review">Needs review <strong>@_suwayomiImportStatus.NeedsReview</strong></span>
+                    <span class="migrator-stat-pill migrator-suwa-stat" data-kind="notfound">Not found <strong>@_suwayomiImportStatus.NotFound</strong></span>
+                </div>
+                @if (!string.IsNullOrEmpty(_suwayomiImportStatus.ErrorMessage))
+                {
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined" Dense="true">@_suwayomiImportStatus.ErrorMessage</MudAlert>
+                }
+            </MudStack>
+        </MudPaper>
+    }
+
     <!-- Section 3: Review -->
     <MudPaper Elevation="0" Class="ops-panel migrator-review-panel">
         <MudTabs @bind-ActivePanelIndex="_activeTabIndex" Class="migrator-tabs">
@@ -314,7 +448,14 @@
                             <ChildContent>
                                 @foreach (var proposal in OrphanedPendingProposals)
                                 {
-                                    @RenderProposalRow(proposal, "orphaned")
+                                    @if (proposal.SuwayomiMangaId != null)
+                                    {
+                                        @RenderSuwayomiProposalRow(proposal)
+                                    }
+                                    else
+                                    {
+                                        @RenderProposalRow(proposal, "orphaned")
+                                    }
                                 }
                             </ChildContent>
                         </MudExpansionPanel>
@@ -330,6 +471,31 @@
                 else
                 {
                     <MudExpansionPanels Class="migrator-groups">
+                        @foreach (var group in SuwayomiPendingGroups)
+                        {
+                            var groupList = group.ToList();
+                            <MudExpansionPanel Class="migrator-group migrator-suwa-group">
+                                <TitleContent>
+                                    <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="migrator-group-header" Style="width:100%;">
+                                        <MudText Typo="Typo.subtitle1">Suwayomi · @group.Key — @groupList.Count proposal(s)</MudText>
+                                        <MudButton Variant="Variant.Filled"
+                                                   Color="Color.Success"
+                                                   Size="Size.Small"
+                                                   OnClick="@(() => ApproveAsync(groupList.Select(p => p.Id)))"
+                                                   Class="migrator-approve-group-btn">
+                                            Approve @groupList.Count
+                                        </MudButton>
+                                    </MudStack>
+                                </TitleContent>
+                                <ChildContent>
+                                    @foreach (var proposal in groupList)
+                                    {
+                                        @RenderSuwayomiProposalRow(proposal)
+                                    }
+                                </ChildContent>
+                            </MudExpansionPanel>
+                        }
+
                         @foreach (var group in PendingGroups)
                         {
                             var groupList = group.ToList();
@@ -385,14 +551,28 @@
                                                 </div>
                                             </div>
                                             <div class="migrator-actions-col">
-                                                <MudButton Variant="Variant.Outlined"
-                                                           Color="Color.Primary"
-                                                           Size="Size.Small"
-                                                           StartIcon="@Icons.Material.Filled.Edit"
-                                                           Class="migrator-manual-url-btn"
-                                                           OnClick="@(() => OpenManualUrlDialogAsync(proposal))">
-                                                    Enter URL…
-                                                </MudButton>
+                                                @if (proposal.IsSuwayomi)
+                                                {
+                                                    <MudButton Variant="Variant.Outlined"
+                                                               Color="Color.Primary"
+                                                               Size="Size.Small"
+                                                               StartIcon="@Icons.Material.Filled.ManageSearch"
+                                                               Class="migrator-suwa-search-btn"
+                                                               OnClick="@(() => OpenSuwayomiDialogAsync(proposal))">
+                                                        Search Suwayomi…
+                                                    </MudButton>
+                                                }
+                                                else
+                                                {
+                                                    <MudButton Variant="Variant.Outlined"
+                                                               Color="Color.Primary"
+                                                               Size="Size.Small"
+                                                               StartIcon="@Icons.Material.Filled.Edit"
+                                                               Class="migrator-manual-url-btn"
+                                                               OnClick="@(() => OpenManualUrlDialogAsync(proposal))">
+                                                        Enter URL…
+                                                    </MudButton>
+                                                }
                                                 <MudTooltip Text="Cancel proposal — rerun fresh next time">
                                                     <MudIconButton Icon="@Icons.Material.Filled.Refresh"
                                                                    Color="Color.Warning"
@@ -449,7 +629,7 @@
                             {
                                 <tr class="migrator-history-row" data-status="@proposal.Status">
                                     <td>@proposal.BookmarkTitle</td>
-                                    <td class="migrator-host-cell">@proposal.ProposedHost</td>
+                                    <td class="migrator-host-cell">@(proposal.SuwayomiMangaId != null ? $"Suwayomi · {proposal.SourceName}" : proposal.ProposedHost)</td>
                                     <td><span class="status-badge @HistoryStatusBadgeClass(proposal.Status)">@proposal.Status</span></td>
                                     <td>@(proposal.CreatedAt.ToLocalTime().ToString("g"))</td>
                                     <td>
@@ -559,6 +739,109 @@
                                    Size="Size.Small"
                                    Class="migrator-edit-btn"
                                    OnClick="@(() => OpenEditProposalUrlDialogAsync(proposal))" />
+                </MudTooltip>
+                <MudTooltip Text="Reject — decline this proposed URL, won't be re-suggested">
+                    <MudIconButton Icon="@Icons.Material.Filled.Close"
+                                   Color="Color.Error"
+                                   Size="Size.Small"
+                                   Class="migrator-reject-btn"
+                                   OnClick="@(() => RejectAsync([proposal.Id]))" />
+                </MudTooltip>
+                <MudTooltip Text="Cancel — void this proposal, rerun fresh next time">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                   Color="Color.Warning"
+                                   Size="Size.Small"
+                                   Class="migrator-cancel-btn"
+                                   OnClick="@(() => CancelAsync([proposal.Id]))" />
+                </MudTooltip>
+            </div>
+        </div>
+    };
+
+    private RenderFragment RenderSuwayomiProposalRow(UrlMigrationProposalDto proposal) => __builder =>
+    {
+        <div class="migrator-proposal-row migrator-suwa-row" id="@($"proposal-{proposal.Id}")">
+            <div class="migrator-suwa-cover-col">
+                <a class="migrator-suwa-cover-link" href="@proposal.ProposedUrl" target="_blank" rel="noopener" tabindex="-1" aria-hidden="true">
+                    <span class="migrator-suwa-cover">
+                        <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Class="migrator-suwa-cover-fallback" />
+                        <img class="migrator-suwa-cover-img" src="@SuwayomiThumbnailUrl(proposal.SuwayomiMangaId)" loading="lazy" alt="" />
+                    </span>
+                </a>
+            </div>
+            <div class="migrator-content-col">
+                <div class="migrator-title-line">
+                    <a class="migrator-bookmark-title migrator-suwa-title"
+                       href="@proposal.ProposedUrl"
+                       target="_blank"
+                       rel="noopener"
+                       title="@proposal.MatchedTitle">@proposal.MatchedTitle</a>
+                    @if (!string.IsNullOrEmpty(proposal.ChapterNumber))
+                    {
+                        <span class="migrator-chapter-badge">Ch. @proposal.ChapterNumber</span>
+                    }
+                    <span class="status-badge @ConfidenceBadgeClass(proposal.Confidence)">@proposal.Confidence</span>
+                    <span class="migrator-chapter-badge migrator-suwa-source">@proposal.SourceName</span>
+                </div>
+
+                @if (ShowFromBookmark(proposal))
+                {
+                    <div class="migrator-suwa-from">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary" title="@proposal.BookmarkTitle">From bookmark: "@proposal.BookmarkTitle"</MudText>
+                    </div>
+                }
+
+                @if (!string.IsNullOrEmpty(proposal.OldUrl))
+                {
+                    <div class="migrator-url-row">
+                        <span class="migrator-url-tag migrator-url-tag-old">OLD</span>
+                        <span class="migrator-url-value migrator-url-value-old" title="@proposal.OldUrl">@proposal.OldUrl</span>
+                        <MudTooltip Text="Copy old URL">
+                            <MudIconButton Icon="@Icons.Material.Filled.ContentCopy"
+                                           Size="Size.Small"
+                                           Class="migrator-copy-btn"
+                                           OnClick="@(() => CopyToClipboardAsync(proposal.OldUrl))" />
+                        </MudTooltip>
+                    </div>
+                }
+
+                @if (IsChapterBeyondSource(proposal))
+                {
+                    <div class="migrator-detail migrator-suwa-warn">
+                        <MudIcon Icon="@Icons.Material.Filled.WarningAmber" Size="Size.Small" />
+                        <MudText Typo="Typo.caption">Your bookmark is at ch @proposal.ChapterNumber but @proposal.SourceName ends at @proposal.SourceLatestChapter — nothing will be marked read.</MudText>
+                        <MudButton Variant="Variant.Text"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Class="migrator-suwa-pick-source-btn"
+                                   OnClick="@(() => OpenSuwayomiDialogAsync(proposal))">
+                            Pick another source?
+                        </MudButton>
+                    </div>
+                }
+                else if (!string.IsNullOrEmpty(proposal.Detail))
+                {
+                    <div class="migrator-detail">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@proposal.Detail</MudText>
+                    </div>
+                }
+            </div>
+
+            <div class="migrator-actions-col">
+                <MudTooltip Text="Approve proposed replacement">
+                    <MudIconButton Icon="@Icons.Material.Filled.Check"
+                                   Color="Color.Success"
+                                   Size="Size.Small"
+                                   Class="migrator-approve-btn"
+                                   Disabled="@string.IsNullOrEmpty(proposal.ProposedUrl)"
+                                   OnClick="@(() => ApproveAsync([proposal.Id]))" />
+                </MudTooltip>
+                <MudTooltip Text="Find another match on Suwayomi">
+                    <MudIconButton Icon="@Icons.Material.Filled.ManageSearch"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   Class="migrator-suwa-find-btn"
+                                   OnClick="@(() => OpenSuwayomiDialogAsync(proposal))" />
                 </MudTooltip>
                 <MudTooltip Text="Reject — decline this proposed URL, won't be re-suggested">
                     <MudIconButton Icon="@Icons.Material.Filled.Close"
