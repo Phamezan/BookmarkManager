@@ -30,6 +30,19 @@ public interface ISuwayomiClient
     Task RemoveFromLibraryAsync(int mangaId, CancellationToken ct);
     Task MarkChaptersReadAsync(IReadOnlyList<int> chapterIds, CancellationToken ct);
     Task<SuwayomiThumbnail> GetThumbnailAsync(int mangaId, CancellationToken ct);
+
+    /// <summary>Reads a source's filter tree so the Discover feed can resolve "latest + Action" by name.</summary>
+    Task<IReadOnlyList<SuwayomiFilter>> GetSourceFiltersAsync(string sourceId, CancellationToken ct);
+
+    /// <summary>Fetches one page of a source's filtered SEARCH listing (empty query + filter changes).</summary>
+    Task<SuwayomiSourcePage> FetchSourceMangaAsync(
+        string sourceId, IReadOnlyList<SuwayomiFilterChange> filters, int page, CancellationToken ct);
+
+    /// <summary>Fetches manga metadata (genres/status/cover) plus its chapters, for the feed builder.</summary>
+    Task<SuwayomiMangaDetails> GetMangaDetailsAsync(int mangaId, CancellationToken ct);
+
+    /// <summary>Reads library reading progress for every series in the user's Suwayomi library.</summary>
+    Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct);
 }
 
 public sealed class SuwayomiGraphQlClient : ISuwayomiClient
@@ -59,6 +72,18 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
 
     private const string MarkReadQuery =
         "mutation($ids:[Int!]!){ updateChapters(input:{ids:$ids, patch:{isRead:true}}){ chapters{ id } } }";
+
+    private const string SourceFiltersQuery =
+        "query($s:LongString!){ source(id:$s){ filters{ __typename ... on SortFilter{name values} ... on SelectFilter{name values} ... on GroupFilter{name filters{__typename ... on CheckBoxFilter{name} ... on TriStateFilter{name}}} } } }";
+
+    private const string FilteredFetchQuery =
+        "mutation($s:LongString!,$f:[FilterChangeInput!],$p:Int!){ fetchSourceManga(input:{source:$s,type:SEARCH,page:$p,query:\"\",filters:$f}){ hasNextPage mangas{ id title } } }";
+
+    private const string MangaDetailsQuery =
+        "mutation($id:Int!){ fetchMangaAndChapters(input:{id:$id, fetchManga:true, fetchChapters:true}){ manga{ id title genre status thumbnailUrl } chapters{ id name chapterNumber uploadDate sourceOrder } } }";
+
+    private const string LibraryQuery =
+        "query { mangas(condition:{inLibrary:true}){ nodes{ title latestReadChapter{ chapterNumber } highestNumberedChapter{ chapterNumber } } } }";
 
     private readonly HttpClient _http;
 
@@ -135,6 +160,130 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         buffer.Position = 0;
         return new SuwayomiThumbnail(buffer, contentType);
     }
+
+    public async Task<IReadOnlyList<SuwayomiFilter>> GetSourceFiltersAsync(string sourceId, CancellationToken ct)
+    {
+        var data = await PostAsync<SourceFiltersData>(SourceFiltersQuery,
+            new Dictionary<string, object?> { ["s"] = sourceId }, ct).ConfigureAwait(false);
+        return MapFilters(data.Source?.Filters, 0);
+    }
+
+    public async Task<SuwayomiSourcePage> FetchSourceMangaAsync(
+        string sourceId, IReadOnlyList<SuwayomiFilterChange> filters, int page, CancellationToken ct)
+    {
+        var filterPayload = filters.Select(ToFilterChangeDictionary).ToList();
+        var data = await PostAsync<FilteredFetchData>(FilteredFetchQuery,
+            new Dictionary<string, object?>
+            {
+                ["s"] = sourceId,
+                ["f"] = filterPayload,
+                ["p"] = page
+            }, ct).ConfigureAwait(false);
+
+        var node = data.FetchSourceManga;
+        var mangas = (node?.Mangas ?? [])
+            .Select(m => new SuwayomiSourceManga(m.Id, m.Title))
+            .ToList();
+        return new SuwayomiSourcePage(node?.HasNextPage ?? false, mangas);
+    }
+
+    public async Task<SuwayomiMangaDetails> GetMangaDetailsAsync(int mangaId, CancellationToken ct)
+    {
+        var data = await PostAsync<MangaDetailsData>(MangaDetailsQuery,
+            new Dictionary<string, object?> { ["id"] = mangaId }, ct).ConfigureAwait(false);
+        var node = data.FetchMangaAndChapters ?? throw new SuwayomiException($"Suwayomi returned no manga for id {mangaId}.");
+        var manga = node.Manga;
+        var chapters = (node.Chapters ?? [])
+            .Select(c => new SuwayomiChapterDetails(
+                c.Id, c.Name ?? string.Empty, c.ChapterNumber, ParseEpochMillis(c.UploadDate), c.SourceOrder))
+            .ToList();
+        return new SuwayomiMangaDetails(
+            manga.Title,
+            manga.Genre ?? [],
+            manga.Status,
+            manga.ThumbnailUrl,
+            chapters);
+    }
+
+    public async Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
+    {
+        var data = await PostAsync<LibraryData>(LibraryQuery, new Dictionary<string, object?>(), ct).ConfigureAwait(false);
+        return (data.Mangas?.Nodes ?? [])
+            .Select(n => new SuwayomiLibraryManga(
+                n.Title, n.LatestReadChapter?.ChapterNumber, n.HighestNumberedChapter?.ChapterNumber))
+            .ToList();
+    }
+
+    private static IReadOnlyList<SuwayomiFilter> MapFilters(List<FilterModel>? models, int offset)
+    {
+        if (models is null || models.Count == 0)
+        {
+            return [];
+        }
+
+        var result = new List<SuwayomiFilter>(models.Count);
+        for (var i = 0; i < models.Count; i++)
+        {
+            var model = models[i];
+            result.Add(new SuwayomiFilter(
+                i + offset,
+                model.Name ?? string.Empty,
+                MapFilterKind(model.Typename),
+                model.Values ?? [],
+                MapFilters(model.Filters, 0)));
+        }
+
+        return result;
+    }
+
+    private static SuwayomiFilterKind MapFilterKind(string? typename) => typename switch
+    {
+        "SortFilter" => SuwayomiFilterKind.Sort,
+        "SelectFilter" => SuwayomiFilterKind.Select,
+        "GroupFilter" => SuwayomiFilterKind.Group,
+        "CheckBoxFilter" => SuwayomiFilterKind.CheckBox,
+        "TriStateFilter" => SuwayomiFilterKind.TriState,
+        _ => SuwayomiFilterKind.Other
+    };
+
+    private static Dictionary<string, object?> ToFilterChangeDictionary(SuwayomiFilterChange change)
+    {
+        var payload = new Dictionary<string, object?> { ["position"] = change.Position };
+        if (change.SortState is { } sort)
+        {
+            payload["sortState"] = new Dictionary<string, object?>
+            {
+                ["index"] = sort.Index,
+                ["ascending"] = sort.Ascending
+            };
+        }
+        else if (change.SelectState is { } select)
+        {
+            payload["selectState"] = select;
+        }
+        else if (change.GroupChange is { } group)
+        {
+            var groupPayload = new Dictionary<string, object?> { ["position"] = group.Position };
+            if (group.CheckBoxState is { } checkBox)
+            {
+                groupPayload["checkBoxState"] = checkBox;
+            }
+
+            if (!string.IsNullOrWhiteSpace(group.TriState))
+            {
+                groupPayload["triState"] = group.TriState;
+            }
+
+            payload["groupChange"] = groupPayload;
+        }
+
+        return payload;
+    }
+
+    private static DateTime? ParseEpochMillis(string? value)
+        => long.TryParse(value, out var millis) && millis > 0
+            ? DateTimeOffset.FromUnixTimeMilliseconds(millis).UtcDateTime
+            : null;
 
     private async Task<T> PostAsync<T>(string query, object variables, CancellationToken ct)
     {
@@ -273,5 +422,87 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
     private sealed class UpdateChaptersData
     {
         public object? UpdateChapters { get; set; }
+    }
+
+    private sealed class SourceFiltersData
+    {
+        public SourceFiltersModel? Source { get; set; }
+    }
+
+    private sealed class SourceFiltersModel
+    {
+        public List<FilterModel>? Filters { get; set; }
+    }
+
+    private sealed class FilterModel
+    {
+        [JsonPropertyName("__typename")]
+        public string? Typename { get; set; }
+
+        public string? Name { get; set; }
+        public List<string>? Values { get; set; }
+        public List<FilterModel>? Filters { get; set; }
+    }
+
+    private sealed class FilteredFetchData
+    {
+        public FilteredFetchModel? FetchSourceManga { get; set; }
+    }
+
+    private sealed class FilteredFetchModel
+    {
+        public bool HasNextPage { get; set; }
+        public List<MangaModel>? Mangas { get; set; }
+    }
+
+    private sealed class MangaDetailsData
+    {
+        public MangaDetailsModel? FetchMangaAndChapters { get; set; }
+    }
+
+    private sealed class MangaDetailsModel
+    {
+        public MangaGenreModel Manga { get; set; } = new();
+        public List<ChapterDetailsModel>? Chapters { get; set; }
+    }
+
+    private sealed class MangaGenreModel
+    {
+        public int Id { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public List<string>? Genre { get; set; }
+        public string? Status { get; set; }
+        public string? ThumbnailUrl { get; set; }
+    }
+
+    private sealed class ChapterDetailsModel
+    {
+        public int Id { get; set; }
+        public string? Name { get; set; }
+        public double ChapterNumber { get; set; }
+        public string? UploadDate { get; set; }
+        public int SourceOrder { get; set; }
+    }
+
+    private sealed class LibraryData
+    {
+        public LibraryMangasModel? Mangas { get; set; }
+    }
+
+    private sealed class LibraryMangasModel
+    {
+        public List<LibraryMangaModel>? Nodes { get; set; }
+    }
+
+    private sealed class LibraryMangaModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public ChapterNumberModel? LatestReadChapter { get; set; }
+        public ChapterNumberModel? HighestNumberedChapter { get; set; }
+    }
+
+    private sealed class ChapterNumberModel
+    {
+        public double? ChapterNumber { get; set; }
     }
 }

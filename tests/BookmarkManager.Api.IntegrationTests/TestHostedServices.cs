@@ -22,7 +22,9 @@ internal static class TestHostedServices
         typeof(OnnxEmbeddingService),
         typeof(OnnxRerankerService),
         typeof(LibraryEmbeddingBackfillService),
-        typeof(LibraryCatalogSyncBackgroundService)
+        typeof(LibraryCatalogSyncBackgroundService),
+        // Reaches the real Suwayomi server; integration tests seed the Discover tables directly.
+        typeof(BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService)
     ];
 
     public static void RemoveExternalBackgroundWorkers(this IServiceCollection services)

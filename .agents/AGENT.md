@@ -28,6 +28,8 @@ Bookmark Manager stores category, status, progress, tags, rating, notes, favorit
 
 **Scope change — Suwayomi integration (`Docs/deployment-ubuntu.md`):** the server makes outbound GraphQL calls to the user's self-hosted Suwayomi manga server on the LAN (reached over the shared Compose network at `http://suwayomi:4567`; users open it at its public Tailscale URL). This stays LAN-only, single-user, SQLite — no inbound exposure and no credentials stored. The URL Migrator's Suwayomi import searches the user's installed sources, and on approval (explicit or High-confidence auto-approval) writes Suwayomi library/read state: it adds the matched series to the Suwayomi library and marks chapters up to the bookmarked chapter read. Nothing mutates Suwayomi during the search phase. Suwayomi linkage (`BookmarkNode.SuwayomiMangaId`/`SourceUrl`) is manager-only metadata and is never pushed to Brave; revert removes the series from the Suwayomi library best-effort.
 
+**Scope change — Suwayomi Discover (`Docs/deployment-ubuntu.md`):** the server builds a weekly "latest Action" feed from several of the user's installed Suwayomi sources and serves it as a static page inside the Suwayomi WebUI (via an nginx proxy that points `/bm/` at this app's `suwayomi-addon/` folder and `/bm-api/` at this app's `/api/`). Everything stays LAN-only, single-user, SQLite. The feed job is strictly read-only against Suwayomi (`fetchSourceManga`/`fetchMangaAndChapters`/`mangas`), reusing the phase-1 GraphQL client; it never calls `updateManga`/`updateChapters` and never mutates the user's Suwayomi library. Sources without a resolvable "latest sort" + Action filter are skipped rather than listed unfiltered.
+
 ## Architectural Invariants
 
 - Target .NET 10 for all .NET projects.

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Threading.Channels;
 using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.UrlMigration;
@@ -277,7 +276,7 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
         var suwayomiStatus = await client.GetStatusAsync(ct).ConfigureAwait(false);
         var sourceLookup = BuildSourceLookup(suwayomiStatus.Sources, _options.Value.SourceOrder);
 
-        var throttle = new SourceThrottle(_options.Value.ThrottleMillisecondsPerSource);
+        var throttle = new SuwayomiSourceThrottle(_options.Value.ThrottleMillisecondsPerSource);
         using var saveGate = new SemaphoreSlim(1, 1);
 
         await Parallel.ForEachAsync(
@@ -367,7 +366,7 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
         BookmarkNode bookmark,
         ISuwayomiClient client,
         IReadOnlyDictionary<string, string> sourceLookup,
-        SourceThrottle throttle,
+        SuwayomiSourceThrottle throttle,
         CancellationToken ct)
     {
         var reference = SuwayomiTitleCleaner.Extract(bookmark.Title, bookmark.Url);
@@ -535,40 +534,4 @@ public sealed class SuwayomiImportBackgroundJob : BackgroundService
 
     private sealed record SuwayomiImportRunRequest(Guid RunId, Guid FolderId, string FolderTitle);
     private sealed record SuwayomiCandidate(string SourceName, int MangaId, string Title, double Score, bool Exact);
-
-    /// <summary>Ensures a minimum gap between successive requests to the same source.</summary>
-    private sealed class SourceThrottle
-    {
-        private readonly int _intervalMs;
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _gates = new();
-        private readonly ConcurrentDictionary<string, DateTime> _lastCall = new();
-
-        public SourceThrottle(int intervalMs)
-        {
-            _intervalMs = Math.Max(0, intervalMs);
-        }
-
-        public async Task WaitAsync(string key, CancellationToken ct)
-        {
-            var gate = _gates.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-            await gate.WaitAsync(ct).ConfigureAwait(false);
-            try
-            {
-                if (_lastCall.TryGetValue(key, out var last))
-                {
-                    var elapsed = (int)(DateTime.UtcNow - last).TotalMilliseconds;
-                    if (_intervalMs - elapsed > 0)
-                    {
-                        await Task.Delay(_intervalMs - elapsed, ct).ConfigureAwait(false);
-                    }
-                }
-
-                _lastCall[key] = DateTime.UtcNow;
-            }
-            finally
-            {
-                gate.Release();
-            }
-        }
-    }
 }

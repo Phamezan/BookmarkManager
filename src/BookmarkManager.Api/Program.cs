@@ -140,6 +140,11 @@ builder.Services.AddHttpClient<
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob>(provider =>
     provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.SuwayomiImportBackgroundJob>());
+// Suwayomi Discover (phase 2): builds the merged weekly Action feed served to the WebUI add-on page.
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>(provider =>
+    provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>());
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverLibraryProgressProvider>();
 builder.Services.AddMemoryCache();
 builder.Services.Configure<BookmarkManager.Api.Services.Library.LibraryProviderOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Library.LibraryProviderOptions.SectionName));
