@@ -17,16 +17,12 @@ public sealed class SuwayomiOptions
     /// <summary>Browser-facing Suwayomi base URL written into migrated bookmarks.</summary>
     public string PublicBaseUrl { get; set; } = "http://phamezan.capybara-pirarucu.ts.net:4567";
 
-    /// <summary>Sources tried in this order; the first exact title match wins.</summary>
-    public List<string> SourceOrder { get; set; } =
-    [
-        "Asura Scans",
-        "Vortex Scans",
-        "MangaDex",
-        "Manganato",
-        "MangaRead.org",
-        "Weeb Central"
-    ];
+    /// <summary>
+    /// Sources tried in this order; the first exact title match wins. Set in appsettings.json only:
+    /// a default here would be APPENDED to by configuration binding (list items merge by index),
+    /// duplicating every source.
+    /// </summary>
+    public List<string> SourceOrder { get; set; } = [];
 
     /// <summary>Minimum gap between successive search requests to the same source.</summary>
     public int ThrottleMillisecondsPerSource { get; set; } = 1000;
