@@ -88,7 +88,7 @@ public static class SuwayomiScope
             FolderTitle = title,
             Total = total,
             AlreadyLinked = alreadyLinked,
-            PendingReview = pendingBookmarkIds.Count,
+            PendingReview = pendingOnly,
             ToImport = toImport
         };
     }
