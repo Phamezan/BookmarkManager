@@ -40,7 +40,53 @@ public partial class UrlMigrator : IDisposable
     private List<UrlMigrationProposalDto> _currentProposals = [];
     private List<UrlMigrationProposalDto> _allProposals = [];
 
+    private SuwayomiStatusDto? _suwayomiStatus;
+    private bool _suwayomiStatusLoading;
+    private List<FolderTreeNodeDto> _folders = [];
+    private Guid? _selectedFolderId;
+    private SuwayomiImportPreviewDto? _suwayomiPreview;
+    private bool _suwayomiPreviewLoading;
+    private bool _suwayomiStarting;
+    private bool _suwayomiCanceling;
+    private SuwayomiImportStatusDto? _suwayomiImportStatus;
+    private bool _suwayomiPolling;
+    private CancellationTokenSource? _suwayomiPollCts;
+    private List<UrlMigrationProposalDto> _suwayomiRunProposals = [];
     private bool IsRunning => _status?.IsRunning == true;
+
+    private bool IsSuwayomiImportRunning => _suwayomiImportStatus?.IsRunning == true;
+
+    private bool IsAnyRunning => IsRunning || IsSuwayomiImportRunning;
+
+    private List<string> SuwayomiSearchOrder => _suwayomiStatus?.SearchOrder ?? [];
+
+    private string SuwayomiConnState =>
+        _suwayomiStatusLoading ? "checking" : _suwayomiStatus?.Reachable == true ? "ok" : "down";
+
+    private string SuwayomiConnText =>
+        _suwayomiStatusLoading ? "Checking…"
+        : _suwayomiStatus?.Reachable == true
+            ? $"Connected · {_suwayomiStatus.Version} · {_suwayomiStatus.SourceCount} sources"
+        : "Suwayomi unreachable";
+
+    private string SuwayomiStartText
+    {
+        get
+        {
+            var count = _suwayomiPreview?.ToImport ?? 0;
+            return $"Import {count} bookmark{(count == 1 ? string.Empty : "s")}";
+        }
+    }
+
+    private bool SuwayomiStartDisabled =>
+        _suwayomiStarting
+        || IsAnyRunning
+        || _suwayomiStatus?.Reachable != true
+        || (_suwayomiPreview?.ToImport ?? 0) <= 0;
+
+    private List<FolderOption> FolderOptions => FlattenFolders(_folders);
+
+    private sealed record FolderOption(Guid Id, string Path);
 
     // Test and Suggest sample the old host's bookmarks, so they stay disabled until it's picked.
     private string ManualRowHint =>
@@ -53,14 +99,22 @@ public partial class UrlMigrator : IDisposable
         await LoadDeadDomainsAsync();
         await LoadRejectedHostsAsync();
         await RefreshStatusAsync();
+        await LoadSuwayomiStatusAsync();
+        await LoadFoldersAsync();
+        await RefreshSuwayomiImportStatusAsync();
 
         if (IsRunning)
         {
             StartPolling();
         }
-        else if (_status?.RunId != null)
+        else if (_status?.RunId != null || _suwayomiImportStatus?.RunId != null)
         {
             await LoadCurrentProposalsAsync();
+        }
+
+        if (IsSuwayomiImportRunning)
+        {
+            StartSuwayomiPolling();
         }
 
         await LoadHistoryAsync();
@@ -93,6 +147,285 @@ public partial class UrlMigrator : IDisposable
         {
             Snackbar.Add($"Failed to load migration status: {ex.Message}", Severity.Error);
         }
+    }
+
+    private async Task LoadSuwayomiStatusAsync()
+    {
+        _suwayomiStatusLoading = true;
+        try
+        {
+            _suwayomiStatus = await BookmarkService.GetSuwayomiStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            _suwayomiStatus = new SuwayomiStatusDto { Reachable = false };
+            Snackbar.Add($"Failed to load Suwayomi status: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _suwayomiStatusLoading = false;
+        }
+    }
+
+    private async Task LoadFoldersAsync()
+    {
+        try
+        {
+            _folders = await BookmarkService.GetFolderTreeAsync();
+            var options = FolderOptions;
+            var manga = options.FirstOrDefault(f => string.Equals(f.Path.Split(" / ").LastOrDefault(), "Manga", StringComparison.OrdinalIgnoreCase));
+            _selectedFolderId = manga?.Id ?? options.FirstOrDefault()?.Id;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load folders: {ex.Message}", Severity.Error);
+        }
+
+        await LoadSuwayomiPreviewAsync();
+    }
+
+    private async Task OnFolderChangedAsync(Guid? folderId)
+    {
+        _selectedFolderId = folderId;
+        await LoadSuwayomiPreviewAsync();
+    }
+
+    private async Task LoadSuwayomiPreviewAsync()
+    {
+        if (_selectedFolderId is not Guid folderId)
+        {
+            _suwayomiPreview = null;
+            return;
+        }
+
+        _suwayomiPreviewLoading = true;
+        try
+        {
+            _suwayomiPreview = await BookmarkService.GetSuwayomiImportPreviewAsync(folderId);
+        }
+        catch (Exception ex)
+        {
+            _suwayomiPreview = null;
+            Snackbar.Add($"Failed to load import preview: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _suwayomiPreviewLoading = false;
+        }
+    }
+
+    private async Task RefreshSuwayomiImportStatusAsync()
+    {
+        try
+        {
+            _suwayomiImportStatus = await BookmarkService.GetSuwayomiImportStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load Suwayomi import status: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RefreshSuwayomiAsync()
+    {
+        await LoadSuwayomiStatusAsync();
+        await LoadSuwayomiPreviewAsync();
+        StateHasChanged();
+    }
+
+    private async Task StartSuwayomiImportAsync()
+    {
+        if (_selectedFolderId is not Guid folderId || SuwayomiStartDisabled)
+        {
+            return;
+        }
+
+        _suwayomiStarting = true;
+        try
+        {
+            var started = await BookmarkService.StartSuwayomiImportAsync(folderId);
+            if (!started)
+            {
+                Snackbar.Add("Could not start the import — a run may already be in progress.", Severity.Error);
+                return;
+            }
+
+            Snackbar.Add("Suwayomi import started.", Severity.Info);
+            await RefreshSuwayomiImportStatusAsync();
+            StartSuwayomiPolling();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not start the import: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _suwayomiStarting = false;
+        }
+    }
+
+    private void StartSuwayomiPolling()
+    {
+        if (_suwayomiPolling)
+        {
+            return;
+        }
+
+        _suwayomiPolling = true;
+        _suwayomiPollCts?.Cancel();
+        _suwayomiPollCts = new CancellationTokenSource();
+        _ = PollSuwayomiStatusLoopAsync(_suwayomiPollCts.Token);
+    }
+
+    private async Task PollSuwayomiStatusLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), ct);
+                await RefreshSuwayomiImportStatusAsync();
+                await LoadCurrentProposalsAsync();
+                StateHasChanged();
+
+                if (!IsSuwayomiImportRunning)
+                {
+                    break;
+                }
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Stopped intentionally.
+        }
+        finally
+        {
+            _suwayomiPolling = false;
+        }
+
+        if (!ct.IsCancellationRequested)
+        {
+            await LoadCurrentProposalsAsync();
+            await LoadHistoryAsync();
+            await LoadSuwayomiPreviewAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task CancelSuwayomiImportAsync()
+    {
+        if (!IsSuwayomiImportRunning || _suwayomiCanceling)
+        {
+            return;
+        }
+
+        _suwayomiCanceling = true;
+        try
+        {
+            if (!await BookmarkService.CancelSuwayomiImportAsync())
+            {
+                Snackbar.Add("The import is no longer running.", Severity.Warning);
+            }
+            else
+            {
+                Snackbar.Add("Cancel requested.", Severity.Info);
+            }
+
+            await RefreshSuwayomiImportStatusAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not cancel the import: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _suwayomiCanceling = false;
+        }
+    }
+
+    private double SuwayomiProgressPercent()
+        => _suwayomiImportStatus == null || _suwayomiImportStatus.TotalFound == 0
+            ? 0
+            : Math.Clamp(_suwayomiImportStatus.Processed * 100.0 / _suwayomiImportStatus.TotalFound, 0, 100);
+
+    private async Task OpenSuwayomiDialogAsync(UrlMigrationProposalDto proposal)
+    {
+        var parameters = new DialogParameters<SuwayomiMatchDialog>
+        {
+            { x => x.ProposalId, proposal.Id },
+            { x => x.BookmarkTitle, proposal.BookmarkTitle },
+            { x => x.OldUrl, proposal.OldUrl },
+            { x => x.InitialTitle, proposal.SeriesName ?? proposal.BookmarkTitle },
+            { x => x.SourceOrder, SuwayomiSearchOrder }
+        };
+
+        var options = new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.Medium };
+        var dialog = await DialogService.ShowAsync<SuwayomiMatchDialog>("Find on Suwayomi", parameters, options);
+        var dialogResult = await dialog.Result;
+        if (dialogResult is null || dialogResult.Canceled)
+        {
+            return;
+        }
+
+        await LoadCurrentProposalsAsync();
+        await LoadHistoryAsync();
+        await LoadSuwayomiPreviewAsync();
+        StateHasChanged();
+    }
+
+    private static string SuwayomiThumbnailUrl(int? mangaId)
+        => mangaId is int id ? $"api/suwayomi/thumbnail/{id}" : string.Empty;
+
+    private static bool ShowFromBookmark(UrlMigrationProposalDto proposal)
+    {
+        if (proposal.Confidence is "Medium" or "Low" or "Manual")
+        {
+            return true;
+        }
+
+        return !string.Equals(NormalizeForCompare(proposal.SeriesName), NormalizeForCompare(proposal.MatchedTitle), StringComparison.Ordinal);
+    }
+
+    private static bool IsChapterBeyondSource(UrlMigrationProposalDto proposal)
+    {
+        if (!TryParseChapter(proposal.ChapterNumber, out var chapter) || !TryParseChapter(proposal.SourceLatestChapter, out var latest))
+        {
+            return false;
+        }
+
+        return chapter > latest;
+    }
+
+    private static bool TryParseChapter(string? value, out double chapter)
+    {
+        chapter = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var match = System.Text.RegularExpressions.Regex.Match(value, @"\d+(?:\.\d+)?");
+        return match.Success && double.TryParse(match.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out chapter);
+    }
+
+    private static string NormalizeForCompare(string? value)
+        => System.Text.RegularExpressions.Regex.Replace((value ?? string.Empty).ToLowerInvariant(), @"[^a-z0-9]+", " ").Trim();
+
+    private static List<FolderOption> FlattenFolders(List<FolderTreeNodeDto> nodes)
+    {
+        var result = new List<FolderOption>();
+        void Walk(IEnumerable<FolderTreeNodeDto> items, string prefix)
+        {
+            foreach (var item in items)
+            {
+                var path = string.IsNullOrEmpty(prefix) ? item.Title : $"{prefix} / {item.Title}";
+                result.Add(new FolderOption(item.Id, path));
+                Walk(item.Children, path);
+            }
+        }
+
+        Walk(nodes, string.Empty);
+        return result;
     }
 
     private Task StartMigrationFromListAsync(string host) => StartMigrationAsync(host, force: false, suggestedHost: null);
@@ -406,20 +739,31 @@ public partial class UrlMigrator : IDisposable
 
     private async Task LoadCurrentProposalsAsync()
     {
-        if (_status?.RunId == null)
-        {
-            _currentProposals = [];
-            return;
-        }
+        var combined = new List<UrlMigrationProposalDto>();
+        _suwayomiRunProposals = [];
 
         try
         {
-            _currentProposals = await BookmarkService.GetUrlMigrationProposalsAsync(_status.RunId, null);
+            if (_status?.RunId != null)
+            {
+                combined.AddRange(await BookmarkService.GetUrlMigrationProposalsAsync(_status.RunId, null));
+            }
+
+            if (_suwayomiImportStatus?.RunId != null)
+            {
+                _suwayomiRunProposals = await BookmarkService.GetUrlMigrationProposalsAsync(_suwayomiImportStatus.RunId, null);
+                combined.AddRange(_suwayomiRunProposals);
+            }
         }
         catch (Exception ex)
         {
             Snackbar.Add($"Failed to load proposals: {ex.Message}", Severity.Error);
         }
+
+        _currentProposals = combined
+            .GroupBy(p => p.Id)
+            .Select(g => g.First())
+            .ToList();
     }
 
     private async Task LoadHistoryAsync()
@@ -436,12 +780,38 @@ public partial class UrlMigrator : IDisposable
 
     private IEnumerable<IGrouping<string, UrlMigrationProposalDto>> PendingGroups =>
         _currentProposals
-            .Where(p => p.Status == StatusPending && !string.IsNullOrEmpty(p.ProposedHost) && p.Confidence != ConfidenceUnresolved)
+            .Where(p => p.Status == StatusPending
+                && !p.IsSuwayomi
+                && !string.IsNullOrEmpty(p.ProposedHost)
+                && p.Confidence != ConfidenceUnresolved)
             .GroupBy(p => p.ProposedHost!);
+
+    /// <summary>Pending Suwayomi matches, grouped by source and ordered by the configured search order.</summary>
+    private IEnumerable<IGrouping<string, UrlMigrationProposalDto>> SuwayomiPendingGroups =>
+        _currentProposals
+            .Where(p => p.Status == StatusPending && p.SuwayomiMangaId != null)
+            .GroupBy(p => p.SourceName ?? string.Empty)
+            .OrderBy(g => SourceOrderIndex(g.Key));
+
+    private int SourceOrderIndex(string sourceName)
+    {
+        var order = SuwayomiSearchOrder;
+        for (var i = 0; i < order.Count; i++)
+        {
+            if (string.Equals(order[i], sourceName, StringComparison.OrdinalIgnoreCase))
+            {
+                return i;
+            }
+        }
+
+        return int.MaxValue;
+    }
 
     private List<UrlMigrationProposalDto> UnresolvedProposals =>
         _currentProposals
-            .Where(p => p.Status == StatusPending && (string.IsNullOrEmpty(p.ProposedHost) || p.Confidence == ConfidenceUnresolved))
+            .Where(p => p.Status == StatusPending
+                && p.SuwayomiMangaId == null
+                && (string.IsNullOrEmpty(p.ProposedHost) || p.Confidence == ConfidenceUnresolved))
             .ToList();
 
     private List<UrlMigrationProposalDto> HighConfidencePending =>
@@ -505,15 +875,32 @@ public partial class UrlMigrator : IDisposable
             return;
         }
 
+        var suwayomiApproved = verb == "approved"
+            && idList.Any(id => FindProposal(id)?.SuwayomiMangaId != null);
+
         if (result.Failed > 0)
         {
-            var failedTitles = idList
-                .Select(id => _currentProposals.FirstOrDefault(p => p.Id == id))
-                .Where(p => p != null)
-                .Select(p => p!.BookmarkTitle)
-                .ToList();
-            var detail = failedTitles.Count > 0 ? string.Join(", ", failedTitles) : string.Join("; ", result.Errors);
-            Snackbar.Add($"{result.Succeeded} {verb}, {result.Failed} failed: {detail}", Severity.Warning);
+            var suwayomiFailure = suwayomiApproved
+                && result.Errors?.Any(e => e.Contains("Suwayomi", StringComparison.OrdinalIgnoreCase)) == true;
+            if (suwayomiFailure)
+            {
+                Snackbar.Add("Suwayomi didn't respond — nothing was changed.", Severity.Error);
+            }
+            else
+            {
+                var failedTitles = idList
+                    .Select(FindProposal)
+                    .Where(p => p != null)
+                    .Select(p => p!.BookmarkTitle)
+                    .ToList();
+                var detail = failedTitles.Count > 0 ? string.Join(", ", failedTitles) : string.Join("; ", result.Errors);
+                Snackbar.Add($"{result.Succeeded} {verb}, {result.Failed} failed: {detail}", Severity.Warning);
+            }
+        }
+        else if (suwayomiApproved && result.Succeeded > 0)
+        {
+            var note = result.Messages?.FirstOrDefault() ?? "nothing marked read";
+            Snackbar.Add($"Added to Suwayomi · {note}", Severity.Success);
         }
         else
         {
@@ -524,6 +911,9 @@ public partial class UrlMigrator : IDisposable
         await LoadHistoryAsync();
         StateHasChanged();
     }
+
+    private UrlMigrationProposalDto? FindProposal(Guid id)
+        => _currentProposals.FirstOrDefault(p => p.Id == id) ?? _allProposals.FirstOrDefault(p => p.Id == id);
 
     // Cancel differs from Reject: Reject means "I saw this URL and don't want it" and blocks it
     // from being re-suggested; Cancel just voids a stale proposal so the bookmark is free for a
@@ -556,8 +946,14 @@ public partial class UrlMigrator : IDisposable
     {
         try
         {
+            var isSuwayomi = FindProposal(id)?.SuwayomiMangaId != null;
             var ok = await BookmarkService.RevertProposalAsync(id);
-            Snackbar.Add(ok ? "Proposal reverted." : "Could not revert proposal.", ok ? Severity.Success : Severity.Error);
+            var message = ok
+                ? isSuwayomi
+                    ? "Reverted — bookmark restored and series removed from your Suwayomi library."
+                    : "Proposal reverted."
+                : "Could not revert proposal.";
+            Snackbar.Add(message, ok ? Severity.Success : Severity.Error);
             if (ok)
             {
                 await LoadHistoryAsync();
@@ -732,5 +1128,7 @@ public partial class UrlMigrator : IDisposable
     {
         _pollCts?.Cancel();
         _pollCts?.Dispose();
+        _suwayomiPollCts?.Cancel();
+        _suwayomiPollCts?.Dispose();
     }
 }

@@ -119,6 +119,20 @@ The URL Migrator's old DuckDuckGo/Yahoo HTML fallback was removed after both sit
 
 - To disable the fallback, set `UrlMigration__SearxngBaseUrl=` (empty) on the `bookmarkmanager` service; the provider then reports `SearXNG: not configured (empty base URL)` in migration diagnostics and contributes no candidates.
 
+## Suwayomi import
+
+The URL Migrator's **Import to Suwayomi** panel re-homes dead manga bookmarks onto the user's self-hosted [Suwayomi](https://github.com/Suwayomi/Suwayomi-Server) server instead of a web search. Suwayomi and FlareSolverr run from their own Compose file on the server at `~/suwayomi/docker-compose.yml` (not part of this repo). That stack joins this project's default network (`bookmarkmanager_default`), so the API reaches Suwayomi at `http://suwayomi:4567` without publishing the port to the host.
+
+Configuration on the `bookmarkmanager` service (see `docker-compose.yml`; overridable in `.env`):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `SUWAYOMI_BASE_URL` → `Suwayomi__BaseUrl` | `http://suwayomi:4567` | Internal GraphQL endpoint used by the API. |
+| `SUWAYOMI_PUBLIC_BASE_URL` → `Suwayomi__PublicBaseUrl` | `http://phamezan.capybara-pirarucu.ts.net:4567` | Browser-facing URL written into migrated bookmarks. |
+| `Suwayomi__SourceOrder` | `Asura Scans, Vortex Scans, MangaDex, Manganato, MangaRead.org, Weeb Central` | Search order; first exact title match wins. |
+
+Covers are proxied through the API (`GET /api/suwayomi/thumbnail/{id}`) because the dashboard may be served over https (8443) while Suwayomi is plain http — a direct `<img src="http://...:4567">` would be blocked as mixed content. On approval the API adds the matched series to the Suwayomi library and marks chapters up to the bookmarked chapter read; revert removes it again best-effort. Nothing is written to Suwayomi until a proposal is approved.
+
 ## TLS for the In-Tab Command Palette (optional)
 
 The in-tab command palette (extension shortcut on any webpage) embeds the `/palette` page in an iframe inside an extension document. Browsers block active mixed content there, so the palette page must be served over **https**. Dashboard access and extension sync keep working over plain http — TLS is only required for the in-tab palette.

@@ -525,6 +525,9 @@ public sealed class UrlMigrationBackgroundJobTests
             services.AddSingleton<IDomainLivenessGuard>(new Verification());
             services.AddSingleton<IAnilistScheduleProvider, Anilist>();
             services.AddSingleton<IWaybackEpisodeIdResolver, Wayback>();
+            services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.ISuwayomiClient, NoopSuwayomiClient>();
+            services.AddSingleton<Microsoft.Extensions.Options.IOptions<BookmarkManager.Api.Services.Suwayomi.SuwayomiOptions>>(
+                Microsoft.Extensions.Options.Options.Create(new BookmarkManager.Api.Services.Suwayomi.SuwayomiOptions()));
             services.AddScoped<UrlMigrationApprovalService>();
             var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
             using (var scope = provider.CreateScope()) await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.EnsureCreatedAsync();
@@ -706,5 +709,18 @@ public sealed class UrlMigrationBackgroundJobTests
 
         public Task<IReadOnlyList<string>> DiscoverPageLinksAsync(string seriesPageUrl, CancellationToken ct)
             => Task.FromResult<IReadOnlyList<string>>([wrongChapterUrl]);
+    }
+
+    // URL-migration runs never carry a Suwayomi id, so the approval service's Suwayomi dependency
+    // is never exercised here.
+    private sealed class NoopSuwayomiClient : BookmarkManager.Api.Services.Suwayomi.ISuwayomiClient
+    {
+        public Task<BookmarkManager.Api.Services.Suwayomi.SuwayomiServerStatus> GetStatusAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<BookmarkManager.Api.Services.Suwayomi.SuwayomiManga>> SearchAsync(string sourceId, string query, CancellationToken ct) => throw new NotSupportedException();
+        public Task<BookmarkManager.Api.Services.Suwayomi.SuwayomiMangaAndChapters> GetMangaAndChaptersAsync(int mangaId, CancellationToken ct) => throw new NotSupportedException();
+        public Task AddToLibraryAsync(int mangaId, CancellationToken ct) => throw new NotSupportedException();
+        public Task RemoveFromLibraryAsync(int mangaId, CancellationToken ct) => throw new NotSupportedException();
+        public Task MarkChaptersReadAsync(IReadOnlyList<int> chapterIds, CancellationToken ct) => throw new NotSupportedException();
+        public Task<BookmarkManager.Api.Services.Suwayomi.SuwayomiThumbnail> GetThumbnailAsync(int mangaId, CancellationToken ct) => throw new NotSupportedException();
     }
 }

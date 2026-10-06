@@ -17,5 +17,14 @@ public class UrlMigrationProposal
     public DateTime CreatedAt { get; set; }
     public DateTime? DecidedAt { get; set; }
 
+    // Suwayomi import (phase 1). IsSuwayomi marks every proposal an import run created, including
+    // Unresolved ones (no SuwayomiMangaId) - it must survive API restarts, so it is persisted.
+    // SourceName / MatchedTitle / SourceLatestChapter drive the Suwayomi review row.
+    public bool IsSuwayomi { get; set; }
+    public int? SuwayomiMangaId { get; set; }
+    public string? SourceName { get; set; }
+    public string? MatchedTitle { get; set; }
+    public string? SourceLatestChapter { get; set; }
+
     public BookmarkNode? Bookmark { get; set; }
 }

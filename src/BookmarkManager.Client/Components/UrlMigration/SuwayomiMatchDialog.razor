@@ -1,0 +1,207 @@
+@namespace BookmarkManager.Client.Components
+@using BookmarkManager.Contracts
+@inject IBookmarkService BookmarkService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Find on Suwayomi</MudText>
+    </TitleContent>
+
+    <DialogContent>
+        <MudStack Spacing="3">
+            <div class="migrator-suwa-dialog-context">
+                <MudText Typo="Typo.body2" Class="migrator-suwa-dialog-title" title="@BookmarkTitle">@BookmarkTitle</MudText>
+                @if (!string.IsNullOrEmpty(OldUrl))
+                {
+                    <div class="migrator-url-row">
+                        <span class="migrator-url-tag migrator-url-tag-old">OLD</span>
+                        <span class="migrator-url-value migrator-url-value-old" title="@OldUrl">@OldUrl</span>
+                    </div>
+                }
+            </div>
+
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center" Class="migrator-suwa-dialog-search">
+                <MudTextField T="string"
+                              @bind-Value="_query"
+                              Label="Series title"
+                              Variant="Variant.Outlined"
+                              Immediate="true"
+                              autofocus="true"
+                              OnKeyDown="OnQueryKeyDownAsync"
+                              Class="migrator-suwa-dialog-query" />
+                <MudSelect T="string?"
+                           @bind-Value="_source"
+                           Label="Source"
+                           Variant="Variant.Outlined"
+                           Class="migrator-suwa-dialog-source">
+                    <MudSelectItem T="string?" Value="@((string?)null)">All sources</MudSelectItem>
+                    @foreach (var name in SourceOrder)
+                    {
+                        <MudSelectItem T="string?" Value="@((string?)name)">@name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.Search"
+                           OnClick="SearchAsync"
+                           Disabled="@_searching"
+                           Class="migrator-suwa-dialog-search-btn">
+                    @(_searching ? "Searching…" : "Search")
+                </MudButton>
+            </MudStack>
+
+            @if (_error)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="migrator-suwa-dialog-error">
+                    Suwayomi didn't respond. Check that it's running, then search again.
+                </MudAlert>
+            }
+
+            @if (_loading)
+            {
+                <MudProgressLinear Indeterminate="true" Class="migrator-progress-bar" />
+            }
+
+            @if (_results.Count == 0 && !_loading && !_error)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary migrator-suwa-dialog-empty">
+                    No results on your sources. Try a shorter title, or the English or romanized name.
+                </MudText>
+            }
+
+            <div class="migrator-suwa-grid @(_loading ? "migrator-suwa-grid--loading" : "")">
+                @foreach (var result in _results)
+                {
+                    var isSelected = _selected is not null && _selected.MangaId == result.MangaId && _selected.SourceName == result.SourceName;
+                    <button type="button"
+                            class="migrator-suwa-card"
+                            aria-pressed="@(isSelected ? "true" : "false")"
+                            @onclick="@(() => SelectResult(result))">
+                        <span class="migrator-suwa-card-cover">
+                            <MudIcon Icon="@Icons.Material.Outlined.MenuBook" Class="migrator-suwa-cover-fallback" />
+                            <img class="migrator-suwa-card-img" src="@ThumbnailUrl(result.MangaId)" loading="lazy" alt="" />
+                            @if (result.InLibrary)
+                            {
+                                <span class="migrator-suwa-inlibrary">In library</span>
+                            }
+                        </span>
+                        <span class="migrator-suwa-card-title" title="@result.Title">@result.Title</span>
+                        <span class="migrator-suwa-card-source">@result.SourceName</span>
+                    </button>
+                }
+            </div>
+        </MudStack>
+    </DialogContent>
+
+    <DialogActions>
+        <MudButton Variant="Variant.Text" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled"
+                   Color="Color.Primary"
+                   Disabled="@(_selected is null || _approving)"
+                   OnClick="ApproveAsync"
+                   Class="migrator-suwa-dialog-approve">
+            @(_approving ? "Approving…" : "Use and approve")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public Guid ProposalId { get; set; }
+    [Parameter] public string BookmarkTitle { get; set; } = string.Empty;
+    [Parameter] public string? OldUrl { get; set; }
+    [Parameter] public string? InitialTitle { get; set; }
+    [Parameter] public List<string> SourceOrder { get; set; } = [];
+
+    private string _query = string.Empty;
+    private string? _source;
+    private List<SuwayomiSearchResultDto> _results = [];
+    private bool _loading;
+    private bool _searching;
+    private bool _error;
+    private bool _approving;
+    private SuwayomiSearchResultDto? _selected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _query = string.IsNullOrWhiteSpace(InitialTitle) ? BookmarkTitle : InitialTitle!;
+        await SearchAsync();
+    }
+
+    private async Task OnQueryKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+        {
+            await SearchAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_query) || _searching)
+        {
+            return;
+        }
+
+        _searching = true;
+        _loading = true;
+        _error = false;
+        try
+        {
+            _results = await BookmarkService.SearchSuwayomiAsync(_query, _source);
+            if (_selected is not null && _results.All(r => r.MangaId != _selected.MangaId || r.SourceName != _selected.SourceName))
+            {
+                _selected = null;
+            }
+        }
+        catch (Exception)
+        {
+            _error = true;
+            _results = [];
+        }
+        finally
+        {
+            _loading = false;
+            _searching = false;
+        }
+    }
+
+    private void SelectResult(SuwayomiSearchResultDto result) => _selected = result;
+
+    private async Task ApproveAsync()
+    {
+        if (_selected is null || _approving)
+        {
+            return;
+        }
+
+        _approving = true;
+        try
+        {
+            var result = await BookmarkService.SuwayomiMatchProposalAsync(
+                ProposalId, _selected.MangaId, _selected.SourceName, _selected.Title);
+            if (result is null || result.Failed > 0)
+            {
+                Snackbar.Add("Suwayomi didn't respond — nothing was changed.", Severity.Error);
+                return;
+            }
+
+            var note = result.Messages?.FirstOrDefault() ?? "nothing marked read";
+            Snackbar.Add($"Added to Suwayomi · {note}", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Could not approve the match: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _approving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private static string ThumbnailUrl(int mangaId) => $"api/suwayomi/thumbnail/{mangaId}";
+}
