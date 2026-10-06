@@ -35,4 +35,23 @@ public sealed class SuwayomiOptions
 
     /// <summary>Maximum wall-clock duration of one import run.</summary>
     public int RunTimeoutMinutes { get; set; } = 120;
+
+    /// <summary>
+    /// Sources crawled by the Discover feed, in display order. Set in appsettings.json only: a
+    /// default here would be APPENDED to by configuration binding (list items merge by index),
+    /// duplicating every source.
+    /// </summary>
+    public List<string> DiscoverSources { get; set; } = [];
+
+    /// <summary>Minutes between Discover feed refreshes.</summary>
+    public int DiscoverRefreshMinutes { get; set; } = 60;
+
+    /// <summary>How far back a first-run backfill pages before an all-known page stops it.</summary>
+    public int DiscoverBackfillDays { get; set; } = 28;
+
+    /// <summary>Chapters older than this many days are pruned each run.</summary>
+    public int DiscoverRetentionDays { get; set; } = 182;
+
+    /// <summary>Cap on listing pages paged per source each run.</summary>
+    public int DiscoverMaxPagesPerSource { get; set; } = 5;
 }

@@ -133,6 +133,30 @@ Configuration on the `bookmarkmanager` service (see `docker-compose.yml`; overri
 
 Covers are proxied through the API (`GET /api/suwayomi/thumbnail/{id}`) because the dashboard may be served over https (8443) while Suwayomi is plain http — a direct `<img src="http://...:4567">` would be blocked as mixed content. On approval the API adds the matched series to the Suwayomi library and marks chapters up to the bookmarked chapter read; revert removes it again best-effort. Nothing is written to Suwayomi until a proposal is approved.
 
+## Suwayomi Discover page
+
+Phase 2 adds a **Discover** entry to the Suwayomi WebUI sidebar. It opens a page (served by this app) showing recently updated Action manhwa/manhua/manga merged from several installed sources, with 3 latest chapters, NEW flags, reading-progress badges, type chips, "Hide my library", and week paging. The background `DiscoverFeedBackgroundService` refreshes the feed on an interval; it is read-only against Suwayomi.
+
+Configuration on the `bookmarkmanager` service (overridable in `.env`):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `Suwayomi__DiscoverSources` | `Asura Scans, Vortex Scans, Manganato, MangaDex, Weeb Central` | Sources merged into the feed. A source with no resolvable latest-sort + Action filter is skipped. |
+| `Suwayomi__DiscoverRefreshMinutes` | `60` | Minutes between feed refreshes. |
+| `Suwayomi__DiscoverBackfillDays` | `28` | First-run backfill depth (how far the pager walks before an all-known page stops it). |
+| `Suwayomi__DiscoverRetentionDays` | `182` | Chapters older than this are pruned each run. |
+| `Suwayomi__DiscoverMaxPagesPerSource` | `5` | Listing pages fetched per source per run. |
+
+### nginx proxy for the add-on page
+
+The nginx server in front of Suwayomi (port 4567, not part of this repo) serves the WebUI with `<script src="/bm/addon.js" defer>` injected into every page. It must also expose this app's static add-on folder and API on the same origin as the WebUI:
+
+- `/bm/` → `http://bookmarkmanager:8080/suwayomi-addon/`, with `/bm/` **exact** rewritten to `suwayomi-addon/discover.html` (so the page's relative `./discover.css` / `./discover.js` resolve).
+- `/bm-api/` → `http://bookmarkmanager:8080/api/` (same origin, so no CORS).
+- `/bm/addon.js` → `http://bookmarkmanager:8080/suwayomi-addon/addon.js`.
+
+The API reaches Suwayomi internally at `http://suwayomi:4567`; the page's covers (`/api/v1/manga/{id}/thumbnail`), series links (`/manga/{id}`), and reader links (`/manga/{id}/chapter/{order}`) are same-origin Suwayomi paths served by the proxy.
+
 ## TLS for the In-Tab Command Palette (optional)
 
 The in-tab command palette (extension shortcut on any webpage) embeds the `/palette` page in an iframe inside an extension document. Browsers block active mixed content there, so the palette page must be served over **https**. Dashboard access and extension sync keep working over plain http — TLS is only required for the in-tab palette.

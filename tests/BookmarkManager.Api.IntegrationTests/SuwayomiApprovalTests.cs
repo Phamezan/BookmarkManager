@@ -72,6 +72,19 @@ public sealed class SuwayomiApprovalTests : IntegrationTestBase
 
         public Task<SuwayomiThumbnail> GetThumbnailAsync(int mangaId, CancellationToken ct)
             => throw new SuwayomiException("not used");
+
+        public Task<IReadOnlyList<SuwayomiFilter>> GetSourceFiltersAsync(string sourceId, CancellationToken ct)
+            => throw new SuwayomiException("not used");
+
+        public Task<SuwayomiSourcePage> FetchSourceMangaAsync(
+            string sourceId, IReadOnlyList<SuwayomiFilterChange> filters, int page, CancellationToken ct)
+            => throw new SuwayomiException("not used");
+
+        public Task<SuwayomiMangaDetails> GetMangaDetailsAsync(int mangaId, CancellationToken ct)
+            => throw new SuwayomiException("not used");
+
+        public Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<SuwayomiLibraryManga>>([]);
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateFactoryWithSuwayomi(

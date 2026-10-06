@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discover · Suwayomi</title>
+  <link rel="stylesheet" href="./discover.css">
+</head>
+<body>
+  <div class="page">
+    <header class="header">
+      <div class="header-left">
+        <a class="back-link" href="/library">&larr; Suwayomi</a>
+        <div class="header-titles">
+          <h1>Discover</h1>
+          <p class="subtitle">Action series with new chapters</p>
+        </div>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </header>
+
+    <div class="controls">
+      <div class="chips" role="radiogroup" aria-label="Media type">
+        <button type="button" class="chip" role="radio" data-type="all" aria-checked="true">All</button>
+        <button type="button" class="chip" role="radio" data-type="manhwa" aria-checked="false">Manhwa</button>
+        <button type="button" class="chip" role="radio" data-type="manhua" aria-checked="false">Manhua</button>
+        <button type="button" class="chip" role="radio" data-type="manga" aria-checked="false">Manga</button>
+      </div>
+
+      <label class="switch">
+        <input type="checkbox" id="hide-library" role="switch">
+        <span>Hide my library</span>
+      </label>
+
+      <div class="spacer"></div>
+
+      <div class="pager">
+        <button type="button" id="older" class="pager-btn" aria-label="Older week">&lsaquo; Older</button>
+        <div class="pager-label">
+          <div id="week-label" class="pager-week">This week</div>
+          <div id="week-range" class="pager-range"></div>
+        </div>
+        <button type="button" id="newer" class="pager-btn" aria-label="Newer week">Newer &rsaquo;</button>
+      </div>
+    </div>
+
+    <main id="content" aria-live="polite"></main>
+  </div>
+
+  <script type="module" src="./discover.js"></script>
+</body>
+</html>

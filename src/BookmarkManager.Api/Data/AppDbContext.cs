@@ -22,6 +22,9 @@ public class AppDbContext : DbContext
     public DbSet<LibraryCatalogEntry> LibraryCatalogEntries => Set<LibraryCatalogEntry>();
     public DbSet<LibraryCatalogSyncQueueItem> LibraryCatalogSyncQueue => Set<LibraryCatalogSyncQueueItem>();
     public DbSet<TagProvenance> TagProvenances => Set<TagProvenance>();
+    public DbSet<DiscoverSeries> DiscoverSeriesSet => Set<DiscoverSeries>();
+    public DbSet<DiscoverSourceEntry> DiscoverSourceEntries => Set<DiscoverSourceEntry>();
+    public DbSet<DiscoverChapter> DiscoverChapters => Set<DiscoverChapter>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -201,6 +204,48 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => e.BookmarkId);
             entity.HasIndex(e => new { e.BookmarkId, e.Tag });
+        });
+
+        modelBuilder.Entity<DiscoverSeries>(entity =>
+        {
+            entity.ToTable("DiscoverSeries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.TitleKey).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.Type).HasConversion<string>().HasMaxLength(16).IsRequired();
+            entity.Property(e => e.Genres).HasMaxLength(1000);
+
+            entity.HasIndex(e => e.TitleKey).IsUnique();
+            entity.HasIndex(e => e.LatestChapterAt);
+        });
+
+        modelBuilder.Entity<DiscoverSourceEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SourceName).HasMaxLength(200).IsRequired();
+
+            entity.HasOne(e => e.Series)
+                  .WithMany()
+                  .HasForeignKey(e => e.SeriesId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => e.MangaId).IsUnique();
+            entity.HasIndex(e => e.SeriesId);
+        });
+
+        modelBuilder.Entity<DiscoverChapter>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.SourceName).HasMaxLength(200).IsRequired();
+            entity.Property(e => e.Name).HasMaxLength(500);
+
+            entity.HasOne(e => e.Series)
+                  .WithMany()
+                  .HasForeignKey(e => e.SeriesId)
+                  .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasIndex(e => new { e.MangaId, e.SourceOrder }).IsUnique();
+            entity.HasIndex(e => new { e.SeriesId, e.UploadedAt });
         });
     }
 }
