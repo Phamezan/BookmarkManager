@@ -1,5 +1,6 @@
 using System.Net.Mime;
 using BookmarkManager.Api.Data;
+using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.Suwayomi;
 using BookmarkManager.Api.Services.UrlMigration;
 using BookmarkManager.Contracts;
@@ -18,25 +19,29 @@ namespace BookmarkManager.Api.Controllers;
 public sealed class SuwayomiController : ControllerBase
 {
     private const int ThumbnailCacheSeconds = 86400;
+    private const int MaxLibraryMatchTitles = 200;
 
     private readonly AppDbContext _db;
     private readonly ISuwayomiClient _client;
     private readonly SuwayomiOptions _options;
     private readonly SuwayomiImportBackgroundJob _importJob;
     private readonly UrlMigrationBackgroundJob _migrationJob;
+    private readonly DiscoverLibraryProgressProvider _libraryProgress;
 
     public SuwayomiController(
         AppDbContext db,
         ISuwayomiClient client,
         IOptions<SuwayomiOptions> options,
         SuwayomiImportBackgroundJob importJob,
-        UrlMigrationBackgroundJob migrationJob)
+        UrlMigrationBackgroundJob migrationJob,
+        DiscoverLibraryProgressProvider libraryProgress)
     {
         _db = db;
         _client = client;
         _options = options.Value;
         _importJob = importJob;
         _migrationJob = migrationJob;
+        _libraryProgress = libraryProgress;
     }
 
     [HttpGet("status")]
@@ -252,5 +257,53 @@ public sealed class SuwayomiController : ControllerBase
                 Status = StatusCodes.Status502BadGateway
             });
         }
+    }
+
+    /// <summary>
+    /// Resolves which of the supplied titles are in the user's Suwayomi library and returns their
+    /// reading progress. Matches by normalized title and cached alternative titles - the DB/cache index
+    /// only, never AniList. Titles that do not match are omitted.
+    /// </summary>
+    [HttpPost("library-match")]
+    public async Task<ActionResult<List<SuwayomiLibraryMatchDto>>> MatchLibraryAsync(
+        [FromBody] SuwayomiLibraryMatchRequest? request, CancellationToken ct)
+    {
+        if (request?.Titles is null)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = "titles is required.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        if (request.Titles.Count > MaxLibraryMatchTitles)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Title = $"titles must contain at most {MaxLibraryMatchTitles} entries.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
+
+        var progress = await _libraryProgress.GetAsync(ct).ConfigureAwait(false);
+
+        var matches = new List<SuwayomiLibraryMatchDto>();
+        foreach (var title in request.Titles)
+        {
+            var key = MediaTitleNormalizer.NormalizeForSearch(title);
+            if (key.Length > 0 && progress.TryGetValue(key, out var value))
+            {
+                matches.Add(new SuwayomiLibraryMatchDto
+                {
+                    Title = title,
+                    MangaId = value.MangaId,
+                    Read = value.Read,
+                    Latest = value.Latest
+                });
+            }
+        }
+
+        return Ok(matches);
     }
 }

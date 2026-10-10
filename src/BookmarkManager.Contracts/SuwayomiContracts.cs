@@ -52,3 +52,21 @@ public class SuwayomiSearchResultDto
     public string SourceName { get; set; } = string.Empty;
     public bool InLibrary { get; set; }
 }
+
+/// <summary>
+/// Batched library-membership query from the WebUI add-on: titles it is about to show, matched
+/// against the user's Suwayomi library by normalized title and alternative title. Max 200 per call.
+/// </summary>
+public class SuwayomiLibraryMatchRequest
+{
+    public List<string> Titles { get; set; } = [];
+}
+
+/// <summary>One matched title: the text as sent, plus its library reading progress.</summary>
+public class SuwayomiLibraryMatchDto
+{
+    public string Title { get; set; } = string.Empty;
+    public int MangaId { get; set; }
+    public int Read { get; set; }
+    public int Latest { get; set; }
+}

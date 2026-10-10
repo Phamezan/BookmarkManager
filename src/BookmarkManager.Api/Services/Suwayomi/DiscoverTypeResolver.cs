@@ -37,6 +37,18 @@ public static class DiscoverTypeResolver
         return DiscoverSeriesType.Unknown;
     }
 
+    /// <summary>
+    /// Maps an AniList country of origin to a media family: KR -> Manhwa, CN/TW -> Manhua,
+    /// JP -> Manga. Any other or missing code stays <see cref="DiscoverSeriesType.Unknown"/>.
+    /// </summary>
+    public static DiscoverSeriesType FromCountry(string? countryOfOrigin) => countryOfOrigin?.Trim().ToUpperInvariant() switch
+    {
+        "KR" => DiscoverSeriesType.Manhwa,
+        "CN" or "TW" => DiscoverSeriesType.Manhua,
+        "JP" => DiscoverSeriesType.Manga,
+        _ => DiscoverSeriesType.Unknown
+    };
+
     public static string ToApiValue(DiscoverSeriesType type) => type switch
     {
         DiscoverSeriesType.Manhwa => "Manhwa",

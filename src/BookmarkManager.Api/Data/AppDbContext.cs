@@ -25,6 +25,7 @@ public class AppDbContext : DbContext
     public DbSet<DiscoverSeries> DiscoverSeriesSet => Set<DiscoverSeries>();
     public DbSet<DiscoverSourceEntry> DiscoverSourceEntries => Set<DiscoverSourceEntry>();
     public DbSet<DiscoverChapter> DiscoverChapters => Set<DiscoverChapter>();
+    public DbSet<SeriesMetadata> SeriesMetadataSet => Set<SeriesMetadata>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -217,6 +218,17 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => e.TitleKey).IsUnique();
             entity.HasIndex(e => e.LatestChapterAt);
+        });
+
+        modelBuilder.Entity<SeriesMetadata>(entity =>
+        {
+            entity.ToTable("SeriesMetadata");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.NormalizedKey).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CountryOfOrigin).HasMaxLength(8);
+            entity.Property(e => e.TitlesJson).HasMaxLength(4000);
+
+            entity.HasIndex(e => e.NormalizedKey).IsUnique();
         });
 
         modelBuilder.Entity<DiscoverSourceEntry>(entity =>

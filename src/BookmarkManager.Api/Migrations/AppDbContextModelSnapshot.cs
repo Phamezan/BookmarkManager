@@ -730,6 +730,42 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("LibraryCatalogSyncQueue");
                 });
 
+            modelBuilder.Entity("BookmarkManager.Api.Data.SeriesMetadata", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("AnilistId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CountryOfOrigin")
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Found")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LookedUpAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NormalizedKey")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TitlesJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("NormalizedKey")
+                        .IsUnique();
+
+                    b.ToTable("SeriesMetadata", (string)null);
+                });
+
             modelBuilder.Entity("BookmarkManager.Api.Data.SnapshotBatch", b =>
                 {
                     b.Property<Guid>("Id")

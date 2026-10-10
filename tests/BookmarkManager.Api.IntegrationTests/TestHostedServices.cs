@@ -25,6 +25,8 @@ internal static class TestHostedServices
         typeof(LibraryCatalogSyncBackgroundService),
         // Reaches the real Suwayomi server; integration tests seed the Discover tables directly.
         typeof(BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService),
+        // Reaches the real Suwayomi server and AniList; tests exercise the lookup service directly.
+        typeof(BookmarkManager.Api.Services.Suwayomi.SeriesMetadataBackfillService),
         // Reaches the real Suwayomi server; tests drive the sync planner/apply directly.
         typeof(BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService)
     ];

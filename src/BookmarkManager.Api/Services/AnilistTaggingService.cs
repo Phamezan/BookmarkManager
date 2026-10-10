@@ -16,7 +16,9 @@ public sealed partial class AnilistTaggingService : IAnilistTagProvider
     // returning 429s well below 90. Bursting the full 90 self-inflicts those 429s, which the
     // schedule/match paths can't recover mid-load. Stay comfortably under the degraded ceiling: a
     // small burst plus a steady ~24/min drip means calls actually succeed instead of being rejected.
-    private static readonly ProviderRateLimiter RateLimiter = new(
+    // Internal so the SeriesMetadata backfill shares this one limiter - a second limiter would let
+    // the two features together exceed AniList's ceiling.
+    internal static readonly ProviderRateLimiter RateLimiter = new(
         tokenLimit: 8,
         tokensPerPeriod: 2,
         replenishmentPeriod: TimeSpan.FromSeconds(5));
