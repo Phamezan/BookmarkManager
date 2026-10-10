@@ -72,4 +72,10 @@ public sealed class SuwayomiOptions
     /// fetch failure and performs no removals that cycle.
     /// </summary>
     public int LibrarySyncMaxRemovalsPerCycle { get; set; } = 5;
+
+    /// <summary>
+    /// Hard cap on Suwayomi library removals per cycle (series whose bookmarks were deleted). The
+    /// remainder wait for later cycles rather than being suppressed.
+    /// </summary>
+    public int LibrarySyncMaxLibraryRemovalsPerCycle { get; set; } = 10;
 }

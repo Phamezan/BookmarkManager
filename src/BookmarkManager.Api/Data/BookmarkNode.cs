@@ -34,6 +34,10 @@ public class BookmarkNode
     // series from the Suwayomi library and to clear the linkage.
     public int? SuwayomiMangaId { get; set; }
     public string? SourceUrl { get; set; }
+    // Manager-only: set by the library sync when this bookmark's deletion removed its series from
+    // the Suwayomi library. Guards against re-stamping and marks a restore that must re-add the
+    // series. Cleared when the series is back in the library.
+    public DateTime? SuwayomiRemovedAt { get; set; }
     public string? CoverImageUrl { get; set; }
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
