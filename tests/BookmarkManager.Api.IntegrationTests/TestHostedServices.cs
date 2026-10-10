@@ -24,7 +24,9 @@ internal static class TestHostedServices
         typeof(LibraryEmbeddingBackfillService),
         typeof(LibraryCatalogSyncBackgroundService),
         // Reaches the real Suwayomi server; integration tests seed the Discover tables directly.
-        typeof(BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService)
+        typeof(BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService),
+        // Reaches the real Suwayomi server; tests drive the sync planner/apply directly.
+        typeof(BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService)
     ];
 
     public static void RemoveExternalBackgroundWorkers(this IServiceCollection services)

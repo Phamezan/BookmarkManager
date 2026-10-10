@@ -83,7 +83,7 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         "mutation($id:Int!){ fetchMangaAndChapters(input:{id:$id, fetchManga:true, fetchChapters:true}){ manga{ id title genre status thumbnailUrl } chapters{ id name chapterNumber uploadDate sourceOrder } } }";
 
     private const string LibraryQuery =
-        "query { mangas(condition:{inLibrary:true}){ nodes{ title latestReadChapter{ chapterNumber } highestNumberedChapter{ chapterNumber } } } }";
+        "query { mangas(condition:{inLibrary:true}){ nodes{ id title realUrl source{ displayName } latestReadChapter{ chapterNumber } highestNumberedChapter{ chapterNumber } } } }";
 
     private readonly HttpClient _http;
 
@@ -210,7 +210,12 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         var data = await PostAsync<LibraryData>(LibraryQuery, new Dictionary<string, object?>(), ct).ConfigureAwait(false);
         return (data.Mangas?.Nodes ?? [])
             .Select(n => new SuwayomiLibraryManga(
-                n.Title, n.LatestReadChapter?.ChapterNumber, n.HighestNumberedChapter?.ChapterNumber))
+                n.Title,
+                n.LatestReadChapter?.ChapterNumber,
+                n.HighestNumberedChapter?.ChapterNumber,
+                n.Id,
+                n.RealUrl,
+                n.Source?.DisplayName))
             .ToList();
     }
 
@@ -496,9 +501,18 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
 
     private sealed class LibraryMangaModel
     {
+        public int Id { get; set; }
         public string Title { get; set; } = string.Empty;
+        public string? RealUrl { get; set; }
+        public LibrarySourceModel? Source { get; set; }
         public ChapterNumberModel? LatestReadChapter { get; set; }
         public ChapterNumberModel? HighestNumberedChapter { get; set; }
+    }
+
+    private sealed class LibrarySourceModel
+    {
+        [JsonPropertyName("displayName")]
+        public string? DisplayName { get; set; }
     }
 
     private sealed class ChapterNumberModel

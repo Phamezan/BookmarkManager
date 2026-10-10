@@ -145,6 +145,10 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverFeed
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>(provider =>
     provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverLibraryProgressProvider>();
+// Suwayomi library sync (phase 3): mirrors the Suwayomi library into the Manga folder and back.
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService>(provider =>
+    provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService>());
 builder.Services.AddMemoryCache();
 builder.Services.Configure<BookmarkManager.Api.Services.Library.LibraryProviderOptions>(
     builder.Configuration.GetSection(BookmarkManager.Api.Services.Library.LibraryProviderOptions.SectionName));

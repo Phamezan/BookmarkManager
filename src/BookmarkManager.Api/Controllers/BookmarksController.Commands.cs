@@ -16,7 +16,6 @@ public partial class BookmarksController
     [FromBody] CreateBookmarkRequest request,
     CancellationToken ct)
     {
-    string parentBrowserNodeId = "0";
     BookmarkNode? parentNode = null;
     if (parentId != Guid.Empty)
     {
@@ -24,25 +23,15 @@ public partial class BookmarksController
         if (!parentExists) return NotFound("Parent folder not found");
 
         parentNode = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == parentId, ct);
-        // "0" is a placeholder only; when the parent's BrowserNodeId is not yet
-        // confirmed the command is enqueued Deferred and the payload rewritten
-        // on promotion (see DeferredCommandHelper).
-        parentBrowserNodeId = parentNode?.BrowserNodeId ?? "0";
     }
-
-    var isRoot = parentId == Guid.Empty;
-    var maxPos = isRoot
-        ? await _db.BookmarkNodes.Where(n => n.ParentId == null).MaxAsync(n => (int?)n.Position, ct) ?? -1
-        : await _db.BookmarkNodes.Where(n => n.ParentId == parentId).MaxAsync(n => (int?)n.Position, ct) ?? -1;
 
     var node = new BookmarkNode
     {
         Id = Guid.NewGuid(),
         ParentId = parentId == Guid.Empty ? null : parentId,
         Type = request.Type,
-        Title = ClampBookmarkTitle(request.Title),
+        Title = BookmarkNodeWriter.ClampTitle(request.Title),
         Url = request.Url,
-        Position = maxPos + 1,
         SyncState = SyncState.Pending,
         Version = 1,
         CreatedAt = DateTime.UtcNow,
@@ -89,37 +78,7 @@ public partial class BookmarksController
         }
     }
 
-    var isRootTarget = node.ParentId == null;
-    var maxPosTarget = isRootTarget
-        ? await _db.BookmarkNodes.Where(n => n.ParentId == null).MaxAsync(n => (int?)n.Position, ct) ?? -1
-        : await _db.BookmarkNodes.Where(n => n.ParentId == node.ParentId).MaxAsync(n => (int?)n.Position, ct) ?? -1;
-
-    node.Position = maxPosTarget + 1;
-    parentBrowserNodeId = targetFolder?.BrowserNodeId ?? "0";
-
-    _db.BookmarkNodes.Add(node);
-
-    var payload = new
-    {
-        type = node.Type == NodeType.Folder ? "Folder" : "Bookmark",
-        parentBrowserNodeId = parentBrowserNodeId,
-        title = node.Title,
-        url = node.Url,
-        position = node.Position
-    };
-
-    _db.ExtensionCommands.Add(new ExtensionCommandEntry
-    {
-        Id = Guid.NewGuid(),
-        OperationId = Guid.NewGuid(),
-        CommandType = "Create",
-        BookmarkId = node.Id,
-        BrowserNodeId = null,
-        ExpectedVersion = node.Version,
-        PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
-        CreatedAt = DateTime.UtcNow,
-        Status = Services.DeferredCommandHelper.InitialStatus(targetFolder)
-    });
+    await BookmarkNodeWriter.AppendNewBookmarkAsync(_db, node, targetFolder, ct);
 
     await _db.SaveChangesAsync(ct);
     await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
@@ -140,17 +99,6 @@ public partial class BookmarksController
     await _db.SaveChangesAsync(ct);
     await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
     return _mapper.Map<BookmarkNodeDto>(node);
-    }
-
-    /// <summary>Matches <c>BookmarkNode.Title</c> EF max length in AppDbContext.</summary>
-    private const int MaxBookmarkTitleLength = 500;
-
-    private static string ClampBookmarkTitle(string title)
-    {
-        var trimmed = title.Trim();
-        return trimmed.Length <= MaxBookmarkTitleLength
-            ? trimmed
-            : trimmed[..MaxBookmarkTitleLength];
     }
 
     [HttpPut("{id:guid}/metadata")]
@@ -205,7 +153,7 @@ public partial class BookmarksController
     /// <param name="url">Pass null to leave the node's Url untouched (bulk title-only saves).</param>
     private void ApplyBookmarkProjectionUpdate(BookmarkNode node, string title, string? url)
     {
-    title = ClampBookmarkTitle(title);
+        title = BookmarkNodeWriter.ClampTitle(title);
 
     if (node.PreviousTitle is null && !string.Equals(node.Title, title, StringComparison.Ordinal))
         node.PreviousTitle = node.Title;
@@ -290,33 +238,7 @@ public partial class BookmarksController
     var node = await _db.BookmarkNodes.FirstOrDefaultAsync(n => n.Id == id && !n.IsDeleted, ct);
     if (node is null) return NotFound();
 
-    node.IsDeleted = true;
-    node.DeletedAt = DateTime.UtcNow;
-    node.PurgeAfter = DateTime.UtcNow.AddDays(30);
-    node.SyncState = SyncState.Pending;
-
-    if (node.Type == NodeType.Folder)
-    {
-        await FolderHierarchy.MarkDeletedRecursiveAsync(_db, node.Id, node.DeletedAt.Value, node.PurgeAfter.Value, ct);
-    }
-
-    var payload = new
-    {
-        recursive = true
-    };
-
-    _db.ExtensionCommands.Add(new ExtensionCommandEntry
-    {
-        Id = Guid.NewGuid(),
-        OperationId = Guid.NewGuid(),
-        CommandType = "Delete",
-        BookmarkId = node.Id,
-        BrowserNodeId = node.BrowserNodeId,
-        ExpectedVersion = node.Version,
-        PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
-        CreatedAt = DateTime.UtcNow,
-        Status = "Pending"
-    });
+    await BookmarkNodeWriter.ApplySoftDeleteAsync(_db, node, ct);
 
     await _db.SaveChangesAsync(ct);
     await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync();
@@ -332,33 +254,7 @@ public partial class BookmarksController
 
     foreach (var node in nodes)
     {
-        node.IsDeleted = true;
-        node.DeletedAt = DateTime.UtcNow;
-        node.PurgeAfter = DateTime.UtcNow.AddDays(30);
-        node.SyncState = SyncState.Pending;
-
-        if (node.Type == NodeType.Folder)
-        {
-            await FolderHierarchy.MarkDeletedRecursiveAsync(_db, node.Id, node.DeletedAt.Value, node.PurgeAfter.Value, ct);
-        }
-
-        var payload = new
-        {
-            recursive = true
-        };
-
-        _db.ExtensionCommands.Add(new ExtensionCommandEntry
-        {
-            Id = Guid.NewGuid(),
-            OperationId = Guid.NewGuid(),
-            CommandType = "Delete",
-            BookmarkId = node.Id,
-            BrowserNodeId = node.BrowserNodeId,
-            ExpectedVersion = node.Version,
-            PayloadJson = System.Text.Json.JsonSerializer.Serialize(payload),
-            CreatedAt = DateTime.UtcNow,
-            Status = "Pending"
-        });
+        await BookmarkNodeWriter.ApplySoftDeleteAsync(_db, node, ct);
     }
 
     await _db.SaveChangesAsync(ct);
