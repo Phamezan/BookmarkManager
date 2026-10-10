@@ -16,17 +16,20 @@ public sealed class SuwayomiLibrarySyncPlannerTests
         => new(title, read, highest, id, realUrl);
 
     private static SuwayomiLibrarySyncBookmark Bookmark(
-        Guid id, int? mangaId, string title = "Series", string? url = null, int? progress = null, bool deleted = false)
-        => new(id, title, url, mangaId, progress, deleted);
+        Guid id, int? mangaId, string title = "Series", string? url = null, int? progress = null,
+        bool deleted = false, bool removed = false)
+        => new(id, title, url, mangaId, progress, deleted, removed);
 
     private static SuwayomiLibrarySyncPlan Plan(
         IReadOnlyList<SuwayomiLibraryManga> library,
         IReadOnlyList<SuwayomiLibrarySyncBookmark> bookmarks,
         IReadOnlySet<int> previouslyUnlinked,
         bool syncFolderAvailable = true,
-        int maxRemovalsPerCycle = 5)
+        int maxRemovalsPerCycle = 5,
+        int maxLibraryRemovalsPerCycle = 10)
         => SuwayomiLibrarySyncPlanner.Plan(
-            library, bookmarks, previouslyUnlinked, syncFolderAvailable, BaseUrl, maxRemovalsPerCycle);
+            library, bookmarks, previouslyUnlinked, syncFolderAvailable, BaseUrl, maxRemovalsPerCycle,
+            maxLibraryRemovalsPerCycle);
 
     [Fact]
     public void Create_HappensOnlyOnTheSecondCycle()
@@ -210,5 +213,106 @@ public sealed class SuwayomiLibrarySyncPlannerTests
         var plan = Plan(library, bookmarks, new HashSet<int>());
 
         Assert.Empty(plan.ProgressUpdates);
+    }
+
+    [Fact]
+    public void DeletedBookmark_RemovesSeriesAndStampsIt()
+    {
+        var library = new[] { Manga(5, "Nano Machine") };
+        var bookmarks = new[] { Bookmark(BookmarkA, mangaId: 5, deleted: true) };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>());
+
+        var removal = Assert.Single(plan.LibraryRemovals);
+        Assert.Equal(5, removal.MangaId);
+        Assert.Equal(BookmarkA, Assert.Single(removal.BookmarkIds));
+        Assert.Empty(plan.LibraryRestores);
+        Assert.Empty(plan.Removals);
+    }
+
+    [Fact]
+    public void DeletedBookmark_WithLiveBookmarkOnSameSeries_DoesNotRemove()
+    {
+        var library = new[] { Manga(5, "Nano Machine") };
+        var bookmarks = new[]
+        {
+            Bookmark(BookmarkA, mangaId: 5, deleted: true),
+            Bookmark(BookmarkB, mangaId: 5)
+        };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>());
+
+        Assert.Empty(plan.LibraryRemovals);
+        Assert.Empty(plan.LibraryRestores);
+    }
+
+    [Fact]
+    public void LibraryRemovals_AreThrottledAtTheCapInMangaIdOrder()
+    {
+        var library = new[] { Manga(5), Manga(6) };
+        var bookmarks = new[]
+        {
+            Bookmark(BookmarkB, mangaId: 6, deleted: true),
+            Bookmark(BookmarkA, mangaId: 5, deleted: true)
+        };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>(), maxLibraryRemovalsPerCycle: 1);
+
+        var removal = Assert.Single(plan.LibraryRemovals);
+        Assert.Equal(5, removal.MangaId);
+        Assert.Equal(1, plan.LibraryRemovalsSuppressed);
+    }
+
+    [Fact]
+    public void EmptyLibrary_ProducesNoLibraryRemovals()
+    {
+        var bookmarks = new[] { Bookmark(BookmarkA, mangaId: 5, deleted: true) };
+
+        var plan = Plan([], bookmarks, new HashSet<int>());
+
+        Assert.Empty(plan.LibraryRemovals);
+        Assert.True(plan.LibraryEmpty);
+    }
+
+    [Fact]
+    public void RestoredBookmark_IsRestoredAndNotARemovalCandidate()
+    {
+        var library = new[] { Manga(9, "Some Other Series") };
+        var bookmarks = new[] { Bookmark(BookmarkA, mangaId: 5, removed: true) };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>());
+
+        var restore = Assert.Single(plan.LibraryRestores);
+        Assert.Equal(BookmarkA, restore.BookmarkId);
+        Assert.Equal(5, restore.MangaId);
+        Assert.False(restore.MangaInLibrary);
+        Assert.Empty(plan.Removals);
+    }
+
+    [Fact]
+    public void MarkedBookmark_WithSeriesAlreadyInLibrary_ClearsMarkerOnly()
+    {
+        var library = new[] { Manga(5, "Nano Machine") };
+        var bookmarks = new[] { Bookmark(BookmarkA, mangaId: 5, removed: true) };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>());
+
+        var restore = Assert.Single(plan.LibraryRestores);
+        Assert.True(restore.MangaInLibrary);
+        Assert.Empty(plan.LibraryRemovals);
+        Assert.Empty(plan.Removals);
+    }
+
+    [Fact]
+    public void AlreadyStampedDeletedBookmark_DoesNothing()
+    {
+        var library = new[] { Manga(5, "Nano Machine") };
+        var bookmarks = new[] { Bookmark(BookmarkA, mangaId: 5, deleted: true, removed: true) };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>());
+
+        Assert.Empty(plan.LibraryRemovals);
+        Assert.Empty(plan.LibraryRestores);
+        Assert.Empty(plan.Removals);
     }
 }

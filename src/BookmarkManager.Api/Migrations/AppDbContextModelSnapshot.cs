@@ -263,6 +263,9 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<int?>("SuwayomiMangaId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("SuwayomiRemovedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("SyncState")
                         .HasColumnType("INTEGER");
 
