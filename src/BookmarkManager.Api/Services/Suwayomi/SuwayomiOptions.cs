@@ -54,4 +54,22 @@ public sealed class SuwayomiOptions
 
     /// <summary>Cap on listing pages paged per source each run.</summary>
     public int DiscoverMaxPagesPerSource { get; set; } = 5;
+
+    /// <summary>Whether the background job mirrors the Suwayomi library into bookmarks.</summary>
+    public bool LibrarySyncEnabled { get; set; } = true;
+
+    /// <summary>Minutes between Suwayomi library polls.</summary>
+    public int LibrarySyncIntervalMinutes { get; set; } = 5;
+
+    /// <summary>
+    /// Folder new Suwayomi series bookmarks are created under. Null (or a missing/deleted folder)
+    /// disables creation; set in appsettings.json only. Removals and progress still run.
+    /// </summary>
+    public Guid? LibrarySyncFolderId { get; set; }
+
+    /// <summary>
+    /// Hard cap on soft-deletes per cycle. A larger diff (e.g. a wiped library) is treated as a
+    /// fetch failure and performs no removals that cycle.
+    /// </summary>
+    public int LibrarySyncMaxRemovalsPerCycle { get; set; } = 5;
 }

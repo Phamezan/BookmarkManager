@@ -59,5 +59,16 @@ public sealed record SuwayomiMangaDetails(
     string? ThumbnailUrl,
     IReadOnlyList<SuwayomiChapterDetails> Chapters);
 
-/// <summary>A library series' reading progress, used for the Discover progress badge.</summary>
-public sealed record SuwayomiLibraryManga(string Title, double? LatestReadChapter, double? HighestNumberedChapter);
+/// <summary>
+/// A series in the user's Suwayomi library: its reading progress (Discover progress badge) plus the
+/// linkage fields the library-sync feature needs (<see cref="Id"/>, <see cref="RealUrl"/> and the
+/// owning source's display name). The linkage fields default so the Discover-only positional call
+/// sites keep compiling.
+/// </summary>
+public sealed record SuwayomiLibraryManga(
+    string Title,
+    double? LatestReadChapter,
+    double? HighestNumberedChapter,
+    int Id = 0,
+    string? RealUrl = null,
+    string? SourceDisplayName = null);
