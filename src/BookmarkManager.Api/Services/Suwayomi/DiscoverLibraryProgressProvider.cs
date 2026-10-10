@@ -1,15 +1,19 @@
+using BookmarkManager.Api.Data;
 using BookmarkManager.Api.Services.BookmarkTagging;
+using Microsoft.EntityFrameworkCore;
 
 namespace BookmarkManager.Api.Services.Suwayomi;
 
-/// <summary>Read/latest chapter counts for a series in the user's Suwayomi library.</summary>
-public readonly record struct DiscoverProgressValue(int Read, int Latest);
+/// <summary>Read/latest chapter counts and the manga id for a series in the user's Suwayomi library.</summary>
+public readonly record struct DiscoverProgressValue(int Read, int Latest, int MangaId);
 
 /// <summary>
 /// Fetches the user's Suwayomi library reading progress and caches it for 60 s, so a Discover page
 /// load never fans out to Suwayomi more than once a minute. Matching is by normalized title
 /// (<see cref="MediaTitleNormalizer.NormalizeForSearch"/>) so a series found on several sources still
-/// lines up with the library entry.
+/// lines up with the library entry. The index also carries every alternative title recorded in
+/// <see cref="SeriesMetadata.TitlesJson"/>, so a library series whose readable title differs from the
+/// Discover title still gets its badge; exact-title keys win over alias keys on a collision.
 /// </summary>
 public sealed class DiscoverLibraryProgressProvider
 {
@@ -47,23 +51,23 @@ public sealed class DiscoverLibraryProgressProvider
 
             using var scope = _scopeFactory.CreateScope();
             var client = scope.ServiceProvider.GetRequiredService<ISuwayomiClient>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var library = await client.GetLibraryAsync(ct).ConfigureAwait(false);
 
-            var progress = new Dictionary<string, DiscoverProgressValue>(StringComparer.Ordinal);
-            foreach (var manga in library)
-            {
-                var key = MediaTitleNormalizer.NormalizeForSearch(manga.Title);
-                if (key.Length == 0)
-                {
-                    continue;
-                }
+            var keys = library
+                .Select(manga => MediaTitleNormalizer.NormalizeForSearch(manga.Title))
+                .Where(key => key.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            var metadataByKey = keys.Count == 0
+                ? new Dictionary<string, SeriesMetadata>(StringComparer.Ordinal)
+                : (await db.SeriesMetadataSet
+                        .AsNoTracking()
+                        .Where(m => keys.Contains(m.NormalizedKey))
+                        .ToListAsync(ct).ConfigureAwait(false))
+                    .ToDictionary(m => m.NormalizedKey, StringComparer.Ordinal);
 
-                progress[key] = new DiscoverProgressValue(
-                    (int)Math.Truncate(manga.LatestReadChapter ?? 0),
-                    (int)Math.Truncate(manga.HighestNumberedChapter ?? 0));
-            }
-
-            _cache = progress;
+            _cache = BuildIndex(library, metadataByKey);
             _fetchedAt = DateTime.UtcNow;
             return _cache;
         }
@@ -80,5 +84,56 @@ public sealed class DiscoverLibraryProgressProvider
         {
             _gate.Release();
         }
+    }
+
+    /// <summary>
+    /// Builds the normalized-title -> progress index from the library, then adds a key for every
+    /// alternative title stored for a library series. Exact-title keys are inserted first and aliases
+    /// only fill gaps (<see cref="Dictionary{TKey,TValue}.TryAdd"/>), so an exact match always wins.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, DiscoverProgressValue> BuildIndex(
+        IReadOnlyList<SuwayomiLibraryManga> library,
+        IReadOnlyDictionary<string, SeriesMetadata> metadataByKey)
+    {
+        var index = new Dictionary<string, DiscoverProgressValue>(StringComparer.Ordinal);
+
+        foreach (var manga in library)
+        {
+            var key = MediaTitleNormalizer.NormalizeForSearch(manga.Title);
+            if (key.Length == 0)
+            {
+                continue;
+            }
+
+            index.TryAdd(key, new DiscoverProgressValue(
+                (int)Math.Truncate(manga.LatestReadChapter ?? 0),
+                (int)Math.Truncate(manga.HighestNumberedChapter ?? 0),
+                manga.Id));
+        }
+
+        foreach (var manga in library)
+        {
+            var key = MediaTitleNormalizer.NormalizeForSearch(manga.Title);
+            if (key.Length == 0
+                || !index.TryGetValue(key, out var value)
+                || !metadataByKey.TryGetValue(key, out var metadata)
+                || !metadata.Found)
+            {
+                continue;
+            }
+
+            foreach (var alternate in SeriesMetadataService.ParseTitles(metadata.TitlesJson))
+            {
+                var aliasKey = MediaTitleNormalizer.NormalizeForSearch(alternate);
+                if (aliasKey.Length == 0 || aliasKey == key)
+                {
+                    continue;
+                }
+
+                index.TryAdd(aliasKey, value);
+            }
+        }
+
+        return index;
     }
 }

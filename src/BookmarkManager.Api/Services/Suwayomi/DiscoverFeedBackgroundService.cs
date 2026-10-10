@@ -392,6 +392,11 @@ public sealed class DiscoverFeedBackgroundService : BackgroundService
             .ToDictionary(e => e.MangaId);
         var seriesById = seriesByKey.Values.ToDictionary(s => s.Id);
 
+        // Cached AniList metadata only - the feed never calls AniList itself. Used purely to give a
+        // genre-less ("Unknown") series a type from its country of origin.
+        var metadataByKey = (await db.SeriesMetadataSet.AsNoTracking().ToListAsync(ct).ConfigureAwait(false))
+            .ToDictionary(m => m.NormalizedKey, StringComparer.Ordinal);
+
         var fetchedMangaIds = results
             .SelectMany(r => r.Candidates)
             .Where(c => c.FetchedChapters)
@@ -475,6 +480,13 @@ public sealed class DiscoverFeedBackgroundService : BackgroundService
                     if (series2.Type == DiscoverSeriesType.Unknown)
                     {
                         series2.Type = candidate.Type;
+                    }
+
+                    if (series2.Type == DiscoverSeriesType.Unknown
+                        && metadataByKey.TryGetValue(series2.TitleKey, out var metadata)
+                        && metadata.Found)
+                    {
+                        series2.Type = DiscoverTypeResolver.FromCountry(metadata.CountryOfOrigin);
                     }
 
                     foreach (var chapter in candidate.Chapters)

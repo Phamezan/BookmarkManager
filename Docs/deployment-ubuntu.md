@@ -147,6 +147,12 @@ Configuration on the `bookmarkmanager` service (overridable in `.env`):
 | `Suwayomi__DiscoverRetentionDays` | `182` | Chapters older than this are pruned each run. |
 | `Suwayomi__DiscoverMaxPagesPerSource` | `5` | Listing pages fetched per source per run. |
 
+### Series metadata (country of origin + alternative titles)
+
+`SeriesMetadataService` resolves a series title to its AniList identity - id, country of origin, and every known title (romaji/english/native/synonyms) - and caches the result in the `SeriesMetadata` table (keyed by the normalized title; misses cached 30 days). It shares the auto-tagging AniList rate limiter, and a match is accepted only when an AniList title normalizes exactly to the query. The `SeriesMetadataBackfillService` worker (60-minute interval, 30-second startup delay, 300 lookups per run) fills rows for every Suwayomi library title and every Discover series still typed Unknown; a resolved country re-types matching Unknown rows (KR → Manhwa, CN/TW → Manhua, JP → Manga). Discover's progress badges and type chips both read this cache, and the feed service re-types Unknown rows from stored metadata only - it never calls AniList itself.
+
+The WebUI add-on can ask whether titles are in the library via `POST /api/suwayomi/library-match` with `{ "titles": ["..."] }` (max 200). It answers from the DB/cache library index only - matching by normalized title and alternative title - and returns `[{ "title", "mangaId", "read", "latest" }]` for matching titles only, never calling AniList.
+
 ### nginx proxy for the add-on page
 
 The nginx server in front of Suwayomi (port 4567, not part of this repo) serves the WebUI with `<script src="/bm/addon.js" defer>` injected into every page. It must also expose this app's static add-on folder and API on the same origin as the WebUI:

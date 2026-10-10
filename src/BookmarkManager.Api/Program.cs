@@ -145,6 +145,10 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverFeed
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>(provider =>
     provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverLibraryProgressProvider>();
+// Series metadata (AniList country of origin + alternative titles): scoped lookup cached in SQLite,
+// plus the backfill worker that fills missing rows. Shares the AniList rate limiter with tagging.
+builder.Services.AddScoped<BookmarkManager.Api.Services.Suwayomi.SeriesMetadataService>();
+builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.SeriesMetadataBackfillService>();
 // Suwayomi library sync (phase 3): mirrors the Suwayomi library into the Manga folder and back.
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService>();
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.SuwayomiLibrarySyncService>(provider =>

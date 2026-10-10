@@ -32,4 +32,18 @@ public sealed class DiscoverTypeResolverTests
         Assert.Equal("Manhwa", DiscoverTypeResolver.ToApiValue(DiscoverSeriesType.Manhwa));
         Assert.Equal("Unknown", DiscoverTypeResolver.ToApiValue(DiscoverSeriesType.Unknown));
     }
+
+    [Theory]
+    [InlineData("KR", DiscoverSeriesType.Manhwa)]
+    [InlineData("kr", DiscoverSeriesType.Manhwa)]
+    [InlineData("CN", DiscoverSeriesType.Manhua)]
+    [InlineData("TW", DiscoverSeriesType.Manhua)]
+    [InlineData("JP", DiscoverSeriesType.Manga)]
+    [InlineData("US", DiscoverSeriesType.Unknown)]
+    [InlineData("", DiscoverSeriesType.Unknown)]
+    [InlineData(null, DiscoverSeriesType.Unknown)]
+    public void FromCountry_MapsKnownCodes(string? country, DiscoverSeriesType expected)
+    {
+        Assert.Equal(expected, DiscoverTypeResolver.FromCountry(country));
+    }
 }
