@@ -71,7 +71,8 @@ public sealed class SuwayomiLibraryMatchTests : IntegrationTestBase
     public async Task Match_ReturnsOnlyLibraryTitles_AndResolvesAlternativeTitles()
     {
         var fake = new FakeLibraryClient();
-        fake.Library.Add(new SuwayomiLibraryManga("The Divine Demon's Grand Ascension", 65, 68, 4360));
+        fake.Library.Add(new SuwayomiLibraryManga(
+            "The Divine Demon's Grand Ascension", 65, 68, 4360, null, "Asura Scans"));
         using var factory = WithFakeClient(Factory, fake);
 
         var libraryKey = MediaTitleNormalizer.NormalizeForSearch("The Divine Demon's Grand Ascension");
@@ -89,6 +90,8 @@ public sealed class SuwayomiLibraryMatchTests : IntegrationTestBase
         Assert.Equal(4360, match.MangaId);
         Assert.Equal(65, match.Read);
         Assert.Equal(68, match.Latest);
+        Assert.Equal("The Divine Demon's Grand Ascension", match.LibraryTitle);
+        Assert.Equal("Asura Scans", match.SourceName);
     }
 
     [Fact]

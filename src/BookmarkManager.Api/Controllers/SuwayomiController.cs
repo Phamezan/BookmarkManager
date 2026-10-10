@@ -299,7 +299,9 @@ public sealed class SuwayomiController : ControllerBase
                     Title = title,
                     MangaId = value.MangaId,
                     Read = value.Read,
-                    Latest = value.Latest
+                    Latest = value.Latest,
+                    LibraryTitle = value.LibraryTitle,
+                    SourceName = value.SourceName
                 });
             }
         }

@@ -62,11 +62,20 @@ public class SuwayomiLibraryMatchRequest
     public List<string> Titles { get; set; } = [];
 }
 
-/// <summary>One matched title: the text as sent, plus its library reading progress.</summary>
+/// <summary>
+/// One matched title: the text as sent, plus the library series' identity and reading progress, so
+/// the WebUI add-on can badge a cross-source duplicate and link to the library copy.
+/// </summary>
 public class SuwayomiLibraryMatchDto
 {
     public string Title { get; set; } = string.Empty;
     public int MangaId { get; set; }
     public int Read { get; set; }
     public int Latest { get; set; }
+
+    /// <summary>The matched library series' title (may differ from <see cref="Title"/> via an alias).</summary>
+    public string LibraryTitle { get; set; } = string.Empty;
+
+    /// <summary>Display name of the source the library series belongs to.</summary>
+    public string? SourceName { get; set; }
 }
