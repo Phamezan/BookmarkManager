@@ -4,8 +4,12 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BookmarkManager.Api.Services.Suwayomi;
 
-/// <summary>Read/latest chapter counts and the manga id for a series in the user's Suwayomi library.</summary>
-public readonly record struct DiscoverProgressValue(int Read, int Latest, int MangaId);
+/// <summary>
+/// Reading progress plus the identity of the series in the user's Suwayomi library: its manga id,
+/// the library series' own title and the display name of the source it belongs to.
+/// </summary>
+public readonly record struct DiscoverProgressValue(
+    int Read, int Latest, int MangaId, string LibraryTitle = "", string? SourceName = null);
 
 /// <summary>
 /// Fetches the user's Suwayomi library reading progress and caches it for 60 s, so a Discover page
@@ -108,7 +112,9 @@ public sealed class DiscoverLibraryProgressProvider
             index.TryAdd(key, new DiscoverProgressValue(
                 (int)Math.Truncate(manga.LatestReadChapter ?? 0),
                 (int)Math.Truncate(manga.HighestNumberedChapter ?? 0),
-                manga.Id));
+                manga.Id,
+                manga.Title,
+                manga.SourceDisplayName));
         }
 
         foreach (var manga in library)
