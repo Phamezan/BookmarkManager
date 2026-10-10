@@ -143,7 +143,8 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
             _previouslyUnlinked,
             syncFolder is not null,
             baseUrl,
-            options.LibrarySyncMaxRemovalsPerCycle);
+            options.LibrarySyncMaxRemovalsPerCycle,
+            options.LibrarySyncMaxLibraryRemovalsPerCycle);
 
         if (plan.LibraryEmpty)
         {
@@ -156,13 +157,83 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
                 plan.RemovalsSuppressed, options.LibrarySyncMaxRemovalsPerCycle);
         }
 
+        if (plan.LibraryRemovalsSuppressed > 0)
+        {
+            _logger.LogInformation(
+                "Suwayomi library sync: {Count} library removals exceed the per-cycle cap of {Cap}; the rest wait for a later cycle.",
+                plan.LibraryRemovalsSuppressed, options.LibrarySyncMaxLibraryRemovalsPerCycle);
+        }
+
+        // Suwayomi side effects run outside the DB transaction: never hold the SQLite write lock
+        // across an HTTP call. Only a successful call touches the database below.
+        var removedStampIds = new List<Guid>();
+        var libraryRemovedCount = 0;
+        if (plan.LibraryRemovals.Count > 0)
+        {
+            var client = scope.ServiceProvider.GetRequiredService<ISuwayomiClient>();
+            foreach (var removal in plan.LibraryRemovals)
+            {
+                try
+                {
+                    await client.RemoveFromLibraryAsync(removal.MangaId, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Suwayomi library sync: removing manga {MangaId} from the library failed; it will be retried next cycle.",
+                        removal.MangaId);
+                    continue;
+                }
+
+                removedStampIds.AddRange(removal.BookmarkIds);
+                libraryRemovedCount++;
+            }
+        }
+
+        var restoredMarkerIds = new List<Guid>();
+        var libraryRestoredCount = 0;
+        if (plan.LibraryRestores.Count > 0)
+        {
+            var client = scope.ServiceProvider.GetRequiredService<ISuwayomiClient>();
+            foreach (var group in plan.LibraryRestores.GroupBy(r => r.MangaId))
+            {
+                if (group.All(r => !r.MangaInLibrary))
+                {
+                    try
+                    {
+                        await client.AddToLibraryAsync(group.Key, ct).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex,
+                            "Suwayomi library sync: restoring manga {MangaId} to the library failed; it will be retried next cycle.",
+                            group.Key);
+                        continue;
+                    }
+
+                    libraryRestoredCount++;
+                }
+
+                restoredMarkerIds.AddRange(group.Select(r => r.BookmarkId));
+            }
+        }
+
+        var libraryChanged = removedStampIds.Count > 0 || restoredMarkerIds.Count > 0;
         var changed = plan.Creations.Count > 0 || plan.Links.Count > 0 || plan.Relinks.Count > 0
-            || plan.Removals.Count > 0 || plan.ProgressUpdates.Count > 0;
+            || plan.Removals.Count > 0 || plan.ProgressUpdates.Count > 0 || libraryChanged;
 
         if (changed)
         {
             await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-            await ApplyPlanAsync(db, plan, syncFolder, baseUrl, ct).ConfigureAwait(false);
+            await ApplyPlanAsync(db, plan, syncFolder, baseUrl, removedStampIds, restoredMarkerIds, ct).ConfigureAwait(false);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await transaction.CommitAsync(ct).ConfigureAwait(false);
         }
@@ -173,8 +244,9 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
         {
             await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync().ConfigureAwait(false);
             _logger.LogInformation(
-                "Suwayomi library sync: created {Created}, linked {Linked}, relinked {Relinked}, removed {Removed}, progress {Progress}.",
-                plan.Creations.Count, plan.Links.Count, plan.Relinks.Count, plan.Removals.Count, plan.ProgressUpdates.Count);
+                "Suwayomi library sync: created {Created}, linked {Linked}, relinked {Relinked}, removed {Removed}, progress {Progress}, libraryRemoved {LibraryRemoved}, libraryRestored {LibraryRestored}.",
+                plan.Creations.Count, plan.Links.Count, plan.Relinks.Count, plan.Removals.Count, plan.ProgressUpdates.Count,
+                libraryRemovedCount, libraryRestoredCount);
         }
     }
 
@@ -185,7 +257,8 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
             .AsNoTracking()
             .Where(n => n.SuwayomiMangaId != null)
             .Select(n => new SuwayomiLibrarySyncBookmark(
-                n.Id, n.Title, n.Url, n.SuwayomiMangaId, n.CurrentProgress, n.IsDeleted))
+                n.Id, n.Title, n.Url, n.SuwayomiMangaId, n.CurrentProgress, n.IsDeleted,
+                n.SuwayomiRemovedAt != null))
             .ToListAsync(ct).ConfigureAwait(false);
 
         var prefix = $"{baseUrl}/manga/";
@@ -196,7 +269,8 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
                 && n.Url != null
                 && n.Url.StartsWith(prefix))
             .Select(n => new SuwayomiLibrarySyncBookmark(
-                n.Id, n.Title, n.Url, n.SuwayomiMangaId, n.CurrentProgress, n.IsDeleted))
+                n.Id, n.Title, n.Url, n.SuwayomiMangaId, n.CurrentProgress, n.IsDeleted,
+                n.SuwayomiRemovedAt != null))
             .ToListAsync(ct).ConfigureAwait(false);
 
         return linked.Concat(urlMatches).ToList();
@@ -207,6 +281,8 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
         SuwayomiLibrarySyncPlan plan,
         BookmarkNode? syncFolder,
         string baseUrl,
+        IReadOnlyList<Guid> removedStampIds,
+        IReadOnlyList<Guid> restoredMarkerIds,
         CancellationToken ct)
     {
         foreach (var creation in plan.Creations)
@@ -300,6 +376,26 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
                     node.CurrentProgress = update.Progress;
                     node.UpdatedAt = DateTime.UtcNow;
                 }
+            }
+        }
+
+        if (removedStampIds.Count > 0)
+        {
+            var stampIds = removedStampIds.ToHashSet();
+            var nodes = await db.BookmarkNodes.Where(n => stampIds.Contains(n.Id)).ToListAsync(ct).ConfigureAwait(false);
+            foreach (var node in nodes)
+            {
+                node.SuwayomiRemovedAt = DateTime.UtcNow;
+            }
+        }
+
+        if (restoredMarkerIds.Count > 0)
+        {
+            var clearIds = restoredMarkerIds.ToHashSet();
+            var nodes = await db.BookmarkNodes.Where(n => clearIds.Contains(n.Id)).ToListAsync(ct).ConfigureAwait(false);
+            foreach (var node in nodes)
+            {
+                node.SuwayomiRemovedAt = null;
             }
         }
     }
