@@ -166,7 +166,7 @@ public sealed class SeriesMetadataService
     /// </summary>
     public static SeriesMetadataLookup SelectAccepted(string query, JsonElement mediaArray)
     {
-        var normalizedQuery = MediaTitleNormalizer.NormalizeForSearch(query);
+        var normalizedQuery = MatchKey(query);
         if (normalizedQuery.Length == 0 || mediaArray.ValueKind != JsonValueKind.Array)
         {
             return new SeriesMetadataLookup(false, null, null, []);
@@ -180,7 +180,7 @@ public sealed class SeriesMetadataService
             }
 
             var titles = ExtractTitles(media);
-            var accepted = titles.Any(t => MediaTitleNormalizer.NormalizeForSearch(t) == normalizedQuery);
+            var accepted = titles.Any(t => MatchKey(t) == normalizedQuery);
             if (!accepted)
             {
                 continue;
@@ -194,6 +194,26 @@ public sealed class SeriesMetadataService
         }
 
         return new SeriesMetadataLookup(false, null, null, []);
+    }
+
+    private static readonly string[] LeadingArticles = ["the ", "a ", "an "];
+
+    /// <summary>
+    /// Normalized title with one leading article dropped: sources list "Academy's Genius Swordsman"
+    /// while AniList's English title is "The Academy's Genius Swordsman".
+    /// </summary>
+    private static string MatchKey(string title)
+    {
+        var key = MediaTitleNormalizer.NormalizeForSearch(title);
+        foreach (var article in LeadingArticles)
+        {
+            if (key.Length > article.Length && key.StartsWith(article, StringComparison.Ordinal))
+            {
+                return key[article.Length..];
+            }
+        }
+
+        return key;
     }
 
     /// <summary>romaji + english + native + every synonym, non-empty and de-duplicated in order.</summary>

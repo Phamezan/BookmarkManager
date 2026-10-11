@@ -22,6 +22,21 @@ public sealed class SeriesMetadataServiceTests
     """;
 
     [Fact]
+    public void AcceptsWhenOnlyALeadingArticleDiffers()
+    {
+        const string media = """
+        [{ "id": 167649, "countryOfOrigin": "KR",
+           "title": { "romaji": "Academy Cheonjaekaljabi", "english": "The Academy's Genius Swordsman", "native": null },
+           "synonyms": ["Academy's Genius Swordmaster"] }]
+        """;
+
+        var result = SeriesMetadataService.SelectAccepted("Academy's Genius Swordsman", media);
+
+        Assert.True(result.Found);
+        Assert.Equal(167649, result.AnilistId);
+    }
+
+    [Fact]
     public void AcceptsWhenEnglishTitleMatches()
     {
         var result = SeriesMetadataService.SelectAccepted("Heavenly Demon Sovereign", Fixture);
