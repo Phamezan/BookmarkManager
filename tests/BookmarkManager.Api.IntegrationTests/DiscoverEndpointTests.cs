@@ -173,6 +173,97 @@ public sealed class DiscoverEndpointTests : IntegrationTestBase
     }
 
     [Fact]
+    public async Task GetFeed_MergesSeriesSharingAnilistId_AndFiltersAfterMerge()
+    {
+        var fake = new FakeLibraryClient();
+        fake.Library.Add(new SuwayomiLibraryManga("Noble Lady Reformation Guide", 1, 1));
+        using var factory = WithFakeClient(Factory, fake);
+        var now = DateTime.UtcNow;
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var noble = new DiscoverSeries
+            {
+                Id = Guid.NewGuid(),
+                TitleKey = MediaTitleNormalizer.NormalizeForSearch("Noble Lady Reformation Guide"),
+                Title = "Noble Lady Reformation Guide",
+                Type = DiscoverSeriesType.Unknown,
+                CoverMangaId = 12,
+                LatestChapterAt = now.AddDays(-1),
+                UpdatedAt = now
+            };
+            var badLady = new DiscoverSeries
+            {
+                Id = Guid.NewGuid(),
+                TitleKey = MediaTitleNormalizer.NormalizeForSearch("There's No Such Thing as a Bad Lady"),
+                Title = "There's No Such Thing as a Bad Lady",
+                Type = DiscoverSeriesType.Manhwa,
+                CoverMangaId = 11,
+                LatestChapterAt = now.AddDays(-4),
+                UpdatedAt = now
+            };
+            db.DiscoverSeriesSet.AddRange(noble, badLady);
+
+            void Chapter(DiscoverSeries series, int mangaId, string source, double number, DateTime uploaded, int order)
+                => db.DiscoverChapters.Add(new DiscoverChapter
+                {
+                    Id = Guid.NewGuid(),
+                    SeriesId = series.Id,
+                    MangaId = mangaId,
+                    SourceName = source,
+                    ChapterNumber = number,
+                    Name = $"Chapter {number}",
+                    UploadedAt = uploaded,
+                    SourceOrder = order
+                });
+
+            Chapter(noble, 12, "Asura Scans", 8, now.AddDays(-1), 8);
+            Chapter(badLady, 11, "Manganato", 10, now.AddDays(-4), 10);
+            Chapter(badLady, 11, "Weeb Central", 9, now.AddDays(-6), 9);
+
+            db.SeriesMetadataSet.AddRange(
+                new SeriesMetadata
+                {
+                    Id = Guid.NewGuid(),
+                    NormalizedKey = noble.TitleKey,
+                    AnilistId = 206766,
+                    Found = true,
+                    LookedUpAt = now
+                },
+                new SeriesMetadata
+                {
+                    Id = Guid.NewGuid(),
+                    NormalizedKey = badLady.TitleKey,
+                    AnilistId = 206766,
+                    Found = true,
+                    LookedUpAt = now
+                });
+
+            await db.SaveChangesAsync();
+        }
+
+        using var client = factory.CreateClient();
+
+        var all = await client.GetFromJsonAsync<DiscoverFeedDto>("/api/discover?week=0&type=all", JsonOptions);
+        var card = Assert.Single(all!.Items);
+        Assert.Equal("Noble Lady Reformation Guide", card.Title);
+        Assert.Equal("Manhwa", card.Type);
+        Assert.Equal(12, card.SeriesMangaId);
+        Assert.Equal(new[] { "Asura Scans", "Manganato", "Weeb Central" }, card.Sources);
+        Assert.Equal(new double[] { 10, 9, 8 }, card.Chapters.Select(c => c.Number));
+
+        var manhwa = await client.GetFromJsonAsync<DiscoverFeedDto>("/api/discover?week=0&type=manhwa", JsonOptions);
+        Assert.Single(manhwa!.Items);
+
+        var manga = await client.GetFromJsonAsync<DiscoverFeedDto>("/api/discover?week=0&type=manga", JsonOptions);
+        Assert.Empty(manga!.Items);
+
+        var hidden = await client.GetFromJsonAsync<DiscoverFeedDto>("/api/discover?week=0&type=all&hideLibrary=true", JsonOptions);
+        Assert.Empty(hidden!.Items);
+    }
+
+    [Fact]
     public async Task GetStatus_ReturnsSourceList()
     {
         using var factory = WithFakeClient(Factory, new FakeLibraryClient());

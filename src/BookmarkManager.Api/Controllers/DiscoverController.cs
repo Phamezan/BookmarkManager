@@ -49,11 +49,8 @@ public sealed class DiscoverController : ControllerBase
             .Where(s => seriesIds.Contains(s.Id))
             .ToListAsync(ct).ConfigureAwait(false);
 
-        if (typeFilter is { } filterType)
-        {
-            series = series.Where(s => s.Type == filterType).ToList();
-        }
-
+        // Type and hide-library filters are applied after merging (below), so a merged card survives
+        // even when only one of the same-series rows matched the filter.
         var allowed = series.Select(s => s.Id).ToHashSet();
         var allowedRows = windowRows.Where(r => allowed.Contains(r.SeriesId)).ToList();
 
@@ -90,10 +87,6 @@ public sealed class DiscoverController : ControllerBase
         {
             var latest = latestBySeries[s.Id];
             var progressValue = progress.TryGetValue(s.TitleKey, out var pv) ? pv : (DiscoverProgressValue?)null;
-            if (hideLibrary && progressValue is not null)
-            {
-                continue;
-            }
 
             var chapters = chaptersByManga.TryGetValue(latest.MangaId, out var rows) ? rows : [];
             items.Add(new DiscoverItemDto
@@ -117,6 +110,29 @@ public sealed class DiscoverController : ControllerBase
                     ? new DiscoverProgressDto { Read = value.Read, Latest = value.Latest }
                     : null
             });
+        }
+
+        // Same series under different titles share an AniList id; merge those cards before filtering.
+        var titleKeys = items.Select(i => i.TitleKey).Distinct(StringComparer.Ordinal).ToList();
+        var anilistIdByTitleKey = titleKeys.Count == 0
+            ? new Dictionary<string, int>(StringComparer.Ordinal)
+            : (await _db.SeriesMetadataSet
+                    .AsNoTracking()
+                    .Where(m => m.Found && m.AnilistId != null && titleKeys.Contains(m.NormalizedKey))
+                    .Select(m => new { m.NormalizedKey, m.AnilistId })
+                    .ToListAsync(ct).ConfigureAwait(false))
+                .ToDictionary(m => m.NormalizedKey, m => m.AnilistId!.Value, StringComparer.Ordinal);
+        items = DiscoverSeriesMerger.Merge(items, anilistIdByTitleKey);
+
+        if (typeFilter is { } filterType)
+        {
+            var typeValue = DiscoverTypeResolver.ToApiValue(filterType);
+            items = items.Where(i => i.Type == typeValue).ToList();
+        }
+
+        if (hideLibrary)
+        {
+            items = items.Where(i => i.Progress is null).ToList();
         }
 
         var hasOlder = await _db.DiscoverChapters.AnyAsync(c => c.UploadedAt < window.Start, ct).ConfigureAwait(false);
