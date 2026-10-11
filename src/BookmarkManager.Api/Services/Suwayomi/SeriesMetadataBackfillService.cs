@@ -6,14 +6,14 @@ namespace BookmarkManager.Api.Services.Suwayomi;
 
 /// <summary>
 /// Periodically fills <see cref="SeriesMetadata"/> for titles that lack a fresh entry: every title in
-/// the user's Suwayomi library plus every Discover series whose type is still Unknown. Lookups run one
-/// at a time through <see cref="SeriesMetadataService"/> (the shared AniList limiter paces them),
-/// capped per run. When a lookup resolves a country of origin, matching Unknown Discover rows are
-/// re-typed so they show under the Manhwa/Manhua/Manga chips.
+/// the user's Suwayomi library plus every Discover series, newest-updated Discover series first.
+/// Lookups run one at a time through <see cref="SeriesMetadataService"/> (the shared AniList limiter
+/// paces them), capped per run. When a lookup resolves a country of origin, matching Unknown Discover
+/// rows are re-typed so they show under the Manhwa/Manhua/Manga chips.
 /// </summary>
 public sealed class SeriesMetadataBackfillService : BackgroundService
 {
-    internal const int MaxLookupsPerRun = 300;
+    internal const int MaxLookupsPerRun = 1200;
 
     private static readonly TimeSpan StartupDelay = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan Interval = TimeSpan.FromMinutes(60);
@@ -91,39 +91,28 @@ public sealed class SeriesMetadataBackfillService : BackgroundService
             _logger.LogWarning(ex, "Series metadata backfill could not read the Suwayomi library.");
         }
 
-        var unknownTitles = await db.DiscoverSeriesSet
+        var discoverSeries = await db.DiscoverSeriesSet
             .AsNoTracking()
-            .Where(s => s.Type == DiscoverSeriesType.Unknown)
-            .Select(s => s.Title)
             .ToListAsync(ct).ConfigureAwait(false);
-        titles.AddRange(unknownTitles);
-
-        var candidates = titles
-            .Select(title => (Title: title, Key: MediaTitleNormalizer.NormalizeForSearch(title)))
-            .Where(candidate => candidate.Key.Length > 0)
-            .GroupBy(candidate => candidate.Key, StringComparer.Ordinal)
-            .Select(group => group.First())
-            .ToList();
-
-        if (candidates.Count == 0)
-        {
-            return;
-        }
 
         var now = DateTime.UtcNow;
-        var keys = candidates.Select(candidate => candidate.Key).ToList();
-        var freshKeys = (await db.SeriesMetadataSet
-                .AsNoTracking()
-                .Where(m => keys.Contains(m.NormalizedKey))
-                .ToListAsync(ct).ConfigureAwait(false))
-            .Where(row => SeriesMetadataService.IsFresh(row, now))
-            .Select(row => row.NormalizedKey)
-            .ToHashSet(StringComparer.Ordinal);
-
-        var pending = candidates
-            .Where(candidate => !freshKeys.Contains(candidate.Key))
-            .Take(MaxLookupsPerRun)
+        var allKeys = titles
+            .Concat(discoverSeries.Select(s => s.Title))
+            .Select(MediaTitleNormalizer.NormalizeForSearch)
+            .Where(key => key.Length > 0)
+            .Distinct(StringComparer.Ordinal)
             .ToList();
+        var freshKeys = allKeys.Count == 0
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : (await db.SeriesMetadataSet
+                    .AsNoTracking()
+                    .Where(m => allKeys.Contains(m.NormalizedKey))
+                    .ToListAsync(ct).ConfigureAwait(false))
+                .Where(row => SeriesMetadataService.IsFresh(row, now))
+                .Select(row => row.NormalizedKey)
+                .ToHashSet(StringComparer.Ordinal);
+
+        var pending = SelectCandidates(titles, discoverSeries, freshKeys, MaxLookupsPerRun);
         if (pending.Count == 0)
         {
             return;
@@ -162,5 +151,44 @@ public sealed class SeriesMetadataBackfillService : BackgroundService
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         _logger.LogInformation("Series metadata backfill: {Lookups} lookups, {Retyped} Discover rows re-typed.", pending.Count, updates.Count);
+    }
+
+    /// <summary>
+    /// Picks the titles to look up: every library title first, then every Discover series by
+    /// <see cref="DiscoverSeries.LatestChapterAt"/> descending (current week first). A title whose
+    /// normalized key is already fresh is skipped, and duplicates (library and Discover naming the
+    /// same series) keep the first occurrence. Capped at <paramref name="max"/>.
+    /// </summary>
+    internal static IReadOnlyList<(string Title, string Key)> SelectCandidates(
+        IReadOnlyList<string> libraryTitles,
+        IReadOnlyList<DiscoverSeries> discoverSeries,
+        IReadOnlySet<string> freshKeys,
+        int max)
+    {
+        var result = new List<(string Title, string Key)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        void Consider(string title)
+        {
+            var key = MediaTitleNormalizer.NormalizeForSearch(title);
+            if (key.Length == 0 || freshKeys.Contains(key) || !seen.Add(key))
+            {
+                return;
+            }
+
+            result.Add((title, key));
+        }
+
+        foreach (var title in libraryTitles)
+        {
+            Consider(title);
+        }
+
+        foreach (var series in discoverSeries.OrderByDescending(s => s.LatestChapterAt))
+        {
+            Consider(series.Title);
+        }
+
+        return result.Count <= max ? result : result.Take(max).ToList();
     }
 }
