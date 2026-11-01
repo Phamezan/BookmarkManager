@@ -71,4 +71,5 @@ public sealed record SuwayomiLibraryManga(
     double? HighestNumberedChapter,
     int Id = 0,
     string? RealUrl = null,
-    string? SourceDisplayName = null);
+    string? SourceDisplayName = null,
+    int? ResumeSourceOrder = null);

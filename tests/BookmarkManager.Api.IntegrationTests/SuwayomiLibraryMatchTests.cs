@@ -10,6 +10,7 @@ using BookmarkManager.Api.Services.BookmarkTagging;
 using BookmarkManager.Api.Services.Suwayomi;
 using BookmarkManager.Contracts;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -92,6 +93,109 @@ public sealed class SuwayomiLibraryMatchTests : IntegrationTestBase
         Assert.Equal(68, match.Latest);
         Assert.Equal("The Divine Demon's Grand Ascension", match.LibraryTitle);
         Assert.Equal("Asura Scans", match.SourceName);
+    }
+
+    [Fact]
+    public async Task LibrarySync_CreatesChapterBookmarkAndBrowserCommandAfterTwoCycles()
+    {
+        const string baseUrl = "http://suwayomi.local:4567";
+        var folderId = Guid.NewGuid();
+        var fake = new FakeLibraryClient();
+        fake.Library.Add(new SuwayomiLibraryManga("Series", 12, 20, 5, ResumeSourceOrder: 13));
+        using var factory = WithFakeClient(Factory, fake).WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.PostConfigure<SuwayomiOptions>(options =>
+            {
+                options.PublicBaseUrl = baseUrl;
+                options.LibrarySyncFolderId = folderId;
+            })));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkNode
+            {
+                Id = folderId, Type = NodeType.Folder, Title = "Library", BrowserNodeId = "100"
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var sync = factory.Services.GetRequiredService<SuwayomiLibrarySyncService>();
+        await sync.RunOnceAsync(default);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.False(await db.BookmarkNodes.AnyAsync(n => n.SuwayomiMangaId == 5));
+        }
+        await sync.RunOnceAsync(default);
+
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var node = await verifyDb.BookmarkNodes.SingleAsync(n => n.SuwayomiMangaId == 5);
+        Assert.Equal($"{baseUrl}/manga/5/chapter/13", node.Url);
+        Assert.Equal(folderId, node.ParentId);
+        var command = await verifyDb.ExtensionCommands.SingleAsync(c => c.BookmarkId == node.Id);
+        Assert.Equal("Create", command.CommandType);
+        Assert.NotNull(command.PayloadJson);
+        using var payload = JsonDocument.Parse(command.PayloadJson);
+        Assert.Equal(node.Url, payload.RootElement.GetProperty("url").GetString());
+    }
+
+    [Theory]
+    [InlineData(5, "http://suwayomi.local:4567/manga/5", true)]
+    [InlineData(5, null, true)]
+    [InlineData(4, "http://suwayomi.local:4567/manga/4/chapter/9", true)]
+    [InlineData(null, "http://suwayomi.local:4567/manga/5", true)]
+    [InlineData(4, "https://example.com/custom", false)]
+    public async Task LibrarySync_UpdatesResumeUrlAndQueuesOneBrowserCommand(
+        int? mangaId, string? url, bool expectUpdate)
+    {
+        const string baseUrl = "http://suwayomi.local:4567";
+        var bookmarkId = Guid.NewGuid();
+        var fake = new FakeLibraryClient();
+        fake.Library.Add(new SuwayomiLibraryManga("Series", 12, 20, 5,
+            "https://example.com/source", ResumeSourceOrder: 13));
+        using var factory = WithFakeClient(Factory, fake).WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.PostConfigure<SuwayomiOptions>(options =>
+            {
+                options.PublicBaseUrl = baseUrl;
+                options.LibrarySyncFolderId = null;
+            })));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkNode
+            {
+                Id = bookmarkId, Type = NodeType.Bookmark, Title = "Series", Url = url,
+                SuwayomiMangaId = mangaId, CurrentProgress = 12, BrowserNodeId = "101", Version = 1
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var sync = factory.Services.GetRequiredService<SuwayomiLibrarySyncService>();
+        await sync.RunOnceAsync(default);
+        await sync.RunOnceAsync(default);
+        await sync.RunOnceAsync(default);
+
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var node = await verifyDb.BookmarkNodes.SingleAsync(n => n.Id == bookmarkId);
+        Assert.Equal(5, node.SuwayomiMangaId);
+        Assert.False(node.IsDeleted);
+        Assert.Equal(expectUpdate ? $"{baseUrl}/manga/5/chapter/13" : url, node.Url);
+        var commands = await verifyDb.ExtensionCommands.Where(c => c.BookmarkId == bookmarkId).ToListAsync();
+        if (expectUpdate)
+        {
+            var command = Assert.Single(commands);
+            Assert.Equal("Update", command.CommandType);
+            Assert.Equal(2, node.Version);
+            Assert.Equal(SyncState.Pending, node.SyncState);
+            Assert.NotNull(command.PayloadJson);
+            using var payload = JsonDocument.Parse(command.PayloadJson);
+            Assert.Equal(node.Url, payload.RootElement.GetProperty("url").GetString());
+        }
+        else
+        {
+            Assert.Empty(commands);
+        }
     }
 
     [Fact]
