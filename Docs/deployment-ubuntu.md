@@ -133,6 +133,8 @@ Configuration on the `bookmarkmanager` service (see `docker-compose.yml`; overri
 
 Covers are proxied through the API (`GET /api/suwayomi/thumbnail/{id}`) because the dashboard may be served over https (8443) while Suwayomi is plain http — a direct `<img src="http://...:4567">` would be blocked as mixed content. On approval the API adds the matched series to the Suwayomi library and marks chapters up to the bookmarked chapter read; revert removes it again best-effort. Nothing is written to Suwayomi until a proposal is approved.
 
+Library sync keeps linked bookmark URLs at `/manga/{id}/chapter/{sourceOrder}` for the first unread chapter, falling back to the latest read chapter or the series page when no chapter is available. It queues URL changes for the browser extension and preserves manually set URLs outside the configured Suwayomi manga path.
+
 ## Suwayomi Discover page
 
 Phase 2 adds a **Discover** entry to the Suwayomi WebUI sidebar. It opens a page (served by this app) showing recently updated Action manhwa/manhua/manga merged from several installed sources, with 3 latest chapters, NEW flags, reading-progress badges, type chips, "Hide my library", and week paging. The background `DiscoverFeedBackgroundService` refreshes the feed on an interval; it is read-only against Suwayomi.

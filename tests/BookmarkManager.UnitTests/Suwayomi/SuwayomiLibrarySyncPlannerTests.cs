@@ -12,8 +12,9 @@ public sealed class SuwayomiLibrarySyncPlannerTests
     private static readonly Guid BookmarkC = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
     private static SuwayomiLibraryManga Manga(
-        int id, string title = "Series", double? read = null, double? highest = null, string? realUrl = null)
-        => new(title, read, highest, id, realUrl);
+        int id, string title = "Series", double? read = null, double? highest = null, string? realUrl = null,
+        int? resumeSourceOrder = null)
+        => new(title, read, highest, id, realUrl, ResumeSourceOrder: resumeSourceOrder);
 
     private static SuwayomiLibrarySyncBookmark Bookmark(
         Guid id, int? mangaId, string title = "Series", string? url = null, int? progress = null,
@@ -49,6 +50,137 @@ public sealed class SuwayomiLibrarySyncPlannerTests
         Assert.Equal("Nano Machine", creation.Title);
         Assert.Equal($"{BaseUrl}/manga/5", creation.Url);
         Assert.Equal(12, creation.CurrentProgress);
+    }
+
+    [Fact]
+    public void Create_UsesResumeChapterUrl()
+    {
+        var library = new[] { Manga(5, resumeSourceOrder: 0) };
+
+        var plan = Plan(library, [], new HashSet<int> { 5 });
+
+        Assert.Equal($"{BaseUrl}/manga/5/chapter/0", Assert.Single(plan.Creations).Url);
+    }
+
+    [Fact]
+    public void LinkedBookmark_UpdatesSeriesUrlToResumeChapter()
+    {
+        var library = new[] { Manga(5, resumeSourceOrder: 13) };
+        var bookmarks = new[] { Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5") };
+
+        var plan = Plan(library, bookmarks, new HashSet<int>());
+
+        var update = Assert.Single(plan.UrlUpdates);
+        Assert.Equal(BookmarkA, update.BookmarkId);
+        Assert.Equal($"{BaseUrl}/manga/5/chapter/13", update.Url);
+    }
+
+    [Fact]
+    public void TrialEraBookmark_IsLinkedAndGetsResumeChapterInSameCycle()
+    {
+        var library = new[] { Manga(5, resumeSourceOrder: 13) };
+        var bookmarks = new[] { Bookmark(BookmarkA, null, url: $"{BaseUrl}/manga/5") };
+
+        var plan = Plan(library, bookmarks, new HashSet<int> { 5 });
+
+        Assert.Single(plan.Links);
+        Assert.Empty(plan.Creations);
+        Assert.Equal($"{BaseUrl}/manga/5/chapter/13", Assert.Single(plan.UrlUpdates).Url);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("http://suwayomi.local:4567/manga/5/chapter/12")]
+    public void LinkedBookmark_UpdatesNullOrPreviousChapterUrl(string? url)
+    {
+        var plan = Plan([Manga(5, resumeSourceOrder: 13)], [Bookmark(BookmarkA, 5, url: url)], new HashSet<int>());
+
+        Assert.Equal($"{BaseUrl}/manga/5/chapter/13", Assert.Single(plan.UrlUpdates).Url);
+    }
+
+    [Fact]
+    public void LinkedBookmark_AlreadyAtResumeChapter_HasNoUrlUpdate()
+    {
+        var plan = Plan([Manga(5, resumeSourceOrder: 13)],
+            [Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5/chapter/13")], new HashSet<int>());
+
+        Assert.Empty(plan.UrlUpdates);
+    }
+
+    [Fact]
+    public void CaughtUpManga_UsesLatestReadResumeChapter()
+    {
+        var plan = Plan([Manga(5, read: 12.5, highest: 12.5, resumeSourceOrder: 27)],
+            [Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5/chapter/26")], new HashSet<int>());
+
+        Assert.Equal($"{BaseUrl}/manga/5/chapter/27", Assert.Single(plan.UrlUpdates).Url);
+    }
+
+    [Fact]
+    public void NoResumeChapter_KeepsSeriesUrl()
+    {
+        var plan = Plan([Manga(5)], [Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5")], new HashSet<int>());
+
+        Assert.Empty(plan.UrlUpdates);
+    }
+
+    [Fact]
+    public void NoResumeChapter_RevertsPreviousChapterUrlToSeriesUrl()
+    {
+        var plan = Plan([Manga(5)], [Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5/chapter/12")], new HashSet<int>());
+
+        Assert.Equal($"{BaseUrl}/manga/5", Assert.Single(plan.UrlUpdates).Url);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/manga/5")]
+    [InlineData("http://suwayomi.local:4567/manga-custom/5")]
+    [InlineData("http://suwayomi.local:4567/Manga/5")]
+    public void HandSetUrl_IsPreserved(string url)
+    {
+        var plan = Plan([Manga(5, resumeSourceOrder: 13)], [Bookmark(BookmarkA, 5, url: url)], new HashSet<int>());
+
+        Assert.Empty(plan.UrlUpdates);
+    }
+
+    [Fact]
+    public void Relink_UsesNewMangaResumeChapterUrl()
+    {
+        var plan = Plan([Manga(6, resumeSourceOrder: 13)],
+            [Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5/chapter/9")], new HashSet<int>());
+
+        Assert.Single(plan.Relinks);
+        var update = Assert.Single(plan.UrlUpdates);
+        Assert.Equal(BookmarkA, update.BookmarkId);
+        Assert.Equal($"{BaseUrl}/manga/6/chapter/13", update.Url);
+    }
+
+    [Fact]
+    public void Relink_PreservesHandSetUrl()
+    {
+        var plan = Plan([Manga(6, resumeSourceOrder: 13)],
+            [Bookmark(BookmarkA, 5, url: "https://example.com/custom")], new HashSet<int>());
+
+        Assert.Single(plan.Relinks);
+        Assert.Empty(plan.UrlUpdates);
+    }
+
+    [Fact]
+    public void DeletedBookmark_HasNoUrlUpdate()
+    {
+        var plan = Plan([Manga(5, resumeSourceOrder: 13)],
+            [Bookmark(BookmarkA, 5, url: $"{BaseUrl}/manga/5", deleted: true)], new HashSet<int>());
+
+        Assert.Empty(plan.UrlUpdates);
+    }
+
+    [Fact]
+    public void ReaderUrl_TrimsTrailingBaseUrlSlash()
+    {
+        var plan = SuwayomiLibrarySyncPlanner.Plan([Manga(5, resumeSourceOrder: 13)], [], new HashSet<int> { 5 },
+            true, $"{BaseUrl}/", 5, 10);
+
+        Assert.Equal($"{BaseUrl}/manga/5/chapter/13", Assert.Single(plan.Creations).Url);
     }
 
     [Fact]

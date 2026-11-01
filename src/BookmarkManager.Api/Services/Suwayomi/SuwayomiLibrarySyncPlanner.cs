@@ -22,6 +22,9 @@ public sealed record SuwayomiLibrarySyncRelink(Guid BookmarkId, int MangaId, str
 /// <summary>A forward-only progress bump for a linked or relinked bookmark.</summary>
 public sealed record SuwayomiLibrarySyncProgress(Guid BookmarkId, int Progress);
 
+/// <summary>A reader URL change for a live linked bookmark.</summary>
+public sealed record SuwayomiLibrarySyncUrlUpdate(Guid BookmarkId, string Url);
+
 /// <summary>
 /// A series to remove from the Suwayomi library because every bookmark linking it was deleted.
 /// <see cref="BookmarkIds"/> are the deleted bookmarks to stamp with <c>SuwayomiRemovedAt</c> once
@@ -48,7 +51,8 @@ public sealed record SuwayomiLibrarySyncPlan(
     int RemovalsSuppressed,
     IReadOnlyList<SuwayomiLibraryRemoval> LibraryRemovals,
     IReadOnlyList<SuwayomiLibraryRestore> LibraryRestores,
-    int LibraryRemovalsSuppressed);
+    int LibraryRemovalsSuppressed,
+    IReadOnlyList<SuwayomiLibrarySyncUrlUpdate> UrlUpdates);
 
 /// <summary>
 /// Pure diff of the Suwayomi library against BookmarkManager's linked bookmarks. The service fetches
@@ -66,6 +70,7 @@ public sealed record SuwayomiLibrarySyncPlan(
 /// live bookmark still links it (throttled per cycle); restores the series when a marked bookmark
 /// comes back from the recycle bin.</item>
 /// <item>Raises progress only, never lowers it.</item>
+/// <item>Keeps Suwayomi URLs at the resume chapter while preserving custom URLs.</item>
 /// </list>
 /// </summary>
 public static class SuwayomiLibrarySyncPlanner
@@ -227,7 +232,30 @@ public static class SuwayomiLibrarySyncPlanner
             }
 
             creations.Add(new SuwayomiLibrarySyncCreation(
-                manga.Id, manga.Title, pageUrl, manga.RealUrl, FloorProgress(manga.LatestReadChapter)));
+                manga.Id, manga.Title, BuildReaderUrl(baseUrl, manga), manga.RealUrl, FloorProgress(manga.LatestReadChapter)));
+        }
+
+        var relinkByBookmark = relinks.ToDictionary(r => r.BookmarkId);
+        var linkByBookmark = links.ToDictionary(l => l.BookmarkId);
+        var urlUpdates = new List<SuwayomiLibrarySyncUrlUpdate>();
+        foreach (var bookmark in bookmarks)
+        {
+            var mangaId = relinkByBookmark.GetValueOrDefault(bookmark.Id)?.MangaId
+                ?? linkByBookmark.GetValueOrDefault(bookmark.Id)?.MangaId
+                ?? bookmark.SuwayomiMangaId;
+            if (bookmark.IsDeleted
+                || mangaId is not int id
+                || !byId.TryGetValue(id, out var manga)
+                || (bookmark.Url is not null && !bookmark.Url.StartsWith($"{baseUrl}/manga/", StringComparison.Ordinal)))
+            {
+                continue;
+            }
+
+            var desiredUrl = BuildReaderUrl(baseUrl, manga);
+            if (!string.Equals(bookmark.Url, desiredUrl, StringComparison.Ordinal))
+            {
+                urlUpdates.Add(new SuwayomiLibrarySyncUrlUpdate(bookmark.Id, desiredUrl));
+            }
         }
 
         var pendingRemovals = removalCandidates
@@ -264,8 +292,14 @@ public static class SuwayomiLibrarySyncPlanner
             suppressRemovals ? pendingRemovals.Count : 0,
             libraryRemovals,
             libraryRestores,
-            libraryRemovalsSuppressed);
+            libraryRemovalsSuppressed,
+            urlUpdates);
     }
+
+    private static string BuildReaderUrl(string baseUrl, SuwayomiLibraryManga manga)
+        => manga.ResumeSourceOrder is int sourceOrder
+            ? $"{baseUrl}/manga/{manga.Id}/chapter/{sourceOrder}"
+            : $"{baseUrl}/manga/{manga.Id}";
 
     private static int? FloorProgress(double? chapter)
         => chapter is { } value ? (int)Math.Floor(value) : null;

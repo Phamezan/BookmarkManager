@@ -228,12 +228,12 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
 
         var libraryChanged = removedStampIds.Count > 0 || restoredMarkerIds.Count > 0;
         var changed = plan.Creations.Count > 0 || plan.Links.Count > 0 || plan.Relinks.Count > 0
-            || plan.Removals.Count > 0 || plan.ProgressUpdates.Count > 0 || libraryChanged;
+            || plan.Removals.Count > 0 || plan.ProgressUpdates.Count > 0 || plan.UrlUpdates.Count > 0 || libraryChanged;
 
         if (changed)
         {
             await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-            await ApplyPlanAsync(db, plan, syncFolder, baseUrl, removedStampIds, restoredMarkerIds, ct).ConfigureAwait(false);
+            await ApplyPlanAsync(db, plan, syncFolder, removedStampIds, restoredMarkerIds, ct).ConfigureAwait(false);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await transaction.CommitAsync(ct).ConfigureAwait(false);
         }
@@ -244,9 +244,9 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
         {
             await Infrastructure.SyncWebSocketManager.BroadcastSyncAsync().ConfigureAwait(false);
             _logger.LogInformation(
-                "Suwayomi library sync: created {Created}, linked {Linked}, relinked {Relinked}, removed {Removed}, progress {Progress}, libraryRemoved {LibraryRemoved}, libraryRestored {LibraryRestored}.",
+                "Suwayomi library sync: created {Created}, linked {Linked}, relinked {Relinked}, removed {Removed}, progress {Progress}, urls {Urls}, libraryRemoved {LibraryRemoved}, libraryRestored {LibraryRestored}.",
                 plan.Creations.Count, plan.Links.Count, plan.Relinks.Count, plan.Removals.Count, plan.ProgressUpdates.Count,
-                libraryRemovedCount, libraryRestoredCount);
+                plan.UrlUpdates.Count, libraryRemovedCount, libraryRestoredCount);
         }
     }
 
@@ -280,7 +280,6 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
         AppDbContext db,
         SuwayomiLibrarySyncPlan plan,
         BookmarkNode? syncFolder,
-        string baseUrl,
         IReadOnlyList<Guid> removedStampIds,
         IReadOnlyList<Guid> restoredMarkerIds,
         CancellationToken ct)
@@ -338,16 +337,23 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
 
                 node.SuwayomiMangaId = relink.MangaId;
                 node.SourceUrl = relink.SourceUrl;
+                node.UpdatedAt = DateTime.UtcNow;
+            }
+        }
 
-                var newUrl = $"{baseUrl}/manga/{relink.MangaId}";
-                if (!string.Equals(node.Url, newUrl, StringComparison.Ordinal))
+        if (plan.UrlUpdates.Count > 0)
+        {
+            var updateIds = plan.UrlUpdates.Select(u => u.BookmarkId).ToHashSet();
+            var nodes = await db.BookmarkNodes
+                .Where(n => updateIds.Contains(n.Id) && !n.IsDeleted)
+                .ToListAsync(ct).ConfigureAwait(false);
+            var byId = nodes.ToDictionary(n => n.Id);
+            foreach (var update in plan.UrlUpdates)
+            {
+                if (byId.TryGetValue(update.BookmarkId, out var node))
                 {
-                    node.Url = newUrl;
+                    node.Url = update.Url;
                     BookmarkNodeWriter.EnqueueUpdateCommand(db, node);
-                }
-                else
-                {
-                    node.UpdatedAt = DateTime.UtcNow;
                 }
             }
         }

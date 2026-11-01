@@ -85,6 +85,37 @@ public sealed class SuwayomiGraphQlClientTests
     }
 
     [Fact]
+    public async Task GetLibraryAsync_ResumesFirstUnreadThenLatestReadThenSeries()
+    {
+        var handler = new CapturingHandler("""
+            {"data":{"mangas":{"nodes":[
+              {"id":5,"title":"Reading","realUrl":"https://example.com/reading","source":{"displayName":"Source"},
+               "firstUnreadChapter":{"sourceOrder":0},"latestReadChapter":{"chapterNumber":12.5,"sourceOrder":27},
+               "highestNumberedChapter":{"chapterNumber":30}},
+              {"id":6,"title":"Caught up","firstUnreadChapter":null,
+               "latestReadChapter":{"chapterNumber":30,"sourceOrder":42}},
+              {"id":7,"title":"Empty","firstUnreadChapter":null,"latestReadChapter":null}
+            ]}}}
+            """);
+        var client = Create(handler);
+
+        var library = await client.GetLibraryAsync(default);
+
+        Assert.Equal(3, library.Count);
+        Assert.Equal(0, library[0].ResumeSourceOrder);
+        Assert.Equal(12.5, library[0].LatestReadChapter);
+        Assert.Equal(30, library[0].HighestNumberedChapter);
+        Assert.Equal(5, library[0].Id);
+        Assert.Equal("https://example.com/reading", library[0].RealUrl);
+        Assert.Equal("Source", library[0].SourceDisplayName);
+        Assert.Equal(42, library[1].ResumeSourceOrder);
+        Assert.Null(library[2].ResumeSourceOrder);
+        Assert.Contains("firstUnreadChapter{ sourceOrder }", handler.LastBody);
+        Assert.Contains("latestReadChapter{ chapterNumber sourceOrder }", handler.LastBody);
+        Assert.DoesNotContain("lastReadChapter", handler.LastBody);
+    }
+
+    [Fact]
     public async Task MarkChaptersRead_NoIds_DoesNotCallServer()
     {
         var handler = new CapturingHandler("""{"data":{"updateChapters":{"chapters":[]}}}""");

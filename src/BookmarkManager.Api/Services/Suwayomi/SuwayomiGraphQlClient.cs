@@ -83,7 +83,7 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         "mutation($id:Int!){ fetchMangaAndChapters(input:{id:$id, fetchManga:true, fetchChapters:true}){ manga{ id title genre status thumbnailUrl } chapters{ id name chapterNumber uploadDate sourceOrder } } }";
 
     private const string LibraryQuery =
-        "query { mangas(condition:{inLibrary:true}){ nodes{ id title realUrl source{ displayName } latestReadChapter{ chapterNumber } highestNumberedChapter{ chapterNumber } } } }";
+        "query { mangas(condition:{inLibrary:true}){ nodes{ id title realUrl source{ displayName } firstUnreadChapter{ sourceOrder } latestReadChapter{ chapterNumber sourceOrder } highestNumberedChapter{ chapterNumber } } } }";
 
     private readonly HttpClient _http;
 
@@ -215,7 +215,8 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
                 n.HighestNumberedChapter?.ChapterNumber,
                 n.Id,
                 n.RealUrl,
-                n.Source?.DisplayName))
+                n.Source?.DisplayName,
+                ResumeSourceOrder: n.FirstUnreadChapter?.SourceOrder ?? n.LatestReadChapter?.SourceOrder))
             .ToList();
     }
 
@@ -505,6 +506,7 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         public string Title { get; set; } = string.Empty;
         public string? RealUrl { get; set; }
         public LibrarySourceModel? Source { get; set; }
+        public ChapterNumberModel? FirstUnreadChapter { get; set; }
         public ChapterNumberModel? LatestReadChapter { get; set; }
         public ChapterNumberModel? HighestNumberedChapter { get; set; }
     }
@@ -518,5 +520,6 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
     private sealed class ChapterNumberModel
     {
         public double? ChapterNumber { get; set; }
+        public int? SourceOrder { get; set; }
     }
 }
