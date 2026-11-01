@@ -827,7 +827,21 @@ public partial class CommandPalette : IDisposable
     private bool IsContextOnManager =>
         Uri.TryCreate(ContextUrl, UriKind.Absolute, out var context)
         && Uri.TryCreate(NavigationManager.BaseUri, UriKind.Absolute, out var baseUri)
-        && string.Equals(context.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase);
+        && IsManagerOrigin(context, baseUri);
+
+    // The palette is served over https; the manager's http twin is the port the extension maps
+    // onto it (palette-url.ts). Any other port on the same host is another app, e.g. Suwayomi.
+    private static readonly Dictionary<int, int> HttpsToHttpManagerPort = new()
+    {
+        [8443] = 8080,
+        [5443] = 5080,
+        [443] = 80,
+    };
+
+    public static bool IsManagerOrigin(Uri context, Uri managerBase) =>
+        string.Equals(context.Host, managerBase.Host, StringComparison.OrdinalIgnoreCase)
+        && (context.Port == managerBase.Port
+            || HttpsToHttpManagerPort.GetValueOrDefault(managerBase.Port) == context.Port);
 
     /// <summary>
     /// Origin of the overlaid tab (scheme + host + port), used so a deep link
