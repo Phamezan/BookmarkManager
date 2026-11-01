@@ -23,7 +23,9 @@ set -euo pipefail
 # Example (override auto-detection):
 #   scripts/setup-tls.sh myhost.tailnet-name.ts.net
 
-REPO_ROOT=$(git rev-parse --show-toplevel)
+# Resolve from the script location, not git: the systemd timer runs this as root,
+# and git refuses a user-owned repo for root ("dubious ownership").
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CERTS_DIR="$REPO_ROOT/certs"
 FQDN_OVERRIDE="${1:-}"
 
