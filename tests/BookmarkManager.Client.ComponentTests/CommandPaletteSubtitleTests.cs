@@ -25,6 +25,24 @@ public sealed class CommandPaletteSubtitleTests
         Assert.Equal(expected, actual);
     }
 
+    [Theory]
+    [InlineData(28, "Manga", "Bookmarks bar / Manga · Ch 28 · host.ts.net")]
+    [InlineData(5, "anime", "Bookmarks bar / Manga · Ep 5 · host.ts.net")]
+    [InlineData(12, null, "Bookmarks bar / Manga · Ch 12 · host.ts.net")]
+    [InlineData(0, "Manga", "Bookmarks bar / Manga · host.ts.net")]
+    [InlineData(null, "Manga", "Bookmarks bar / Manga · host.ts.net")]
+    public void FormatBookmarkSubtitle_ShowsProgressBetweenFolderAndHost(
+        int? progress, string? category, string expected)
+    {
+        var actual = CommandPalette.FormatBookmarkSubtitle(
+            "Bookmarks bar / Manga", "http://host.ts.net:4567/manga/7866/chapter/28", progress, category);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void FormatBookmarkSubtitle_ProgressOnly_NoFolderOrUrl()
+        => Assert.Equal("Ch 3", CommandPalette.FormatBookmarkSubtitle(null, null, 3));
+
     [Fact]
     public void FormatBookmarkSubtitle_ValidUrl_ShowsHostOnly_NotPath()
     {
