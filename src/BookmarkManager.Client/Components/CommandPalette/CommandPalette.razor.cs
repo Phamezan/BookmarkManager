@@ -901,7 +901,8 @@ public partial class CommandPalette : IDisposable
             Id = bookmark.Id,
             Title = bookmark.Title,
             TitleHtml = PaletteTitleHighlighter.BuildTitleHtml(bookmark.Title, _highlightQuery),
-            Subtitle = FormatBookmarkSubtitle(folderPath, bookmark.Url),
+            Subtitle = FormatBookmarkSubtitle(
+                folderPath, bookmark.Url, bookmark.Metadata?.CurrentProgress, bookmark.Metadata?.Category),
             Category = bookmark.Metadata?.Category,
             Url = bookmark.Url,
             IsFolder = false,
@@ -946,36 +947,24 @@ public partial class CommandPalette : IDisposable
     }
 
     /// <summary>
-    /// Location-first subtitle: folder breadcrumb and/or URL host.
+    /// Location-first subtitle: folder breadcrumb, reading progress ("Ch 28" / "Ep 5"), URL host.
     /// Extracted for unit testing.
     /// </summary>
-    public static string FormatBookmarkSubtitle(string? folderPath, string? url)
+    public static string FormatBookmarkSubtitle(
+        string? folderPath, string? url, int? progress = null, string? category = null)
     {
         string? host = null;
-        if (!string.IsNullOrWhiteSpace(url))
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && !string.IsNullOrEmpty(uri.Host))
         {
-            try
-            {
-                host = new Uri(url).Host;
-                if (string.IsNullOrEmpty(host))
-                    host = null;
-            }
-            catch
-            {
-                host = null;
-            }
+            host = uri.Host;
         }
 
-        var hasPath = !string.IsNullOrWhiteSpace(folderPath);
-        var hasHost = !string.IsNullOrWhiteSpace(host);
+        var progressLabel = progress is > 0
+            ? $"{(string.Equals(category, "anime", StringComparison.OrdinalIgnoreCase) ? "Ep" : "Ch")} {progress}"
+            : null;
 
-        if (hasPath && hasHost)
-            return $"{folderPath} · {host}";
-        if (hasPath)
-            return folderPath!;
-        if (hasHost)
-            return host!;
-        return "Bookmark";
+        var parts = new[] { folderPath, progressLabel, host }.Where(p => !string.IsNullOrWhiteSpace(p)).ToList();
+        return parts.Count > 0 ? string.Join(" · ", parts) : "Bookmark";
     }
 
     private string? GetFaviconUrl(string? url)
