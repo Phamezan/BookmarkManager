@@ -1,3 +1,5 @@
+import { attachSeriesPreview, closeSeriesPreview } from './discover-preview.js?v=1';
+
 const API = '/bm-api/discover';
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -134,6 +136,7 @@ function updateStatusLine(status) {
 }
 
 function renderFeed(feed) {
+  closeSeriesPreview();
   hasOlder = Boolean(feed.hasOlder);
   updatePager(hasOlder);
   weekLabelEl.textContent = weekLabel(state.week);
@@ -206,6 +209,8 @@ function buildCard(item) {
   }
   card.appendChild(list);
 
+  attachSeriesPreview(card, item);
+
   return card;
 }
 
@@ -234,6 +239,7 @@ function buildChapterRow(chapter) {
 }
 
 function renderSkeleton() {
+  closeSeriesPreview();
   const grid = document.createElement('div');
   grid.className = 'grid';
   for (let i = 0; i < 12; i++) {

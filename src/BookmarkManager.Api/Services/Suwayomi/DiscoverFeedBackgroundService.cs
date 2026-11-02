@@ -348,7 +348,9 @@ public sealed class DiscoverFeedBackgroundService : BackgroundService
                     manga.Id,
                     currentRank,
                     true,
-                    details.Chapters));
+                    details.Chapters,
+                    details.Description,
+                    details.Status));
             }
 
             if (wholePageKnownOld || !listing.HasNextPage)
@@ -472,6 +474,17 @@ public sealed class DiscoverFeedBackgroundService : BackgroundService
                     }
 
                     entry.ChaptersFetchedAt = now;
+                    // A source with missing details must not erase another source's synopsis.
+                    if (!string.IsNullOrWhiteSpace(candidate.Description))
+                    {
+                        series2.Description = candidate.Description;
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(candidate.Status))
+                    {
+                        series2.Status = candidate.Status;
+                    }
+
                     if (!string.IsNullOrWhiteSpace(candidate.Genres.FirstOrDefault()))
                     {
                         series2.Genres = string.Join(",", candidate.Genres);
@@ -629,7 +642,9 @@ public sealed class DiscoverFeedBackgroundService : BackgroundService
         int MangaId,
         int Rank,
         bool FetchedChapters,
-        IReadOnlyList<SuwayomiChapterDetails> Chapters);
+        IReadOnlyList<SuwayomiChapterDetails> Chapters,
+        string? Description = null,
+        string? Status = null);
 
     private sealed record SourceRunResult(
         string SourceName, string State, string? Detail, IReadOnlyList<SourceMangaCandidate> Candidates);

@@ -139,6 +139,8 @@ Library sync keeps linked bookmark URLs at `/manga/{id}/chapter/{sourceOrder}` f
 
 Phase 2 adds a **Discover** entry to the Suwayomi WebUI sidebar. It opens a page (served by this app) showing recently updated Action manhwa/manhua/manga merged from several installed sources, with 3 latest chapters, NEW flags, reading-progress badges, type chips, "Hide my library", and week paging. The background `DiscoverFeedBackgroundService` refreshes the feed on an interval; it is read-only against Suwayomi.
 
+Hover a series card or focus its cover/title to preview its tags, description, publication status, sources, and reading progress. The **Details** button also opens the preview on touch screens. Previews stay within the viewport, allow scrolling long descriptions, and close with Escape, the close button, or a click outside. Details come from the cached `/api/discover` response (`genres`, `description`, `status`), so hovering does not request source data. The `AddDiscoverSeriesDetails` migration adds nullable description/status columns; existing series acquire these details when their source metadata is next refreshed (normally after the 24-hour chapter-cache interval). Sources without descriptions show an explicit empty state.
+
 Configuration on the `bookmarkmanager` service (overridable in `.env`):
 
 | Variable | Default | Purpose |

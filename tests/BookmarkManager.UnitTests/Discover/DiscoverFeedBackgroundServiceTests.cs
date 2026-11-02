@@ -79,7 +79,8 @@ public sealed class DiscoverFeedBackgroundServiceTests
         ];
         client.Listings["vortex"] = [new SuwayomiSourceManga(2, "Solo Leveling")];
 
-        client.DetailsByManga[1] = Details("Solo Leveling", 1, (10, 1, Now.AddDays(-2), 1));
+        client.DetailsByManga[1] = Details("Solo Leveling", 1, (10, 1, Now.AddDays(-2), 1))
+            with { Description = "A hunter's second chance." };
         client.DetailsByManga[3] = new SuwayomiMangaDetails(
             "A Romance Story", ["Romance"], null, null,
             [new SuwayomiChapterDetails(30, "Chapter 1", 1, Now.AddDays(-1), 1)]);
@@ -113,6 +114,8 @@ public sealed class DiscoverFeedBackgroundServiceTests
         Assert.Equal(2, chapters.Count);
         Assert.Equal(Now.AddDays(-1).Date, series[0].LatestChapterAt.Date);
         Assert.Equal(2, series[0].CoverMangaId);
+        Assert.Equal("A hunter's second chance.", series[0].Description);
+        Assert.Equal("Ongoing", series[0].Status);
     }
 
     [Fact]

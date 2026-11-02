@@ -84,6 +84,18 @@ public static class DiscoverSeriesMerger
             TitleKey = primary.TitleKey,
             Title = primary.Title,
             Type = type,
+            Genres = primary.Genres.Concat(group.Where(item => !ReferenceEquals(item, primary))
+                    .SelectMany(item => item.Genres))
+                .Select(genre => genre.Trim())
+                .Where(genre => genre.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList(),
+            Description = !string.IsNullOrWhiteSpace(primary.Description)
+                ? primary.Description
+                : group.Select(item => item.Description).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
+            Status = !string.IsNullOrWhiteSpace(primary.Status)
+                ? primary.Status
+                : group.Select(item => item.Status).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)),
             CoverMangaId = primary.CoverMangaId,
             SeriesMangaId = primary.SeriesMangaId,
             Sources = sources,

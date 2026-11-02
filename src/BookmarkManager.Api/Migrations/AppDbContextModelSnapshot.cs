@@ -367,11 +367,17 @@ namespace BookmarkManager.Api.Migrations
                     b.Property<int>("CoverMangaId")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Genres")
                         .HasMaxLength(1000)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("LatestChapterAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Title")

@@ -116,6 +116,22 @@ public sealed class SuwayomiGraphQlClientTests
     }
 
     [Fact]
+    public async Task GetMangaDetails_ParsesDescriptionAndStatus()
+    {
+        var handler = new CapturingHandler("""
+            {"data":{"fetchMangaAndChapters":{"manga":{"title":"Solo Leveling",
+            "genre":["Action","Fantasy"],"description":"A hunter's second chance.","status":"ONGOING"},"chapters":[]}}}
+            """);
+
+        var details = await Create(handler).GetMangaDetailsAsync(42, default);
+
+        Assert.Equal("A hunter's second chance.", details.Description);
+        Assert.Equal("ONGOING", details.Status);
+        Assert.Equal(new[] { "Action", "Fantasy" }, details.Genres);
+        Assert.Contains("description", handler.LastBody);
+    }
+
+    [Fact]
     public async Task MarkChaptersRead_NoIds_DoesNotCallServer()
     {
         var handler = new CapturingHandler("""{"data":{"updateChapters":{"chapters":[]}}}""");

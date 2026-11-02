@@ -62,7 +62,9 @@ public sealed class DiscoverEndpointTests : IntegrationTestBase
             TitleKey = MediaTitleNormalizer.NormalizeForSearch("Solo Leveling"),
             Title = "Solo Leveling",
             Type = DiscoverSeriesType.Manhwa,
-            Genres = "Manhwa,Action",
+            Genres = "Manhwa, Action,action, , Fantasy ",
+            Description = "A hunter's second chance.",
+            Status = "ONGOING",
             CoverMangaId = 2,
             LatestChapterAt = now.AddDays(-1),
             UpdatedAt = now
@@ -130,6 +132,9 @@ public sealed class DiscoverEndpointTests : IntegrationTestBase
         var item = Assert.Single(feed.Items);
         Assert.Equal("Solo Leveling", item.Title);
         Assert.Equal("Manhwa", item.Type);
+        Assert.Equal(new[] { "Manhwa", "Action", "Fantasy" }, item.Genres);
+        Assert.Equal("A hunter's second chance.", item.Description);
+        Assert.Equal("ONGOING", item.Status);
         Assert.Equal(2, item.SeriesMangaId);
         Assert.Equal(3, item.Chapters.Count);
         Assert.Equal(new double[] { 333, 332, 331 }, item.Chapters.Select(c => c.Number));
