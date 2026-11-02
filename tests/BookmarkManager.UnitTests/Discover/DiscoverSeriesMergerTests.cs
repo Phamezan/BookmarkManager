@@ -40,6 +40,25 @@ public sealed class DiscoverSeriesMergerTests
         };
 
     [Fact]
+    public void Merge_PreservesDetailsAndCombinesTagsAcrossAliases()
+    {
+        var older = Item("a", "Old Title", "Manhwa", 1, 1, ["S1"], [Chapter(1, Base)]);
+        older.Description = "A hunter's second chance.";
+        older.Status = "ONGOING";
+        older.Genres = ["Action", "Fantasy"];
+        var newer = Item("b", "New Title", "Manhwa", 2, 2, ["S2"], [Chapter(2, Base.AddDays(1))]);
+        newer.Genres = ["action", " Adventure ", ""];
+
+        var card = Assert.Single(DiscoverSeriesMerger.Merge([older, newer],
+            new Dictionary<string, int> { ["a"] = 7, ["b"] = 7 }));
+
+        Assert.Equal("New Title", card.Title);
+        Assert.Equal("A hunter's second chance.", card.Description);
+        Assert.Equal("ONGOING", card.Status);
+        Assert.Equal(new[] { "action", "Adventure", "Fantasy" }, card.Genres);
+    }
+
+    [Fact]
     public void SameAnilistId_MergesSourcesChaptersAndProgress()
     {
         var older = Item(

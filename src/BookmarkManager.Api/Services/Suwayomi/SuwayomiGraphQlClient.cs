@@ -80,7 +80,7 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         "mutation($s:LongString!,$f:[FilterChangeInput!],$p:Int!){ fetchSourceManga(input:{source:$s,type:SEARCH,page:$p,query:\"\",filters:$f}){ hasNextPage mangas{ id title } } }";
 
     private const string MangaDetailsQuery =
-        "mutation($id:Int!){ fetchMangaAndChapters(input:{id:$id, fetchManga:true, fetchChapters:true}){ manga{ id title genre status thumbnailUrl } chapters{ id name chapterNumber uploadDate sourceOrder } } }";
+        "mutation($id:Int!){ fetchMangaAndChapters(input:{id:$id, fetchManga:true, fetchChapters:true}){ manga{ id title genre description status thumbnailUrl } chapters{ id name chapterNumber uploadDate sourceOrder } } }";
 
     private const string LibraryQuery =
         "query { mangas(condition:{inLibrary:true}){ nodes{ id title realUrl source{ displayName } firstUnreadChapter{ sourceOrder } latestReadChapter{ chapterNumber sourceOrder } highestNumberedChapter{ chapterNumber } } } }";
@@ -202,7 +202,8 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
             manga.Genre ?? [],
             manga.Status,
             manga.ThumbnailUrl,
-            chapters);
+            chapters,
+            manga.Description);
     }
 
     public async Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
@@ -477,6 +478,7 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         public int Id { get; set; }
         public string Title { get; set; } = string.Empty;
         public List<string>? Genre { get; set; }
+        public string? Description { get; set; }
         public string? Status { get; set; }
         public string? ThumbnailUrl { get; set; }
     }

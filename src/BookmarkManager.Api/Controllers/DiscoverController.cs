@@ -94,6 +94,12 @@ public sealed class DiscoverController : ControllerBase
                 TitleKey = s.TitleKey,
                 Title = s.Title,
                 Type = DiscoverTypeResolver.ToApiValue(s.Type),
+                Genres = (s.Genres ?? string.Empty)
+                    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+                Description = s.Description,
+                Status = s.Status,
                 CoverMangaId = s.CoverMangaId > 0 ? s.CoverMangaId : latest.MangaId,
                 SeriesMangaId = latest.MangaId,
                 Sources = sourcesBySeries.TryGetValue(s.Id, out var sources) ? sources : [],

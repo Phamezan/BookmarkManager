@@ -298,6 +298,68 @@ button {
 
 .chapter-date { font-size: 12px; color: var(--text-3); }
 
+/* Series details stay outside the cover's clipped image frame. */
+.details-btn {
+  margin-top: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.details-btn:hover,
+.details-btn[aria-expanded="true"] {
+  color: var(--text);
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
+.series-preview {
+  display: none;
+  position: fixed;
+  z-index: 10;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(580px, calc(100dvh - 24px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .45);
+  overflow-wrap: anywhere;
+  scrollbar-width: thin;
+}
+
+.series-preview.is-open { display: block; }
+.preview-header { display: flex; align-items: flex-start; gap: 12px; }
+.preview-header h2 { flex: 1; margin: 0; font-size: 18px; line-height: 1.35; font-weight: 500; }
+.preview-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 22px;
+  line-height: 1;
+}
+.preview-close:hover { color: var(--text); }
+.preview-meta { margin: 8px 0; color: var(--text-2); font-size: 12px; }
+.preview-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; color: var(--text-3); font-size: 12px; }
+.preview-tag { padding: 3px 8px; border-radius: 12px; background: var(--primary-soft); color: var(--text); }
+.preview-description { margin: 14px 0; color: var(--text-2); line-height: 1.65; white-space: pre-line; }
+.preview-link { display: inline-block; margin-top: 8px; color: var(--primary); font-weight: 500; }
+.preview-link:hover { text-decoration: underline; }
+
+@media (pointer: coarse) {
+  .details-btn, .preview-close { min-height: 44px; min-width: 44px; }
+}
+
 /* Skeleton */
 .skeleton { display: block; }
 .skeleton .sk-cover {

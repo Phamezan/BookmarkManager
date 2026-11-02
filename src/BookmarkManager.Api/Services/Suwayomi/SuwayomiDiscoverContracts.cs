@@ -57,7 +57,8 @@ public sealed record SuwayomiMangaDetails(
     IReadOnlyList<string> Genres,
     string? Status,
     string? ThumbnailUrl,
-    IReadOnlyList<SuwayomiChapterDetails> Chapters);
+    IReadOnlyList<SuwayomiChapterDetails> Chapters,
+    string? Description = null);
 
 /// <summary>
 /// A series in the user's Suwayomi library: its reading progress (Discover progress badge) plus the

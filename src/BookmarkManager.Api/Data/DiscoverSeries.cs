@@ -29,6 +29,10 @@ public class DiscoverSeries
     /// <summary>Comma-separated genre tags as reported by the source.</summary>
     public string? Genres { get; set; }
 
+    public string? Description { get; set; }
+
+    public string? Status { get; set; }
+
     /// <summary>Manga id of the source entry with the most recent chapter; drives the cover/link.</summary>
     public int CoverMangaId { get; set; }
 

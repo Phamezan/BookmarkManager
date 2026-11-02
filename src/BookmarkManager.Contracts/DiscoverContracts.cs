@@ -21,6 +21,10 @@ public class DiscoverItemDto
     /// <summary>Manhwa / Manhua / Manga / Unknown.</summary>
     public string Type { get; set; } = "Unknown";
 
+    public List<string> Genres { get; set; } = [];
+    public string? Description { get; set; }
+    public string? Status { get; set; }
+
     public int CoverMangaId { get; set; }
 
     /// <summary>Manga id of the source with the newest chapter in the window; drives the series link.</summary>
