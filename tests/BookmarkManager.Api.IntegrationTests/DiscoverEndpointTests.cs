@@ -26,6 +26,9 @@ public sealed class DiscoverEndpointTests : IntegrationTestBase
         public Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<SuwayomiLibraryManga>>(Library);
 
+        public Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<int>>([]);
+
         public Task<SuwayomiServerStatus> GetStatusAsync(CancellationToken ct) => throw new SuwayomiException("not used");
         public Task<IReadOnlyList<SuwayomiManga>> SearchAsync(string sourceId, string query, CancellationToken ct) => throw new SuwayomiException("not used");
         public Task<SuwayomiMangaAndChapters> GetMangaAndChaptersAsync(int mangaId, CancellationToken ct) => throw new SuwayomiException("not used");

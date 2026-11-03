@@ -175,6 +175,9 @@ public sealed class DiscoverFeedBackgroundServiceTests
         public Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<SuwayomiLibraryManga>>([]);
 
+        public Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<int>>([]);
+
         public Task<SuwayomiMangaAndChapters> GetMangaAndChaptersAsync(int mangaId, CancellationToken ct)
             => throw new NotSupportedException();
 

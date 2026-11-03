@@ -73,4 +73,6 @@ public sealed record SuwayomiLibraryManga(
     int Id = 0,
     string? RealUrl = null,
     string? SourceDisplayName = null,
-    int? ResumeSourceOrder = null);
+    int? ResumeSourceOrder = null,
+    int? FirstUnreadSourceOrder = null,
+    int? LatestReadSourceOrder = null);

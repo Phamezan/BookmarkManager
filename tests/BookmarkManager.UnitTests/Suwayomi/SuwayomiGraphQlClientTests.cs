@@ -109,10 +109,28 @@ public sealed class SuwayomiGraphQlClientTests
         Assert.Equal("https://example.com/reading", library[0].RealUrl);
         Assert.Equal("Source", library[0].SourceDisplayName);
         Assert.Equal(42, library[1].ResumeSourceOrder);
+        Assert.Equal(0, library[0].FirstUnreadSourceOrder);
+        Assert.Equal(27, library[0].LatestReadSourceOrder);
+        Assert.Null(library[1].FirstUnreadSourceOrder);
         Assert.Null(library[2].ResumeSourceOrder);
         Assert.Contains("firstUnreadChapter{ sourceOrder }", handler.LastBody);
         Assert.Contains("latestReadChapter{ chapterNumber sourceOrder }", handler.LastBody);
         Assert.DoesNotContain("lastReadChapter", handler.LastBody);
+    }
+
+    [Fact]
+    public async Task GetUnreadChapterIdsBefore_QueriesLocalUnreadChaptersBelowCutoff()
+    {
+        var handler = new CapturingHandler("""
+            {"data":{"chapters":{"nodes":[{"id":17370},{"id":17371}]}}}
+            """);
+
+        var ids = await Create(handler).GetUnreadChapterIdsBeforeAsync(2161, 122, default);
+
+        Assert.Equal(new[] { 17370, 17371 }, ids);
+        Assert.Contains("isRead:false", handler.LastBody);
+        Assert.Contains("sourceOrder:{lessThan:$o}", handler.LastBody);
+        Assert.Contains("\"o\":122", handler.LastBody);
     }
 
     [Fact]

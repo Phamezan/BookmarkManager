@@ -43,6 +43,9 @@ public interface ISuwayomiClient
 
     /// <summary>Reads library reading progress for every series in the user's Suwayomi library.</summary>
     Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct);
+
+    /// <summary>Ids of a series' unread chapters ordered before <paramref name="sourceOrder"/> (local DB, no source call).</summary>
+    Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct);
 }
 
 public sealed class SuwayomiGraphQlClient : ISuwayomiClient
@@ -84,6 +87,9 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
 
     private const string LibraryQuery =
         "query { mangas(condition:{inLibrary:true}){ nodes{ id title realUrl source{ displayName } firstUnreadChapter{ sourceOrder } latestReadChapter{ chapterNumber sourceOrder } highestNumberedChapter{ chapterNumber } } } }";
+
+    private const string UnreadBeforeQuery =
+        "query($id:Int!,$o:Int!){ chapters(condition:{mangaId:$id, isRead:false}, filter:{sourceOrder:{lessThan:$o}}){ nodes{ id } } }";
 
     private readonly HttpClient _http;
 
@@ -217,8 +223,17 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
                 n.Id,
                 n.RealUrl,
                 n.Source?.DisplayName,
-                ResumeSourceOrder: n.FirstUnreadChapter?.SourceOrder ?? n.LatestReadChapter?.SourceOrder))
+                ResumeSourceOrder: n.FirstUnreadChapter?.SourceOrder ?? n.LatestReadChapter?.SourceOrder,
+                FirstUnreadSourceOrder: n.FirstUnreadChapter?.SourceOrder,
+                LatestReadSourceOrder: n.LatestReadChapter?.SourceOrder))
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct)
+    {
+        var data = await PostAsync<ChapterIdsData>(UnreadBeforeQuery,
+            new Dictionary<string, object?> { ["id"] = mangaId, ["o"] = sourceOrder }, ct).ConfigureAwait(false);
+        return (data.Chapters?.Nodes ?? []).Select(c => c.Id).ToList();
     }
 
     private static IReadOnlyList<SuwayomiFilter> MapFilters(List<FilterModel>? models, int offset)
@@ -490,6 +505,21 @@ public sealed class SuwayomiGraphQlClient : ISuwayomiClient
         public double ChapterNumber { get; set; }
         public string? UploadDate { get; set; }
         public int SourceOrder { get; set; }
+    }
+
+    private sealed class ChapterIdsData
+    {
+        public ChapterIdNodesModel? Chapters { get; set; }
+    }
+
+    private sealed class ChapterIdNodesModel
+    {
+        public List<ChapterIdModel>? Nodes { get; set; }
+    }
+
+    private sealed class ChapterIdModel
+    {
+        public int Id { get; set; }
     }
 
     private sealed class LibraryData

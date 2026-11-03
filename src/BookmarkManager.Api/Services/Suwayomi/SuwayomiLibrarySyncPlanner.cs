@@ -296,6 +296,14 @@ public static class SuwayomiLibrarySyncPlanner
             urlUpdates);
     }
 
+    /// <summary>
+    /// Series with unread chapters ordered before the latest read one (chapters paged past without
+    /// reaching their last page). Suwayomi resumes at the oldest unread chapter, so each gap drags
+    /// the resume point backwards; the sync marks them read.
+    /// </summary>
+    public static IReadOnlyList<SuwayomiLibraryManga> ReadGaps(IReadOnlyList<SuwayomiLibraryManga> library)
+        => library.Where(m => m.FirstUnreadSourceOrder < m.LatestReadSourceOrder).ToList();
+
     private static string BuildReaderUrl(string baseUrl, SuwayomiLibraryManga manga)
         => manga.ResumeSourceOrder is int sourceOrder
             ? $"{baseUrl}/manga/{manga.Id}/chapter/{sourceOrder}"

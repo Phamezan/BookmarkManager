@@ -95,6 +95,11 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
             try
             {
                 library = await client.GetLibraryAsync(ct).ConfigureAwait(false);
+                if (await FillReadGapsAsync(client, library, ct).ConfigureAwait(false) > 0)
+                {
+                    // Re-read so resume URLs point past the filled gap this cycle.
+                    library = await client.GetLibraryAsync(ct).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -108,6 +113,42 @@ public sealed class SuwayomiLibrarySyncService : BackgroundService
         }
 
         await ApplyAsync(library, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Marks every unread chapter before each series' latest read chapter read; returns the series filled.</summary>
+    private async Task<int> FillReadGapsAsync(
+        ISuwayomiClient client, IReadOnlyList<SuwayomiLibraryManga> library, CancellationToken ct)
+    {
+        var filled = 0;
+        foreach (var manga in SuwayomiLibrarySyncPlanner.ReadGaps(library))
+        {
+            try
+            {
+                var ids = await client.GetUnreadChapterIdsBeforeAsync(manga.Id, manga.LatestReadSourceOrder!.Value, ct)
+                    .ConfigureAwait(false);
+                if (ids.Count == 0)
+                {
+                    continue;
+                }
+
+                await client.MarkChaptersReadAsync(ids, ct).ConfigureAwait(false);
+                filled++;
+                _logger.LogInformation(
+                    "Suwayomi library sync: marked {Count} skipped chapters read for manga {MangaId}.", ids.Count, manga.Id);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Suwayomi library sync: filling read gaps for manga {MangaId} failed; it will be retried next cycle.",
+                    manga.Id);
+            }
+        }
+
+        return filled;
     }
 
     private async Task ApplyAsync(IReadOnlyList<SuwayomiLibraryManga> library, CancellationToken ct)

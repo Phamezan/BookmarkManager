@@ -33,6 +33,21 @@ public sealed class SuwayomiLibrarySyncPlannerTests
             maxLibraryRemovalsPerCycle);
 
     [Fact]
+    public void ReadGaps_ReturnsOnlySeriesWithUnreadChaptersBeforeTheLatestRead()
+    {
+        var gap = Manga(1) with { FirstUnreadSourceOrder = 105, LatestReadSourceOrder = 122 };
+        var library = new[]
+        {
+            gap,
+            Manga(2) with { FirstUnreadSourceOrder = 123, LatestReadSourceOrder = 122 },
+            Manga(3) with { FirstUnreadSourceOrder = null, LatestReadSourceOrder = 50 },
+            Manga(4) with { FirstUnreadSourceOrder = 1, LatestReadSourceOrder = null }
+        };
+
+        Assert.Equal(new[] { gap }, SuwayomiLibrarySyncPlanner.ReadGaps(library));
+    }
+
+    [Fact]
     public void Create_HappensOnlyOnTheSecondCycle()
     {
         var library = new[] { Manga(5, "Nano Machine", read: 12) };
