@@ -85,6 +85,9 @@ public sealed class SuwayomiApprovalTests : IntegrationTestBase
 
         public Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
             => Task.FromResult<IReadOnlyList<SuwayomiLibraryManga>>([]);
+
+        public Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<int>>([]);
     }
 
     private static Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory<Program> CreateFactoryWithSuwayomi(

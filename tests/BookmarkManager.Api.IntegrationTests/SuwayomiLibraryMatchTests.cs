@@ -24,15 +24,35 @@ public sealed class SuwayomiLibraryMatchTests : IntegrationTestBase
     {
         public List<SuwayomiLibraryManga> Library { get; } = [];
 
+        public List<int> MarkedReadIds { get; } = [];
+
         public Task<IReadOnlyList<SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct)
-            => Task.FromResult<IReadOnlyList<SuwayomiLibraryManga>>(Library);
+            => Task.FromResult<IReadOnlyList<SuwayomiLibraryManga>>(Library.ToList());
+
+        // Chapter id == source order; ids before the cutoff not yet marked read are "unread".
+        public Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct)
+            => Task.FromResult<IReadOnlyList<int>>(Enumerable.Range(1, sourceOrder - 1).Except(MarkedReadIds).ToList());
 
         public Task<SuwayomiServerStatus> GetStatusAsync(CancellationToken ct) => throw new SuwayomiException("not used");
         public Task<IReadOnlyList<SuwayomiManga>> SearchAsync(string sourceId, string query, CancellationToken ct) => throw new SuwayomiException("not used");
         public Task<SuwayomiMangaAndChapters> GetMangaAndChaptersAsync(int mangaId, CancellationToken ct) => throw new SuwayomiException("not used");
         public Task AddToLibraryAsync(int mangaId, CancellationToken ct) => throw new SuwayomiException("not used");
         public Task RemoveFromLibraryAsync(int mangaId, CancellationToken ct) => throw new SuwayomiException("not used");
-        public Task MarkChaptersReadAsync(IReadOnlyList<int> chapterIds, CancellationToken ct) => throw new SuwayomiException("not used");
+        public Task MarkChaptersReadAsync(IReadOnlyList<int> chapterIds, CancellationToken ct)
+        {
+            MarkedReadIds.AddRange(chapterIds);
+            // Gap filled: Suwayomi now resumes after the latest read chapter.
+            for (var i = 0; i < Library.Count; i++)
+            {
+                Library[i] = Library[i] with
+                {
+                    FirstUnreadSourceOrder = Library[i].LatestReadSourceOrder + 1,
+                    ResumeSourceOrder = Library[i].LatestReadSourceOrder + 1
+                };
+            }
+
+            return Task.CompletedTask;
+        }
         public Task<SuwayomiThumbnail> GetThumbnailAsync(int mangaId, CancellationToken ct) => throw new SuwayomiException("not used");
         public Task<IReadOnlyList<SuwayomiFilter>> GetSourceFiltersAsync(string sourceId, CancellationToken ct) => throw new SuwayomiException("not used");
         public Task<SuwayomiSourcePage> FetchSourceMangaAsync(string sourceId, IReadOnlyList<SuwayomiFilterChange> filters, int page, CancellationToken ct) => throw new SuwayomiException("not used");
@@ -196,6 +216,42 @@ public sealed class SuwayomiLibraryMatchTests : IntegrationTestBase
         {
             Assert.Empty(commands);
         }
+    }
+
+    [Fact]
+    public async Task LibrarySync_MarksSkippedChaptersReadAndResumesPastTheGap()
+    {
+        const string baseUrl = "http://suwayomi.local:4567";
+        var bookmarkId = Guid.NewGuid();
+        var fake = new FakeLibraryClient();
+        fake.Library.Add(new SuwayomiLibraryManga("Series", 6, 20, 5, ResumeSourceOrder: 3,
+            FirstUnreadSourceOrder: 3, LatestReadSourceOrder: 6));
+        using var factory = WithFakeClient(Factory, fake).WithWebHostBuilder(builder =>
+            builder.ConfigureServices(services => services.PostConfigure<SuwayomiOptions>(options =>
+            {
+                options.PublicBaseUrl = baseUrl;
+                options.LibrarySyncFolderId = null;
+            })));
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.BookmarkNodes.Add(new BookmarkNode
+            {
+                Id = bookmarkId, Type = NodeType.Bookmark, Title = "Series", Url = $"{baseUrl}/manga/5/chapter/3",
+                SuwayomiMangaId = 5, CurrentProgress = 6, BrowserNodeId = "101", Version = 1
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var sync = factory.Services.GetRequiredService<SuwayomiLibrarySyncService>();
+        await sync.RunOnceAsync(default);
+        await sync.RunOnceAsync(default);
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, fake.MarkedReadIds);
+        using var verifyScope = factory.Services.CreateScope();
+        var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var node = await verifyDb.BookmarkNodes.SingleAsync(n => n.Id == bookmarkId);
+        Assert.Equal($"{baseUrl}/manga/5/chapter/7", node.Url);
     }
 
     [Fact]

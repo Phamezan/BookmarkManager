@@ -726,5 +726,6 @@ public sealed class UrlMigrationBackgroundJobTests
         public Task<BookmarkManager.Api.Services.Suwayomi.SuwayomiSourcePage> FetchSourceMangaAsync(string sourceId, IReadOnlyList<BookmarkManager.Api.Services.Suwayomi.SuwayomiFilterChange> filters, int page, CancellationToken ct) => throw new NotSupportedException();
         public Task<BookmarkManager.Api.Services.Suwayomi.SuwayomiMangaDetails> GetMangaDetailsAsync(int mangaId, CancellationToken ct) => throw new NotSupportedException();
         public Task<IReadOnlyList<BookmarkManager.Api.Services.Suwayomi.SuwayomiLibraryManga>> GetLibraryAsync(CancellationToken ct) => throw new NotSupportedException();
+        public Task<IReadOnlyList<int>> GetUnreadChapterIdsBeforeAsync(int mangaId, int sourceOrder, CancellationToken ct) => throw new NotSupportedException();
     }
 }
