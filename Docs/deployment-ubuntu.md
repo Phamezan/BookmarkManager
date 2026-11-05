@@ -157,6 +157,8 @@ Configuration on the `bookmarkmanager` service (overridable in `.env`):
 
 The WebUI add-on can ask whether titles are in the library via `POST /api/suwayomi/library-match` with `{ "titles": ["..."] }` (max 200). It answers from the DB/cache library index only - matching by normalized title and alternative title - and returns `[{ "title", "mangaId", "read", "latest", "libraryTitle", "sourceName" }]` for matching titles only, never calling AniList. `libraryTitle` is the matched library series' own title and `sourceName` its source display name, so the add-on can badge a cross-source duplicate on any source browse/search page and, on the manga detail page, show a banner linking to the library copy when the manga id differs from the library entry.
 
+In the reader, the add-on adds an **Other sources** button under the side menu's Settings button. It searches the configured `SourceOrder` sources via `GET /api/suwayomi/search` for the current title, listing same-title hits on other sources (or every other-source hit when none match exactly). Picking one runs Suwayomi's `fetchChapters` for that manga and opens the chapter with the same chapter number, or the series page when there is none. It doesn't copy reading progress or change the library.
+
 ### nginx proxy for the add-on page
 
 The nginx server in front of Suwayomi (port 4567, not part of this repo) serves the WebUI with `<script src="/bm/addon.js" defer>` injected into every page. It must also expose this app's static add-on folder and API on the same origin as the WebUI:
