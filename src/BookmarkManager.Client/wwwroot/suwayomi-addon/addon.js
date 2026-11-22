@@ -22,27 +22,30 @@
   // check below must still see the clone missing and re-insert it.
   var SOURCE_SELECTOR = 'a[href="/browse"]';
 
-  function replaceLabel(clone) {
+  // Material "TravelExplore" for the Explore entry.
+  var EXPLORE_ICON_PATH = 'M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14';
+
+  function replaceLabel(clone, label) {
     var walker = document.createTreeWalker(clone, NodeFilter.SHOW_TEXT, null);
     var node;
     var fallback = null;
     while ((node = walker.nextNode())) {
       if (!node.nodeValue || node.nodeValue.indexOf('Browse') === -1) continue;
       if (node.nodeValue.trim() === 'Browse') {
-        node.nodeValue = node.nodeValue.replace('Browse', 'Discover');
+        node.nodeValue = node.nodeValue.replace('Browse', label);
         return;
       }
       if (!fallback) fallback = node;
     }
-    if (fallback) fallback.nodeValue = fallback.nodeValue.replace('Browse', 'Discover');
+    if (fallback) fallback.nodeValue = fallback.nodeValue.replace('Browse', label);
   }
 
-  function replaceIcon(clone) {
+  function replaceIcon(clone, iconPath) {
     var svg = clone.querySelector('svg');
     if (!svg) return;
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     var path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    path.setAttribute('d', EXPLORE_PATH);
+    path.setAttribute('d', iconPath);
     svg.appendChild(path);
   }
 
@@ -54,27 +57,34 @@
     }
   }
 
-  function insertAfter(link) {
-    if (link.nextElementSibling && link.nextElementSibling.hasAttribute('data-bm-discover')) {
-      return;
+  function insertEntry(link, after, attr, label, href, iconPath) {
+    if (after.nextElementSibling && after.nextElementSibling.hasAttribute(attr)) {
+      return after.nextElementSibling;
     }
 
     var clone = link.cloneNode(true);
-    clone.setAttribute('data-bm-discover', '');
-    clone.setAttribute('href', '/bm/');
+    clone.setAttribute(attr, '');
+    clone.setAttribute('href', href);
     if (clone.classList) clone.classList.remove('Mui-selected');
 
-    replaceLabel(clone);
-    replaceIcon(clone);
+    replaceLabel(clone, label);
+    replaceIcon(clone, iconPath);
     removeBadges(clone);
 
     clone.addEventListener('click', function (event) {
       event.preventDefault();
       event.stopPropagation();
-      location.assign('/bm/');
+      location.assign(href);
     }, true);
 
-    if (link.parentNode) link.parentNode.insertBefore(clone, link.nextSibling);
+    if (after.parentNode) after.parentNode.insertBefore(clone, after.nextSibling);
+    return clone;
+  }
+
+  // Discover goes right after Browse, Explore right after Discover; both are cloned from Browse.
+  function insertAfter(link) {
+    var discover = insertEntry(link, link, 'data-bm-discover', 'Discover', '/bm/', EXPLORE_PATH);
+    insertEntry(link, discover, 'data-bm-explore', 'Explore', '/bm/explore.html', EXPLORE_ICON_PATH);
   }
 
   /* ------------------------------------------------------------------ *

@@ -27,6 +27,7 @@ public sealed class SuwayomiController : ControllerBase
     private readonly SuwayomiImportBackgroundJob _importJob;
     private readonly UrlMigrationBackgroundJob _migrationJob;
     private readonly DiscoverLibraryProgressProvider _libraryProgress;
+    private readonly SuwayomiSourceSearcher _searcher;
 
     public SuwayomiController(
         AppDbContext db,
@@ -34,7 +35,8 @@ public sealed class SuwayomiController : ControllerBase
         IOptions<SuwayomiOptions> options,
         SuwayomiImportBackgroundJob importJob,
         UrlMigrationBackgroundJob migrationJob,
-        DiscoverLibraryProgressProvider libraryProgress)
+        DiscoverLibraryProgressProvider libraryProgress,
+        SuwayomiSourceSearcher searcher)
     {
         _db = db;
         _client = client;
@@ -42,6 +44,7 @@ public sealed class SuwayomiController : ControllerBase
         _importJob = importJob;
         _migrationJob = migrationJob;
         _libraryProgress = libraryProgress;
+        _searcher = searcher;
     }
 
     [HttpGet("status")]
@@ -167,58 +170,7 @@ public sealed class SuwayomiController : ControllerBase
             return Ok(new List<SuwayomiSearchResultDto>());
         }
 
-        SuwayomiServerStatus server;
-        try
-        {
-            server = await _client.GetStatusAsync(ct).ConfigureAwait(false);
-        }
-        catch (Exception)
-        {
-            return Ok(new List<SuwayomiSearchResultDto>());
-        }
-
-        var english = server.Sources
-            .Where(s => string.Equals(s.Lang, "en", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var all = server.Sources;
-
-        string? requested = string.IsNullOrWhiteSpace(source) ? null : source.Trim();
-        var names = requested is null ? _options.SourceOrder : [requested];
-
-        var results = new List<SuwayomiSearchResultDto>();
-        foreach (var name in names)
-        {
-            ct.ThrowIfCancellationRequested();
-            var match = english.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase))
-                ?? all.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-            if (match is null)
-            {
-                continue;
-            }
-
-            IReadOnlyList<SuwayomiManga> hits;
-            try
-            {
-                hits = await _client.SearchAsync(match.Id, query, ct).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception)
-            {
-                continue;
-            }
-
-            results.AddRange(hits.Take(_options.MaxResultsPerSource).Select(h => new SuwayomiSearchResultDto
-            {
-                MangaId = h.Id,
-                Title = h.Title,
-                SourceName = match.Name,
-                InLibrary = h.InLibrary
-            }));
-        }
-
+        var results = await _searcher.SearchAsync(query, source, ct).ConfigureAwait(false);
         return Ok(results);
     }
 

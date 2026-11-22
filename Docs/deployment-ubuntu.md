@@ -169,6 +169,29 @@ The nginx server in front of Suwayomi (port 4567, not part of this repo) serves 
 
 The API reaches Suwayomi internally at `http://suwayomi:4567`; the page's covers (`/api/v1/manga/{id}/thumbnail`), series links (`/manga/{id}`), and reader links (`/manga/{id}/chapter/{order}`) are same-origin Suwayomi paths served by the proxy.
 
+## Suwayomi Explore page
+
+**Explore** is a second add-on page for finding new series to read, including finished ones. Discover only lists series with new chapters this week; Explore browses the whole AniList MANGA catalog (manga, manhwa, manhua; novels excluded), badges series already in the Suwayomi library, and hands a picked series to Suwayomi. It is served at `/bm/explore.html` by the existing `/bm/` proxy, so **no nginx change is needed**; the add-on adds an Explore entry to the Suwayomi sidebar after Discover. The page calls the API same-origin as `/bm-api/explore/...`.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/explore/browse` | Filtered, paged catalog (30 per page). Filters: `q`, `type` (all/manhwa/manhua/manga), `status`, `genres`/`excludeGenres`, `tags`/`excludeTags`, `minScore`, `minChapters`/`maxChapters`, `yearFrom`/`yearTo`, `sort`, `maxPopularity`, `adult`, `hideLibrary`, `hideDismissed` (default true), `page`. Invalid values are ignored, never a 400. |
+| `GET /api/explore/random` | One random series matching the same filters, excluding library and dismissed series (404 when none). |
+| `GET /api/explore/shelves` | Home shelves (up to 18 each): For you, Trending now, Best completed, Recently completed, Hidden gems, Popular manhwa, Started this year. |
+| `GET /api/explore/for-you` | Recommendations built from the library series AniList knows (matched through the `SeriesMetadata` cache), scored by summed recommendation rating; each item lists the library titles it is `becauseOf`. |
+| `GET /api/explore/series/{anilistId}` | Series detail: titles, dates, staff, relations, recommendations, external links, full tags. |
+| `GET /api/explore/series/{anilistId}/sources` | Searches the configured `Suwayomi__SourceOrder` sources (english title, then romaji, then the first two synonyms; stops at the first query with hits). Exact title matches come first. |
+| `POST /api/explore/library` | `{ "mangaId": n }` adds a Suwayomi manga to the library (204; 502 when Suwayomi fails). |
+| `GET /api/explore/meta` | AniList genres and non-adult tags for the filter UI. |
+| `GET /api/explore/list?state=saved\|dismissed`, `PUT /api/explore/list/{anilistId}` | The Saved / Not interested lists. `PUT` body `{ "state": "saved"\|"dismissed"\|null, "title", "coverUrl", "type" }`; a null state removes the entry. Stored in the `ExploreListEntries` table (`AddExploreList` migration). |
+
+Caching and limits:
+
+- Every AniList response is cached in memory: browse and shelves 30 minutes, series detail 6 hours, genres/tags 24 hours, for-you source data 12 hours. The key is the request's GraphQL variables, so filter changes are separate entries. Failures are never cached.
+- All AniList requests wait on the same rate limiter as auto-tagging and the series-metadata backfill (burst of 8, then 2 per 5 seconds), so a Home load (up to seven shelves, fetched one after another) can take a few seconds on a cold cache.
+- When AniList is unreachable or errors, the API answers `502` with `{ "error": "AniList unavailable" }`; the page shows a retry banner.
+- Library badges come from the Discover library-progress cache (60 seconds); the Suwayomi source search reuses the same loop as `GET /api/suwayomi/search`.
+
 ## TLS for the In-Tab Command Palette (optional)
 
 The in-tab command palette (extension shortcut on any webpage) embeds the `/palette` page in an iframe inside an extension document. Browsers block active mixed content there, so the palette page must be served over **https**. Dashboard access and extension sync keep working over plain http — TLS is only required for the in-tab palette.

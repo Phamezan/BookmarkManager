@@ -26,6 +26,7 @@ public class AppDbContext : DbContext
     public DbSet<DiscoverSourceEntry> DiscoverSourceEntries => Set<DiscoverSourceEntry>();
     public DbSet<DiscoverChapter> DiscoverChapters => Set<DiscoverChapter>();
     public DbSet<SeriesMetadata> SeriesMetadataSet => Set<SeriesMetadata>();
+    public DbSet<ExploreListEntry> ExploreListEntries => Set<ExploreListEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -229,6 +230,18 @@ public class AppDbContext : DbContext
             entity.Property(e => e.TitlesJson).HasMaxLength(4000);
 
             entity.HasIndex(e => e.NormalizedKey).IsUnique();
+        });
+
+        modelBuilder.Entity<ExploreListEntry>(entity =>
+        {
+            entity.HasKey(e => e.AnilistId);
+            entity.Property(e => e.AnilistId).ValueGeneratedNever();
+            entity.Property(e => e.State).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CoverUrl).HasMaxLength(2048);
+            entity.Property(e => e.Type).HasMaxLength(20).IsRequired();
+
+            entity.HasIndex(e => e.State);
         });
 
         modelBuilder.Entity<DiscoverSourceEntry>(entity =>

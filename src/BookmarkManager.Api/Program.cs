@@ -145,6 +145,19 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverFeed
 builder.Services.AddHostedService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>(provider =>
     provider.GetRequiredService<BookmarkManager.Api.Services.Suwayomi.DiscoverFeedBackgroundService>());
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Suwayomi.DiscoverLibraryProgressProvider>();
+// Suwayomi Explore: AniList catalog browsing (cached, shares the AniList rate limiter), for-you
+// recommendations, library enrichment and the shared Suwayomi source-search loop.
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Explore.ExploreAniListClient>(sp =>
+    new BookmarkManager.Api.Services.Explore.ExploreAniListClient(
+        sp.GetRequiredService<IHttpClientFactory>(),
+        sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+        BookmarkManager.Api.Services.AnilistTaggingService.RateLimiter,
+        sp.GetRequiredService<ILogger<BookmarkManager.Api.Services.Explore.ExploreAniListClient>>()));
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Explore.ExploreForYouRecommender>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Explore.ExploreShelfBuilder>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Explore.ExploreLibraryEnricher>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Explore.ExploreSourceFinder>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Suwayomi.SuwayomiSourceSearcher>();
 // Series metadata (AniList country of origin + alternative titles): scoped lookup cached in SQLite,
 // plus the backfill worker that fills missing rows. Shares the AniList rate limiter with tagging.
 builder.Services.AddScoped<BookmarkManager.Api.Services.Suwayomi.SeriesMetadataService>();
