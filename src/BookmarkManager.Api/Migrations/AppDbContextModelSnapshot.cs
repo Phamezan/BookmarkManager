@@ -441,6 +441,40 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("DiscoverSourceEntries");
                 });
 
+            modelBuilder.Entity("BookmarkManager.Api.Data.ExploreListEntry", b =>
+                {
+                    b.Property<int>("AnilistId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CoverUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("AnilistId");
+
+                    b.HasIndex("State");
+
+                    b.ToTable("ExploreListEntries");
+                });
+
             modelBuilder.Entity("BookmarkManager.Api.Data.ExtensionClient", b =>
                 {
                     b.Property<Guid>("Id")

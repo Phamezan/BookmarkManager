@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Explore · Suwayomi</title>
+  <link rel="stylesheet" href="./explore.css?v=3">
+  <link rel="stylesheet" href="./explore-filters.css?v=1">
+</head>
+<body>
+  <div class="page" id="page">
+    <header class="xhead">
+      <div class="xhead-in">
+        <div class="xbrand">
+          <a class="back-link" href="/library">&larr; Suwayomi</a>
+          <h1>Explore</h1>
+        </div>
+        <nav class="xtabs" aria-label="Explore sections">
+          <button type="button" data-tab="home" aria-current="page">Home</button>
+          <button type="button" data-tab="browse" aria-current="false">Browse</button>
+          <button type="button" data-tab="foryou" aria-current="false">For you</button>
+          <button type="button" data-tab="saved" aria-current="false">Saved</button>
+        </nav>
+        <input id="search" class="xsearch" type="search" placeholder="Search series  ( / )" aria-label="Search series" autocomplete="off">
+        <a class="back-link xdiscover" href="/bm/">Discover</a>
+      </div>
+    </header>
+
+    <div id="banner" role="alert"></div>
+
+    <div class="xlayout" id="layout">
+      <aside id="filters" class="xfilters" aria-label="Filters" hidden></aside>
+      <div class="xmain">
+        <div id="browse-bar" class="xbrowse-bar" hidden>
+          <h2 class="xbrowse-title">Browse</h2>
+          <span id="count" class="xresult-count" aria-live="polite"></span>
+          <button type="button" id="filter-toggle" class="xbtn xfilter-toggle">Filters <span id="filter-count"></span></button>
+          <button type="button" id="reset-top" class="xlink">Reset</button>
+          <div id="pills" class="xpills"></div>
+        </div>
+        <main id="view"></main>
+      </div>
+    </div>
+    <div id="filter-backdrop" class="xfilter-backdrop" hidden></div>
+  </div>
+  <div id="toasts" class="xtoasts" aria-live="polite"></div>
+
+  <script type="module" src="./explore.js?v=3"></script>
+</body>
+</html>
