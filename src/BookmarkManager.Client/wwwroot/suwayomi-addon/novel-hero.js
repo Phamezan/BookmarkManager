@@ -217,13 +217,13 @@ export function createNovelHero({
         ? `${parts.join(' ')} · ${cnt.toLocaleString()} review${cnt === 1 ? '' : 's'}`
         : parts.join(' ');
       revBody.appendChild(el('span', 'nhero-card-main', mainText));
-      revBody.appendChild(el('span', 'nhero-card-sub', 'Read reader reviews & Royal Road'));
+      revBody.appendChild(el('span', 'nhero-card-sub', 'Read reader reviews'));
     } else if (state.loadingStats) {
       revBody.appendChild(el('span', 'nhero-skel nhero-skel-md'));
       revBody.appendChild(el('span', 'nhero-card-sub', 'Loading review summary…'));
     } else {
       revBody.appendChild(el('span', 'nhero-card-main', 'Reader reviews'));
-      revBody.appendChild(el('span', 'nhero-card-sub', 'Open reviews from sources & Royal Road'));
+      revBody.appendChild(el('span', 'nhero-card-sub', 'Open reader reviews'));
     }
     reviewsCard.append(revBody, el('span', 'nhero-card-arrow', '›'));
   }

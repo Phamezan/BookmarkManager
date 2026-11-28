@@ -206,7 +206,7 @@ Configuration on the `bookmarkmanager` service (overridable in `.env`):
 |----------|---------|---------|
 | `Novels__SidecarUrl` | `http://novels:3000` | Internal base URL of the `novels` sidecar service. |
 | `NOVELS_ENABLED_SOURCES` → `Novels__EnabledSources` | `hangulplanet,novelfire` | Comma-separated list of enabled plugin IDs. Disabled or unknown sources return `404` on every endpoint. |
-| `NOVELS_ROYALROAD_REVIEWS` → `Novels__RoyalRoadReviews` | `true` | Enables Royal Road review lookup by exact normalized title match (`GET /api/novels/reviews/royalroad`). Set `false` to return `404`. |
+| `NOVELS_ROYALROAD_REVIEWS` → `Novels__RoyalRoadReviews` | `false` | Enables Royal Road review lookup by exact normalized title match (`GET /api/novels/reviews/royalroad`). Off by default: Royal Road's Cloudflare blocks the sidecar's fetch (HTTP 403), so the lookup always fails today; the Reviews panel hides the tab when disabled. |
 
 Bundled plugins: `hangulplanet` and `novelfire` (enabled), plus `wetriedtls` and `fenrirrealm` (bundled and ready to enable after a manual smoke test by adding them to `NOVELS_ENABLED_SOURCES`, e.g. `NOVELS_ENABLED_SOURCES=hangulplanet,novelfire,wetriedtls`). Novelfire catalog rows open straight in the reader from their `novelfire.net/book/{slug}` URL; other catalog rows use **Find on novel sources**.
 
