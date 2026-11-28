@@ -209,7 +209,7 @@ async function assertNoOldPrimary(page, label) {
     const reviewCalls = [];
     page.on('pageerror', error => errors.push(error.message));
 
-    await page.route('**/*', async route => {
+    const mockRoutes = async route => {
       const request = route.request();
       const url = new URL(request.url());
 
@@ -264,7 +264,8 @@ async function assertNoOldPrimary(page, label) {
         });
       }
       return route.fulfill({ contentType: 'text/html', body: '<p>stub</p>' });
-    });
+    };
+    await page.route('**/*', mockRoutes);
 
     // 1. Library grid renders + status filter works + no old blue primary.
     await page.goto(`${ORIGIN}/bm/novel.html#/`);
@@ -339,19 +340,48 @@ async function assertNoOldPrimary(page, label) {
     assert.equal(progressPuts[0].chapterIndex, 0);
     await assertNoOldPrimary(page, 'novel reader');
 
-    // Scroll down hides dock; clicking text area brings it back; scroll up also shows it.
+    // Mouse device: dock hidden until the pointer nears the bottom edge; scrolling and text clicks don't reveal it.
     const dockWrap = page.locator('.nreader-dock-wrap');
+    const dockHidden = p => p.locator('.nreader-dock-wrap').evaluate(n => n.classList.contains('is-hidden'));
+    await page.mouse.move(640, 200);
+    assert.equal(await dockHidden(page), true, 'dock hidden without hover');
     await page.evaluate(() => window.scrollTo(0, 320));
     await page.waitForTimeout(80);
-    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), true, 'dock hides when scrolling down');
+    await page.evaluate(() => window.scrollTo(0, 120));
+    await page.waitForTimeout(80);
+    assert.equal(await dockHidden(page), true, 'scroll up does not reveal dock on mouse devices');
     await page.locator('.nreader-body p').first().click();
-    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), false, 'dock reappears on text tap');
-    await page.evaluate(() => window.scrollTo(0, 560));
-    await page.waitForTimeout(80);
-    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), true);
-    await page.evaluate(() => window.scrollTo(0, 420));
-    await page.waitForTimeout(80);
-    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), false, 'dock reappears on scroll up');
+    assert.equal(await dockHidden(page), true, 'text click does not reveal dock on mouse devices');
+    await page.mouse.move(640, 780);
+    assert.equal(await dockHidden(page), false, 'dock shows when pointer nears bottom');
+    await page.mouse.move(640, 300);
+    assert.equal(await dockHidden(page), true, 'dock hides when pointer leaves');
+    await dockWrap.locator('a[href], button:not(:disabled)').first().focus();
+    assert.equal(await dockHidden(page), false, 'keyboard focus reveals dock');
+    await page.evaluate(() => document.activeElement.blur());
+    assert.equal(await dockHidden(page), true, 'dock hides again when focus leaves');
+    await page.mouse.move(640, 780);
+
+    // Touch device: scroll down hides, tap shows, scroll up shows (unchanged behaviour).
+    const touchContext = await browser.newContext({ viewport: { width: 390, height: 800 }, isMobile: true, hasTouch: true });
+    const touchPage = await touchContext.newPage();
+    touchPage.setDefaultTimeout(5000);
+    touchPage.on('pageerror', error => errors.push(error.message));
+    await touchPage.route('**/*', mockRoutes);
+    await touchPage.goto(page.url());
+    await touchPage.locator('.nreader-body').waitFor();
+    await touchPage.evaluate(() => window.scrollTo(0, 320));
+    await touchPage.waitForTimeout(80);
+    assert.equal(await dockHidden(touchPage), true, 'touch: dock hides when scrolling down');
+    await touchPage.locator('.nreader-body p').first().tap();
+    assert.equal(await dockHidden(touchPage), false, 'touch: dock reappears on tap');
+    await touchPage.evaluate(() => window.scrollTo(0, 560));
+    await touchPage.waitForTimeout(80);
+    assert.equal(await dockHidden(touchPage), true);
+    await touchPage.evaluate(() => window.scrollTo(0, 420));
+    await touchPage.waitForTimeout(80);
+    assert.equal(await dockHidden(touchPage), false, 'touch: dock reappears on scroll up');
+    await touchContext.close();
 
     // 5. Chapter list slide-in panel: current highlight, search filter, locked link, Esc closes.
     await page.getByRole('button', { name: 'Chapters' }).click();
@@ -368,6 +398,7 @@ async function assertNoOldPrimary(page, label) {
     await chDrawer.waitFor({ state: 'hidden' });
 
     // 6. Settings popover: theme swatch changes reader bg, size stepper, width, align, progress bar toggle, persist across reload, reset.
+    await page.mouse.move(640, 790);
     await page.getByRole('button', { name: 'Reader settings' }).click();
     const popover = page.locator('.nset-popover');
     await popover.waitFor();
@@ -396,6 +427,7 @@ async function assertNoOldPrimary(page, label) {
     assert.equal(savedV2.progressBar, false);
 
     // Reset button restores defaults.
+    await page.mouse.move(640, 790);
     await page.getByRole('button', { name: 'Reader settings' }).click();
     await page.locator('.nset-popover').waitFor();
     await page.locator('.nset-reset').click();
@@ -427,6 +459,20 @@ async function assertNoOldPrimary(page, label) {
     assert.equal(await lockNotice.locator('a').getAttribute('href'), 'https://hangulplanet.com/novel/tower-of-time/chapter-3');
     await page.keyboard.press('ArrowLeft');
     await page.waitForFunction(() => document.querySelector('.nreader-body')?.textContent?.includes('Life on easy mode'));
+
+    // Synopsis renders one <p> per paragraph; long text is clamped behind Show more / Show less.
+    const syn = await page.evaluate(async () => {
+      const { renderSynopsis } = await import('/bm/novel-hero.js');
+      const s = renderSynopsis(`First line.\n\nSecond line.\n${'x'.repeat(700)}`);
+      document.body.appendChild(s);
+      const toggle = s.querySelector('.nsyn-toggle');
+      const before = s.querySelector('.nsyn-body').classList.contains('is-clamped');
+      toggle.click();
+      const result = { paras: s.querySelectorAll('.nsyn-body p').length, before, after: s.querySelector('.nsyn-body').classList.contains('is-clamped'), label: toggle.textContent };
+      s.remove();
+      return result;
+    });
+    assert.deepEqual(syn, { paras: 3, before: true, after: false, label: 'Show less' });
 
     // 8. Mobile 375px: no horizontal scroll across library, detail, and reader.
     await page.setViewportSize({ width: 375, height: 800 });

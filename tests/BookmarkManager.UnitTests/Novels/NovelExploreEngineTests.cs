@@ -8,6 +8,17 @@ namespace BookmarkManager.UnitTests.Novels;
 public class NovelExploreEngineTests
 {
     [Fact]
+    public void BuildRows_DecodesHtmlEncodedSynopsis()
+    {
+        var entry = MakeEntry("Novelfire", "n1", "Encoded", 1, DateTimeOffset.UtcNow);
+        entry.Synopsis = "&ldquo;What if?&rdquo;<br>Heroes&mdash;none could match him.";
+
+        var row = NovelCatalogEngine.BuildRows([entry]).Single();
+
+        Assert.Equal("“What if?”\nHeroes—none could match him.", row.Synopsis);
+    }
+
+    [Fact]
     public void BuildRows_NormalizesPopularityAcrossProvidersAndInterleaves()
     {
         var now = DateTimeOffset.UtcNow;

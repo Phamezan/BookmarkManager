@@ -1,5 +1,5 @@
 import { el, button, safeUrl } from './explore-util.js?v=3';
-import { createNovelDrawer as buildNovelDrawer, novelReaderUrl } from './explore-novels-drawer.js?v=1';
+import { createNovelDrawer as buildNovelDrawer, novelReaderUrl } from './explore-novels-drawer.js?v=2';
 
 const novelListOverride = new Map();
 export const novelStateOf = item => (novelListOverride.has(item.id) ? novelListOverride.get(item.id) : (item.listState ?? null));

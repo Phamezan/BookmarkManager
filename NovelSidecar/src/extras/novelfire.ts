@@ -88,7 +88,14 @@ export function parseNovelfireStats(html: string): SidecarStats {
 
   const ratingCount = ld.count ?? reviewCount;
 
+  const summaryParas = $('.summary .content p')
+    .map((_, p) => cleanText($(p).text()))
+    .get()
+    .filter(Boolean);
+  const summary = summaryParas.length ? summaryParas.join('\n\n') : null;
+
   return {
+    summary,
     rank,
     rating,
     ratingCount,

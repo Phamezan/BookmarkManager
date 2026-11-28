@@ -83,6 +83,9 @@ describe('NovelSidecar extras endpoints (stats, reviews, RoyalRoad)', () => {
     assert.equal(res.body.latestChapterUpdated, '1 day ago');
     assert.equal(res.body.reviewCount, 54);
     assert.equal(res.body.reviewAverage, 4.1);
+    assert.match(res.body.summary, /^On just another normal Monday/);
+    assert.equal(res.body.summary.split('\n\n').length, 3, 'summary keeps its paragraphs');
+    assert.doesNotMatch(res.body.summary, /Show More/);
   });
 
   test('GET /reviews parses novelfire reviews fixture as plain text', async () => {

@@ -183,6 +183,8 @@ public class NovelStatsDto
     public string? LatestChapterUpdated { get; set; }
     public int? ReviewCount { get; set; }
     public double? ReviewAverage { get; set; }
+    /// <summary>Full synopsis as plain text, paragraphs separated by blank lines (Novelfire only).</summary>
+    public string? Summary { get; set; }
 }
 
 public class NovelReviewParagraphDto

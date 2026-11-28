@@ -2,7 +2,7 @@ import { el, button, safeUrl, stateBox, isAbort } from './explore-util.js?v=3';
 import {
   novelsGet, novelsSend, readHash, READING_STATUSES, showErrorBanner, toast
 } from './novel-api.js?v=1';
-import { createNovelHero } from './novel-hero.js?v=1';
+import { createNovelHero, renderSynopsis } from './novel-hero.js?v=2';
 import { createReviewsPanel } from './novel-reviews.js?v=1';
 
 function buildChapterRow(chapter, detail) {
@@ -189,9 +189,7 @@ export async function renderDetail({ view, banner, params, signal }) {
   root.appendChild(hero.element);
 
   if (detail.summary) {
-    const synBox = el('section', 'nsummary-box');
-    synBox.append(el('h3', null, 'Synopsis'), el('p', 'ndetail-summary', detail.summary));
-    root.appendChild(synBox);
+    root.appendChild(renderSynopsis(detail.summary, 'nsummary-box'));
   }
 
   const chHead = el('div', 'nchapters-head');

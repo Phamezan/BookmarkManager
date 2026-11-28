@@ -5,7 +5,7 @@ import { buildCard, buildShelf, buildSkeletons, syncCard } from './explore-cards
 import { buildHero } from './explore-hero.js?v=3';
 import { createGridLoader } from './explore-grid.js?v=3';
 import { createDetail } from './explore-detail.js?v=3';
-import { createNovelsExplore } from './explore-novels.js?v=2';
+import { createNovelsExplore } from './explore-novels.js?v=3';
 import {
   createFilterPanel, filtersFromParams, filtersToParams, defaultFilters, activePills, hasFilters, panelCount
 } from './explore-filters.js?v=3';

@@ -303,8 +303,15 @@ export async function renderReader({ view, banner, params, signal }) {
   dock.setAttribute('role', 'toolbar');
   dock.setAttribute('aria-label', 'Reader controls');
 
+  // Mouse devices: the dock shows only while the pointer is near the bottom edge (or the dock has focus / a panel is open).
+  // Touch devices keep the scroll-direction and tap behaviour.
+  const hoverDevice = window.matchMedia?.('(hover: hover) and (pointer: fine)').matches ?? false;
+  let pointerNearDock = false;
+  const dockPinned = () => settingsOpen || chaptersPanel.isOpen() || dockWrap.contains(document.activeElement);
+
   function setDockHidden(hidden) {
-    if (hidden && (settingsOpen || chaptersPanel.isOpen())) return;
+    if (hidden && dockPinned()) return;
+    if (!hidden && hoverDevice && !pointerNearDock && !dockPinned()) return;
     dockWrap.classList.toggle('is-hidden', hidden);
   }
 
@@ -365,6 +372,7 @@ export async function renderReader({ view, banner, params, signal }) {
     settingsOpen = false;
     dockSettings.setAttribute('aria-expanded', 'false');
     settingsHost.replaceChildren();
+    if (hoverDevice && !pointerNearDock) setDockHidden(true);
   }
 
   function applyAll({ rerender = true } = {}) {
@@ -423,6 +431,7 @@ export async function renderReader({ view, banner, params, signal }) {
   const onScroll = () => {
     scheduleProgressSave();
     updateProgressBar();
+    if (hoverDevice) return;
 
     const y = window.scrollY;
     const doc = document.documentElement;
@@ -441,6 +450,20 @@ export async function renderReader({ view, banner, params, signal }) {
 
   const onUserInterrupt = () => {
     if (settings.autoScroll) stopAutoScroll(true);
+  };
+
+  const DOCK_REVEAL_PX = 140;
+  const onPointerMove = event => {
+    pointerNearDock = event.clientY >= window.innerHeight - DOCK_REVEAL_PX;
+    setDockHidden(!pointerNearDock);
+  };
+  const onPointerLeave = () => {
+    pointerNearDock = false;
+    setDockHidden(true);
+  };
+  const onDockFocusIn = () => setDockHidden(false);
+  const onDockFocusOut = event => {
+    if (!dockWrap.contains(event.relatedTarget) && !pointerNearDock) setDockHidden(true);
   };
 
   const onArticleClick = event => {
@@ -480,6 +503,13 @@ export async function renderReader({ view, banner, params, signal }) {
     }
   };
 
+  if (hoverDevice) {
+    dockWrap.classList.add('is-hidden');
+    window.addEventListener('mousemove', onPointerMove, { passive: true });
+    document.documentElement.addEventListener('mouseleave', onPointerLeave);
+    dockWrap.addEventListener('focusin', onDockFocusIn);
+    dockWrap.addEventListener('focusout', onDockFocusOut);
+  }
   article.addEventListener('click', onArticleClick);
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('wheel', onUserInterrupt, { passive: true });
@@ -497,6 +527,8 @@ export async function renderReader({ view, banner, params, signal }) {
     }
     chaptersPanel.destroy();
     article.removeEventListener('click', onArticleClick);
+    window.removeEventListener('mousemove', onPointerMove);
+    document.documentElement.removeEventListener('mouseleave', onPointerLeave);
     window.removeEventListener('scroll', onScroll);
     window.removeEventListener('wheel', onUserInterrupt);
     window.removeEventListener('touchstart', onUserInterrupt);

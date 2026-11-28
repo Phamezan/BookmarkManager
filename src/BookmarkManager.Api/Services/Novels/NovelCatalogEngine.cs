@@ -78,7 +78,8 @@ public static partial class NovelCatalogEngine
                 Authors = LibraryCatalogEntry.SplitList(entry.Authors),
                 MediaType = entry.MediaType,
                 CoverUrl = entry.CoverImageUrl,
-                Synopsis = entry.Synopsis,
+                // Catalog synopses can arrive still HTML-encoded (Novelfire meta description: &amp;ldquo;).
+                Synopsis = BookmarkManager.Api.Services.Explore.ExploreHtmlText.Strip(entry.Synopsis),
                 Genres = genres,
                 GenreSet = new HashSet<string>(genres, StringComparer.OrdinalIgnoreCase),
                 Rating = entry.Rating,

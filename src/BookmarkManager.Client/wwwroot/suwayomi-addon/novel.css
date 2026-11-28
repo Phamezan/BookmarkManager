@@ -208,9 +208,18 @@
   background: var(--surface); border: 1px solid var(--border);
 }
 .nsummary-box h3 { margin: 0 0 var(--s3); font-size: 16px; }
-.ndetail-summary {
-  margin: 0; color: var(--text-2); line-height: 1.65;
-  white-space: pre-line; max-width: 78ch; overflow-wrap: anywhere;
+.nsyn-body { max-width: 78ch; color: var(--text-2); line-height: 1.65; overflow-wrap: anywhere; }
+.nsyn-body p { margin: 0 0 .85em; }
+.nsyn-body p:last-child { margin-bottom: 0; }
+.nsyn-body.is-clamped { max-height: 13.2em; overflow: hidden; position: relative; }
+.nsyn-body.is-clamped::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3.3em; pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--nsyn-fade, var(--surface)));
+}
+.xblock.nsyn { --nsyn-fade: var(--surface); }
+.nsyn-toggle {
+  margin-top: var(--s2); padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--text); font-size: 13px; font-weight: 700; text-decoration: underline;
 }
 
 .nchapters-box {

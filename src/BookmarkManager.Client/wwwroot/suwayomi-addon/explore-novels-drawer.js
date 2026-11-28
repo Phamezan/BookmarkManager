@@ -1,6 +1,6 @@
 import { el, button, safeUrl, isAbort, trapTab } from './explore-util.js?v=3';
 import { novelsGet, novelsSend, novelHash } from './novel-api.js?v=1';
-import { createNovelHero } from './novel-hero.js?v=1';
+import { createNovelHero, renderSynopsis } from './novel-hero.js?v=2';
 import { createReviewsPanel } from './novel-reviews.js?v=1';
 
 export function novelReaderUrl(source, path) {
@@ -162,7 +162,16 @@ export function createNovelDrawer({ toast, onLibraryAdded, onList, novelStateOf 
       }
     }
 
+    let synSec = null;
     const hero = createNovelHero({
+      // The catalog only has a short meta description; the live source page has the full summary.
+      onStats: stats => {
+        if (!stats.summary) return;
+        const full = renderSynopsis(stats.summary);
+        if (synSec) synSec.replaceWith(full);
+        else body.appendChild(full);
+        synSec = full;
+      },
       model: {
         titleId: 'xndetail-title',
         title,
@@ -258,9 +267,8 @@ export function createNovelDrawer({ toast, onLibraryAdded, onList, novelStateOf 
 
     body.appendChild(sourcesBox);
 
-    if (synopsis) {
-      const synSec = el('section', 'xblock');
-      synSec.append(el('h3', null, 'Synopsis'), el('p', 'xdesc', synopsis));
+    if (synopsis && !synSec) {
+      synSec = renderSynopsis(synopsis);
       body.appendChild(synSec);
     }
 

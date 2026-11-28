@@ -40,7 +40,8 @@ public sealed record SidecarStatsRecord(
     string? LatestChapterName,
     string? LatestChapterUpdated,
     int? ReviewCount,
-    double? ReviewAverage);
+    double? ReviewAverage,
+    string? Summary = null);
 
 public sealed record SidecarReviewParagraphRecord(string Text, bool Spoiler);
 

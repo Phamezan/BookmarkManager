@@ -1,6 +1,6 @@
 import { renderLibrary } from './novel-library.js?v=1';
-import { renderDetail } from './novel-detail.js?v=2';
-import { renderReader, clearReaderTheme } from './novel-reader.js?v=2';
+import { renderDetail } from './novel-detail.js?v=3';
+import { renderReader, clearReaderTheme } from './novel-reader.js?v=3';
 
 const view = document.getElementById('view');
 const banner = document.getElementById('banner');

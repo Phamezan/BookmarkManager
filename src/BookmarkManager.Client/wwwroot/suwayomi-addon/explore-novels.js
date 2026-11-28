@@ -10,7 +10,7 @@ import {
 import {
   novelStateOf, setNovelStateOf, novelfireHit, buildNovelCard, syncNovelCard,
   buildNovelShelf, buildLiveSourceShelf, createNovelDrawer
-} from './explore-novels-cards.js?v=1';
+} from './explore-novels-cards.js?v=2';
 
 const FILTER_DEBOUNCE_MS = 300;
 const NOVEL_FILTER_KEY = 'explore.novelFilters';
