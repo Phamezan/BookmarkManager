@@ -33,6 +33,43 @@ public class NovelCatalogItemDto
     public string? SourceUrl { get; set; }
     public int? PopularityRank { get; set; }
     public bool InLibrary { get; set; }
+    public bool Readable { get; set; }
+    public int? Chapters { get; set; }
+    public DateTimeOffset? LastReleaseAt { get; set; }
+
+    /// <summary>"saved", "dismissed" or null.</summary>
+    public string? ListState { get; set; }
+
+    /// <summary>For-you only: seed titles (or "Genre: ..." fallback) that led to this recommendation.</summary>
+    public List<string> BecauseOf { get; set; } = [];
+}
+
+public class NovelGenreCountDto
+{
+    public string Name { get; set; } = string.Empty;
+    public int Count { get; set; }
+}
+
+public class NovelMetaDto
+{
+    public List<NovelGenreCountDto> Genres { get; set; } = [];
+}
+
+public class NovelShelfDto
+{
+    public string Key { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string? Subtitle { get; set; }
+    public string? BrowseQuery { get; set; }
+    public List<NovelCatalogItemDto> Items { get; set; } = [];
+}
+
+public class NovelListUpdateRequest
+{
+    /// <summary>"saved", "dismissed" or null (removes the entry).</summary>
+    public string? State { get; set; }
+    public string? Title { get; set; }
+    public string? CoverUrl { get; set; }
 }
 
 public class NovelCatalogPageDto

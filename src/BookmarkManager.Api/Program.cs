@@ -175,6 +175,8 @@ builder.Services.AddHttpClient<
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Novels.NovelRateLimiterRegistry>();
 builder.Services.AddSingleton<BookmarkManager.Api.Services.Novels.NovelHtmlSanitizer>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.Novels.NovelService>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Novels.NovelForYouScorer>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Novels.NovelExploreService>();
 // Series metadata (AniList country of origin + alternative titles): scoped lookup cached in SQLite,
 // plus the backfill worker that fills missing rows. Shares the AniList rate limiter with tagging.
 builder.Services.AddScoped<BookmarkManager.Api.Services.Suwayomi.SeriesMetadataService>();

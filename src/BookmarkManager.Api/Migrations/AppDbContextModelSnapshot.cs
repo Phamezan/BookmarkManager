@@ -836,6 +836,35 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("NovelLibraryEntries", (string)null);
                 });
 
+            modelBuilder.Entity("BookmarkManager.Api.Data.NovelListEntry", b =>
+                {
+                    b.Property<Guid>("CatalogEntryId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CoverUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CatalogEntryId");
+
+                    b.HasIndex("State");
+
+                    b.ToTable("NovelListEntries", (string)null);
+                });
+
             modelBuilder.Entity("BookmarkManager.Api.Data.SeriesMetadata", b =>
                 {
                     b.Property<Guid>("Id")
