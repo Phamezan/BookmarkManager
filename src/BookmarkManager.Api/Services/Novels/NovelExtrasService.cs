@@ -11,6 +11,7 @@ public sealed partial class NovelExtrasService
     private const string RoyalRoadSite = "https://www.royalroad.com";
     private const string RoyalRoadRateLimiterKey = "royalroad";
     private const int MaxShortFieldLength = 256;
+    private const int MaxSummaryLength = 8000;
     public const int MaxReviewTextLength = 20_000;
 
     private static readonly TimeSpan StatsCacheTtl = TimeSpan.FromHours(1);
@@ -78,7 +79,8 @@ public sealed partial class NovelExtrasService
             LatestChapterName = TruncateOptional(raw.LatestChapterName, MaxShortFieldLength),
             LatestChapterUpdated = TruncateOptional(raw.LatestChapterUpdated, 64),
             ReviewCount = raw.ReviewCount,
-            ReviewAverage = raw.ReviewAverage
+            ReviewAverage = raw.ReviewAverage,
+            Summary = TruncateOptional(raw.Summary, MaxSummaryLength)
         };
 
         _cache.Set(cacheKey, dto, StatsCacheTtl);

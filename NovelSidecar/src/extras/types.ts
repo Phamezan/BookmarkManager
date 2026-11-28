@@ -15,6 +15,8 @@ export interface SidecarStats {
   latestChapterUpdated: string | null;
   reviewCount: number | null;
   reviewAverage: number | null;
+  /** Full synopsis as plain text, paragraphs separated by blank lines. */
+  summary: string | null;
 }
 
 export interface SidecarReviewParagraph {

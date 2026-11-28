@@ -19,6 +19,30 @@ export function buildStarString(rating) {
   return '★'.repeat(filled) + '☆'.repeat(5 - filled);
 }
 
+const SYNOPSIS_CLAMP_CHARS = 600;
+
+/** Synopsis section: one <p> per paragraph, long text clamped behind Show more / Show less. */
+export function renderSynopsis(text, className = 'xblock') {
+  const section = el('section', `${className} nsyn`);
+  section.appendChild(el('h3', null, 'Synopsis'));
+  const body = el('div', 'nsyn-body');
+  for (const para of String(text).split(/\n\s*\n|\n/).map(p => p.trim()).filter(Boolean)) {
+    body.appendChild(el('p', null, para));
+  }
+  section.appendChild(body);
+  if (String(text).length > SYNOPSIS_CLAMP_CHARS) {
+    body.classList.add('is-clamped');
+    const toggle = button('nsyn-toggle', 'Show more', () => {
+      const clamped = body.classList.toggle('is-clamped');
+      toggle.textContent = clamped ? 'Show more' : 'Show less';
+      toggle.setAttribute('aria-expanded', String(!clamped));
+    });
+    toggle.setAttribute('aria-expanded', 'false');
+    section.appendChild(toggle);
+  }
+  return section;
+}
+
 function sourceDisplayName(source, fallback) {
   if (fallback) return fallback;
   if (source === 'novelfire') return 'Novel Fire';
@@ -37,7 +61,8 @@ export function createNovelHero({
   renderSecondaryActions,
   onChaptersClick,
   chaptersHref,
-  onReviewsClick
+  onReviewsClick,
+  onStats
 }) {
   const root = el('div', 'nhero-wrap');
   const hero = el('section', 'nhero');
@@ -271,6 +296,7 @@ export function createNovelHero({
       paintRating();
       paintStats();
       paintCards();
+      onStats?.(stats);
     } catch (err) {
       if (isAbort(err)) return;
       state.loadingStats = false;

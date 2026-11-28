@@ -114,6 +114,7 @@ export function parseHangulplanetStats(html: string): SidecarStats {
     latestChapterUpdated,
     reviewCount,
     reviewAverage,
+    summary: null, // detail page already shows the plugin's full summary
   };
 }
 
