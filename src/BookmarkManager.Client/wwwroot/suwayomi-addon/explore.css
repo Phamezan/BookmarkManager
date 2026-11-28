@@ -27,6 +27,7 @@
 
 * { box-sizing: border-box; }
 html { overflow-x: hidden; }
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
 body {
   background: var(--bg); color: var(--text); margin: 0;
   font-family: var(--font); font-size: 14px; line-height: 1.45; -webkit-font-smoothing: antialiased;
@@ -48,8 +49,7 @@ button { cursor: pointer; color: inherit; }
 /* Full-bleed glass bar even when .page is capped narrower than the window. */
 .xhead::before {
   content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%);
-  background: rgba(11, 11, 12, .82); border-bottom: 1px solid var(--border);
-  -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%);
+  background: rgba(11, 11, 12, .97); border-bottom: 1px solid var(--border);
 }
 .xhead-in { display: flex; align-items: center; gap: var(--s2) var(--s5); min-height: 64px; flex-wrap: wrap; padding: var(--s2) 0; }
 .xbrand { display: flex; align-items: baseline; gap: var(--s3); }
@@ -221,7 +221,7 @@ button { cursor: pointer; color: inherit; }
 .xcard:focus-visible .xcover { box-shadow: 0 0 0 2px var(--primary), var(--shadow-cover); }
 .xbadge {
   position: absolute; z-index: 1; font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 2px 7px;
-  border-radius: 999px; background: rgba(11, 11, 12, .76); color: var(--text); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border-radius: 999px; background: rgba(11, 11, 12, .76); color: var(--text);
 }
 .xbadge-type { top: var(--s2); left: var(--s2); }
 .xrank {
@@ -243,7 +243,6 @@ button { cursor: pointer; color: inherit; }
 @media (hover: none) { .xactions { opacity: 1; transform: none; } }
 .xact {
   width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(11, 11, 12, .78); color: var(--text-2); font-size: 14px; line-height: 1;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
 .xact:hover { color: var(--text); background: rgba(11, 11, 12, .95); }
 .xact-save[aria-pressed="true"] { background: var(--primary); color: var(--primary-fg); }
@@ -309,7 +308,7 @@ button { cursor: pointer; color: inherit; }
 .xshelf-nav {
   position: absolute; z-index: 3; top: calc(var(--card-w) * .75 - 22px); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-hi);
   background: rgba(11, 11, 12, .85); font-size: 26px; line-height: 1; display: none; place-items: center; padding: 0 0 3px;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 140ms, background 140ms, color 140ms;
+  opacity: 0; transition: opacity 140ms, background 140ms, color 140ms;
 }
 .xshelf-nav:hover { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
 .xshelf-prev { left: -10px; }
@@ -322,7 +321,7 @@ button { cursor: pointer; color: inherit; }
 .xsubtabs { display: flex; gap: var(--s2); margin-bottom: var(--s5); }
 
 /* Detail drawer */
-.xdrawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .62); display: flex; justify-content: flex-end; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+.xdrawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .62); display: flex; justify-content: flex-end; }
 .xdrawer {
   position: relative; width: min(960px, 92vw); height: 100%; overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface); border-left: 1px solid var(--border); scrollbar-width: thin; box-shadow: -20px 0 60px rgba(0, 0, 0, .5);

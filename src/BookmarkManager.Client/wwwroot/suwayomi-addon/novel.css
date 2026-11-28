@@ -242,7 +242,6 @@ a.nch-row:hover { background: rgba(255, 255, 255, .05); }
   position: fixed; inset: 0; z-index: 55;
   background: rgba(0, 0, 0, .68);
   display: flex; justify-content: flex-end;
-  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
 }
 .nrev-panel {
   width: min(640px, 100vw); height: 100%;
@@ -262,10 +261,12 @@ a.nch-row:hover { background: rgba(255, 255, 255, .05); }
 }
 .nrev-close:hover { background: var(--surface-3); }
 
+.nrev-head, .nrev-tabs { flex: none; }
 .nrev-tabs {
   display: flex; gap: var(--s2); padding: var(--s3) var(--s5);
-  border-bottom: 1px solid var(--border); overflow-x: auto;
+  border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none;
 }
+.nrev-tabs::-webkit-scrollbar { display: none; }
 .nrev-tab {
   min-height: 32px; padding: 0 14px; border-radius: 999px;
   border: 1px solid var(--border); background: transparent;
@@ -302,11 +303,11 @@ a.nch-row:hover { background: rgba(255, 255, 255, .05); }
 .nrev-card-meta { display: flex; align-items: center; gap: var(--s3); font-size: 12px; color: var(--text-2); }
 .nrev-score { font-weight: 700; color: var(--text); }
 .nrev-body { display: flex; flex-direction: column; gap: var(--s2); color: var(--text-2); line-height: 1.58; }
-.nrev-body.is-clamped {
-  max-height: 9.6em;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(180deg, #000 68%, transparent 100%);
-  mask-image: linear-gradient(180deg, #000 68%, transparent 100%);
+.nrev-body.is-clamped { max-height: 9.6em; overflow: hidden; position: relative; }
+/* Plain gradient overlay instead of mask-image: masks force offscreen compositing on every scroll frame. */
+.nrev-body.is-clamped::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 3em; pointer-events: none;
+  background: linear-gradient(180deg, transparent, var(--surface-2));
 }
 .nrev-para { margin: 0; overflow-wrap: anywhere; }
 .nrev-more-btn {
@@ -449,8 +450,6 @@ body.is-reading {
   border: 1px solid var(--reader-border, rgba(255, 255, 255, .14));
   color: var(--reader-fg);
   box-shadow: 0 12px 32px rgba(0, 0, 0, .38);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  backdrop-filter: blur(16px) saturate(140%);
   max-width: 100%;
 }
 .ndock-btn {
@@ -587,7 +586,6 @@ body.is-reading {
   position: fixed; inset: 0; z-index: 50;
   background: rgba(0, 0, 0, .55);
   display: flex; justify-content: flex-end;
-  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
 }
 .nch-drawer {
   width: min(380px, 92vw); height: 100%;
