@@ -192,6 +192,46 @@ Caching and limits:
 - When AniList is unreachable or errors, the API answers `502` with `{ "error": "AniList unavailable" }`; the page shows a retry banner.
 - Library badges come from the Discover library-progress cache (60 seconds); the Suwayomi source search reuses the same loop as `GET /api/suwayomi/search`.
 
+## Suwayomi novel reader
+
+Suwayomi only handles image chapters, so light/web novels run alongside it using the same `/bm/` WebUI add-on mechanism — **no nginx change is needed**. `addon.js` adds a **Novels** sidebar entry pointing to `/bm/novel.html`, and Explore gains a **Manga | Novels** toggle backed by the local `LibraryCatalogEntry` novel catalog plus the internal novel sidecar.
+
+### Sidecar service (`novels`)
+
+The `novels` service in `docker-compose.yml` builds `./NovelSidecar` (Node 22, non-root user, port `3000`) running vendored [LNReader](https://github.com/LNReader/lnreader-plugins) source plugins. It has **no `ports:`** mapping and is reachable only from `bookmarkmanager` over the default Compose network at `http://novels:3000`.
+
+Configuration on the `bookmarkmanager` service (overridable in `.env`):
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `Novels__SidecarUrl` | `http://novels:3000` | Internal base URL of the `novels` sidecar service. |
+| `NOVELS_ENABLED_SOURCES` → `Novels__EnabledSources` | `hangulplanet` | Comma-separated list of enabled plugin IDs. Disabled or unknown sources return `404` on every endpoint. |
+
+Bundled plugins: `hangulplanet` (enabled in v1), plus `wetriedtls`, `fenrirrealm`, and `novelfire` (bundled and ready to enable after a manual smoke test by adding them to `NOVELS_ENABLED_SOURCES`, e.g. `NOVELS_ENABLED_SOURCES=hangulplanet,wetriedtls`).
+
+### Endpoints (`/api/novels/*`, exposed to the add-on at `/bm-api/novels/*`)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /api/novels/sources` | Returns enabled sources (`id`, `name`, `site`). |
+| `GET /api/novels/catalog?q=&status=&page=` | Local `LibraryCatalogEntry` rows (`LightNovel` / `Webnovel`), 30 per page, ranked by `PopularityRank` (nulls last) then title, annotated with `inLibrary`. |
+| `GET /api/novels/popular?source=&page=` | Proxies the sidecar's popular listing for an enabled source. |
+| `GET /api/novels/search?q=&source=` | Searches one enabled source (or all enabled sources when `source` is omitted); exact normalized title matches come first. |
+| `GET /api/novels/novel?source=&path=` | Novel metadata, chapter list (`locked` flag passed through), and matching library entry (updates stored `ChapterCount` on demand). |
+| `GET /api/novels/chapter?source=&novelPath=&path=` | Looks up `path` in the novel's chapter list (`404` if missing, `403` `{ "error": "Locked chapter" }` if locked), otherwise returns server-side sanitized HTML plus prev/next chapter navigation. |
+| `GET /api/novels/library` | Lists saved novel library entries (`NovelLibraryEntries` table, `AddNovelLibrary` migration), ordered by `LastReadAt` desc. |
+| `PUT /api/novels/library` | Upserts a library entry by `(source, novelPath)`. |
+| `PATCH /api/novels/library/{id}` | Updates reading status (`Reading`, `Plan`, `Completed`, `Dropped`). |
+| `PUT /api/novels/library/{id}/progress` | Saves current chapter and `scrollPercent` (`0`–`1`), updating `LastReadAt`. |
+| `DELETE /api/novels/library/{id}` | Removes a library entry (`204`). |
+
+### Free-only, robots.txt, sanitization, and limits
+
+- **Free chapters only:** No login, cookies, or credentials are stored. Locked / premium / early-access chapters are flagged `locked: true`, rejected with `403` if requested, never fetched from the sidecar, and rendered in the UI with a lock icon and an external **Open on site** link.
+- **No background crawling:** Every outbound novel-source fetch is strictly user-triggered (browser-equivalent). There is no background novel polling or chapter-check job.
+- **Server-side HTML sanitization:** Chapter HTML is untrusted and is always sanitized by `NovelHtmlSanitizer` (Ganss.Xss `HtmlSanitizer`) before caching or returning: only `p br em strong i b u s hr blockquote h1 h2 h3 h4 ul ol li img` are allowed, all attributes except `img[src]` are stripped, and `img` elements without an absolute `http`/`https` `src` are dropped.
+- **Rate limits & caching:** Each source has its own `ProviderRateLimiter` (burst 6, replenishing 2 per 2 seconds). `IMemoryCache` caches sanitized chapter HTML for 30 minutes, novel detail/chapter lists for 1 hour, and popular/search results for 15 minutes. Sidecar failures return `502` `{ "error": "Novel source unavailable" }` and are never cached.
+
 ## TLS for the In-Tab Command Palette (optional)
 
 The in-tab command palette (extension shortcut on any webpage) embeds the `/palette` page in an iframe inside an extension document. Browsers block active mixed content there, so the palette page must be served over **https**. Dashboard access and extension sync keep working over plain http — TLS is only required for the in-tab palette.
