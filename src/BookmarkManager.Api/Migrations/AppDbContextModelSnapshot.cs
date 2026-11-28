@@ -770,6 +770,72 @@ namespace BookmarkManager.Api.Migrations
                     b.ToTable("LibraryCatalogSyncQueue");
                 });
 
+            modelBuilder.Entity("BookmarkManager.Api.Data.NovelLibraryEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ChapterCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CoverUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("LastChapterIndex")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LastChapterName")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("LastChapterPath")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LastReadAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NovelPath")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("ScrollPercent")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastReadAt");
+
+                    b.HasIndex("Source", "NovelPath")
+                        .IsUnique();
+
+                    b.ToTable("NovelLibraryEntries", (string)null);
+                });
+
             modelBuilder.Entity("BookmarkManager.Api.Data.SeriesMetadata", b =>
                 {
                     b.Property<Guid>("Id")
