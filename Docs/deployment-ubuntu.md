@@ -214,7 +214,12 @@ Bundled plugins: `hangulplanet` and `novelfire` (enabled), plus `wetriedtls` and
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /api/novels/sources` | Returns enabled sources (`id`, `name`, `site`). |
-| `GET /api/novels/catalog?q=&status=&page=` | Local `LibraryCatalogEntry` rows (`LightNovel` / `Webnovel`), 30 per page, ranked by `PopularityRank` (nulls last) then title, annotated with `inLibrary`. |
+| `GET /api/novels/catalog` | Local `LibraryCatalogEntry` rows (`LightNovel` / `Webnovel`), 30 per page. Params: `q`, `status`, `genres`, `excludeGenres`, `type` (`LightNovel`\|`Webnovel`), `minRating`, `minChapters`, `maxChapters`, `sort` (`popular`\|`rating`\|`updated`\|`chapters`\|`title`), `readable` (default `true`), `hideLibrary` (default `false`), `hideDismissed` (default `true`), `page`. Invalid params are ignored (never `400`). Each item includes `readable`, `chapters`, `rating`, `provider`, `sourceUrl`, `inLibrary`, `listState`. |
+| `GET /api/novels/meta` | Genre counts (`{ genres: [{ name, count }] }`) across the novel catalog, sorted by count descending. |
+| `GET /api/novels/recommends?count=12&readable=true` | Returns `count` (1–24) freshly shuffled random picks (`Random.Shared`) from the top 300 novel rows by normalized `popularityScore` with `Rating` null or ≥ 3.5, excluding library titles and dismissed entries. |
+| `GET /api/novels/shelves?readable=true` | Curated novel shelves (up to 18 items each, excluding library + dismissed): `for-you` (omitted when empty), `trending`, `top-rated`, `updated`, and `completed-gems` (completed/finished, rating ≥ 4.0, `popularityScore` ≥ 0.2). |
+| `GET /api/novels/for-you?page=1&readable=true` | Personalized recommendations (30/page) seeded from `NovelLibraryEntries` title matches and novel bookmark matches (`BookmarkSeriesMatchService`, capped at 200 seeds). Scores via `IVectorSearchService` (`k=25`, `floor=0.55`) over seed embeddings with `becauseOf` seed titles; falls back to seed genre-frequency profile (`Genre: ...` reasons) when no embeddings/vector hits exist. |
+| `GET /api/novels/list?state=saved\|dismissed`, `PUT /api/novels/list/{catalogEntryId}` | Saved / Not interested lists for catalog novels stored in `NovelListEntries` (`AddNovelListEntries` migration). `PUT` body `{ state: "saved"\|"dismissed"\|null, title, coverUrl }`; `null` removes the entry; unknown catalog id returns `404`. |
 | `GET /api/novels/popular?source=&page=` | Proxies the sidecar's popular listing for an enabled source. |
 | `GET /api/novels/search?q=&source=` | Searches one enabled source (or all enabled sources when `source` is omitted); exact normalized title matches come first. |
 | `GET /api/novels/novel?source=&path=` | Novel metadata, chapter list (`locked` flag passed through), and matching library entry (updates stored `ChapterCount` on demand). |
@@ -225,12 +230,13 @@ Bundled plugins: `hangulplanet` and `novelfire` (enabled), plus `wetriedtls` and
 | `PUT /api/novels/library/{id}/progress` | Saves current chapter and `scrollPercent` (`0`–`1`), updating `LastReadAt`. |
 | `DELETE /api/novels/library/{id}` | Removes a library entry (`204`). |
 
-### Free-only, robots.txt, sanitization, and limits
+### Ranking, readability, free-only, sanitization, and limits
 
+- **Provider-normalized popularity & readability:** Novel catalog rows are loaded into memory (`IMemoryCache`, 10 min) and assigned `popularityScore = PopularityRank / maxRankOfThatProvider` (`1.0` when unranked) so providers with different rank ranges interleave fairly in the default `popular` sort. `chapters` is parsed from `LatestChapter` (via `LibraryLatestChapterParser` plus trailing `"N chapters"` support). A row is marked `readable: true` when `Provider == "Novelfire"`, `SourceUrl` is `novelfire.net/book/...`, and `novelfire` is enabled.
 - **Free chapters only:** No login, cookies, or credentials are stored. Locked / premium / early-access chapters are flagged `locked: true`, rejected with `403` if requested, never fetched from the sidecar, and rendered in the UI with a lock icon and an external **Open on site** link.
 - **No background crawling:** Every outbound novel-source fetch is strictly user-triggered (browser-equivalent). There is no background novel polling or chapter-check job.
 - **Server-side HTML sanitization:** Chapter HTML is untrusted and is always sanitized by `NovelHtmlSanitizer` (Ganss.Xss `HtmlSanitizer`) before caching or returning: only `p br em strong i b u s hr blockquote h1 h2 h3 h4 ul ol li img` are allowed, all attributes except `img[src]` are stripped, and `img` elements without an absolute `http`/`https` `src` are dropped.
-- **Rate limits & caching:** Each source has its own `ProviderRateLimiter` (burst 6, replenishing 2 per 2 seconds). `IMemoryCache` caches sanitized chapter HTML for 30 minutes, novel detail/chapter lists for 1 hour, and popular/search results for 15 minutes. Sidecar failures return `502` `{ "error": "Novel source unavailable" }` and are never cached.
+- **Rate limits & caching:** Each source has its own `ProviderRateLimiter` (burst 6, replenishing 2 per 2 seconds). `IMemoryCache` caches catalog rows for 10 minutes, the Recommends trendy pool for 10 minutes (picks are freshly randomized per call and never cached), shelves for 15 minutes, For-you rankings for 1 hour (all user-scoped caches are invalidated on library/list changes), sanitized chapter HTML for 30 minutes, novel detail/chapter lists for 1 hour, and popular/search results for 15 minutes. Sidecar failures return `502` `{ "error": "Novel source unavailable" }` and are never cached.
 
 ## TLS for the In-Tab Command Palette (optional)
 
