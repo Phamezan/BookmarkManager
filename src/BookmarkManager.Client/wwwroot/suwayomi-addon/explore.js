@@ -5,6 +5,7 @@ import { buildCard, buildShelf, buildSkeletons, syncCard } from './explore-cards
 import { buildHero } from './explore-hero.js?v=3';
 import { createGridLoader } from './explore-grid.js?v=3';
 import { createDetail } from './explore-detail.js?v=3';
+import { createNovelsExplore } from './explore-novels.js?v=1';
 import {
   createFilterPanel, filtersFromParams, filtersToParams, defaultFilters, activePills, hasFilters, panelCount
 } from './explore-filters.js?v=3';
@@ -14,6 +15,7 @@ const SEARCH_DEBOUNCE_MS = 350;
 const FILTER_DEBOUNCE_MS = 300;
 const TOAST_MS = 6000;
 const FILTER_KEY = 'explore.filters';
+const MODE_KEY = 'explore.mode';
 const $ = id => document.getElementById(id);
 
 const view = $('view');
@@ -21,11 +23,13 @@ const banner = $('banner');
 const searchInput = $('search');
 const filtersEl = $('filters');
 const toolbar = $('browse-bar');
+const tabsNav = document.querySelector('.xtabs');
 const pillsEl = $('pills');
 const countEl = $('count');
 const drawerMq = matchMedia('(max-width: 900px)');
 const headEl = document.querySelector('.xhead');
 
+let mode = 'manga';
 let tab = 'home';
 let savedSub = 'saved';
 let filters = defaultFilters();
@@ -55,6 +59,12 @@ const detail = createDetail({
     switchTab('browse');
   }),
   onLibraryAdded: id => document.querySelectorAll(`.xcard[data-id="${id}"]`).forEach(syncCard),
+  toast: message => toast(message)
+});
+
+const novelsExplore = createNovelsExplore({
+  view,
+  banner,
   toast: message => toast(message)
 });
 
@@ -141,12 +151,45 @@ function readInitialState() {
   const params = new URLSearchParams(location.search);
   const urlTab = params.get('tab');
   const filterParams = filtersToParams(filtersFromParams(params));
+  const hasMangaUrl = Boolean(params.get('id') || urlTab || filterParams.size);
+  const storedMode = storageGet(MODE_KEY);
+  mode = !hasMangaUrl && storedMode === 'novels' ? 'novels' : 'manga';
   if (TABS.includes(urlTab)) tab = urlTab;
   else if (filterParams.size) tab = 'browse';
   savedSub = params.get('list') === 'dismissed' ? 'dismissed' : 'saved';
   if (filterParams.size) filters = filtersFromParams(params);
   else if (tab === 'browse') filters = filtersFromParams(new URLSearchParams(storageGet(FILTER_KEY) || ''));
-  searchInput.value = filters.q;
+  searchInput.value = mode === 'manga' ? filters.q : '';
+}
+
+function switchMode(next) {
+  mode = next === 'novels' ? 'novels' : 'manga';
+  storageSet(MODE_KEY, mode);
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+  if (mode === 'novels') {
+    shelvesAbort?.abort();
+    clearTimeout(fetchTimer);
+    hero?.stop();
+    hero = null;
+    grid.stop();
+    detail.close();
+    closeFilterDrawer();
+    tabsNav.hidden = true;
+    toolbar.hidden = true;
+    filtersEl.hidden = true;
+    $('layout').classList.remove('has-filters');
+    searchInput.placeholder = 'Search novels  ( / )';
+    searchInput.setAttribute('aria-label', 'Search novels');
+    searchInput.value = '';
+    novelsExplore.enter('');
+    return;
+  }
+
+  novelsExplore.leave();
+  tabsNav.hidden = false;
+  searchInput.placeholder = 'Search series  ( / )';
+  searchInput.setAttribute('aria-label', 'Search series');
+  switchTab(tab);
 }
 
 /* ---------- tabs ---------- */
@@ -344,6 +387,10 @@ function closeFilterDrawer() {
 function applySearch() {
   clearTimeout(searchTimer);
   const q = searchInput.value;
+  if (mode === 'novels') {
+    novelsExplore.setQuery(q);
+    return;
+  }
   if (tab === 'browse' && q === filters.q) return;
   if (tab !== 'browse' && !q.trim() && q === filters.q) return;
   filters = { ...filters, q };
@@ -358,9 +405,11 @@ searchInput.addEventListener('keydown', event => { if (event.key === 'Enter') ap
 
 document.addEventListener('keydown', event => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
-  if (event.key === '/' && !typing && !detail.isOpen()) { event.preventDefault(); searchInput.focus(); }
+  const anyDrawerOpen = detail.isOpen() || novelsExplore.isOpenDrawer();
+  if (event.key === '/' && !typing && !anyDrawerOpen) { event.preventDefault(); searchInput.focus(); }
   else if (event.key === 'Escape' && filtersEl.classList.contains('is-open')) closeFilterDrawer();
   else if (event.key === 'Escape' && detail.isOpen()) detail.close();
+  else if (event.key === 'Escape' && novelsExplore.isOpenDrawer()) novelsExplore.closeDrawer();
 });
 filtersEl.addEventListener('keydown', event => {
   if (filtersEl.getAttribute('aria-modal')) trapTab(filtersEl, event);
@@ -370,6 +419,7 @@ drawerMq.addEventListener('change', () => { if (!drawerMq.matches) closeFilterDr
 
 /* ---------- init ---------- */
 
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { if (b.dataset.mode !== mode) switchMode(b.dataset.mode); }));
 document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { if (b.dataset.tab !== tab) switchTab(b.dataset.tab); }));
 $('filter-toggle').addEventListener('click', openFilterDrawer);
 $('filter-backdrop').addEventListener('click', closeFilterDrawer);
@@ -379,5 +429,10 @@ $('reset-top').addEventListener('click', resetFilters);
 new ResizeObserver(() => document.documentElement.style.setProperty('--head-h', `${headEl.offsetHeight}px`)).observe(headEl);
 
 readInitialState();
-switchTab(tab);
-detail.syncFromLocation();
+if (mode === 'novels') {
+  switchMode('novels');
+} else {
+  document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === 'manga')));
+  switchTab(tab);
+  detail.syncFromLocation();
+}

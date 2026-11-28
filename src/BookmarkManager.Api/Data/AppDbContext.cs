@@ -27,6 +27,7 @@ public class AppDbContext : DbContext
     public DbSet<DiscoverChapter> DiscoverChapters => Set<DiscoverChapter>();
     public DbSet<SeriesMetadata> SeriesMetadataSet => Set<SeriesMetadata>();
     public DbSet<ExploreListEntry> ExploreListEntries => Set<ExploreListEntry>();
+    public DbSet<NovelLibraryEntry> NovelLibraryEntries => Set<NovelLibraryEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -242,6 +243,22 @@ public class AppDbContext : DbContext
             entity.Property(e => e.Type).HasMaxLength(20).IsRequired();
 
             entity.HasIndex(e => e.State);
+        });
+
+        modelBuilder.Entity<NovelLibraryEntry>(entity =>
+        {
+            entity.ToTable("NovelLibraryEntries");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Source).HasMaxLength(64).IsRequired();
+            entity.Property(e => e.NovelPath).HasMaxLength(512).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CoverUrl).HasMaxLength(2048);
+            entity.Property(e => e.Status).HasConversion<string>().HasMaxLength(32).IsRequired();
+            entity.Property(e => e.LastChapterPath).HasMaxLength(512);
+            entity.Property(e => e.LastChapterName).HasMaxLength(500);
+
+            entity.HasIndex(e => new { e.Source, e.NovelPath }).IsUnique();
+            entity.HasIndex(e => e.LastReadAt);
         });
 
         modelBuilder.Entity<DiscoverSourceEntry>(entity =>

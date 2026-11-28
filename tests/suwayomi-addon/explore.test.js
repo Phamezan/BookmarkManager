@@ -55,6 +55,8 @@ const THIS_YEAR = new Date().getFullYear();
     const calls = [];
     const puts = [];
     const posts = [];
+    const novelCalls = [];
+    const novelLibPuts = [];
     let failShelves = false;
     let failMeta = false;
     page.on('pageerror', error => errors.push(error.message));
@@ -62,6 +64,55 @@ const THIS_YEAR = new Date().getFullYear();
     await page.route('**/*', async route => {
       const request = route.request();
       const url = new URL(request.url());
+      if (url.pathname.startsWith('/bm-api/novels/')) {
+        const api = url.pathname.slice('/bm-api/novels'.length);
+        novelCalls.push(api + url.search);
+        if (api === '/popular') {
+          return route.fulfill({
+            json: [
+              { source: 'hangulplanet', sourceName: 'HangulPlanet', title: 'Popular Tower Novel', path: '/novel/popular-tower', cover: null }
+            ]
+          });
+        }
+        if (api === '/catalog') {
+          return route.fulfill({
+            json: {
+              page: 1,
+              hasNextPage: false,
+              total: 1,
+              items: [
+                {
+                  id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                  provider: 'Novelfire',
+                  title: 'Shadow Monarch Novel',
+                  alternateTitles: ['Kage no Ou'],
+                  authors: ['Chugong'],
+                  mediaType: 'Webnovel',
+                  coverUrl: null,
+                  synopsis: 'Arise from the shadows.',
+                  genres: ['Action', 'Fantasy'],
+                  rating: 4.8,
+                  status: 'Completed',
+                  latestChapter: 'Ch 270',
+                  inLibrary: false
+                }
+              ]
+            }
+          });
+        }
+        if (api === '/search') {
+          return route.fulfill({
+            json: [
+              { source: 'hangulplanet', sourceName: 'HangulPlanet', title: 'Shadow Monarch Novel', path: '/novel/shadow-monarch', cover: null, isExactMatch: true }
+            ]
+          });
+        }
+        if (api === '/library' && request.method() === 'PUT') {
+          novelLibPuts.push(request.postDataJSON());
+          return route.fulfill({ json: { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', ...request.postDataJSON() } });
+        }
+        return route.fulfill({ status: 404, json: {} });
+      }
       if (url.pathname.startsWith('/bm-api/explore/')) {
         const api = url.pathname.slice('/bm-api/explore'.length);
         calls.push(api + url.search);
@@ -569,20 +620,64 @@ const THIS_YEAR = new Date().getFullYear();
       }
     }
 
-    // Sidebar: addon.js injects Discover then Explore after Browse and re-inserts on removal.
+    // Novels mode: toggle, popular shelf, catalog card -> Find on novel sources -> Read & Add to library; popular card skips search.
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(home);
+    await page.locator('.xshelf').nth(1).waitFor();
+    await page.locator('.xmode').getByRole('button', { name: 'Novels', exact: true }).click();
+    await page.locator('.xncard').first().waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('explore.mode')), 'novels');
+    assert.match(await page.locator('.xn-shelf-host h2').innerText(), /Popular on Hangul Planet/);
+
+    // Popular shelf item opens drawer pre-resolved without calling /search.
+    const searchesBeforePopular = novelCalls.filter(c => c.startsWith('/search')).length;
+    await page.locator('.xncard-pop').first().click();
+    const novelDrawer = page.locator('.xndrawer[role="dialog"]');
+    await novelDrawer.waitFor();
+    assert.equal(novelCalls.filter(c => c.startsWith('/search')).length, searchesBeforePopular, 'popular item must skip /search');
+    assert.equal(
+      await novelDrawer.locator('a', { hasText: 'Read' }).getAttribute('href'),
+      '/bm/novel.html#/novel?source=hangulplanet&path=%2Fnovel%2Fpopular-tower'
+    );
+    await page.keyboard.press('Escape');
+    await novelDrawer.waitFor({ state: 'hidden' });
+
+    // Catalog item opens drawer -> Find on novel sources -> Add to library.
+    await page.locator('.xncard[data-novel-id]').first().click();
+    await novelDrawer.waitFor();
+    await novelDrawer.getByRole('button', { name: 'Find on novel sources' }).click();
+    await novelDrawer.locator('.xnhit').first().waitFor();
+    assert.equal(
+      await novelDrawer.locator('.xnhit a', { hasText: 'Read' }).getAttribute('href'),
+      '/bm/novel.html#/novel?source=hangulplanet&path=%2Fnovel%2Fshadow-monarch'
+    );
+    await novelDrawer.getByRole('button', { name: /Add to library: Shadow Monarch Novel/ }).click();
+    await novelDrawer.getByRole('button', { name: 'In library' }).waitFor();
+    assert.equal(novelLibPuts.length, 1);
+    assert.equal(novelLibPuts[0].novelPath, '/novel/shadow-monarch');
+    await page.keyboard.press('Escape');
+    await novelDrawer.waitFor({ state: 'hidden' });
+
+    // Switch back to Manga mode.
+    await page.locator('.xmode').getByRole('button', { name: 'Manga', exact: true }).click();
+    await page.locator('.xshelf').nth(1).waitFor();
+    assert.equal(await page.evaluate(() => localStorage.getItem('explore.mode')), 'manga');
+
+    // Sidebar: addon.js injects Discover, Explore, then Novels after Browse and re-inserts on removal.
     const sidebar = await browser.newPage();
     await sidebar.setContent('<nav id="n"><a href="/library">Library</a><a href="/browse"><svg viewBox="0 0 24 24"><path d="M0 0"/></svg><span>Browse</span></a><a href="/downloads">Downloads</a></nav>');
     await sidebar.addScriptTag({ path: path.join(addonDir, 'addon.js') });
-    await sidebar.waitForFunction(() => document.querySelector('[data-bm-explore]'));
+    await sidebar.waitForFunction(() => document.querySelector('[data-bm-novels]'));
     const order = await sidebar.$$eval('#n a', links => links.map(a => `${a.textContent.trim()}|${a.getAttribute('href')}`));
-    assert.deepEqual(order, ['Library|/library', 'Browse|/browse', 'Discover|/bm/', 'Explore|/bm/explore.html', 'Downloads|/downloads']);
+    assert.deepEqual(order, ['Library|/library', 'Browse|/browse', 'Discover|/bm/', 'Explore|/bm/explore.html', 'Novels|/bm/novel.html', 'Downloads|/downloads']);
     await sidebar.evaluate(() => document.querySelector('[data-bm-explore]').remove());
     await sidebar.waitForFunction(() => document.querySelector('[data-bm-explore]'));
     assert.equal(await sidebar.locator('[data-bm-explore]').count(), 1);
     assert.equal(await sidebar.locator('[data-bm-discover]').count(), 1);
+    assert.equal(await sidebar.locator('[data-bm-novels]').count(), 1);
 
     assert.deepEqual(errors, []);
-    console.log('explore.test.js: all assertions passed (home, drawer, filters, dismiss, 502, mobile, sidebar)');
+    console.log('explore.test.js: all assertions passed (home, drawer, filters, dismiss, 502, mobile, novels mode, sidebar)');
   } finally {
     await browser.close();
   }

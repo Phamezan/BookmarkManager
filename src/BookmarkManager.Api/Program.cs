@@ -158,6 +158,23 @@ builder.Services.AddSingleton<BookmarkManager.Api.Services.Explore.ExploreShelfB
 builder.Services.AddScoped<BookmarkManager.Api.Services.Explore.ExploreLibraryEnricher>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.Explore.ExploreSourceFinder>();
 builder.Services.AddScoped<BookmarkManager.Api.Services.Suwayomi.SuwayomiSourceSearcher>();
+// Suwayomi Novel Reader: proxies user-triggered novel/chapter fetches to the internal NovelSidecar,
+// rate-limited per source, cached in memory, and sanitized server-side before returning.
+builder.Services.Configure<BookmarkManager.Api.Services.Novels.NovelOptions>(
+    builder.Configuration.GetSection(BookmarkManager.Api.Services.Novels.NovelOptions.SectionName));
+builder.Services.AddHttpClient<
+    BookmarkManager.Api.Services.Novels.INovelSidecarClient,
+    BookmarkManager.Api.Services.Novels.NovelSidecarClient>(
+    BookmarkManager.Api.Services.Novels.NovelSidecarClient.HttpClientName,
+    (sp, client) =>
+    {
+        var options = sp.GetRequiredService<IOptions<BookmarkManager.Api.Services.Novels.NovelOptions>>().Value;
+        client.BaseAddress = new Uri(options.SidecarUrl.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(25);
+    });
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Novels.NovelRateLimiterRegistry>();
+builder.Services.AddSingleton<BookmarkManager.Api.Services.Novels.NovelHtmlSanitizer>();
+builder.Services.AddScoped<BookmarkManager.Api.Services.Novels.NovelService>();
 // Series metadata (AniList country of origin + alternative titles): scoped lookup cached in SQLite,
 // plus the backfill worker that fills missing rows. Shares the AniList rate limiter with tagging.
 builder.Services.AddScoped<BookmarkManager.Api.Services.Suwayomi.SeriesMetadataService>();
