@@ -1,6 +1,6 @@
 import { renderLibrary } from './novel-library.js?v=1';
-import { renderDetail } from './novel-detail.js?v=1';
-import { renderReader, clearReaderTheme } from './novel-reader.js?v=1';
+import { renderDetail } from './novel-detail.js?v=2';
+import { renderReader, clearReaderTheme } from './novel-reader.js?v=2';
 
 const view = document.getElementById('view');
 const banner = document.getElementById('banner');
@@ -40,7 +40,7 @@ async function navigate() {
   if (route === '/read') {
     activeCleanup = await renderReader({ view, banner, params, signal });
   } else if (route === '/novel') {
-    await renderDetail({ view, banner, params, signal });
+    activeCleanup = await renderDetail({ view, banner, params, signal });
   } else {
     document.title = 'Novels · Suwayomi';
     await renderLibrary({ view, banner, signal });

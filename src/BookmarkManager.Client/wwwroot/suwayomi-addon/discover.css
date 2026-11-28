@@ -1,13 +1,16 @@
 :root {
-  --bg: #03050C;
-  --surface: #060919;
-  --surface-2: #0C1230;
-  --primary: #5B74EF;
-  --primary-soft: rgba(91, 116, 239, .16);
-  --text: #FFFFFF;
-  --text-2: rgba(255, 255, 255, .70);
-  --text-3: rgba(255, 255, 255, .50);
-  --border: rgba(255, 255, 255, .12);
+  --bg: #0B0B0C;
+  --surface: #141416;
+  --surface-2: #1C1C1F;
+  --primary: #F4F4F5;
+  --primary-fg: #0B0B0C;
+  --primary-soft: rgba(255, 255, 255, .08);
+  --text: #F4F4F5;
+  --text-2: rgba(244, 244, 245, .62);
+  --text-3: rgba(244, 244, 245, .56);
+  --border: rgba(255, 255, 255, .10);
+  --border-hi: rgba(255, 255, 255, .20);
+  --star: #F5B83D;
   --radius: 6px;
 }
 
@@ -154,7 +157,7 @@ button {
 
 .switch input:checked::after {
   transform: translateX(16px);
-  background: #fff;
+  background: var(--primary-fg);
 }
 
 .spacer { flex: 1 1 auto; }
@@ -238,7 +241,7 @@ button {
   padding: 2px 7px;
   border-radius: 10px;
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-fg);
 }
 
 .progress-badge.caught-up {
@@ -293,7 +296,7 @@ button {
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-fg);
 }
 
 .chapter-date { font-size: 12px; color: var(--text-3); }

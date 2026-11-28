@@ -2,6 +2,8 @@ import { el, button, safeUrl, stateBox, isAbort } from './explore-util.js?v=3';
 import {
   novelsGet, novelsSend, readHash, READING_STATUSES, showErrorBanner, toast
 } from './novel-api.js?v=1';
+import { createNovelHero } from './novel-hero.js?v=1';
+import { createReviewsPanel } from './novel-reviews.js?v=1';
 
 function buildChapterRow(chapter, detail) {
   const li = el('li', 'nch-item');
@@ -44,7 +46,7 @@ export async function renderDetail({ view, banner, params, signal }) {
 
   if (!source || !novelPath) {
     view.replaceChildren(stateBox('alert', 'Missing novel source or path.'));
-    return;
+    return () => {};
   }
 
   view.replaceChildren(el('div', 'xstate', 'Loading novel details…'));
@@ -54,10 +56,10 @@ export async function renderDetail({ view, banner, params, signal }) {
     detail = await novelsGet(`/novel?${qs}`, signal);
     banner.replaceChildren();
   } catch (error) {
-    if (isAbort(error)) return;
+    if (isAbort(error)) return () => {};
     view.replaceChildren();
     showErrorBanner(banner, error, () => renderDetail({ view, banner, params, signal: new AbortController().signal }));
-    return;
+    return () => {};
   }
 
   document.title = `${detail.title} · Novels`;
@@ -65,128 +67,135 @@ export async function renderDetail({ view, banner, params, signal }) {
   let libraryEntry = detail.libraryEntry || null;
   let reversed = false;
 
+  const reviewsPanel = createReviewsPanel();
   const root = el('div', 'ndetail');
-
-  const hero = el('section', 'ndetail-hero');
-  const coverSrc = safeUrl(detail.cover);
-  if (coverSrc) {
-    const img = el('img', 'ndetail-cover');
-    img.src = coverSrc;
-    img.alt = `${detail.title} cover`;
-    hero.appendChild(img);
-  }
-
-  const info = el('div', 'ndetail-info');
-  info.appendChild(el('h2', null, detail.title));
-  if (detail.author) info.appendChild(el('p', 'ndetail-author', detail.author));
-
-  const meta = el('div', 'xmeta');
-  meta.appendChild(el('span', 'xchip', detail.sourceName || detail.source));
-  if (detail.status) {
-    meta.appendChild(el('span', detail.status === 'Completed' ? 'xchip xchip-done' : 'xchip', detail.status));
-  }
-  for (const g of detail.genres || []) {
-    meta.appendChild(el('span', 'xchip', g));
-  }
-  info.appendChild(meta);
-
-  if (detail.summary) {
-    info.appendChild(el('p', 'ndetail-summary', detail.summary));
-  }
-
-  const actions = el('div', 'ndetail-actions');
-  info.appendChild(actions);
-  hero.appendChild(info);
-  root.appendChild(hero);
-
-  const firstUnlocked = (detail.chapters || []).find(c => !c.locked) || null;
-
-  function renderActions() {
-    actions.replaceChildren();
-
-    const resumePath = libraryEntry?.lastChapterPath;
-    if (resumePath) {
-      const cont = el('a', 'xbtn xbtn-primary', 'Continue');
-      cont.href = readHash(detail.source, detail.path, resumePath);
-      actions.appendChild(cont);
-    } else if (firstUnlocked) {
-      const start = el('a', 'xbtn xbtn-primary', 'Start reading');
-      start.href = readHash(detail.source, detail.path, firstUnlocked.path);
-      actions.appendChild(start);
-    }
-
-    if (libraryEntry) {
-      const select = el('select', 'nselect');
-      select.setAttribute('aria-label', 'Reading status');
-      for (const s of READING_STATUSES) {
-        const opt = el('option', null, s.label);
-        opt.value = s.value;
-        if (s.value === libraryEntry.status) opt.selected = true;
-        select.appendChild(opt);
-      }
-      select.addEventListener('change', async () => {
-        try {
-          libraryEntry = await novelsSend('PATCH', `/library/${libraryEntry.id}`, { status: select.value });
-          toast(`Status set to ${select.value}`);
-        } catch {
-          toast('Could not update status.');
-          select.value = libraryEntry.status;
-        }
-      });
-      actions.appendChild(select);
-
-      const removeBtn = button('xbtn', 'Remove from library', async () => {
-        removeBtn.disabled = true;
-        try {
-          await novelsSend('DELETE', `/library/${libraryEntry.id}`);
-          libraryEntry = null;
-          detail.libraryEntry = null;
-          renderActions();
-          toast('Removed from library');
-        } catch {
-          removeBtn.disabled = false;
-          toast('Could not remove from library.');
-        }
-      });
-      actions.appendChild(removeBtn);
-    } else {
-      const addBtn = button('xbtn', 'Add to library', async () => {
-        addBtn.disabled = true;
-        try {
-          libraryEntry = await novelsSend('PUT', '/library', {
-            source: detail.source,
-            novelPath: detail.path,
-            title: detail.title,
-            coverUrl: detail.cover || null,
-            status: 'Reading'
-          });
-          detail.libraryEntry = libraryEntry;
-          renderActions();
-          toast('Added to library');
-        } catch {
-          addBtn.disabled = false;
-          toast('Could not add to library.');
-        }
-      });
-      actions.appendChild(addBtn);
-    }
-
-    const siteUrl = safeUrl(`${detail.site}${detail.path}`);
-    if (siteUrl) {
-      const ext = el('a', 'xbtn', 'Open on site ↗');
-      ext.href = siteUrl;
-      ext.target = '_blank';
-      ext.rel = 'noopener noreferrer';
-      actions.appendChild(ext);
-    }
-  }
-
-  renderActions();
+  const chapters = detail.chapters || [];
+  const firstUnlocked = chapters.find(c => !c.locked) || null;
+  const latestChapter = chapters.length ? chapters[chapters.length - 1] : null;
 
   const chaptersBox = el('section', 'nchapters-box');
+  chaptersBox.id = 'novel-chapters';
+
+  const hero = createNovelHero({
+    model: {
+      title: detail.title,
+      coverUrl: detail.cover,
+      author: detail.author,
+      status: detail.status,
+      genres: detail.genres,
+      chapters: chapters.length || null,
+      latestChapterName: latestChapter?.name || null,
+      source: detail.source,
+      sourceName: detail.sourceName,
+      path: detail.path,
+      site: detail.site
+    },
+    signal,
+    onChaptersClick: () => {
+      chaptersBox.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    },
+    onReviewsClick: () => {
+      reviewsPanel.open({
+        title: detail.title,
+        source: detail.source,
+        sourceName: detail.sourceName,
+        site: detail.site,
+        path: detail.path
+      });
+    },
+    renderPrimaryActions: actions => {
+      const resumePath = libraryEntry?.lastChapterPath;
+      if (resumePath) {
+        const chLabel = libraryEntry.lastChapterIndex != null
+          ? `CONTINUE CH ${libraryEntry.lastChapterIndex + 1}`
+          : 'CONTINUE READING';
+        const cont = el('a', 'xbtn xbtn-primary xbtn-lg', chLabel);
+        cont.href = readHash(detail.source, detail.path, resumePath);
+        actions.appendChild(cont);
+      } else if (firstUnlocked) {
+        const start = el('a', 'xbtn xbtn-primary xbtn-lg', 'READ NOW');
+        start.href = readHash(detail.source, detail.path, firstUnlocked.path);
+        actions.appendChild(start);
+      }
+
+      if (libraryEntry) {
+        const inLibBtn = button('xbtn xbtn-lg', 'IN LIBRARY', async () => {
+          inLibBtn.disabled = true;
+          try {
+            await novelsSend('DELETE', `/library/${libraryEntry.id}`);
+            libraryEntry = null;
+            detail.libraryEntry = null;
+            hero.refreshActions();
+            toast('Removed from library');
+          } catch {
+            inLibBtn.disabled = false;
+            toast('Could not remove from library.');
+          }
+        }, 'Remove from library');
+        inLibBtn.setAttribute('aria-pressed', 'true');
+        actions.appendChild(inLibBtn);
+
+        const select = el('select', 'nselect');
+        select.setAttribute('aria-label', 'Reading status');
+        for (const s of READING_STATUSES) {
+          const opt = el('option', null, s.label);
+          opt.value = s.value;
+          if (s.value === libraryEntry.status) opt.selected = true;
+          select.appendChild(opt);
+        }
+        select.addEventListener('change', async () => {
+          try {
+            libraryEntry = await novelsSend('PATCH', `/library/${libraryEntry.id}`, { status: select.value });
+            toast(`Status set to ${select.value}`);
+          } catch {
+            toast('Could not update status.');
+            select.value = libraryEntry.status;
+          }
+        });
+        actions.appendChild(select);
+      } else {
+        const addBtn = button('xbtn xbtn-lg', 'ADD TO LIBRARY', async () => {
+          addBtn.disabled = true;
+          try {
+            libraryEntry = await novelsSend('PUT', '/library', {
+              source: detail.source,
+              novelPath: detail.path,
+              title: detail.title,
+              coverUrl: detail.cover || null,
+              status: 'Reading'
+            });
+            detail.libraryEntry = libraryEntry;
+            hero.refreshActions();
+            toast('Added to library');
+          } catch {
+            addBtn.disabled = false;
+            toast('Could not add to library.');
+          }
+        });
+        actions.appendChild(addBtn);
+      }
+
+      const siteUrl = safeUrl(`${detail.site}${detail.path}`);
+      if (siteUrl) {
+        const ext = el('a', 'xbtn', 'Open on site ↗');
+        ext.href = siteUrl;
+        ext.target = '_blank';
+        ext.rel = 'noopener noreferrer';
+        actions.appendChild(ext);
+      }
+    }
+  });
+
+  root.appendChild(hero.element);
+
+  if (detail.summary) {
+    const synBox = el('section', 'nsummary-box');
+    synBox.append(el('h3', null, 'Synopsis'), el('p', 'ndetail-summary', detail.summary));
+    root.appendChild(synBox);
+  }
+
   const chHead = el('div', 'nchapters-head');
-  const chCount = (detail.chapters || []).length;
-  chHead.appendChild(el('h3', null, `Chapters (${chCount})`));
+  chHead.appendChild(el('h3', null, `Chapters (${chapters.length})`));
   const sortBtn = button('xbtn', 'Oldest first', () => {
     reversed = !reversed;
     sortBtn.textContent = reversed ? 'Newest first' : 'Oldest first';
@@ -200,7 +209,7 @@ export async function renderDetail({ view, banner, params, signal }) {
 
   function renderChapters() {
     listEl.replaceChildren();
-    const items = reversed ? [...(detail.chapters || [])].reverse() : (detail.chapters || []);
+    const items = reversed ? [...chapters].reverse() : chapters;
     if (!items.length) {
       listEl.appendChild(el('li', 'xstate', 'No chapters available.'));
       return;
@@ -213,4 +222,8 @@ export async function renderDetail({ view, banner, params, signal }) {
   renderChapters();
   root.appendChild(chaptersBox);
   view.replaceChildren(root);
+
+  return () => {
+    reviewsPanel.destroy();
+  };
 }
