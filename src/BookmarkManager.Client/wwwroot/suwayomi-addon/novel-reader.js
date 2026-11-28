@@ -1,57 +1,19 @@
-import { el, button, safeUrl, storageGet, storageSet, stateBox, isAbort } from './explore-util.js?v=3';
+import { el, button, safeUrl, stateBox, isAbort } from './explore-util.js?v=3';
 import { novelsGet, novelsSend, novelHash, readHash, showErrorBanner } from './novel-api.js?v=1';
+import {
+  DEFAULT_SETTINGS,
+  loadReaderSettings,
+  saveReaderSettings,
+  applyReaderSettings,
+  clearReaderTheme,
+  supportsWakeLock,
+  buildSettingsPopover
+} from './novel-reader-settings.js?v=1';
+import { createChaptersPanel } from './novel-reader-chapters.js?v=1';
 
-const SETTINGS_KEY = 'novel.readerSettings';
-const DEFAULT_SETTINGS = {
-  font: 'serif',
-  size: 18,
-  lineHeight: 1.75,
-  width: 720,
-  theme: 'dark'
-};
+export { clearReaderTheme };
 
 const prefetchCache = new Map();
-
-function loadSettings() {
-  try {
-    const raw = storageGet(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    const parsed = JSON.parse(raw);
-    return {
-      font: parsed.font === 'sans' ? 'sans' : 'serif',
-      size: Math.min(28, Math.max(14, Number(parsed.size) || DEFAULT_SETTINGS.size)),
-      lineHeight: Math.min(2.2, Math.max(1.3, Number(parsed.lineHeight) || DEFAULT_SETTINGS.lineHeight)),
-      width: Math.min(960, Math.max(540, Number(parsed.width) || DEFAULT_SETTINGS.width)),
-      theme: ['dark', 'light', 'sepia'].includes(parsed.theme) ? parsed.theme : 'dark'
-    };
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
-}
-
-function saveSettings(settings) {
-  storageSet(SETTINGS_KEY, JSON.stringify(settings));
-}
-
-function applySettings(settings) {
-  document.body.classList.add('is-reading');
-  document.body.setAttribute('data-reader-theme', settings.theme);
-  const root = document.documentElement.style;
-  root.setProperty(
-    '--reader-font',
-    settings.font === 'sans'
-      ? 'Inter, "Segoe UI Variable", Roboto, system-ui, sans-serif'
-      : 'Georgia, "Times New Roman", Cambria, serif'
-  );
-  root.setProperty('--reader-size', `${settings.size}px`);
-  root.setProperty('--reader-lh', String(settings.lineHeight));
-  root.setProperty('--reader-width', `${settings.width}px`);
-}
-
-export function clearReaderTheme() {
-  document.body.classList.remove('is-reading');
-  document.body.removeAttribute('data-reader-theme');
-}
 
 function computeScrollPercent() {
   const doc = document.documentElement;
@@ -79,40 +41,25 @@ function prefetchNextChapter(source, novelPath, nextPath) {
   if (prefetchCache.has(key)) return;
   const qs = new URLSearchParams({ source, novelPath, path: nextPath });
   novelsGet(`/chapter?${qs}`).then(data => {
-    // Keep cache bounded to 1 prefetched chapter.
     prefetchCache.clear();
     prefetchCache.set(key, data);
   }).catch(() => { /* best-effort prefetch */ });
 }
 
-function buildSettingsPanel(settings, onChange) {
-  const panel = el('section', 'nsettings');
-  panel.setAttribute('aria-label', 'Reader settings');
-
-  function chipGroup(label, options, current, onPick) {
-    const group = el('div', 'nset-group');
-    group.appendChild(el('span', 'nset-label', label));
-    const row = el('div', 'nset-row');
-    for (const [val, text] of options) {
-      const btn = button('nset-chip', text, () => {
-        onPick(val);
-        onChange();
-      });
-      btn.setAttribute('aria-pressed', String(current === val));
-      row.appendChild(btn);
-    }
-    group.appendChild(row);
-    return group;
+export function parseChapterHeading(chapterTitle, chapterIndex, chapterNumber) {
+  const raw = (chapterTitle || '').trim();
+  const numMatch = /^(?:chapter|ch\.?)\s*(\d+(?:\.\d+)?)\s*(?:[:\-–—]\s*(.*))?$/i.exec(raw);
+  if (numMatch) {
+    return {
+      label: `Chapter ${numMatch[1]}`,
+      subtitle: (numMatch[2] || '').trim()
+    };
   }
-
-  panel.append(
-    chipGroup('Theme', [['dark', 'Dark'], ['light', 'Light'], ['sepia', 'Sepia']], settings.theme, v => { settings.theme = v; }),
-    chipGroup('Font', [['serif', 'Serif'], ['sans', 'Sans']], settings.font, v => { settings.font = v; }),
-    chipGroup('Text size', [[16, 'S'], [18, 'M'], [20, 'L'], [22, 'XL']], settings.size, v => { settings.size = v; }),
-    chipGroup('Line height', [[1.5, 'Tight'], [1.75, 'Normal'], [2.0, 'Relaxed']], settings.lineHeight, v => { settings.lineHeight = v; }),
-    chipGroup('Width', [[600, 'Narrow'], [720, 'Medium'], [880, 'Wide']], settings.width, v => { settings.width = v; })
-  );
-  return panel;
+  const fallbackNum = chapterNumber != null ? chapterNumber : (chapterIndex + 1);
+  return {
+    label: `Chapter ${fallbackNum}`,
+    subtitle: raw
+  };
 }
 
 export async function renderReader({ view, banner, params, signal }) {
@@ -125,20 +72,22 @@ export async function renderReader({ view, banner, params, signal }) {
     return () => {};
   }
 
-  const settings = loadSettings();
-  applySettings(settings);
+  let settings = loadReaderSettings();
+  applyReaderSettings(settings);
   view.replaceChildren(el('div', 'xstate', 'Loading chapter…'));
 
   let chapter;
+  let novelData = null;
   let libraryEntry = null;
   try {
     const novelQs = new URLSearchParams({ source, path: novelPath });
-    const [chData, novelData] = await Promise.all([
+    const [chData, detail] = await Promise.all([
       fetchChapter(source, novelPath, chapterPath, signal),
       novelsGet(`/novel?${novelQs}`, signal).catch(() => null)
     ]);
     chapter = chData;
-    libraryEntry = novelData?.libraryEntry || null;
+    novelData = detail;
+    libraryEntry = detail?.libraryEntry || null;
     banner.replaceChildren();
   } catch (error) {
     if (isAbort(error)) return () => {};
@@ -153,10 +102,19 @@ export async function renderReader({ view, banner, params, signal }) {
     return () => {};
   }
 
-  document.title = `${chapter.title} · Novels`;
+  const novelTitle = novelData?.title || 'Novel';
+  const matchedChapter = (novelData?.chapters || []).find(c => c.path === chapterPath);
+  const heading = parseChapterHeading(chapter.title, chapter.index, matchedChapter?.number);
+  document.title = `${heading.label} · ${novelTitle}`;
 
   let settingsOpen = false;
   let progressTimer = null;
+  let wakeLockSentinel = null;
+  let autoScrollRaf = null;
+  let autoScrollLastTs = 0;
+  let autoScrollCarry = 0;
+  let lastScrollY = window.scrollY;
+  let programmaticScroll = false;
 
   function saveProgress(keepalive = false) {
     if (!libraryEntry?.id) return;
@@ -176,44 +134,105 @@ export async function renderReader({ view, banner, params, signal }) {
     progressTimer = setTimeout(() => saveProgress(false), 2000);
   }
 
-  const root = el('div', 'nreader-root');
+  /* ---------- Wake Lock ---------- */
 
-  const topBar = el('div', 'nreader-bar');
-  const backLink = el('a', 'nreader-btn', '← Novel');
-  backLink.href = novelHash(source, novelPath);
-
-  const titleWrap = el('div', 'nreader-bar-title');
-  titleWrap.append(
-    el('h2', null, chapter.title),
-    el('div', 'nreader-bar-sub', `Chapter ${chapter.index + 1} of ${chapter.count}`)
-  );
-
-  const settingsHost = el('div');
-  const settingsBtn = button('nreader-btn', 'Aa Settings', () => {
-    settingsOpen = !settingsOpen;
-    settingsBtn.setAttribute('aria-expanded', String(settingsOpen));
-    drawSettings();
-  });
-  settingsBtn.setAttribute('aria-expanded', 'false');
-
-  function drawSettings() {
-    if (!settingsOpen) {
-      settingsHost.replaceChildren();
-      return;
+  async function syncWakeLock() {
+    if (!supportsWakeLock()) return;
+    if (settings.wakeLock && document.visibilityState === 'visible') {
+      if (wakeLockSentinel && !wakeLockSentinel.released) return;
+      try {
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+      } catch { /* user denied or battery saver */ }
+    } else if (wakeLockSentinel) {
+      const sentinel = wakeLockSentinel;
+      wakeLockSentinel = null;
+      sentinel.release().catch(() => {});
     }
-    settingsHost.replaceChildren(
-      buildSettingsPanel(settings, () => {
-        applySettings(settings);
-        saveSettings(settings);
-        drawSettings();
-      })
-    );
   }
 
-  topBar.append(backLink, titleWrap, settingsBtn);
-  root.append(topBar, settingsHost);
+  const onVisibilityChange = () => { syncWakeLock(); };
+  document.addEventListener('visibilitychange', onVisibilityChange);
+
+  /* ---------- Auto-scroll ---------- */
+
+  function stopAutoScroll(persistOff = false) {
+    if (autoScrollRaf !== null) {
+      cancelAnimationFrame(autoScrollRaf);
+      autoScrollRaf = null;
+    }
+    autoScrollLastTs = 0;
+    autoScrollCarry = 0;
+    if (persistOff && settings.autoScroll) {
+      settings.autoScroll = false;
+      saveReaderSettings(settings);
+      if (settingsOpen) drawSettings();
+    }
+  }
+
+  function stepAutoScroll(ts) {
+    if (!settings.autoScroll) { stopAutoScroll(false); return; }
+    const doc = document.documentElement;
+    if (window.scrollY + window.innerHeight >= doc.scrollHeight - 2) {
+      stopAutoScroll(true);
+      setDockHidden(false);
+      return;
+    }
+    if (autoScrollLastTs > 0) {
+      const dt = Math.min(100, ts - autoScrollLastTs) / 1000;
+      const pxPerSec = 18 + settings.autoScrollSpeed * 16;
+      autoScrollCarry += pxPerSec * dt;
+      if (autoScrollCarry >= 1) {
+        const delta = Math.floor(autoScrollCarry);
+        autoScrollCarry -= delta;
+        programmaticScroll = true;
+        window.scrollBy(0, delta);
+        programmaticScroll = false;
+      }
+    }
+    autoScrollLastTs = ts;
+    autoScrollRaf = requestAnimationFrame(stepAutoScroll);
+  }
+
+  function syncAutoScroll() {
+    if (settings.autoScroll) {
+      if (autoScrollRaf === null) {
+        autoScrollLastTs = 0;
+        autoScrollRaf = requestAnimationFrame(stepAutoScroll);
+      }
+    } else {
+      stopAutoScroll(false);
+    }
+  }
+
+  /* ---------- DOM structure ---------- */
+
+  const root = el('div', 'nreader-root');
+
+  const progressBar = el('div', 'nreader-progress');
+  progressBar.setAttribute('aria-hidden', 'true');
+  const progressFill = el('div', 'nreader-progress-fill');
+  progressBar.appendChild(progressFill);
+  progressBar.hidden = !settings.progressBar;
+  root.appendChild(progressBar);
+
+  function updateProgressBar() {
+    progressBar.hidden = !settings.progressBar;
+    if (!settings.progressBar) return;
+    const pct = Math.round(computeScrollPercent() * 100);
+    progressFill.style.width = `${pct}%`;
+  }
 
   const wrap = el('div', 'nreader-wrap');
+
+  const header = el('header', 'nreader-header');
+  const novelBackTitle = el('a', 'nreader-novel-title', novelTitle);
+  novelBackTitle.href = novelHash(source, novelPath);
+  header.append(novelBackTitle, el('h1', 'nreader-ch-heading', heading.label));
+  if (heading.subtitle) {
+    header.appendChild(el('p', 'nreader-ch-subtitle', heading.subtitle));
+  }
+  wrap.appendChild(header);
+
   const article = el('article', 'nreader-body');
   // Sanitized server-side by NovelHtmlSanitizer before caching/returning.
   article.innerHTML = chapter.html || '';
@@ -264,9 +283,123 @@ export async function renderReader({ view, banner, params, signal }) {
   }
 
   root.appendChild(wrap);
+
+  /* ---------- Chapters slide-in panel ---------- */
+
+  const chaptersPanel = createChaptersPanel({
+    source,
+    novelPath,
+    site: chapter.site || novelData?.site || '',
+    chapters: novelData?.chapters || [{ name: chapter.title, path: chapterPath, number: matchedChapter?.number ?? (chapter.index + 1), locked: false }],
+    currentPath: chapterPath,
+    onNavigate: () => saveProgress(true)
+  });
+
+  /* ---------- Floating bottom dock + Settings popover ---------- */
+
+  const dockWrap = el('div', 'nreader-dock-wrap');
+  const settingsHost = el('div', 'nset-host');
+  const dock = el('div', 'nreader-dock');
+  dock.setAttribute('role', 'toolbar');
+  dock.setAttribute('aria-label', 'Reader controls');
+
+  function setDockHidden(hidden) {
+    if (hidden && (settingsOpen || chaptersPanel.isOpen())) return;
+    dockWrap.classList.toggle('is-hidden', hidden);
+  }
+
+  let dockPrev;
+  if (chapter.prevPath) {
+    dockPrev = el('a', 'ndock-btn', '‹');
+    dockPrev.href = readHash(source, novelPath, chapter.prevPath);
+    dockPrev.setAttribute('aria-label', 'Prev');
+    dockPrev.addEventListener('click', () => saveProgress(true));
+  } else {
+    dockPrev = button('ndock-btn', '‹', null, 'Prev');
+    dockPrev.disabled = true;
+  }
+
+  const dockHome = el('a', 'ndock-btn', '⌂');
+  dockHome.href = novelHash(source, novelPath);
+  dockHome.setAttribute('aria-label', 'Back to novel');
+
+  const dockInfo = button('ndock-info', '', () => {
+    closeSettings();
+    chaptersPanel.open();
+  }, 'Open chapter list');
+  dockInfo.append(
+    el('span', 'ndock-novel', novelTitle),
+    el('span', 'ndock-ch', heading.label)
+  );
+
+  const dockChapters = button('ndock-btn', '☰', () => {
+    closeSettings();
+    chaptersPanel.open();
+  }, 'Chapters');
+
+  const dockSettings = button('ndock-btn ndock-settings', 'T', () => {
+    settingsOpen = !settingsOpen;
+    dockSettings.setAttribute('aria-expanded', String(settingsOpen));
+    if (settingsOpen) setDockHidden(false);
+    drawSettings();
+  }, 'Reader settings');
+  dockSettings.setAttribute('aria-expanded', 'false');
+
+  let dockNext;
+  if (chapter.nextPath && !chapter.nextLocked) {
+    dockNext = el('a', 'ndock-btn', '›');
+    dockNext.href = readHash(source, novelPath, chapter.nextPath);
+    dockNext.setAttribute('aria-label', 'Next');
+    dockNext.addEventListener('click', () => saveProgress(true));
+  } else {
+    dockNext = button('ndock-btn', '›', null, chapter.nextLocked ? 'Next locked' : 'Next');
+    dockNext.disabled = true;
+  }
+
+  dock.append(dockPrev, dockHome, dockInfo, dockChapters, dockSettings, dockNext);
+  dockWrap.append(settingsHost, dock);
+  root.appendChild(dockWrap);
+
+  function closeSettings() {
+    if (!settingsOpen) return;
+    settingsOpen = false;
+    dockSettings.setAttribute('aria-expanded', 'false');
+    settingsHost.replaceChildren();
+  }
+
+  function applyAll({ rerender = true } = {}) {
+    applyReaderSettings(settings);
+    saveReaderSettings(settings);
+    updateProgressBar();
+    syncWakeLock();
+    syncAutoScroll();
+    if (rerender && settingsOpen) drawSettings();
+  }
+
+  function drawSettings() {
+    if (!settingsOpen) {
+      settingsHost.replaceChildren();
+      return;
+    }
+    settingsHost.replaceChildren(
+      buildSettingsPopover(settings, {
+        onUpdate: opts => applyAll(opts),
+        onReset: () => {
+          settings = { ...DEFAULT_SETTINGS };
+          applyAll({ rerender: true });
+        },
+        onClose: () => {
+          closeSettings();
+          dockSettings.focus({ preventScroll: true });
+        }
+      })
+    );
+  }
+
   view.replaceChildren(root);
 
-  // Resume scroll position if opening the saved chapter, else top of chapter.
+  /* ---------- Initial scroll resume, progress save, prefetch ---------- */
+
   requestAnimationFrame(() => {
     if (libraryEntry?.lastChapterPath === chapterPath && libraryEntry.scrollPercent > 0) {
       const max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
@@ -274,24 +407,69 @@ export async function renderReader({ view, banner, params, signal }) {
     } else {
       window.scrollTo(0, 0);
     }
+    lastScrollY = window.scrollY;
+    updateProgressBar();
   });
 
-  // Immediately record chapter change on entry (if in library).
-  if (libraryEntry?.id) {
-    saveProgress(false);
-  }
-
-  // Prefetch next chapter only (when unlocked).
+  if (libraryEntry?.id) saveProgress(false);
   if (chapter.nextPath && !chapter.nextLocked) {
     prefetchNextChapter(source, novelPath, chapter.nextPath);
   }
+  syncWakeLock();
+  syncAutoScroll();
 
-  const onScroll = () => scheduleProgressSave();
+  /* ---------- Events ---------- */
+
+  const onScroll = () => {
+    scheduleProgressSave();
+    updateProgressBar();
+
+    const y = window.scrollY;
+    const doc = document.documentElement;
+    const nearEnd = y + window.innerHeight >= doc.scrollHeight - 80;
+    const delta = y - lastScrollY;
+    lastScrollY = y;
+
+    if (nearEnd || y <= 40) {
+      setDockHidden(false);
+    } else if (!programmaticScroll && delta > 14) {
+      setDockHidden(true);
+    } else if (!programmaticScroll && delta < -8) {
+      setDockHidden(false);
+    }
+  };
+
+  const onUserInterrupt = () => {
+    if (settings.autoScroll) stopAutoScroll(true);
+  };
+
+  const onArticleClick = event => {
+    if (event.target?.closest?.('a, button')) return;
+    if (settingsOpen) { closeSettings(); return; }
+    setDockHidden(false);
+  };
+
+  const onDocumentClick = event => {
+    if (!settingsOpen) return;
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    if (!path.includes(dockWrap) && !dockWrap.contains(event.target)) {
+      closeSettings();
+    }
+  };
+
   const onPageHide = () => {
     clearTimeout(progressTimer);
     saveProgress(true);
   };
+
   const onKeyDown = event => {
+    if (event.key === 'Escape' && settingsOpen) {
+      event.preventDefault();
+      closeSettings();
+      dockSettings.focus({ preventScroll: true });
+      return;
+    }
+    if (chaptersPanel.isOpen()) return;
     if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '')) return;
     if (event.key === 'ArrowLeft' && chapter.prevPath) {
       saveProgress(true);
@@ -302,14 +480,29 @@ export async function renderReader({ view, banner, params, signal }) {
     }
   };
 
+  article.addEventListener('click', onArticleClick);
   window.addEventListener('scroll', onScroll, { passive: true });
+  window.addEventListener('wheel', onUserInterrupt, { passive: true });
+  window.addEventListener('touchstart', onUserInterrupt, { passive: true });
   window.addEventListener('pagehide', onPageHide);
+  document.addEventListener('click', onDocumentClick);
   document.addEventListener('keydown', onKeyDown);
 
   return () => {
     clearTimeout(progressTimer);
+    stopAutoScroll(false);
+    if (wakeLockSentinel) {
+      wakeLockSentinel.release().catch(() => {});
+      wakeLockSentinel = null;
+    }
+    chaptersPanel.destroy();
+    article.removeEventListener('click', onArticleClick);
     window.removeEventListener('scroll', onScroll);
+    window.removeEventListener('wheel', onUserInterrupt);
+    window.removeEventListener('touchstart', onUserInterrupt);
     window.removeEventListener('pagehide', onPageHide);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    document.removeEventListener('click', onDocumentClick);
     document.removeEventListener('keydown', onKeyDown);
     saveProgress(true);
   };

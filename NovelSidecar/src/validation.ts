@@ -32,10 +32,23 @@ export function parsePage(value: string | null): { page?: number; error?: string
   return { page: parsed };
 }
 
-export function validateQuery(value: string | null): string | null {
-  if (!value || !value.trim()) return 'Missing required parameter: q';
+export function validateQuery(value: string | null, fieldName = 'q'): string | null {
+  if (!value || !value.trim()) return `Missing required parameter: ${fieldName}`;
   if (value.length > MAX_QUERY_LENGTH) {
-    return `q must be at most ${MAX_QUERY_LENGTH} characters`;
+    return `${fieldName} must be at most ${MAX_QUERY_LENGTH} characters`;
+  }
+  return null;
+}
+
+const ROYALROAD_PATH_RE = /^\/fiction\/\d+\/[a-z0-9-]+$/;
+
+export function validateRoyalRoadPath(value: string | null): string | null {
+  if (!value) return 'Missing required parameter: path';
+  if (value.length > MAX_PATH_LENGTH) {
+    return `path must be at most ${MAX_PATH_LENGTH} characters`;
+  }
+  if (!ROYALROAD_PATH_RE.test(value)) {
+    return 'path must match /fiction/{id}/{slug}';
   }
   return null;
 }

@@ -1,19 +1,20 @@
 :root {
-  --bg: #03050C;
-  --surface: #070B1E;
-  --surface-2: #0D1433;
-  --surface-3: #162056;
-  --primary: #5B74EF;
-  --primary-hi: #8497FF;
-  --primary-soft: rgba(91, 116, 239, .16);
-  --text: #FFFFFF;
-  --text-2: rgba(255, 255, 255, .72);
-  --text-3: rgba(255, 255, 255, .52);
+  --bg: #0B0B0C;
+  --surface: #141416;
+  --surface-2: #1C1C1F;
+  --surface-3: #252529;
+  --primary: #F4F4F5;
+  --primary-fg: #0B0B0C;
+  --primary-hi: #D4D4D8;
+  --primary-soft: rgba(255, 255, 255, .08);
+  --text: #F4F4F5;
+  --text-2: rgba(244, 244, 245, .62);
+  --text-3: rgba(244, 244, 245, .56);
   --border: rgba(255, 255, 255, .10);
-  --border-hi: rgba(255, 255, 255, .22);
+  --border-hi: rgba(255, 255, 255, .20);
   --bad: #e5645f;
   --good: #7fe0a3;
-  --star: #f5c451;
+  --star: #F5B83D;
   --radius: 8px;
   --radius-sm: 6px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px; --s7: 48px;
@@ -34,7 +35,7 @@ body.is-locked { overflow: hidden; }
 a { color: inherit; text-decoration: none; }
 button, input, select { font-family: inherit; font-size: inherit; }
 button { cursor: pointer; color: inherit; }
-:focus-visible { outline: 2px solid var(--primary-hi); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 [hidden] { display: none !important; }
 .xicon { width: 1em; height: 1em; flex: none; }
 
@@ -47,8 +48,8 @@ button { cursor: pointer; color: inherit; }
 /* Full-bleed glass bar even when .page is capped narrower than the window. */
 .xhead::before {
   content: ""; position: absolute; z-index: -1; top: 0; bottom: 0; left: 50%; width: 100vw; transform: translateX(-50%);
-  background: rgba(3, 5, 12, .78); border-bottom: 1px solid var(--border);
-  -webkit-backdrop-filter: blur(14px) saturate(140%); backdrop-filter: blur(14px) saturate(140%);
+  background: rgba(11, 11, 12, .82); border-bottom: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(14px) saturate(120%); backdrop-filter: blur(14px) saturate(120%);
 }
 .xhead-in { display: flex; align-items: center; gap: var(--s2) var(--s5); min-height: 64px; flex-wrap: wrap; padding: var(--s2) 0; }
 .xbrand { display: flex; align-items: baseline; gap: var(--s3); }
@@ -76,7 +77,7 @@ button { cursor: pointer; color: inherit; }
 }
 .xmode button[aria-pressed="true"] {
   background: var(--primary);
-  color: #fff;
+  color: var(--primary-fg);
 }
 .xn-bar {
   display: flex;
@@ -151,10 +152,10 @@ button { cursor: pointer; color: inherit; }
 .xbtn:hover:not(:disabled) { background: rgba(255, 255, 255, .1); }
 .xbtn:disabled { opacity: .55; cursor: default; }
 .xbtn-lg { min-height: 42px; padding: 0 var(--s5); }
-.xbtn-primary { background: var(--primary); border-color: var(--primary); }
-.xbtn-primary:hover:not(:disabled) { background: var(--primary-hi); border-color: var(--primary-hi); }
-.xbtn[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--primary); }
-.xlink { background: none; border: 0; padding: var(--s1) 2px; color: var(--primary-hi); font-weight: 600; }
+.xbtn-primary { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
+.xbtn-primary:hover:not(:disabled) { background: var(--primary-hi); border-color: var(--primary-hi); color: var(--primary-fg); }
+.xbtn[aria-pressed="true"] { background: var(--primary-soft); border-color: var(--border-hi); }
+.xlink { background: none; border: 0; padding: var(--s1) 2px; color: var(--text); font-weight: 600; }
 .xlink:hover { text-decoration: underline; }
 .xchip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .09); color: var(--text-2); }
 .xchip-done { background: rgba(63, 181, 107, .18); color: var(--good); }
@@ -195,8 +196,8 @@ button { cursor: pointer; color: inherit; }
 #reset-top { align-self: center; }
 .xpills { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; order: 9; }
 .xpills:empty { display: none; }
-.xpill { min-height: 28px; padding: 0 var(--s3); border-radius: 999px; border: 1px solid var(--primary); background: var(--primary-soft); font-size: 12px; font-weight: 600; }
-.xpill:hover { background: rgba(91, 116, 239, .32); }
+.xpill { min-height: 28px; padding: 0 var(--s3); border-radius: 999px; border: 1px solid var(--border-hi); background: var(--primary-soft); font-size: 12px; font-weight: 600; }
+.xpill:hover { background: rgba(255, 255, 255, .16); }
 .xresult-count { color: var(--text-3); font-size: 13px; margin-right: auto; }
 .xfilter-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, .6); z-index: 30; }
 
@@ -217,35 +218,35 @@ button { cursor: pointer; color: inherit; }
   .xcard:not(.xskeleton):hover .xcover { transform: translateY(-4px); box-shadow: 0 14px 28px rgba(0, 0, 0, .55); }
   .xcard:not(.xskeleton):hover .xcover img { transform: scale(1.06); }
 }
-.xcard:focus-visible .xcover { box-shadow: 0 0 0 2px var(--primary-hi), var(--shadow-cover); }
+.xcard:focus-visible .xcover { box-shadow: 0 0 0 2px var(--primary), var(--shadow-cover); }
 .xbadge {
   position: absolute; z-index: 1; font-size: 10px; font-weight: 700; letter-spacing: .02em; padding: 2px 7px;
-  border-radius: 999px; background: rgba(3, 5, 12, .72); color: var(--text); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  border-radius: 999px; background: rgba(11, 11, 12, .76); color: var(--text); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
 .xbadge-type { top: var(--s2); left: var(--s2); }
 .xrank {
   position: absolute; z-index: 1; top: 0; left: 0; padding: 4px 10px 6px; font-size: 15px; font-weight: 800; letter-spacing: -.02em;
-  background: var(--primary); border-bottom-right-radius: var(--radius); box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
+  background: var(--star); color: #0B0B0C; border-bottom-right-radius: var(--radius); box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
 }
 .has-rank .xbadge-type { top: 38px; }
 /* Gradient strip holds score (left) and library badge (right); flex keeps them apart. */
 .xoverlay {
   position: absolute; left: 0; right: 0; bottom: 0; z-index: 1; display: flex; align-items: flex-end; justify-content: space-between; gap: var(--s2);
-  padding: 28px var(--s2) var(--s2); background: linear-gradient(to top, rgba(3, 5, 12, .92), rgba(3, 5, 12, 0));
+  padding: 28px var(--s2) var(--s2); background: linear-gradient(to top, rgba(11, 11, 12, .92), rgba(11, 11, 12, 0));
 }
 .xoverlay:empty { display: none; }
 .xoverlay .xscore { font-size: 12px; margin-right: auto; }
-.xbadge-lib { position: static; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--primary); font-size: 11px; padding: 2px 9px; }
+.xbadge-lib { position: static; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--primary); color: var(--primary-fg); font-size: 11px; padding: 2px 9px; }
 .xbadge-lib:hover { background: var(--primary-hi); }
 .xactions { position: absolute; z-index: 2; top: 6px; right: 6px; display: flex; flex-direction: column; gap: 6px; opacity: 0; transform: translateX(4px); transition: opacity 140ms ease, transform 140ms ease; }
 .xcard:hover .xactions, .xcard:focus-within .xactions { opacity: 1; transform: none; }
 @media (hover: none) { .xactions { opacity: 1; transform: none; } }
 .xact {
-  width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(3, 5, 12, .78); color: var(--text-2); font-size: 14px; line-height: 1;
+  width: 32px; height: 32px; border-radius: 50%; border: 0; background: rgba(11, 11, 12, .78); color: var(--text-2); font-size: 14px; line-height: 1;
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
 }
-.xact:hover { color: var(--text); background: rgba(3, 5, 12, .95); }
-.xact-save[aria-pressed="true"] { background: var(--primary); color: #fff; }
+.xact:hover { color: var(--text); background: rgba(11, 11, 12, .95); }
+.xact-save[aria-pressed="true"] { background: var(--primary); color: var(--primary-fg); }
 .xact-dismiss[aria-pressed="true"] { background: var(--bad); color: #fff; }
 .xtitle {
   margin: var(--s3) 0 var(--s1); font-size: 14px; font-weight: 600; line-height: 1.3; overflow: hidden;
@@ -254,7 +255,7 @@ button { cursor: pointer; color: inherit; }
 .xmeta { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 .xmeta-text { font-size: 12px; color: var(--text-3); }
 .xgenres { margin-top: var(--s1); font-size: 12px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.xbecause { margin-top: var(--s1); font-size: 12px; color: var(--primary-hi); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.xbecause { margin-top: var(--s1); font-size: 12px; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .xsentinel { height: 1px; }
 
 .xskeleton .xcover { box-shadow: none; background: var(--surface-2); }
@@ -273,13 +274,13 @@ button { cursor: pointer; color: inherit; }
 .xhero-bg { position: absolute; inset: 0; z-index: -2; background: var(--accent, var(--surface-2)) center 25% / cover no-repeat; filter: brightness(.62) saturate(1.1); }
 /* No banner: zoom the cover art across the hero; light blur keeps it recognisable instead of a flat wash. */
 .xhero-bg-cover { inset: -12px; filter: blur(6px) brightness(.5) saturate(1.25); background-position: center 20%; }
-.xhero-shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(3, 5, 12, .92) 0%, rgba(3, 5, 12, .62) 45%, rgba(3, 5, 12, .1) 100%), linear-gradient(0deg, rgba(3, 5, 12, .85) 0%, rgba(3, 5, 12, 0) 40%); }
+.xhero-shade { position: absolute; inset: 0; z-index: -1; background: linear-gradient(90deg, rgba(11, 11, 12, .92) 0%, rgba(11, 11, 12, .62) 45%, rgba(11, 11, 12, .1) 100%), linear-gradient(0deg, rgba(11, 11, 12, .85) 0%, rgba(11, 11, 12, 0) 40%); }
 .xhero-inner { position: relative; display: flex; align-items: center; gap: var(--s6); height: 100%; padding: var(--s6) clamp(24px, 4vw, 72px) 56px; }
 .xhero-cover { flex: none; height: min(100%, 360px); aspect-ratio: 2 / 3; padding: 0; border: 0; border-radius: var(--radius); overflow: hidden; background: var(--accent, var(--surface-2)); box-shadow: 0 16px 40px rgba(0, 0, 0, .6); }
 .xhero-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .xhero-text { min-width: 0; max-width: 62ch; display: flex; flex-direction: column; gap: var(--s3); align-items: flex-start; }
 .xhero-kicker, .xhero-facts { display: flex; align-items: center; flex-wrap: wrap; gap: var(--s2); }
-.xhero-rank { font-size: 12px; font-weight: 700; color: var(--primary-hi); }
+.xhero-rank { font-size: 12px; font-weight: 700; color: var(--star); }
 .xhero-title { margin: 0; font-size: clamp(26px, 2.6vw, 44px); line-height: 1.1; font-weight: 800; letter-spacing: -.02em; overflow-wrap: anywhere; text-wrap: balance; }
 .xhero-facts .xscore { font-size: 14px; }
 .xhero-desc { margin: 0; color: var(--text-2); line-height: 1.55; font-size: 15px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; overflow-wrap: anywhere; }
@@ -307,10 +308,10 @@ button { cursor: pointer; color: inherit; }
 .xshelf-track .xcard { flex: 0 0 var(--card-w); scroll-snap-align: start; }
 .xshelf-nav {
   position: absolute; z-index: 3; top: calc(var(--card-w) * .75 - 22px); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border-hi);
-  background: rgba(3, 5, 12, .85); font-size: 26px; line-height: 1; display: none; place-items: center; padding: 0 0 3px;
-  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 140ms, background 140ms;
+  background: rgba(11, 11, 12, .85); font-size: 26px; line-height: 1; display: none; place-items: center; padding: 0 0 3px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); opacity: 0; transition: opacity 140ms, background 140ms, color 140ms;
 }
-.xshelf-nav:hover { background: var(--primary); border-color: var(--primary); }
+.xshelf-nav:hover { background: var(--primary); border-color: var(--primary); color: var(--primary-fg); }
 .xshelf-prev { left: -10px; }
 .xshelf-next { right: -10px; }
 @media (hover: hover) {
@@ -330,10 +331,10 @@ button { cursor: pointer; color: inherit; }
   .xdrawer { animation: xslide 240ms cubic-bezier(.2, .8, .2, 1); }
   @keyframes xslide { from { transform: translateX(32px); opacity: 0; } }
 }
-.xdrawer-close { position: absolute; top: var(--s3); right: var(--s3); z-index: 2; background: rgba(3, 5, 12, .72); }
+.xdrawer-close { position: absolute; top: var(--s3); right: var(--s3); z-index: 2; background: rgba(11, 11, 12, .76); }
 .xdrawer-close:hover { background: var(--surface-3); }
 .xbanner { position: relative; height: clamp(180px, 26vh, 280px); background: linear-gradient(135deg, var(--accent, var(--surface-3)), var(--surface-2)) center / cover; }
-.xbanner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--surface) 0%, rgba(7, 11, 30, .55) 45%, rgba(7, 11, 30, .15) 100%); }
+.xbanner::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, var(--surface) 0%, rgba(20, 20, 22, .55) 45%, rgba(20, 20, 22, .15) 100%); }
 .xdrawer-body { padding: 0 var(--s6) var(--s7); margin-top: -96px; position: relative; z-index: 1; }
 .xdetail-top { display: flex; gap: var(--s5); align-items: flex-end; }
 .xdetail-cover { width: 168px; flex: none; aspect-ratio: 2 / 3; object-fit: cover; border-radius: var(--radius); background: var(--surface-2); box-shadow: 0 12px 32px rgba(0, 0, 0, .6); }
@@ -363,8 +364,8 @@ button { cursor: pointer; color: inherit; }
 .xmini-cap { display: block; font-size: 11px; text-transform: capitalize; color: var(--text-3); }
 .xlinks { display: flex; flex-wrap: wrap; gap: var(--s3); }
 .xread {
-  margin-top: var(--s5); padding: var(--s5); border: 1px solid rgba(91, 116, 239, .5); border-radius: 12px;
-  background: linear-gradient(180deg, rgba(91, 116, 239, .16), rgba(91, 116, 239, .05));
+  margin-top: var(--s5); padding: var(--s5); border: 1px solid var(--border-hi); border-radius: 12px;
+  background: var(--surface-2);
 }
 .xread h3 { font-size: 18px; }
 .xcontinue:not(:empty) { margin-bottom: var(--s3); }

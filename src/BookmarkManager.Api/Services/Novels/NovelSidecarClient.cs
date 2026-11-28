@@ -29,6 +29,49 @@ public sealed record SidecarNovelDetailRecord(
 
 public sealed record SidecarChapterHtmlRecord(string Html);
 
+public sealed record SidecarStatsRecord(
+    int? Rank,
+    double? Rating,
+    int? RatingCount,
+    long? Views,
+    int? Bookmarks,
+    int? Chapters,
+    string? Status,
+    string? LatestChapterName,
+    string? LatestChapterUpdated,
+    int? ReviewCount,
+    double? ReviewAverage);
+
+public sealed record SidecarReviewParagraphRecord(string Text, bool Spoiler);
+
+public sealed record SidecarReviewItemRecord(
+    string Author,
+    string? Date,
+    double? Score,
+    int? Likes,
+    List<SidecarReviewParagraphRecord> Paragraphs);
+
+public sealed record SidecarReviewsPageRecord(
+    double? Average,
+    int? Count,
+    int Page,
+    bool HasNextPage,
+    List<SidecarReviewItemRecord> Items);
+
+public sealed record SidecarRoyalRoadSearchHitRecord(string Title, string Path, string? Cover);
+
+public sealed record SidecarRoyalRoadFictionRecord(
+    string? Title,
+    double? OverallScore,
+    int? Ratings,
+    long? Views,
+    int? Followers,
+    int? Favorites,
+    int? Count,
+    int Page,
+    bool HasNextPage,
+    List<SidecarReviewItemRecord> Items);
+
 public interface INovelSidecarClient
 {
     Task<IReadOnlyList<SidecarSourceRecord>> GetSourcesAsync(CancellationToken ct);
@@ -36,6 +79,10 @@ public interface INovelSidecarClient
     Task<IReadOnlyList<SidecarNovelSummaryRecord>> SearchAsync(string source, string query, int page, CancellationToken ct);
     Task<SidecarNovelDetailRecord> GetNovelAsync(string source, string path, CancellationToken ct);
     Task<string> GetChapterHtmlAsync(string source, string path, CancellationToken ct);
+    Task<SidecarStatsRecord> GetStatsAsync(string source, string path, CancellationToken ct);
+    Task<SidecarReviewsPageRecord> GetReviewsAsync(string source, string path, int page, CancellationToken ct);
+    Task<IReadOnlyList<SidecarRoyalRoadSearchHitRecord>> SearchRoyalRoadAsync(string title, CancellationToken ct);
+    Task<SidecarRoyalRoadFictionRecord> GetRoyalRoadFictionAsync(string path, int page, CancellationToken ct);
 }
 
 public sealed class NovelSidecarClient : INovelSidecarClient
@@ -75,6 +122,22 @@ public sealed class NovelSidecarClient : INovelSidecarClient
             .ConfigureAwait(false);
         return payload.Html ?? string.Empty;
     }
+
+    public Task<SidecarStatsRecord> GetStatsAsync(string source, string path, CancellationToken ct)
+        => GetAsync<SidecarStatsRecord>(
+            $"stats?source={Uri.EscapeDataString(source)}&path={Uri.EscapeDataString(path)}", ct);
+
+    public Task<SidecarReviewsPageRecord> GetReviewsAsync(string source, string path, int page, CancellationToken ct)
+        => GetAsync<SidecarReviewsPageRecord>(
+            $"reviews?source={Uri.EscapeDataString(source)}&path={Uri.EscapeDataString(path)}&page={page}", ct);
+
+    public Task<IReadOnlyList<SidecarRoyalRoadSearchHitRecord>> SearchRoyalRoadAsync(string title, CancellationToken ct)
+        => GetAsync<IReadOnlyList<SidecarRoyalRoadSearchHitRecord>>(
+            $"rr/search?title={Uri.EscapeDataString(title)}", ct);
+
+    public Task<SidecarRoyalRoadFictionRecord> GetRoyalRoadFictionAsync(string path, int page, CancellationToken ct)
+        => GetAsync<SidecarRoyalRoadFictionRecord>(
+            $"rr/fiction?path={Uri.EscapeDataString(path)}&page={page}", ct);
 
     private async Task<T> GetAsync<T>(string relativeUrl, CancellationToken ct)
     {

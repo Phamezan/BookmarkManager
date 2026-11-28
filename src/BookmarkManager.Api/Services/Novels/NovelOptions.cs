@@ -9,6 +9,9 @@ public sealed class NovelOptions
     /// <summary>Comma-separated list of enabled sidecar source ids (e.g. "hangulplanet").</summary>
     public string EnabledSources { get; set; } = "hangulplanet";
 
+    /// <summary>Enables Royal Road review lookup by exact normalized title match. Off by default: Royal Road's Cloudflare answers the sidecar's Node fetch with 403.</summary>
+    public bool RoyalRoadReviews { get; set; }
+
     public HashSet<string> GetEnabledSourceSet()
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

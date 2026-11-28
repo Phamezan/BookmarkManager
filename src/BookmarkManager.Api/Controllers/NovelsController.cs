@@ -13,12 +13,14 @@ public sealed class NovelsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly NovelService _novels;
+    private readonly NovelExtrasService _extras;
     private readonly NovelExploreService _explore;
 
-    public NovelsController(AppDbContext db, NovelService novels, NovelExploreService explore)
+    public NovelsController(AppDbContext db, NovelService novels, NovelExtrasService extras, NovelExploreService explore)
     {
         _db = db;
         _novels = novels;
+        _extras = extras;
         _explore = explore;
     }
 
@@ -172,6 +174,90 @@ public sealed class NovelsController : ControllerBase
         return detail is null
             ? NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Novel source not found."))
             : Ok(detail);
+    });
+
+    [HttpGet("stats")]
+    public Task<IActionResult> GetStatsAsync(
+        [FromQuery] string? source,
+        [FromQuery] string? path,
+        CancellationToken ct = default) => GuardAsync(async () =>
+    {
+        if (string.IsNullOrWhiteSpace(source) || !_novels.IsSourceEnabled(source) || !NovelExtrasService.SupportsExtras(source))
+        {
+            return NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Novel source not found."));
+        }
+
+        var pathError = NovelPathValidator.ValidatePath(path);
+        if (pathError is not null)
+        {
+            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, pathError);
+        }
+
+        var stats = await _extras.GetStatsAsync(source, path!, ct).ConfigureAwait(false);
+        return stats is null
+            ? NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Novel source not found."))
+            : Ok(stats);
+    });
+
+    [HttpGet("reviews")]
+    public Task<IActionResult> GetReviewsAsync(
+        [FromQuery] string? source,
+        [FromQuery] string? path,
+        [FromQuery] int page = 1,
+        CancellationToken ct = default) => GuardAsync(async () =>
+    {
+        if (page is < 1 or > 50)
+        {
+            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, "page must be between 1 and 50.");
+        }
+
+        if (string.IsNullOrWhiteSpace(source) || !_novels.IsSourceEnabled(source) || !NovelExtrasService.SupportsExtras(source))
+        {
+            return NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Novel source not found."));
+        }
+
+        var pathError = NovelPathValidator.ValidatePath(path);
+        if (pathError is not null)
+        {
+            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, pathError);
+        }
+
+        var reviews = await _extras.GetReviewsAsync(source, path!, page, ct).ConfigureAwait(false);
+        return reviews is null
+            ? NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Novel source not found."))
+            : Ok(reviews);
+    });
+
+    [HttpGet("reviews/royalroad")]
+    public Task<IActionResult> GetRoyalRoadReviewsAsync(
+        [FromQuery] string? title,
+        [FromQuery] int page = 1,
+        CancellationToken ct = default) => GuardAsync(async () =>
+    {
+        if (!_extras.IsRoyalRoadReviewsEnabled)
+        {
+            return NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Royal Road reviews are disabled."));
+        }
+
+        if (page is < 1 or > 50)
+        {
+            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, "page must be between 1 and 50.");
+        }
+
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, "title is required.");
+        }
+
+        if (title.Length > NovelPathValidator.MaxQueryLength)
+        {
+            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, "title is too long.");
+        }
+
+        var reviews = await _extras.GetRoyalRoadReviewsAsync(title, page, ct).ConfigureAwait(false);
+        return reviews is null
+            ? NotFound(ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", "Royal Road reviews are disabled."))
+            : Ok(reviews);
     });
 
     [HttpGet("chapter")]

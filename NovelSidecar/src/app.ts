@@ -1,7 +1,14 @@
 import http from 'node:http';
 import { getSource, listSources } from './plugins';
-import { parsePage, validatePath, validateQuery } from './validation';
+import { parsePage, validatePath, validateQuery, validateRoyalRoadPath } from './validation';
 import { runWithFetchSignal } from './shims/fetch';
+import {
+  fetchRoyalRoadFiction,
+  fetchRoyalRoadSearch,
+  getSourceReviews,
+  getSourceStats,
+  isExtrasSource,
+} from './extras';
 
 export const REQUEST_TIMEOUT_MS = 20_000;
 
@@ -77,6 +84,76 @@ export function createServer(options?: { timeoutMs?: number }): http.Server {
     if (pathname === '/sources') {
       sendJson(res, 200, listSources());
       return;
+    }
+
+    if (pathname === '/rr/search') {
+      const title = searchParams.get('title');
+      const titleErr = validateQuery(title, 'title');
+      if (titleErr) {
+        sendJson(res, 400, { error: titleErr });
+        return;
+      }
+      try {
+        const hits = await withTimeout(timeoutMs, () => fetchRoyalRoadSearch(title!.trim()));
+        sendJson(res, 200, hits);
+      } catch (err) {
+        sendJson(res, 502, { error: safeErrorMessage(err) });
+      }
+      return;
+    }
+
+    if (pathname === '/rr/fiction') {
+      const fictionPath = searchParams.get('path');
+      const pathErr = validateRoyalRoadPath(fictionPath);
+      if (pathErr) {
+        sendJson(res, 400, { error: pathErr });
+        return;
+      }
+      const { page, error } = parsePage(searchParams.get('page'));
+      if (error) {
+        sendJson(res, 400, { error });
+        return;
+      }
+      try {
+        const result = await withTimeout(timeoutMs, () => fetchRoyalRoadFiction(fictionPath!, page!));
+        sendJson(res, 200, result);
+      } catch (err) {
+        sendJson(res, 502, { error: safeErrorMessage(err) });
+      }
+      return;
+    }
+
+    if (pathname === '/stats' || pathname === '/reviews') {
+      const rawSource = searchParams.get('source');
+      if (!isExtrasSource(rawSource)) {
+        sendJson(res, 400, { error: 'Unsupported source for extras endpoint' });
+        return;
+      }
+      const source = rawSource.trim().toLowerCase() as 'novelfire' | 'hangulplanet';
+      const novelPath = searchParams.get('path');
+      const pathErr = validatePath(novelPath);
+      if (pathErr) {
+        sendJson(res, 400, { error: pathErr });
+        return;
+      }
+      try {
+        if (pathname === '/stats') {
+          const stats = await withTimeout(timeoutMs, () => getSourceStats(source, novelPath!));
+          sendJson(res, 200, stats);
+          return;
+        }
+        const { page, error } = parsePage(searchParams.get('page'));
+        if (error) {
+          sendJson(res, 400, { error });
+          return;
+        }
+        const reviews = await withTimeout(timeoutMs, () => getSourceReviews(source, novelPath!, page!));
+        sendJson(res, 200, reviews);
+        return;
+      } catch (err) {
+        sendJson(res, 502, { error: safeErrorMessage(err) });
+        return;
+      }
     }
 
     if (

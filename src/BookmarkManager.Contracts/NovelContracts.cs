@@ -167,3 +167,65 @@ public class UpdateNovelLibraryProgressRequest
     public int? ChapterCount { get; set; }
     public double ScrollPercent { get; set; }
 }
+
+public class NovelStatsDto
+{
+    public string Source { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+    public int? Rank { get; set; }
+    public double? Rating { get; set; }
+    public int? RatingCount { get; set; }
+    public long? Views { get; set; }
+    public int? Bookmarks { get; set; }
+    public int? Chapters { get; set; }
+    public string? Status { get; set; }
+    public string? LatestChapterName { get; set; }
+    public string? LatestChapterUpdated { get; set; }
+    public int? ReviewCount { get; set; }
+    public double? ReviewAverage { get; set; }
+}
+
+public class NovelReviewParagraphDto
+{
+    public string Text { get; set; } = string.Empty;
+    public bool Spoiler { get; set; }
+}
+
+public class NovelReviewItemDto
+{
+    public string Author { get; set; } = string.Empty;
+    public string? Date { get; set; }
+    public double? Score { get; set; }
+    public int? Likes { get; set; }
+    public List<NovelReviewParagraphDto> Paragraphs { get; set; } = [];
+}
+
+public class NovelReviewsPageDto
+{
+    public string Source { get; set; } = string.Empty;
+    public string SourceName { get; set; } = string.Empty;
+    public string Site { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+    public double? Average { get; set; }
+    public int? Count { get; set; }
+    public int Page { get; set; }
+    public bool HasNextPage { get; set; }
+    public List<NovelReviewItemDto> Items { get; set; } = [];
+}
+
+public class RoyalRoadReviewsPageDto
+{
+    public bool Matched { get; set; }
+    public string? Title { get; set; }
+    public string? Path { get; set; }
+    public string Site { get; set; } = "https://www.royalroad.com";
+    public double? OverallScore { get; set; }
+    public int? Ratings { get; set; }
+    public long? Views { get; set; }
+    public int? Followers { get; set; }
+    public int? Favorites { get; set; }
+    public int? Count { get; set; }
+    public int Page { get; set; }
+    public bool HasNextPage { get; set; }
+    public List<NovelReviewItemDto> Items { get; set; } = [];
+}

@@ -214,6 +214,68 @@ const THIS_YEAR = new Date().getFullYear();
             ]
           });
         }
+        if (api === '/stats') {
+          const src = url.searchParams.get('source') || 'novelfire';
+          return route.fulfill({
+            json: {
+              source: src,
+              path: url.searchParams.get('path') || '/book/fire-book',
+              rank: src === 'novelfire' ? 24 : null,
+              rating: 4.5,
+              ratingCount: 105,
+              views: 2_300_000,
+              bookmarks: 5_400,
+              chapters: 410,
+              status: 'Ongoing',
+              latestChapterName: 'Chapter 410: Crimson Sky',
+              latestChapterUpdated: '11 hours ago',
+              reviewCount: 105,
+              reviewAverage: 4.5
+            }
+          });
+        }
+        if (api === '/reviews') {
+          const pageNo = Number(url.searchParams.get('page') || 1);
+          return route.fulfill({
+            json: {
+              source: url.searchParams.get('source') || 'novelfire',
+              sourceName: 'Novel Fire',
+              site: 'https://novelfire.net',
+              path: url.searchParams.get('path') || '/book/fire-book',
+              average: 4.5,
+              count: 105,
+              page: pageNo,
+              hasNextPage: pageNo === 1,
+              items: pageNo === 1
+                ? [{ author: 'FireFan', date: '1 day ago', score: 4.5, likes: 8, paragraphs: [{ text: 'Great pacing and magic system.', spoiler: false }] }]
+                : [{ author: 'PageTwoFan', date: '3 days ago', score: 4.0, likes: 2, paragraphs: [{ text: 'Second page review.', spoiler: false }] }]
+            }
+          });
+        }
+        if (api === '/reviews/royalroad') {
+          return route.fulfill({
+            json: {
+              matched: true,
+              title: 'Fire Book',
+              path: '/fiction/36049/fire-book',
+              site: 'https://www.royalroad.com',
+              overallScore: 4.7,
+              count: 42,
+              page: 1,
+              hasNextPage: false,
+              items: [{
+                author: 'RrCritic',
+                date: '2 weeks ago',
+                score: 5,
+                likes: 15,
+                paragraphs: [
+                  { text: 'Top tier worldbuilding.', spoiler: false },
+                  { text: 'The dragon awakens in chapter 300.', spoiler: true }
+                ]
+              }]
+            }
+          });
+        }
         if (api === '/library' && request.method() === 'PUT') {
           novelLibPuts.push(request.postDataJSON());
           return route.fulfill({ json: { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', ...request.postDataJSON() } });
@@ -784,16 +846,53 @@ const THIS_YEAR = new Date().getFullYear();
     await page.keyboard.press('Escape');
     await novelDrawer.waitFor({ state: 'hidden' });
 
-    // Novelfire catalog row with a book URL opens straight to the reader link, no search.
+    // Novelfire catalog row with a book URL opens straight to the reader hero with live stats + reviews panel, no search.
     await novelBrowseGrid.locator('.xncard[data-novel-id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').click();
     await novelDrawer.waitFor();
     assert.equal(await novelDrawer.getByRole('button', { name: 'Find on novel sources' }).count(), 0);
     assert.equal(
-      await novelDrawer.locator('.xnhit a', { hasText: 'Read' }).getAttribute('href'),
+      await novelDrawer.locator('a.xn-read-now').getAttribute('href'),
       '/bm/novel.html#/novel?source=novelfire&path=%2Fbook%2Ffire-book'
     );
+    await novelDrawer.locator('.nhero-rank').waitFor();
+    assert.match(await novelDrawer.locator('.nhero-rank').innerText(), /RANK 24/);
+    assert.match(await novelDrawer.locator('.nhero-card-chapters').innerText(), /Updated 11 hours ago/);
+    assert.match(await novelDrawer.locator('.nhero-card-reviews').innerText(), /Novel Fire 4\.5 · 105 reviews/);
+
+    // Clicking Reviews card opens shared reviews panel with tabs, spoiler reveal, and Load more.
+    await novelDrawer.locator('.nhero-card-reviews').click();
+    const drawerReviews = page.locator('.nrev-panel[role="dialog"]');
+    await drawerReviews.waitFor();
+    await drawerReviews.locator('.nrev-card').first().waitFor();
+    await drawerReviews.getByRole('button', { name: 'Load more' }).click();
+    await drawerReviews.locator('.nrev-card').nth(1).waitFor();
+    await drawerReviews.locator('.nrev-tab[data-source="royalroad"]').waitFor();
+    await drawerReviews.locator('.nrev-tab[data-source="royalroad"]').click();
+    const rrSpoiler = drawerReviews.locator('.nrev-spoiler');
+    await rrSpoiler.waitFor();
+    await rrSpoiler.locator('.nrev-spoiler-btn').click();
+    assert.equal(await rrSpoiler.evaluate(n => n.classList.contains('is-revealed')), true);
+    await page.keyboard.press('Escape');
+    await drawerReviews.waitFor({ state: 'hidden' });
+
     await page.keyboard.press('Escape');
     await novelDrawer.waitFor({ state: 'hidden' });
+
+    // Neutral palette check: no button or link uses the old primary blue rgb(91, 116, 239).
+    const assertNoOldPrimary = async label => {
+      const bad = await page.evaluate(() => {
+        const hits = [];
+        for (const el of document.querySelectorAll('button, a')) {
+          const st = getComputedStyle(el);
+          if (st.backgroundColor === 'rgb(91, 116, 239)' || st.color === 'rgb(91, 116, 239)') {
+            hits.push(`${el.tagName}.${el.className}`);
+          }
+        }
+        return hits;
+      });
+      assert.deepEqual(bad, [], `old primary rgb(91, 116, 239) found in ${label}`);
+    };
+    await assertNoOldPrimary('Explore Novels mode');
 
     // Novel filter panel sends query params and syncs URL.
     const novelCatalogReq = test => page.waitForRequest(r =>
@@ -846,6 +945,7 @@ const THIS_YEAR = new Date().getFullYear();
     await page.locator('.xmode').getByRole('button', { name: 'Manga', exact: true }).click();
     await page.locator('.xshelf').nth(1).waitFor();
     assert.equal(await page.evaluate(() => localStorage.getItem('explore.mode')), 'manga');
+    await assertNoOldPrimary('Explore Manga mode');
 
     // Sidebar: addon.js injects Discover, Explore, then Novels after Browse and re-inserts on removal.
     const sidebar = await browser.newPage();

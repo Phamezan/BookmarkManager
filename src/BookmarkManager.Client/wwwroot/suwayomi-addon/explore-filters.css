@@ -2,7 +2,7 @@
 :root {
   --bad-soft: rgba(229, 100, 95, .14);
   --bad-text: #ff8f8a;
-  --field: #0A1029;
+  --field: #1C1C1F;
 }
 
 .xfilters {
@@ -37,7 +37,7 @@
 .xf-sec-toggle[aria-expanded="true"] .xf-chev, .xcb-group[data-open="true"] .xf-chev { transform: rotate(90deg); }
 .xf-badge {
   display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  background: var(--primary); color: #fff; font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  background: var(--primary); color: var(--primary-fg); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
 }
 .xf-badge:empty { display: none; }
 .xf-clear { font-size: 12px; }
@@ -46,26 +46,26 @@
 /* Type: one choice, so a segmented control rather than chips. */
 .xseg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 3px; border-radius: var(--radius); background: var(--field); border: 1px solid var(--border); }
 .xseg .xfchip { min-height: 30px; padding: 0 var(--s1); border: 0; border-radius: var(--radius-sm); }
-.xseg .xfchip[aria-pressed="true"] { background: var(--primary); color: #fff; }
+.xseg .xfchip[aria-pressed="true"] { background: var(--primary); color: var(--primary-fg); }
 
 /* Include / exclude marks: + disc, − disc, dashed ring when off. Hover previews the next state. */
 .xmark {
   display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; border-radius: 50%;
-  border: 1px dashed rgba(255, 255, 255, .2); font-size: 12px; font-weight: 800; line-height: 1; color: #fff;
+  border: 1px dashed rgba(255, 255, 255, .2); font-size: 12px; font-weight: 800; line-height: 1; color: var(--primary-fg);
 }
 .xmark::before { content: ""; }
-.xmark-inc, [data-state="include"] > .xmark, [data-state="include"] .xsel-flip > .xmark { border: 0; background: var(--primary); }
-.xmark-exc, [data-state="exclude"] > .xmark, [data-state="exclude"] .xsel-flip > .xmark { border: 0; background: var(--bad); }
+.xmark-inc, [data-state="include"] > .xmark, [data-state="include"] .xsel-flip > .xmark { border: 0; background: var(--primary); color: var(--primary-fg); }
+.xmark-exc, [data-state="exclude"] > .xmark, [data-state="exclude"] .xsel-flip > .xmark { border: 0; background: var(--bad); color: #fff; }
 .xmark-inc::before, [data-state="include"] > .xmark::before, [data-state="include"] .xsel-flip > .xmark::before { content: "+"; }
 .xmark-exc::before, [data-state="exclude"] > .xmark::before, [data-state="exclude"] .xsel-flip > .xmark::before { content: "\2212"; }
 @media (hover: hover) {
-  .xtri[data-state="off"]:hover > .xmark { border: 0; background: var(--primary-soft); color: var(--primary-hi); }
+  .xtri[data-state="off"]:hover > .xmark { border: 0; background: var(--primary-soft); color: var(--text); }
   .xtri[data-state="off"]:hover > .xmark::before { content: "+"; }
-  .xtri[data-state="include"]:hover > .xmark, .xsel[data-state="include"] .xsel-flip:hover > .xmark { background: var(--bad); }
+  .xtri[data-state="include"]:hover > .xmark, .xsel[data-state="include"] .xsel-flip:hover > .xmark { background: var(--bad); color: #fff; }
   .xtri[data-state="include"]:hover > .xmark::before, .xsel[data-state="include"] .xsel-flip:hover > .xmark::before { content: "\2212"; }
   .xtri[data-state="exclude"]:hover > .xmark { background: none; border: 1px dashed var(--border-hi); }
   .xtri[data-state="exclude"]:hover > .xmark::before { content: ""; }
-  .xsel[data-state="exclude"] .xsel-flip:hover > .xmark { background: var(--primary); }
+  .xsel[data-state="exclude"] .xsel-flip:hover > .xmark { background: var(--primary); color: var(--primary-fg); }
   .xsel[data-state="exclude"] .xsel-flip:hover > .xmark::before { content: "+"; }
 }
 .xf-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 0 0 var(--s3); font-size: 12px; color: var(--text-3); }
@@ -107,7 +107,7 @@
 .xcb-opt:hover, .xcb-group:hover { background: rgba(255, 255, 255, .05); }
 .xcb-opt.is-active, .xcb-group.is-active { background: var(--primary-soft); box-shadow: inset 0 0 0 1px var(--primary); }
 .xcb-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.xcb-name mark { background: none; color: var(--primary-hi); font-weight: 700; }
+.xcb-name mark { background: none; color: var(--text); font-weight: 700; text-decoration: underline; }
 .xcb-cat { flex: 0 1 auto; max-width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-3); }
 .xcb-group .xcb-cat { display: none; }
 .xcb-ex {
@@ -118,7 +118,7 @@
 .xcb-ex:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
 @media (hover: none) { .xcb-ex { opacity: 1; } }
 .xcb-group { position: sticky; top: -4px; z-index: 1; background: var(--field); font-size: 12px; font-weight: 600; color: var(--text-2); }
-.xcb-group.is-active { background: #17204a; }
+.xcb-group.is-active { background: var(--surface-3); }
 .xcb-gname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .xcb-count { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .xcb-empty { margin: 0; padding: var(--s3); color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
@@ -139,7 +139,7 @@
 }
 .xf-select {
   appearance: none; padding-inline-end: 32px; cursor: pointer;
-  background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a8c3' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 14px;
+  background: var(--field) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center / 14px;
 }
 .xf-select option { background: var(--surface); }
 .xf-select:focus, .xf-field input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--primary-soft); }
@@ -166,7 +166,7 @@
 .xswitch-track { position: relative; flex: none; width: 36px; height: 20px; margin-top: 1px; border-radius: 10px; background: rgba(255, 255, 255, .16); transition: background 140ms ease; }
 .xswitch-thumb { position: absolute; top: 2px; inset-inline-start: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform 140ms ease; }
 .xswitch[aria-checked="true"] .xswitch-track { background: var(--primary); }
-.xswitch[aria-checked="true"] .xswitch-thumb { transform: translateX(16px); }
+.xswitch[aria-checked="true"] .xswitch-thumb { transform: translateX(16px); background: var(--primary-fg); }
 [dir="rtl"] .xswitch[aria-checked="true"] .xswitch-thumb { transform: translateX(-16px); }
 .xf-gems { margin-top: var(--s1); font-size: 12px; }
 

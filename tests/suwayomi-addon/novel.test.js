@@ -25,7 +25,7 @@ const libraryEntries = [
     lastChapterName: 'Chapter 1: Entry',
     lastChapterIndex: 0,
     chapterCount: 3,
-    scrollPercent: 0.4,
+    scrollPercent: 0,
     addedAt: '2026-11-01T00:00:00Z',
     updatedAt: '2026-11-27T00:00:00Z',
     lastReadAt: '2026-11-27T00:00:00Z'
@@ -67,10 +67,30 @@ const novelDetail = {
   libraryEntry: libraryEntries[0]
 };
 
+const novelStats = {
+  source: 'hangulplanet',
+  path: '/novel/tower-of-time',
+  rank: 17,
+  rating: 4.4,
+  ratingCount: 14,
+  views: 1_250_000,
+  bookmarks: 3_400,
+  chapters: 235,
+  status: 'Ongoing',
+  latestChapterName: 'Chapter 3: Early Access',
+  latestChapterUpdated: '11 hours ago',
+  reviewCount: 14,
+  reviewAverage: 4.4
+};
+
+const longParagraphs = Array.from({ length: 18 }, (_, i) =>
+  `<p>Paragraph ${i + 1}: The tower hummed quietly in the dark as the silver pendulum counted each breath across the stone hall.</p>`
+).join('');
+
 const chapters = {
   '/novel/tower-of-time/chapter-1': {
     title: 'Chapter 1: Entry',
-    html: '<h3>Chapter 1: Entry</h3><p>Life on easy mode.</p><p>The clock stopped at midnight.</p>',
+    html: `<h3>Chapter 1: Entry</h3><p>Life on easy mode.</p><p>The clock stopped at midnight.</p>${longParagraphs}`,
     prevPath: null,
     nextPath: '/novel/tower-of-time/chapter-2',
     nextLocked: false,
@@ -90,6 +110,84 @@ const chapters = {
   }
 };
 
+const reviewsPage1 = {
+  source: 'hangulplanet',
+  sourceName: 'HangulPlanet',
+  site: 'https://hangulplanet.com',
+  path: '/novel/tower-of-time',
+  average: 4.4,
+  count: 14,
+  page: 1,
+  hasNextPage: true,
+  items: [
+    {
+      author: 'Moh',
+      date: '2 days ago',
+      score: 5.0,
+      likes: 12,
+      paragraphs: [
+        { text: 'Really gripping opening arc. '.repeat(22), spoiler: false }
+      ]
+    }
+  ]
+};
+
+const reviewsPage2 = {
+  ...reviewsPage1,
+  page: 2,
+  hasNextPage: false,
+  items: [
+    {
+      author: 'SecondPageReader',
+      date: '5 days ago',
+      score: 4.0,
+      likes: 3,
+      paragraphs: [{ text: 'Still going strong on floor 20.', spoiler: false }]
+    }
+  ]
+};
+
+const royalRoadReviews = {
+  matched: true,
+  title: 'Tower of Time',
+  path: '/fiction/44444/tower-of-time',
+  site: 'https://www.royalroad.com',
+  overallScore: 4.7,
+  ratings: 890,
+  views: 2_000_000,
+  followers: 12_000,
+  favorites: 4_500,
+  count: 32,
+  page: 1,
+  hasNextPage: false,
+  items: [
+    {
+      author: 'ArcaneReader',
+      date: '1 week ago',
+      score: 4.5,
+      likes: 19,
+      paragraphs: [
+        { text: 'Great time-loop mechanics.', spoiler: false },
+        { text: 'The final floor boss is actually his future self.', spoiler: true }
+      ]
+    }
+  ]
+};
+
+async function assertNoOldPrimary(page, label) {
+  const offenders = await page.evaluate(() => {
+    const bad = [];
+    for (const el of document.querySelectorAll('button, a')) {
+      const style = getComputedStyle(el);
+      if (style.backgroundColor === 'rgb(91, 116, 239)' || style.color === 'rgb(91, 116, 239)') {
+        bad.push(`${el.tagName}.${el.className}`);
+      }
+    }
+    return bad;
+  });
+  assert.deepEqual(offenders, [], `old primary rgb(91, 116, 239) found on ${label}`);
+}
+
 (async () => {
   const browser = await chromium.launch({ headless: true });
   try {
@@ -100,11 +198,16 @@ const chapters = {
     const errors = [];
     const progressPuts = [];
     const statusPatches = [];
+    const reviewCalls = [];
     page.on('pageerror', error => errors.push(error.message));
 
     await page.route('**/*', async route => {
       const request = route.request();
       const url = new URL(request.url());
+
+      if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
+        return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+      }
 
       if (url.pathname.startsWith('/bm-api/novels/')) {
         const api = url.pathname.slice('/bm-api/novels'.length);
@@ -113,6 +216,18 @@ const chapters = {
         }
         if (api === '/novel' && request.method() === 'GET') {
           return route.fulfill({ json: novelDetail });
+        }
+        if (api === '/stats' && request.method() === 'GET') {
+          return route.fulfill({ json: novelStats });
+        }
+        if (api === '/reviews' && request.method() === 'GET') {
+          reviewCalls.push(api + url.search);
+          const p = Number(url.searchParams.get('page') || 1);
+          return route.fulfill({ json: p === 2 ? reviewsPage2 : reviewsPage1 });
+        }
+        if (api === '/reviews/royalroad' && request.method() === 'GET') {
+          reviewCalls.push(api + url.search);
+          return route.fulfill({ json: royalRoadReviews });
         }
         if (api === '/chapter' && request.method() === 'GET') {
           const p = url.searchParams.get('path');
@@ -143,71 +258,166 @@ const chapters = {
       return route.fulfill({ contentType: 'text/html', body: '<p>stub</p>' });
     });
 
-    // 1. Library grid renders + status filter works.
+    // 1. Library grid renders + status filter works + no old blue primary.
     await page.goto(`${ORIGIN}/bm/novel.html#/`);
     await page.locator('.ncard').nth(1).waitFor();
     assert.equal(await page.locator('.ncard').count(), 2);
     assert.match(await page.locator(`.ncard[data-id="${ENTRY_ID}"] .ncard-continue`).innerText(), /Ch 1 of 3 · Continue/);
+    await assertNoOldPrimary(page, 'novel library');
     await page.getByRole('button', { name: 'Completed', exact: true }).click();
     assert.equal(await page.locator('.ncard').count(), 1);
     assert.match(await page.locator('.ncard .xtitle').innerText(), /Abyss Mage/);
     await page.getByRole('button', { name: 'All', exact: true }).click();
     assert.equal(await page.locator('.ncard').count(), 2);
 
-    // 2. Detail view renders metadata + locked chapter as external link, NOT in-app reader link.
+    // 2. Detail hero renders rank, stars, live stats, summary cards, locked chapter link.
     await page.locator(`.ncard[data-id="${ENTRY_ID}"] .ncard-link`).click();
     await page.locator('.nchapters-list').waitFor();
+    await page.locator('.nhero-rank').waitFor();
     assert.equal(await page.locator('.ndetail-info h2').innerText(), 'Tower of Time');
+    assert.match(await page.locator('.nhero-rank').innerText(), /RANK 17/);
+    assert.match(await page.locator('.nhero-stars').innerText(), /4\.4/);
+    assert.match(await page.locator('.nhero-stats').innerText(), /1\.3M|1\.2M|1,250,000/);
+    assert.match(await page.locator('.nhero-card-chapters').innerText(), /Updated 11 hours ago/);
+    assert.match(await page.locator('.nhero-card-reviews').innerText(), /HangulPlanet 4\.4 · 14 reviews/);
+    assert.equal(reviewCalls.length, 0, 'reviews must NOT be fetched until reviews panel opens');
     assert.equal(await page.locator('a.nch-row').count(), 2, 'only unlocked chapters are clickable in-app rows');
     const lockedRow = page.locator('.nch-row.is-locked');
     assert.equal(await lockedRow.count(), 1);
     assert.match(await lockedRow.innerText(), /🔒 Chapter 3: Early Access/);
-    const extLink = lockedRow.locator('a.nch-ext');
-    assert.equal(await extLink.getAttribute('href'), 'https://hangulplanet.com/novel/tower-of-time/chapter-3');
+    assert.equal(await lockedRow.locator('a.nch-ext').getAttribute('href'), 'https://hangulplanet.com/novel/tower-of-time/chapter-3');
+    await assertNoOldPrimary(page, 'novel detail');
 
     // Status change PATCHes API.
     await page.getByLabel('Reading status').selectOption('Plan');
     await page.waitForTimeout(100);
     assert.deepEqual(statusPatches, [{ status: 'Plan' }]);
 
-    // 3. Reader renders sanitized HTML, fires progress PUT, navigates prev/next, shows locked next notice.
+    // 3. Reviews panel: opens on card click, Read more expands, Load more appends, Royal Road tab reveals spoiler.
+    await page.locator('.nhero-card-reviews').click();
+    const revPanel = page.locator('.nrev-panel[role="dialog"]');
+    await revPanel.waitFor();
+    await revPanel.locator('.nrev-card').first().waitFor();
+    assert.ok(reviewCalls.length >= 1, 'reviews fetched on panel open');
+    assert.equal(await revPanel.locator('.nrev-body.is-clamped').count(), 1);
+    await revPanel.getByRole('button', { name: 'Read more' }).click();
+    assert.equal(await revPanel.locator('.nrev-body.is-clamped').count(), 0);
+    await revPanel.getByRole('button', { name: 'Load more' }).click();
+    await revPanel.locator('.nrev-card').nth(1).waitFor();
+    assert.match(await revPanel.locator('.nrev-card').nth(1).innerText(), /SecondPageReader/);
+
+    // Switch to Royal Road tab and reveal spoiler.
+    await revPanel.locator('.nrev-tab[data-source="royalroad"]').waitFor();
+    await revPanel.locator('.nrev-tab[data-source="royalroad"]').click();
+    const spoilerBox = revPanel.locator('.nrev-spoiler');
+    await spoilerBox.waitFor();
+    assert.equal(await spoilerBox.evaluate(n => n.classList.contains('is-revealed')), false);
+    await spoilerBox.locator('.nrev-spoiler-btn').click();
+    assert.equal(await spoilerBox.evaluate(n => n.classList.contains('is-revealed')), true);
+    await page.keyboard.press('Escape');
+    await revPanel.waitFor({ state: 'hidden' });
+
+    // 4. Reader: header, sanitized HTML, progress PUT, bottom bar hide/show on scroll + tap.
     await page.locator('a.nch-row').first().click();
     await page.locator('.nreader-body').waitFor();
+    assert.equal(await page.locator('.nreader-ch-heading').innerText(), 'Chapter 1');
+    assert.equal(await page.locator('.nreader-ch-subtitle').innerText(), 'Entry');
     assert.match(await page.locator('.nreader-body').innerText(), /Life on easy mode\./);
     assert.ok(progressPuts.length >= 1, 'progress PUT fires on reader entry');
     assert.equal(progressPuts[0].chapterPath, '/novel/tower-of-time/chapter-1');
     assert.equal(progressPuts[0].chapterIndex, 0);
+    await assertNoOldPrimary(page, 'novel reader');
 
-    // Navigate to next chapter via button -> Chapter 2 shows locked next notice + Open on site.
+    // Scroll down hides dock; clicking text area brings it back; scroll up also shows it.
+    const dockWrap = page.locator('.nreader-dock-wrap');
+    await page.evaluate(() => window.scrollTo(0, 320));
+    await page.waitForTimeout(80);
+    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), true, 'dock hides when scrolling down');
+    await page.locator('.nreader-body p').first().click();
+    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), false, 'dock reappears on text tap');
+    await page.evaluate(() => window.scrollTo(0, 560));
+    await page.waitForTimeout(80);
+    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), true);
+    await page.evaluate(() => window.scrollTo(0, 420));
+    await page.waitForTimeout(80);
+    assert.equal(await dockWrap.evaluate(n => n.classList.contains('is-hidden')), false, 'dock reappears on scroll up');
+
+    // 5. Chapter list slide-in panel: current highlight, search filter, locked link, Esc closes.
+    await page.getByRole('button', { name: 'Chapters' }).click();
+    const chDrawer = page.locator('.nch-drawer[role="dialog"]');
+    await chDrawer.waitFor();
+    assert.match(await chDrawer.locator('.nch-drawer-row.is-current').innerText(), /Chapter 1: Entry/);
+    assert.equal(
+      await chDrawer.locator('.nch-drawer-row.is-locked a.nch-drawer-ext').getAttribute('href'),
+      'https://hangulplanet.com/novel/tower-of-time/chapter-3'
+    );
+    await chDrawer.getByLabel('Search chapters').fill('Gate');
+    assert.equal(await chDrawer.locator('.nch-drawer-item').count(), 1);
+    await page.keyboard.press('Escape');
+    await chDrawer.waitFor({ state: 'hidden' });
+
+    // 6. Settings popover: theme swatch changes reader bg, size stepper, width, align, progress bar toggle, persist across reload, reset.
+    await page.getByRole('button', { name: 'Reader settings' }).click();
+    const popover = page.locator('.nset-popover');
+    await popover.waitFor();
+    const charcoalBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    await popover.locator('.nset-swatch[data-theme="paper"]').click();
+    const paperBg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    assert.notEqual(paperBg, charcoalBg, 'theme swatch must change reader background');
+    assert.equal(await page.evaluate(() => document.body.getAttribute('data-reader-theme')), 'paper');
+
+    await popover.getByRole('button', { name: 'Increase font size' }).click();
+    assert.equal(await popover.locator('.nset-step-val').innerText(), '21');
+    await popover.getByRole('button', { name: 'Wide', exact: true }).click();
+    await popover.getByRole('button', { name: 'Justify', exact: true }).click();
+    const progSwitch = popover.getByRole('switch', { name: 'Progress bar' });
+    await progSwitch.click();
+    assert.equal(await page.locator('.nreader-progress').isHidden(), true, 'progress bar hides when toggled off');
+
+    await page.reload();
+    await page.locator('.nreader-body').waitFor();
+    assert.equal(await page.evaluate(() => document.body.getAttribute('data-reader-theme')), 'paper');
+    const savedV2 = await page.evaluate(() => JSON.parse(localStorage.getItem('novel.readerSettings.v2')));
+    assert.equal(savedV2.theme, 'paper');
+    assert.equal(savedV2.size, 21);
+    assert.equal(savedV2.width, 'wide');
+    assert.equal(savedV2.align, 'justify');
+    assert.equal(savedV2.progressBar, false);
+
+    // Reset button restores defaults.
+    await page.getByRole('button', { name: 'Reader settings' }).click();
+    await page.locator('.nset-popover').waitFor();
+    await page.locator('.nset-reset').click();
+    assert.equal(await page.evaluate(() => document.body.getAttribute('data-reader-theme')), 'charcoal');
+    assert.equal(await page.locator('.nset-step-val').innerText(), '20');
+
+    // Old v1 key migration.
+    await page.evaluate(() => {
+      localStorage.removeItem('novel.readerSettings.v2');
+      localStorage.setItem('novel.readerSettings', JSON.stringify({
+        theme: 'sepia', font: 'sans', size: 22, lineHeight: 2.0, width: 880
+      }));
+    });
+    await page.reload();
+    await page.locator('.nreader-body').waitFor();
+    assert.equal(await page.evaluate(() => document.body.getAttribute('data-reader-theme')), 'sepia');
+    const migrated = await page.evaluate(() => JSON.parse(localStorage.getItem('novel.readerSettings.v2')));
+    assert.equal(migrated.theme, 'sepia');
+    assert.equal(migrated.font, 'inter');
+    assert.equal(migrated.size, 22);
+    assert.equal(migrated.spacing, 'relaxed');
+    assert.equal(migrated.width, 'wide');
+
+    // 7. Navigate to next chapter via button -> Chapter 2 shows locked next notice + Open on site; ArrowLeft returns.
     await page.getByRole('link', { name: /Next chapter/ }).click();
     await page.waitForFunction(() => document.querySelector('.nreader-body')?.textContent?.includes('iron gate'));
     const lockNotice = page.locator('.nlock-notice');
     await lockNotice.waitFor();
-    assert.equal(
-      await lockNotice.locator('a').getAttribute('href'),
-      'https://hangulplanet.com/novel/tower-of-time/chapter-3'
-    );
-
-    // ArrowLeft keyboard shortcut returns to Chapter 1.
+    assert.equal(await lockNotice.locator('a').getAttribute('href'), 'https://hangulplanet.com/novel/tower-of-time/chapter-3');
     await page.keyboard.press('ArrowLeft');
     await page.waitForFunction(() => document.querySelector('.nreader-body')?.textContent?.includes('Life on easy mode'));
 
-    // 4. Settings persist in localStorage across reload.
-    await page.getByRole('button', { name: /Settings/ }).click();
-    await page.locator('.nsettings').waitFor();
-    await page.getByRole('button', { name: 'Sepia', exact: true }).click();
-    await page.getByRole('button', { name: 'Sans', exact: true }).click();
-    await page.getByRole('button', { name: 'L', exact: true }).click();
-    assert.equal(await page.evaluate(() => document.body.getAttribute('data-reader-theme')), 'sepia');
-    await page.reload();
-    await page.locator('.nreader-body').waitFor();
-    assert.equal(await page.evaluate(() => document.body.getAttribute('data-reader-theme')), 'sepia');
-    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('novel.readerSettings')));
-    assert.equal(saved.theme, 'sepia');
-    assert.equal(saved.font, 'sans');
-    assert.equal(saved.size, 20);
-
-    // 5. Mobile 375px: no horizontal scroll across library, detail, and reader.
+    // 8. Mobile 375px: no horizontal scroll across library, detail, and reader.
     await page.setViewportSize({ width: 375, height: 800 });
     const noOverflow = async label => assert.ok(
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
@@ -226,7 +436,7 @@ const chapters = {
     await noOverflow('reader');
 
     assert.deepEqual(errors, []);
-    console.log('novel.test.js: all assertions passed (library, detail/locked, reader/prev-next, progress PUT, settings persist, 375px mobile)');
+    console.log('novel.test.js: all assertions passed (library, detail hero/stats/locked, reviews panel, reader dock/chapters/settings/migration, neutral palette, 375px mobile)');
   } finally {
     await browser.close();
   }

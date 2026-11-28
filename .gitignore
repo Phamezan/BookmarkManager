@@ -75,3 +75,6 @@ bin/*/logs/
 
 # Downloaded ONNX embedding model cache (regenerated on first run)
 src/BookmarkManager.Api/models/
+
+# Local Playwright visual review screenshots
+tests/suwayomi-addon/shots/
