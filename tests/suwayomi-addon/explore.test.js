@@ -57,9 +57,33 @@ const THIS_YEAR = new Date().getFullYear();
     const posts = [];
     const novelCalls = [];
     const novelLibPuts = [];
+    const novelListPuts = [];
+    let novelRecommendBatch = 0;
     let failShelves = false;
     let failMeta = false;
     page.on('pageerror', error => errors.push(error.message));
+
+    const makeNovelItem = (suffix, extra = {}) => ({
+      id: `11111111-1111-1111-1111-${String(suffix).padStart(12, '0')}`,
+      provider: 'Novelfire',
+      title: `Novel Title ${suffix}`,
+      alternateTitles: [],
+      authors: ['Author N'],
+      mediaType: 'Webnovel',
+      coverUrl: null,
+      synopsis: 'A great novel.',
+      genres: ['Action', 'Fantasy'],
+      rating: 4.6,
+      status: 'Ongoing',
+      latestChapter: 'Ch 320',
+      chapters: 320,
+      sourceUrl: `https://novelfire.net/book/novel-${suffix}`,
+      readable: true,
+      inLibrary: false,
+      listState: null,
+      becauseOf: [],
+      ...extra
+    });
 
     await page.route('**/*', async route => {
       const request = route.request();
@@ -67,12 +91,78 @@ const THIS_YEAR = new Date().getFullYear();
       if (url.pathname.startsWith('/bm-api/novels/')) {
         const api = url.pathname.slice('/bm-api/novels'.length);
         novelCalls.push(api + url.search);
-        if (api === '/popular') {
+        if (api === '/sources') {
           return route.fulfill({
             json: [
-              { source: 'hangulplanet', sourceName: 'HangulPlanet', title: 'Popular Tower Novel', path: '/novel/popular-tower', cover: null }
+              { id: 'hangulplanet', name: 'Hangul Planet', site: 'https://hangulplanet.com' },
+              { id: 'novelfire', name: 'Novel Fire', site: 'https://novelfire.net' }
             ]
           });
+        }
+        if (api === '/popular') {
+          const src = url.searchParams.get('source') || 'hangulplanet';
+          if (src === 'novelfire') {
+            return route.fulfill({
+              json: [
+                { source: 'novelfire', sourceName: 'Novel Fire', title: 'Popular Fire Novel', path: '/book/popular-fire', cover: null }
+              ]
+            });
+          }
+          return route.fulfill({
+            json: [
+              { source: 'hangulplanet', sourceName: 'Hangul Planet', title: 'Popular Tower Novel', path: '/novel/popular-tower', cover: null }
+            ]
+          });
+        }
+        if (api === '/recommends') {
+          novelRecommendBatch++;
+          const batch = novelRecommendBatch;
+          return route.fulfill({
+            json: Array.from({ length: 12 }, (_, i) => makeNovelItem(batch * 100 + i + 1, {
+              title: `Rec Batch ${batch} #${i + 1}`
+            }))
+          });
+        }
+        if (api === '/shelves') {
+          return route.fulfill({
+            json: [
+              { key: 'for-you', title: 'For you', subtitle: 'Based on your library', browseQuery: 'view=for-you',
+                items: [makeNovelItem(501, { title: 'For You Novel', becauseOf: ['Seed Chronicle'] })] },
+              { key: 'trending', title: 'Trending', subtitle: 'Most popular', browseQuery: 'sort=popular',
+                items: [makeNovelItem(502, { title: 'Trending Novel' })] },
+              { key: 'top-rated', title: 'Top rated', subtitle: 'Highest rated', browseQuery: 'sort=rating',
+                items: [makeNovelItem(503, { title: 'Top Rated Novel', rating: 4.9 })] },
+              { key: 'updated', title: 'Recently updated', subtitle: 'Latest releases', browseQuery: 'sort=updated',
+                items: [makeNovelItem(504, { title: 'Updated Novel' })] },
+              { key: 'completed-gems', title: 'Completed gems', subtitle: 'Finished gems', browseQuery: 'status=Completed&minRating=4&sort=rating',
+                items: [makeNovelItem(505, { title: 'Completed Gem Novel', status: 'Completed', rating: 4.7 })] }
+            ]
+          });
+        }
+        if (api === '/meta') {
+          return route.fulfill({
+            json: {
+              genres: [
+                { name: 'Fantasy', count: 120 },
+                { name: 'Action', count: 95 },
+                { name: 'Romance', count: 60 }
+              ]
+            }
+          });
+        }
+        if (api === '/for-you') {
+          return route.fulfill({
+            json: { page: 1, hasNextPage: false, total: 1, items: [makeNovelItem(501, { title: 'For You Novel', becauseOf: ['Seed Chronicle'] })] }
+          });
+        }
+        if (api === '/list' && request.method() === 'GET') {
+          return route.fulfill({
+            json: [makeNovelItem(701, { title: 'Saved Novel', listState: 'saved' })]
+          });
+        }
+        if (api.startsWith('/list/') && request.method() === 'PUT') {
+          novelListPuts.push({ id: api.slice('/list/'.length), ...request.postDataJSON() });
+          return route.fulfill({ status: 204 });
         }
         if (api === '/catalog') {
           return route.fulfill({
@@ -83,7 +173,7 @@ const THIS_YEAR = new Date().getFullYear();
               items: [
                 {
                   id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-                  provider: 'Novelfire',
+                  provider: 'RanobeDB',
                   title: 'Shadow Monarch Novel',
                   alternateTitles: ['Kage no Ou'],
                   authors: ['Chugong'],
@@ -94,6 +184,8 @@ const THIS_YEAR = new Date().getFullYear();
                   rating: 4.8,
                   status: 'Completed',
                   latestChapter: 'Ch 270',
+                  chapters: 270,
+                  readable: false,
                   inLibrary: false
                 },
                 {
@@ -105,9 +197,10 @@ const THIS_YEAR = new Date().getFullYear();
                   mediaType: 'Webnovel',
                   coverUrl: null,
                   synopsis: '',
-                  genres: [],
+                  genres: ['Fantasy'],
                   status: 'Ongoing',
                   sourceUrl: 'https://novelfire.net/book/fire-book',
+                  readable: true,
                   inLibrary: false
                 }
               ]
@@ -634,14 +727,32 @@ const THIS_YEAR = new Date().getFullYear();
       }
     }
 
-    // Novels mode: toggle, popular shelf, catalog card -> Find on novel sources -> Read & Add to library; popular card skips search.
+    // Novels mode: recommends (12 + Shuffle), catalog shelves, live source shelves, filter panel, dismiss + undo, saved, drawer, mobile.
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(home);
     await page.locator('.xshelf').nth(1).waitFor();
     await page.locator('.xmode').getByRole('button', { name: 'Novels', exact: true }).click();
-    await page.locator('.xncard').first().waitFor();
+    await page.locator('.xn-rec-grid .xncard-rec').nth(11).waitFor();
     assert.equal(await page.evaluate(() => localStorage.getItem('explore.mode')), 'novels');
-    assert.match(await page.locator('.xn-shelf-host h2').innerText(), /Popular on Hangul Planet/);
+    assert.equal(await page.locator('.xn-rec-grid .xncard-rec').count(), 12, 'Recommends renders 12 cards');
+    assert.match(await page.locator('.xn-rec-grid .xncard-rec').first().innerText(), /Rec Batch 1 #1/);
+
+    // Shuffle refetches /recommends and updates the grid.
+    const recCallsBefore = novelCalls.filter(c => c.startsWith('/recommends')).length;
+    await page.locator('.xn-shuffle').click();
+    await page.locator('.xn-rec-grid .xncard-rec[aria-label="Rec Batch 2 #1"]').waitFor();
+    assert.equal(novelCalls.filter(c => c.startsWith('/recommends')).length, recCallsBefore + 1);
+
+    // Shelves from /shelves render in order, including For you "Because you read" text.
+    await page.locator('.xn-shelves .xshelf').nth(4).waitFor();
+    const novelShelfTitles = await page.locator('.xn-shelves .xshelf h2').allTextContents();
+    assert.deepEqual(novelShelfTitles, ['For you', 'Trending', 'Top rated', 'Recently updated', 'Completed gems']);
+    assert.match(await page.locator('.xn-shelves .xshelf[data-shelf-key="for-you"] .xbecause').innerText(), /Because you read Seed Chronicle/);
+
+    // Live per-source shelves from /sources + /popular render.
+    await page.locator('.xn-live-shelves .xshelf').nth(1).waitFor();
+    const liveTitles = await page.locator('.xn-live-shelves h2').allTextContents();
+    assert.deepEqual(liveTitles, ['Popular on Hangul Planet', 'Popular on Novel Fire']);
 
     // Popular shelf item opens drawer pre-resolved without calling /search.
     const searchesBeforePopular = novelCalls.filter(c => c.startsWith('/search')).length;
@@ -657,7 +768,8 @@ const THIS_YEAR = new Date().getFullYear();
     await novelDrawer.waitFor({ state: 'hidden' });
 
     // Catalog item opens drawer -> Find on novel sources -> Add to library.
-    await page.locator('.xncard[data-novel-id]').first().click();
+    const novelBrowseGrid = page.locator('.xn-browse-grid');
+    await novelBrowseGrid.locator('.xncard[data-novel-id]').first().click();
     await novelDrawer.waitFor();
     await novelDrawer.getByRole('button', { name: 'Find on novel sources' }).click();
     await novelDrawer.locator('.xnhit').first().waitFor();
@@ -673,7 +785,7 @@ const THIS_YEAR = new Date().getFullYear();
     await novelDrawer.waitFor({ state: 'hidden' });
 
     // Novelfire catalog row with a book URL opens straight to the reader link, no search.
-    await page.locator('.xncard[data-novel-id]').nth(1).click();
+    await novelBrowseGrid.locator('.xncard[data-novel-id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]').click();
     await novelDrawer.waitFor();
     assert.equal(await novelDrawer.getByRole('button', { name: 'Find on novel sources' }).count(), 0);
     assert.equal(
@@ -683,7 +795,54 @@ const THIS_YEAR = new Date().getFullYear();
     await page.keyboard.press('Escape');
     await novelDrawer.waitFor({ state: 'hidden' });
 
+    // Novel filter panel sends query params and syncs URL.
+    const novelCatalogReq = test => page.waitForRequest(r =>
+      r.url().includes('/bm-api/novels/catalog?') && test(new URL(r.url()).searchParams));
+    const novelFilters = page.locator('.xn-filters');
+    let nReq = novelCatalogReq(p => p.get('genres') === 'Fantasy');
+    await novelFilters.locator('.xtri[data-name="fantasy"]').click();
+    await nReq;
+    assert.match(page.url(), /mode=novels/);
+    assert.match(page.url(), /genres=Fantasy/);
+
+    nReq = novelCatalogReq(p => p.get('readable') === 'false');
+    await novelFilters.getByRole('switch', { name: 'Readable now' }).click();
+    await nReq;
+    assert.match(page.url(), /readable=false/);
+
+    nReq = novelCatalogReq(p => p.get('sort') === 'rating');
+    await novelFilters.getByRole('combobox', { name: 'Sort novels by' }).selectOption('rating');
+    await nReq;
+
+    // Dismiss hides card immediately and sends PUT /list/{id}; Undo restores it.
+    novelListPuts.length = 0;
+    const dismissTarget = novelBrowseGrid.locator('.xncard[data-novel-id="bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]');
+    await dismissTarget.hover();
+    await dismissTarget.getByRole('button', { name: /Not interested: Fire Book/ }).click();
+    await dismissTarget.waitFor({ state: 'hidden' });
+    assert.equal(novelListPuts[0].id, 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb');
+    assert.equal(novelListPuts[0].state, 'dismissed');
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await dismissTarget.waitFor({ state: 'visible' });
+    assert.equal(novelListPuts[1].state, null);
+
+    // Saved tab in Novels mode loads /bm-api/novels/list?state=saved.
+    await page.locator('.xtabs').getByRole('button', { name: 'Saved', exact: true }).click();
+    await page.locator('.xncard', { hasText: 'Saved Novel' }).waitFor();
+
+    // Mobile 375px in Novels mode: no horizontal scroll, mobile filter drawer works.
+    await page.setViewportSize({ width: 375, height: 800 });
+    await page.locator('.xtabs').getByRole('button', { name: 'Home', exact: true }).click();
+    await page.locator('.xn-rec-grid .xncard-rec').first().waitFor();
+    await noOverflow('novels home 375px');
+    await page.locator('.xn-browse-bar').getByRole('button', { name: /^Filters/ }).click();
+    await page.locator('.xn-filters.is-open').waitFor();
+    await noOverflow('novels filter drawer 375px');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.xn-filters').evaluate(n => n.classList.contains('is-open')), false);
+
     // Switch back to Manga mode.
+    await page.setViewportSize({ width: 1440, height: 900 });
     await page.locator('.xmode').getByRole('button', { name: 'Manga', exact: true }).click();
     await page.locator('.xshelf').nth(1).waitFor();
     assert.equal(await page.evaluate(() => localStorage.getItem('explore.mode')), 'manga');

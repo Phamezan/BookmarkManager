@@ -28,6 +28,7 @@ public class AppDbContext : DbContext
     public DbSet<SeriesMetadata> SeriesMetadataSet => Set<SeriesMetadata>();
     public DbSet<ExploreListEntry> ExploreListEntries => Set<ExploreListEntry>();
     public DbSet<NovelLibraryEntry> NovelLibraryEntries => Set<NovelLibraryEntry>();
+    public DbSet<NovelListEntry> NovelListEntries => Set<NovelListEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -259,6 +260,18 @@ public class AppDbContext : DbContext
 
             entity.HasIndex(e => new { e.Source, e.NovelPath }).IsUnique();
             entity.HasIndex(e => e.LastReadAt);
+        });
+
+        modelBuilder.Entity<NovelListEntry>(entity =>
+        {
+            entity.ToTable("NovelListEntries");
+            entity.HasKey(e => e.CatalogEntryId);
+            entity.Property(e => e.CatalogEntryId).ValueGeneratedNever();
+            entity.Property(e => e.State).HasMaxLength(20).IsRequired();
+            entity.Property(e => e.Title).HasMaxLength(500).IsRequired();
+            entity.Property(e => e.CoverUrl).HasMaxLength(2048);
+
+            entity.HasIndex(e => e.State);
         });
 
         modelBuilder.Entity<DiscoverSourceEntry>(entity =>

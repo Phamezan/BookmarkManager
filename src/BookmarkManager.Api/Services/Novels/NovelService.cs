@@ -273,84 +273,6 @@ public sealed class NovelService
             });
     }
 
-    public async Task<NovelCatalogPageDto> GetCatalogAsync(string? q, string? status, int page, CancellationToken ct)
-    {
-        const int pageSize = 30;
-        var pageNumber = Math.Max(page, 1);
-
-        var query = _db.LibraryCatalogEntries
-            .AsNoTracking()
-            .Where(e => e.MediaType == LibraryMediaType.LightNovel || e.MediaType == LibraryMediaType.Webnovel);
-
-        if (!string.IsNullOrWhiteSpace(q))
-        {
-            var term = q.Trim().ToLowerInvariant();
-            query = query.Where(e =>
-                e.Title.ToLower().Contains(term)
-                || (e.AlternateTitles != null && e.AlternateTitles.ToLower().Contains(term)));
-        }
-
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            var statusMatches = ExpandStatusSynonyms(status.Trim());
-            query = query.Where(e => e.Status != null && statusMatches.Contains(e.Status.ToLower()));
-        }
-
-        var total = await query.CountAsync(ct).ConfigureAwait(false);
-        var rows = await query
-            .OrderBy(e => e.PopularityRank == null ? 1 : 0)
-            .ThenBy(e => e.PopularityRank)
-            .ThenBy(e => e.Title)
-            .Skip((pageNumber - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-
-        var libraryTitles = await _db.NovelLibraryEntries
-            .AsNoTracking()
-            .Select(e => e.Title)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-
-        var libraryNormalized = libraryTitles
-            .Select(MediaTitleNormalizer.NormalizeForSearch)
-            .Where(t => t.Length > 0)
-            .ToHashSet(StringComparer.Ordinal);
-
-        var items = rows.Select(e =>
-        {
-            var alts = LibraryCatalogEntry.SplitList(e.AlternateTitles);
-            var inLib = IsTitleInLibrary(e.Title, alts, libraryNormalized);
-            return new NovelCatalogItemDto
-            {
-                Id = e.Id,
-                Provider = e.Provider,
-                Title = e.Title,
-                AlternateTitles = alts,
-                Authors = LibraryCatalogEntry.SplitList(e.Authors),
-                MediaType = e.MediaType.ToString(),
-                CoverUrl = e.CoverImageUrl,
-                Synopsis = e.Synopsis,
-                Genres = LibraryCatalogEntry.SplitList(e.Genres),
-                Rating = e.Rating,
-                Status = e.Status,
-                LatestChapter = e.LatestChapter,
-                LatestVolume = e.LatestVolume,
-                SourceUrl = e.SourceUrl,
-                PopularityRank = e.PopularityRank,
-                InLibrary = inLib
-            };
-        }).ToList();
-
-        return new NovelCatalogPageDto
-        {
-            Page = pageNumber,
-            HasNextPage = pageNumber * pageSize < total,
-            Total = total,
-            Items = items
-        };
-    }
-
     public static NovelLibraryEntryDto MapLibraryEntry(NovelLibraryEntry entry) => new()
     {
         Id = entry.Id,
@@ -368,44 +290,6 @@ public sealed class NovelService
         UpdatedAt = entry.UpdatedAt,
         LastReadAt = entry.LastReadAt
     };
-
-    private static bool IsTitleInLibrary(string title, IReadOnlyList<string> alternates, HashSet<string> libraryNormalized)
-    {
-        if (libraryNormalized.Count == 0)
-        {
-            return false;
-        }
-
-        var normalizedTitle = MediaTitleNormalizer.NormalizeForSearch(title);
-        if (normalizedTitle.Length > 0 && libraryNormalized.Contains(normalizedTitle))
-        {
-            return true;
-        }
-
-        foreach (var alt in alternates)
-        {
-            var normAlt = MediaTitleNormalizer.NormalizeForSearch(alt);
-            if (normAlt.Length > 0 && libraryNormalized.Contains(normAlt))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static List<string> ExpandStatusSynonyms(string status)
-    {
-        var lower = status.ToLowerInvariant();
-        return lower switch
-        {
-            "ongoing" or "releasing" => ["ongoing", "releasing"],
-            "completed" or "finished" => ["completed", "finished"],
-            "hiatus" or "on hiatus" => ["hiatus", "on hiatus"],
-            "cancelled" or "canceled" or "dropped" => ["cancelled", "canceled", "dropped"],
-            _ => [lower]
-        };
-    }
 
     private async Task<IReadOnlyList<SidecarSourceRecord>> GetAllSidecarSourcesAsync(CancellationToken ct)
     {

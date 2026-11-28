@@ -316,22 +316,23 @@ public class NovelsEndpointTests : IDisposable
             await db.SaveChangesAsync();
         }
 
-        // Default catalog: only LightNovel + Webnovel, PopularityRank asc nulls last
-        var page = await client.GetFromJsonAsync<NovelCatalogPageDto>("/api/novels/catalog", JsonOptions);
+        // With readable=false: includes both LightNovel + Webnovel regardless of enabled sources, sorted by normalized rank
+        var page = await client.GetFromJsonAsync<NovelCatalogPageDto>("/api/novels/catalog?readable=false", JsonOptions);
         Assert.NotNull(page);
         Assert.Equal(3, page.Total);
         Assert.Equal(["First Ranked Novel", "Shadow Monarch Chronicles", "Aether Blade"], page.Items.Select(i => i.Title).ToArray());
         Assert.True(page.Items[1].InLibrary);
         Assert.False(page.Items[0].InLibrary);
+        Assert.All(page.Items, i => Assert.False(i.Readable));
 
         // Query matches AlternateTitles
-        var byAlt = await client.GetFromJsonAsync<NovelCatalogPageDto>("/api/novels/catalog?q=Kage", JsonOptions);
+        var byAlt = await client.GetFromJsonAsync<NovelCatalogPageDto>("/api/novels/catalog?readable=false&q=Kage", JsonOptions);
         Assert.NotNull(byAlt);
         Assert.Single(byAlt.Items);
         Assert.Equal("Shadow Monarch Chronicles", byAlt.Items[0].Title);
 
         // Status filter
-        var completed = await client.GetFromJsonAsync<NovelCatalogPageDto>("/api/novels/catalog?status=Completed", JsonOptions);
+        var completed = await client.GetFromJsonAsync<NovelCatalogPageDto>("/api/novels/catalog?readable=false&status=Completed", JsonOptions);
         Assert.NotNull(completed);
         Assert.Single(completed.Items);
         Assert.Equal("Aether Blade", completed.Items[0].Title);

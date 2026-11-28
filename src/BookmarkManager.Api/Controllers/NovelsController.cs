@@ -13,11 +13,13 @@ public sealed class NovelsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly NovelService _novels;
+    private readonly NovelExploreService _explore;
 
-    public NovelsController(AppDbContext db, NovelService novels)
+    public NovelsController(AppDbContext db, NovelService novels, NovelExploreService explore)
     {
         _db = db;
         _novels = novels;
+        _explore = explore;
     }
 
     [HttpGet("sources")]
@@ -25,18 +27,79 @@ public sealed class NovelsController : ControllerBase
         Ok(await _novels.GetEnabledSourcesAsync(ct).ConfigureAwait(false)));
 
     [HttpGet("catalog")]
-    public async Task<IActionResult> GetCatalogAsync(
-        [FromQuery] string? q,
-        [FromQuery] string? status,
-        [FromQuery] int page = 1,
+    public async Task<IActionResult> GetCatalogAsync(CancellationToken ct = default)
+    {
+        var filter = NovelCatalogFilter.FromQuery(Request.Query);
+        return Ok(await _explore.GetCatalogAsync(filter, ct).ConfigureAwait(false));
+    }
+
+    [HttpGet("meta")]
+    public async Task<IActionResult> GetMetaAsync(CancellationToken ct = default)
+        => Ok(await _explore.GetMetaAsync(ct).ConfigureAwait(false));
+
+    [HttpGet("recommends")]
+    public async Task<IActionResult> GetRecommendsAsync(
+        [FromQuery] string? count = null,
+        [FromQuery] string? readable = null,
         CancellationToken ct = default)
     {
-        if (q is { Length: > NovelPathValidator.MaxQueryLength })
+        var parsedCount = int.TryParse(count?.Trim(), out var c) ? c : 12;
+        var readableOnly = NovelCatalogFilter.ParseBool(readable, fallback: true);
+        return Ok(await _explore.GetRecommendsAsync(parsedCount, readableOnly, ct).ConfigureAwait(false));
+    }
+
+    [HttpGet("shelves")]
+    public async Task<IActionResult> GetShelvesAsync(
+        [FromQuery] string? readable = null,
+        CancellationToken ct = default)
+    {
+        var readableOnly = NovelCatalogFilter.ParseBool(readable, fallback: true);
+        return Ok(await _explore.GetShelvesAsync(readableOnly, ct).ConfigureAwait(false));
+    }
+
+    [HttpGet("for-you")]
+    public async Task<IActionResult> GetForYouAsync(
+        [FromQuery] string? page = null,
+        [FromQuery] string? readable = null,
+        CancellationToken ct = default)
+    {
+        var parsedPage = int.TryParse(page?.Trim(), out var p) && p >= 1 ? p : 1;
+        var readableOnly = NovelCatalogFilter.ParseBool(readable, fallback: true);
+        return Ok(await _explore.GetForYouPageAsync(parsedPage, readableOnly, ct).ConfigureAwait(false));
+    }
+
+    [HttpGet("list")]
+    public async Task<IActionResult> GetListAsync([FromQuery] string? state, CancellationToken ct = default)
+    {
+        var wanted = state?.Trim().ToLowerInvariant();
+        if (wanted is not (NovelListEntry.Saved or NovelListEntry.Dismissed))
         {
-            return ApiProblem.Result(StatusCodes.Status400BadRequest, ApiProblem.ValidationCode, "q is too long.");
+            return ApiProblem.Result(
+                StatusCodes.Status400BadRequest,
+                ApiProblem.ValidationCode,
+                "state must be 'saved' or 'dismissed'.");
         }
 
-        return Ok(await _novels.GetCatalogAsync(q, status, page, ct).ConfigureAwait(false));
+        return Ok(await _explore.GetListAsync(wanted, ct).ConfigureAwait(false));
+    }
+
+    [HttpPut("list/{catalogEntryId:guid}")]
+    public async Task<IActionResult> PutListAsync(
+        Guid catalogEntryId,
+        [FromBody] NovelListUpdateRequest? request,
+        CancellationToken ct = default)
+    {
+        var result = await _explore.PutListAsync(catalogEntryId, request, ct).ConfigureAwait(false);
+        return result.Outcome switch
+        {
+            NovelListUpdateOutcome.ValidationError => ApiProblem.Result(
+                StatusCodes.Status400BadRequest,
+                ApiProblem.ValidationCode,
+                result.ErrorMessage ?? "Invalid request."),
+            NovelListUpdateOutcome.NotFound => NotFound(
+                ApiProblem.Create(StatusCodes.Status404NotFound, "NOT_FOUND", result.ErrorMessage ?? "Novel catalog entry not found.")),
+            _ => NoContent()
+        };
     }
 
     [HttpGet("popular")]
@@ -234,6 +297,7 @@ public sealed class NovelsController : ControllerBase
         }
 
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        _explore.InvalidateUserCaches();
         return Ok(NovelService.MapLibraryEntry(entry));
     }
 
@@ -257,6 +321,7 @@ public sealed class NovelsController : ControllerBase
         entry.Status = status;
         entry.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        _explore.InvalidateUserCaches();
         return Ok(NovelService.MapLibraryEntry(entry));
     }
 
@@ -330,6 +395,7 @@ public sealed class NovelsController : ControllerBase
         {
             _db.NovelLibraryEntries.Remove(entry);
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            _explore.InvalidateUserCaches();
         }
 
         return NoContent();
