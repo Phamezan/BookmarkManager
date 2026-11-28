@@ -18,6 +18,7 @@ services:
       Suwayomi__PublicBaseUrl: "${SUWAYOMI_PUBLIC_BASE_URL:-http://phamezan.capybara-pirarucu.ts.net:4567}"
       Novels__SidecarUrl: "http://novels:3000"
       Novels__EnabledSources: "${NOVELS_ENABLED_SOURCES:-hangulplanet,novelfire}"
+      Novels__RoyalRoadReviews: "${NOVELS_ROYALROAD_REVIEWS:-true}"
     volumes:
       - ${BOOKMARK_MANAGER_DATA_DIR:-./data}:/data
     restart: unless-stopped

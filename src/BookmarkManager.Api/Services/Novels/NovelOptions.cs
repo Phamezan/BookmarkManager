@@ -9,6 +9,9 @@ public sealed class NovelOptions
     /// <summary>Comma-separated list of enabled sidecar source ids (e.g. "hangulplanet").</summary>
     public string EnabledSources { get; set; } = "hangulplanet";
 
+    /// <summary>Enables Royal Road review lookup by exact normalized title match.</summary>
+    public bool RoyalRoadReviews { get; set; } = true;
+
     public HashSet<string> GetEnabledSourceSet()
     {
         var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
