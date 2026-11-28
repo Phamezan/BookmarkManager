@@ -16,6 +16,7 @@
 
 * { box-sizing: border-box; }
 
+* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .18) transparent; }
 body {
   background: var(--bg);
   color: var(--text);

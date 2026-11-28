@@ -186,6 +186,14 @@ async function assertNoOldPrimary(page, label) {
     return bad;
   });
   assert.deepEqual(offenders, [], `old primary rgb(91, 116, 239) found on ${label}`);
+  // backdrop-filter / mask-image re-composite every scroll frame (GPU spikes); keep the add-on free of them.
+  const heavy = await page.evaluate(() => [...document.querySelectorAll('*')]
+    .filter(el => {
+      const s = getComputedStyle(el);
+      return (s.backdropFilter && s.backdropFilter !== 'none') || (s.maskImage && s.maskImage !== 'none');
+    })
+    .map(el => `${el.tagName}.${el.className}`));
+  assert.deepEqual(heavy, [], `backdrop-filter/mask-image found on ${label}`);
 }
 
 (async () => {
@@ -299,6 +307,9 @@ async function assertNoOldPrimary(page, label) {
     await revPanel.waitFor();
     await revPanel.locator('.nrev-card').first().waitFor();
     assert.ok(reviewCalls.length >= 1, 'reviews fetched on panel open');
+    const tabFit = await revPanel.locator('.nrev-tabs').evaluate(n => n.scrollHeight <= n.clientHeight);
+    assert.ok(tabFit, 'review tab row is not squashed or clipped');
+    await assertNoOldPrimary(page, 'reviews panel');
     assert.equal(await revPanel.locator('.nrev-body.is-clamped').count(), 1);
     await revPanel.getByRole('button', { name: 'Read more' }).click();
     assert.equal(await revPanel.locator('.nrev-body.is-clamped').count(), 0);
