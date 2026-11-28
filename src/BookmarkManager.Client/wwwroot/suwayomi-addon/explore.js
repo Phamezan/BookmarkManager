@@ -5,7 +5,7 @@ import { buildCard, buildShelf, buildSkeletons, syncCard } from './explore-cards
 import { buildHero } from './explore-hero.js?v=3';
 import { createGridLoader } from './explore-grid.js?v=3';
 import { createDetail } from './explore-detail.js?v=3';
-import { createNovelsExplore } from './explore-novels.js?v=1';
+import { createNovelsExplore } from './explore-novels.js?v=2';
 import {
   createFilterPanel, filtersFromParams, filtersToParams, defaultFilters, activePills, hasFilters, panelCount
 } from './explore-filters.js?v=3';
@@ -65,7 +65,13 @@ const detail = createDetail({
 const novelsExplore = createNovelsExplore({
   view,
   banner,
-  toast: message => toast(message)
+  toast,
+  searchInput,
+  drawerMq,
+  backdropEl: $('filter-backdrop'),
+  onSyncTab: nextTab => {
+    document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-current', b.dataset.tab === nextTab ? 'page' : 'false'));
+  }
 });
 
 const grid = createGridLoader({
@@ -149,20 +155,25 @@ function syncUrl() {
 
 function readInitialState() {
   const params = new URLSearchParams(location.search);
+  const urlMode = params.get('mode');
   const urlTab = params.get('tab');
   const filterParams = filtersToParams(filtersFromParams(params));
-  const hasMangaUrl = Boolean(params.get('id') || urlTab || filterParams.size);
+  const hasMangaUrl = urlMode !== 'novels' && Boolean(params.get('id') || urlTab || filterParams.size);
   const storedMode = storageGet(MODE_KEY);
-  mode = !hasMangaUrl && storedMode === 'novels' ? 'novels' : 'manga';
+  mode = urlMode === 'novels' ? 'novels' : (!hasMangaUrl && storedMode === 'novels' ? 'novels' : 'manga');
   if (TABS.includes(urlTab)) tab = urlTab;
   else if (filterParams.size) tab = 'browse';
   savedSub = params.get('list') === 'dismissed' ? 'dismissed' : 'saved';
-  if (filterParams.size) filters = filtersFromParams(params);
-  else if (tab === 'browse') filters = filtersFromParams(new URLSearchParams(storageGet(FILTER_KEY) || ''));
-  searchInput.value = mode === 'manga' ? filters.q : '';
+  if (mode === 'manga') {
+    if (filterParams.size) filters = filtersFromParams(params);
+    else if (tab === 'browse') filters = filtersFromParams(new URLSearchParams(storageGet(FILTER_KEY) || ''));
+    searchInput.value = filters.q;
+  } else {
+    searchInput.value = params.get('q') || '';
+  }
 }
 
-function switchMode(next) {
+function switchMode(next, initialParams = null) {
   mode = next === 'novels' ? 'novels' : 'manga';
   storageSet(MODE_KEY, mode);
   document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
@@ -174,14 +185,13 @@ function switchMode(next) {
     grid.stop();
     detail.close();
     closeFilterDrawer();
-    tabsNav.hidden = true;
+    tabsNav.hidden = false;
     toolbar.hidden = true;
     filtersEl.hidden = true;
     $('layout').classList.remove('has-filters');
     searchInput.placeholder = 'Search novels  ( / )';
     searchInput.setAttribute('aria-label', 'Search novels');
-    searchInput.value = '';
-    novelsExplore.enter('');
+    novelsExplore.enter({ initialTab: initialParams?.get('tab') || 'home', params: initialParams });
     return;
   }
 
@@ -408,6 +418,7 @@ document.addEventListener('keydown', event => {
   const anyDrawerOpen = detail.isOpen() || novelsExplore.isOpenDrawer();
   if (event.key === '/' && !typing && !anyDrawerOpen) { event.preventDefault(); searchInput.focus(); }
   else if (event.key === 'Escape' && filtersEl.classList.contains('is-open')) closeFilterDrawer();
+  else if (event.key === 'Escape' && novelsExplore.isFilterDrawerOpen()) novelsExplore.closeFilterDrawer();
   else if (event.key === 'Escape' && detail.isOpen()) detail.close();
   else if (event.key === 'Escape' && novelsExplore.isOpenDrawer()) novelsExplore.closeDrawer();
 });
@@ -415,14 +426,22 @@ filtersEl.addEventListener('keydown', event => {
   if (filtersEl.getAttribute('aria-modal')) trapTab(filtersEl, event);
 });
 // Leaving the drawer layout (rotate / resize) must not leave a modal, scroll-locked page behind.
-drawerMq.addEventListener('change', () => { if (!drawerMq.matches) closeFilterDrawer(); });
+drawerMq.addEventListener('change', () => {
+  if (!drawerMq.matches) {
+    closeFilterDrawer();
+    novelsExplore.closeFilterDrawer();
+  }
+});
 
 /* ---------- init ---------- */
 
 document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => { if (b.dataset.mode !== mode) switchMode(b.dataset.mode); }));
-document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => { if (b.dataset.tab !== tab) switchTab(b.dataset.tab); }));
+document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click', () => {
+  if (mode === 'novels') { novelsExplore.switchTab(b.dataset.tab); return; }
+  if (b.dataset.tab !== tab) switchTab(b.dataset.tab);
+}));
 $('filter-toggle').addEventListener('click', openFilterDrawer);
-$('filter-backdrop').addEventListener('click', closeFilterDrawer);
+$('filter-backdrop').addEventListener('click', () => { closeFilterDrawer(); novelsExplore.closeFilterDrawer(); });
 $('reset-top').addEventListener('click', resetFilters);
 
 // Sticky sidebar offsets itself below the (variable-height) sticky header.
@@ -430,7 +449,7 @@ new ResizeObserver(() => document.documentElement.style.setProperty('--head-h', 
 
 readInitialState();
 if (mode === 'novels') {
-  switchMode('novels');
+  switchMode('novels', new URLSearchParams(location.search));
 } else {
   document.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === 'manga')));
   switchTab(tab);

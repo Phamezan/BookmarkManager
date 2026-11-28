@@ -48,12 +48,20 @@ function highlighted(name, at, length) {
   return span;
 }
 
-export function createTagCombobox({ onAdd, onRemoveLast, label = 'Add a tag' }) {
+export function createTagCombobox({
+  onAdd,
+  onRemoveLast,
+  label = 'Add a tag',
+  placeholder = 'Search or browse tags',
+  noun = 'tags',
+  browseLabel = 'Browse all tags',
+  listLabel = 'Tags'
+}) {
   const root = el('div', 'xcb');
   const field = el('div', 'xcb-field');
   const input = el('input', 'xcb-input');
   const listId = `xcb-list-${Math.random().toString(36).slice(2, 8)}`;
-  Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, placeholder: 'Search or browse tags' });
+  Object.assign(input, { type: 'text', autocomplete: 'off', spellcheck: false, placeholder });
   input.setAttribute('role', 'combobox');
   input.setAttribute('aria-autocomplete', 'list');
   input.setAttribute('aria-expanded', 'false');
@@ -62,7 +70,7 @@ export function createTagCombobox({ onAdd, onRemoveLast, label = 'Add a tag' }) 
   const hint = el('p', 'xcb-hint', 'Enter to include, Shift+Enter to exclude');
   hint.id = `${listId}-hint`;
   input.setAttribute('aria-describedby', hint.id);
-  const opener = button('xcb-open', null, () => (isOpen() ? close() : (open(), input.focus())), 'Browse all tags');
+  const opener = button('xcb-open', null, () => (isOpen() ? close() : (open(), input.focus())), browseLabel);
   opener.tabIndex = -1;
   opener.appendChild(icon('chevron', 'xicon'));
   field.append(icon('search', 'xicon xcb-icon'), input, opener);
@@ -72,7 +80,7 @@ export function createTagCombobox({ onAdd, onRemoveLast, label = 'Add a tag' }) 
   const list = el('ul', 'xcb-list');
   list.id = listId;
   list.setAttribute('role', 'listbox');
-  list.setAttribute('aria-label', 'Tags');
+  list.setAttribute('aria-label', listLabel);
   const empty = el('p', 'xcb-empty');
   empty.setAttribute('role', 'status');
   pop.append(list, empty, hint);
@@ -159,7 +167,7 @@ export function createTagCombobox({ onAdd, onRemoveLast, label = 'Add a tag' }) 
       list.appendChild(row.node);
     });
     const query = input.value.trim();
-    empty.textContent = rows.length ? '' : query ? `No tags match "${query}"` : 'All tags are already selected.';
+    empty.textContent = rows.length ? '' : query ? `No ${noun} match "${query}"` : `All ${noun} are already selected.`;
     empty.hidden = rows.length > 0;
     list.hidden = rows.length === 0;
     if (previous?.kind === 'group') active = rows.findIndex(r => r.kind === 'group' && r.cat.name === previous.cat.name);
