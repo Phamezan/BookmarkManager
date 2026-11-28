@@ -79,7 +79,7 @@ const THIS_YEAR = new Date().getFullYear();
             json: {
               page: 1,
               hasNextPage: false,
-              total: 1,
+              total: 2,
               items: [
                 {
                   id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
@@ -94,6 +94,20 @@ const THIS_YEAR = new Date().getFullYear();
                   rating: 4.8,
                   status: 'Completed',
                   latestChapter: 'Ch 270',
+                  inLibrary: false
+                },
+                {
+                  id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+                  provider: 'Novelfire',
+                  title: 'Fire Book',
+                  alternateTitles: [],
+                  authors: [],
+                  mediaType: 'Webnovel',
+                  coverUrl: null,
+                  synopsis: '',
+                  genres: [],
+                  status: 'Ongoing',
+                  sourceUrl: 'https://novelfire.net/book/fire-book',
                   inLibrary: false
                 }
               ]
@@ -655,6 +669,17 @@ const THIS_YEAR = new Date().getFullYear();
     await novelDrawer.getByRole('button', { name: 'In library' }).waitFor();
     assert.equal(novelLibPuts.length, 1);
     assert.equal(novelLibPuts[0].novelPath, '/novel/shadow-monarch');
+    await page.keyboard.press('Escape');
+    await novelDrawer.waitFor({ state: 'hidden' });
+
+    // Novelfire catalog row with a book URL opens straight to the reader link, no search.
+    await page.locator('.xncard[data-novel-id]').nth(1).click();
+    await novelDrawer.waitFor();
+    assert.equal(await novelDrawer.getByRole('button', { name: 'Find on novel sources' }).count(), 0);
+    assert.equal(
+      await novelDrawer.locator('.xnhit a', { hasText: 'Read' }).getAttribute('href'),
+      '/bm/novel.html#/novel?source=novelfire&path=%2Fbook%2Ffire-book'
+    );
     await page.keyboard.press('Escape');
     await novelDrawer.waitFor({ state: 'hidden' });
 
