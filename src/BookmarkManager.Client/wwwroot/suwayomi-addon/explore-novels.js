@@ -311,8 +311,20 @@ export function createNovelsExplore({ view, banner, toast }) {
       synopsis: item.synopsis,
       alternateTitles: item.alternateTitles,
       inLibrary: item.inLibrary,
-      resolvedHit: null
+      resolvedHit: novelfireHit(item)
     });
+  }
+
+  // Novelfire catalog rows already know their book page, so they open in the reader without a search.
+  function novelfireHit(item) {
+    if (item.provider !== 'Novelfire') return null;
+    try {
+      const url = new URL(item.sourceUrl);
+      if (url.hostname !== 'novelfire.net' || !url.pathname.startsWith('/book/')) return null;
+      return { source: 'novelfire', sourceName: 'Novel Fire', title: item.title, path: url.pathname, cover: item.coverUrl, isExactMatch: true };
+    } catch {
+      return null;
+    }
   }
 
   function openPopularItem(item) {

@@ -205,9 +205,9 @@ Configuration on the `bookmarkmanager` service (overridable in `.env`):
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `Novels__SidecarUrl` | `http://novels:3000` | Internal base URL of the `novels` sidecar service. |
-| `NOVELS_ENABLED_SOURCES` → `Novels__EnabledSources` | `hangulplanet` | Comma-separated list of enabled plugin IDs. Disabled or unknown sources return `404` on every endpoint. |
+| `NOVELS_ENABLED_SOURCES` → `Novels__EnabledSources` | `hangulplanet,novelfire` | Comma-separated list of enabled plugin IDs. Disabled or unknown sources return `404` on every endpoint. |
 
-Bundled plugins: `hangulplanet` (enabled in v1), plus `wetriedtls`, `fenrirrealm`, and `novelfire` (bundled and ready to enable after a manual smoke test by adding them to `NOVELS_ENABLED_SOURCES`, e.g. `NOVELS_ENABLED_SOURCES=hangulplanet,wetriedtls`).
+Bundled plugins: `hangulplanet` and `novelfire` (enabled), plus `wetriedtls` and `fenrirrealm` (bundled and ready to enable after a manual smoke test by adding them to `NOVELS_ENABLED_SOURCES`, e.g. `NOVELS_ENABLED_SOURCES=hangulplanet,novelfire,wetriedtls`). Novelfire catalog rows open straight in the reader from their `novelfire.net/book/{slug}` URL; other catalog rows use **Find on novel sources**.
 
 ### Endpoints (`/api/novels/*`, exposed to the add-on at `/bm-api/novels/*`)
 
